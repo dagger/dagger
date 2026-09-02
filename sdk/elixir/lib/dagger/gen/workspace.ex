@@ -27,6 +27,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare "module:function" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.
+  """
+  @spec addresses(t(), [{:types, [String.t()]}, {:directives, [String.t()]}]) ::
+          {:ok, [Dagger.WorkspaceAddress.t()]} | {:error, term()}
+  def addresses(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("addresses")
+      |> QB.maybe_put_arg("types", optional_args[:types])
+      |> QB.maybe_put_arg("directives", optional_args[:directives])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceAddress{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceAddress"),
+           client: workspace.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Return all agent middlewares from modules loaded in the workspace.
   """
   @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()

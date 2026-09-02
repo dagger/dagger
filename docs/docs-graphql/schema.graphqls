@@ -80,6 +80,13 @@ type Address implements Node {
   """A unique identifier for this Address."""
   id: ID!
 
+  """
+  Load an LLM from a module reference. An @agent function is composed onto a
+  fresh LLM bound to the workspace in scope, as Workspace.agents.compose does
+  with no base.
+  """
+  llm: LLM!
+
   """Load a secret from the address."""
   secret: Secret!
 
@@ -5616,6 +5623,27 @@ type Workspace implements Node {
   """
   address: String!
 
+  """
+  Addresses loadable from the workspace's installed modules: functions taking no
+  caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM
+  doesn't count), rendered as bare "module:function" references. Each filter
+  list matches any of its entries, and the lists both apply; a null list does
+  not filter, an empty one matches nothing.
+  """
+  addresses(
+    """
+    Only list functions returning one of these types, e.g. ["Container"]. An
+    interface name, e.g. "Syncer", matches functions returning any type that
+    implements it.
+    """
+    types: [String!]
+
+    """
+    Only list functions whose field carries one of these directives, e.g. ["check"].
+    """
+    directives: [String!]
+  ): [WorkspaceAddress!]!
+
   """Return all agent middlewares from modules loaded in the workspace."""
   agents(
     """Only include agents matching the specified patterns"""
@@ -6198,6 +6226,24 @@ type Workspace implements Node {
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
   ): Workspace!
+}
+
+"""A module function loadable as an address."""
+type WorkspaceAddress implements Node {
+  """The function's doc string."""
+  description: String!
+
+  """Names of the directives on the function, e.g. ["check"]."""
+  directives: [String!]!
+
+  """A unique identifier for this WorkspaceAddress."""
+  id: ID!
+
+  """Name of the type the address resolves to, e.g. "Container"."""
+  type: String!
+
+  """The address value, e.g. "sandboxes:go"."""
+  value: String!
 }
 
 """Local git state for a workspace."""

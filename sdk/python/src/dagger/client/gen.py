@@ -657,6 +657,15 @@ class Address(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    def llm(self) -> "LLM":
+        """Load an LLM from a module reference. An @agent function is composed
+        onto a fresh LLM bound to the workspace in scope, as
+        Workspace.agents.compose does with no base.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("llm", _args)
+        return LLM(_ctx)
+
     def secret(self) -> "Secret":
         """Load a secret from the address."""
         _args: list[Arg] = []
@@ -15044,6 +15053,35 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    async def addresses(
+        self,
+        *,
+        types: list[str] | None = None,
+        directives: list[str] | None = None,
+    ) -> list["WorkspaceAddress"]:
+        """Addresses loadable from the workspace's installed modules: functions
+        taking no caller-supplied arguments (an auto-injected Workspace or an
+        @agent's base LLM doesn't count), rendered as bare "module:function"
+        references. Each filter list matches any of its entries, and the lists
+        both apply; a null list does not filter, an empty one matches nothing.
+
+        Parameters
+        ----------
+        types:
+            Only list functions returning one of these types, e.g.
+            ["Container"]. An interface name, e.g. "Syncer", matches functions
+            returning any type that implements it.
+        directives:
+            Only list functions whose field carries one of these directives,
+            e.g. ["check"].
+        """
+        _args = [
+            Arg("types", types, None),
+            Arg("directives", directives, None),
+        ]
+        _ctx = self._select("addresses", _args)
+        return await _ctx.execute_object_list(WorkspaceAddress)
+
     def agents(
         self,
         *,
@@ -16147,6 +16185,123 @@ class Workspace(Type):
 
 
 @typecheck
+class WorkspaceAddress(Type):
+    """A module function loadable as an address."""
+
+    async def description(self) -> str:
+        """The function's doc string.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def directives(self) -> list[str]:
+        """Names of the directives on the function, e.g. ["check"].
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("directives", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceAddress.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def type_(self) -> str:
+        """Name of the type the address resolves to, e.g. "Container".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("type", _args)
+        return await _ctx.execute(str)
+
+    async def value(self) -> str:
+        """The address value, e.g. "sandboxes:go".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class WorkspaceGit(Type):
     """Local git state for a workspace."""
 
@@ -16760,6 +16915,7 @@ __all__ = [
     "Void",
     "Volume",
     "Workspace",
+    "WorkspaceAddress",
     "WorkspaceGit",
     "WorkspaceMigration",
     "WorkspaceMigrationStep",

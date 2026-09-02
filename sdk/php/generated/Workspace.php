@@ -23,6 +23,21 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare "module:function" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.
+     */
+    public function addresses(?array $types = null, ?array $directives = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addresses');
+        if (null !== $types) {
+        $leafQueryBuilder->setArgument('types', $types);
+        }
+        if (null !== $directives) {
+        $leafQueryBuilder->setArgument('directives', $directives);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'addresses');
+    }
+
+    /**
      * Return all agent middlewares from modules loaded in the workspace.
      */
     public function agents(?array $include = null): AgentGroup

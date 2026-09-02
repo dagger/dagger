@@ -117,6 +117,20 @@ defmodule Dagger.Address do
   end
 
   @doc """
+  Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.
+  """
+  @spec llm(t()) :: Dagger.LLM.t()
+  def llm(%__MODULE__{} = address) do
+    query_builder =
+      address.query_builder |> QB.select("llm")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: address.client
+    }
+  end
+
+  @doc """
   Load a secret from the address.
   """
   @spec secret(t()) :: Dagger.Secret.t()

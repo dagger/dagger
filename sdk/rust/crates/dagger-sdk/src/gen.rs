@@ -456,6 +456,15 @@ impl Address {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.
+    pub fn llm(&self) -> Llm {
+        let query = self.selection.select("llm");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a secret from the address.
     pub fn secret(&self) -> Secret {
         let query = self.selection.select("secret");
@@ -15142,6 +15151,15 @@ pub struct Workspace {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceAddressesOpts<'a> {
+    /// Only list functions whose field carries one of these directives, e.g. ["check"].
+    #[builder(setter(into, strip_option), default)]
+    pub directives: Option<Vec<&'a str>>,
+    /// Only list functions returning one of these types, e.g. ["Container"]. An interface name, e.g. "Syncer", matches functions returning any type that implements it.
+    #[builder(setter(into, strip_option), default)]
+    pub types: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceAgentsOpts<'a> {
     /// Only include agents matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -15373,6 +15391,57 @@ impl Workspace {
     pub async fn address(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare "module:function" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn addresses(&self) -> Result<Vec<WorkspaceAddress>, DaggerError> {
+        let query = self.selection.select("addresses");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceAddress {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceAddress"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare "module:function" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn addresses_opts<'a>(
+        &self,
+        opts: WorkspaceAddressesOpts<'a>,
+    ) -> Result<Vec<WorkspaceAddress>, DaggerError> {
+        let mut query = self.selection.select("addresses");
+        if let Some(types) = opts.types {
+            query = query.arg("types", types);
+        }
+        if let Some(directives) = opts.directives {
+            query = query.arg("directives", directives);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceAddress {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceAddress"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Return all agent middlewares from modules loaded in the workspace.
     ///
@@ -16597,6 +16666,69 @@ impl Workspace {
     }
 }
 impl Node for Workspace {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceAddress {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceAddress {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceAddress {
+    fn graphql_type() -> &'static str {
+        "WorkspaceAddress"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceAddress {
+    /// The function's doc string.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Names of the directives on the function, e.g. ["check"].
+    pub async fn directives(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("directives");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this WorkspaceAddress.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Name of the type the address resolves to, e.g. "Container".
+    pub async fn r#type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("type");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The address value, e.g. "sandboxes:go".
+    pub async fn value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("value");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for WorkspaceAddress {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
