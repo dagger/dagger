@@ -833,6 +833,9 @@ func (srv *Server) initializeDaggerClient(
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		if client.neverServesAttachables(id) {
+			return nil, fmt.Errorf("client %q serves no session attachables", id)
+		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
@@ -1050,6 +1053,17 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+// neverServesAttachables reports whether id is a synthetic nested client (e.g.
+// in-engine dang evaluation), which never registers attachables of its own.
+// Waiting on one is guaranteed to burn the whole getClientCaller timeout.
+func (client *daggerClient) neverServesAttachables(id string) bool {
+	if id != client.clientID || client.hostServiceProxyClientID == "" {
+		return false
+	}
+	_, registered := client.daggerSession.attachables.Lookup(id)
+	return !registered
 }
 
 func (client *daggerClient) resolveHostServiceCaller(

@@ -552,6 +552,78 @@ func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx contex
 	require.Contains(t, string(out), pinnedCommit)
 }
 
+// A scheme-less ref (how module sources are normally written) makes the git
+// resolver try each candidate transport and ls-remote it to see which one
+// answers. When the workspace lock already holds entries for one of those
+// candidates, that transport served the remote before, so the probe has
+// nothing left to decide and must not run: an unreachable remote still
+// resolves entirely from the pin.
+func (LockfileSuite) TestGitLatestPinnedSchemelessRemoteSkipsTransportProbe(ctx context.Context, t *testctx.T) {
+	const schemelessRemote = "git.example.invalid/dagger.git"
+	const pinnedRemote = "https://" + schemelessRemote
+	const pinnedCommit = "0123456789abcdef0123456789abcdef01234567"
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "`+schemelessRemote+`") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		pinnedRemote,
+		"refs/tags/v1.2.3@"+pinnedCommit,
+	)
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "refs/tags/v1.2.3")
+	require.Contains(t, string(out), pinnedCommit)
+}
+
+// Without lock entries there is nothing to pick a transport from, so the
+// resolver still probes every candidate and reports that none answered.
+func (LockfileSuite) TestUnpinnedSchemelessRemoteStillProbesTransport(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "git.example.invalid/dagger.git") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`)
+
+	_, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.Error(t, err)
+}
+
 func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
