@@ -1,0 +1,6 @@
+name = "test"
+engineVersion = "latest"
+source = "src"
+
+[runtime]
+  source = "embed:runtime.dang"

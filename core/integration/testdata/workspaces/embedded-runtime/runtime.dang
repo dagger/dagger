@@ -1,0 +1,14 @@
+type EmbeddedRuntime {
+  pub moduleRuntime(modSource: ModuleSource!, introspectionJson: File): Container! {
+    let debug = if (modSource.sdk!.debug) { "true" } else { "false" }
+    let introspection = if (introspectionJson == null) { "absent" } else { "present" }
+    container
+      .from("golang:1.25.6-alpine")
+      .withEnvVariable("EMBEDDED_RUNTIME_DEBUG", debug)
+      .withEnvVariable("EMBEDDED_RUNTIME_INTROSPECTION", introspection)
+      .withDirectory("/src", modSource.directory("."))
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-o", "/bin/sdk", "."])
+      .withEntrypoint(["/bin/sdk"])
+  }
+}

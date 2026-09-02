@@ -1220,10 +1220,21 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
 	}
 
+	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
+	// An embedded runtime file lives next to the module config, which the
+	// source-subpath include above doesn't necessarily cover; always load it.
+	// Include patterns are last-match-wins, so this has to come after the
+	// user's patterns: a negation like !runtime.dang must not be able to undo
+	// it.
+	if src.SDK != nil && sdk.IsEmbeddedRuntimeSource(src.SDK.Source) {
+		if filename, err := sdk.EmbeddedRuntimeFilename(src.SDK.Source); err == nil {
+			fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/"+filename)
+		}
+	}
+
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
 		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
@@ -1240,7 +1251,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 		unfilteredContextDirID, err := src.Git.UnfilteredContextDir.ID()
 		if err != nil {
 			return fmt.Errorf("failed to get git unfiltered context directory ID: %w", err)

@@ -50,6 +50,21 @@ type dangImpl interface {
 	) (core.ModuleRuntime, error)
 }
 
+// embeddedRuntimeEvaluator is the optional dangImpl capability for
+// evaluating embedded runtime files. Majors that postdate the feature
+// implement it (v2+); frozen v1 never grows it.
+type embeddedRuntimeEvaluator interface {
+	EmbeddedRuntimeContainer(
+		ctx context.Context,
+		query *core.Query,
+		deps *core.SchemaBuilder,
+		source dagql.ObjectResult[*core.ModuleSource],
+		scopedMod dagql.ObjectResult[*core.Module],
+		filename string,
+		contents string,
+	) (dagql.ObjectResult[*core.Container], error)
+}
+
 // dangImplFor picks the Dang major version matching the module's engine
 // version: modules pinned before a major's gate keep the semantics they were
 // written against. Newest-first ladder; adding a future major is one case.
