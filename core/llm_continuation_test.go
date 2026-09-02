@@ -191,6 +191,48 @@ func TestToolResultSelectors(t *testing.T) {
 		require.Equal(t, dagql.NewString("call-1"), sels[0].Args[0].Value)
 	})
 
+	t.Run("result for a call in an earlier assistant turn degrades to a user message", func(t *testing.T) {
+		// The adopted conversation went on past the call — a sub-agent's
+		// conversation handed back after further turns of its own. A
+		// tool_result there would not directly follow its tool_use, which
+		// providers reject on the next step.
+		target := &LLM{Messages: []*LLMMessage{
+			toolCallMsg("call-1", "reload"),
+			textMsg(LLMMessageRoleAssistant, "carried on"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+		require.Equal(t, dagql.NewString("[continued via tool reload]\nok"), sels[0].Args[0].Value)
+	})
+
+	t.Run("result for a call already answered degrades to a user message", func(t *testing.T) {
+		// The continuation answered the call itself; a second tool_result for
+		// the same ID is as invalid as an orphaned one.
+		target := &LLM{Messages: []*LLMMessage{
+			toolCallMsg("call-1", "reload"),
+			resultMsg("call-1", "answered by the continuation"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+	})
+
+	t.Run("sibling results already appended do not orphan the call", func(t *testing.T) {
+		// Results for OTHER calls of the same turn sit between the tool_use and
+		// this result; the call is still the pending one.
+		target := &LLM{Messages: []*LLMMessage{
+			{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+				{Kind: LLMContentToolCall, CallID: "call-1", ToolName: "reload"},
+				{Kind: LLMContentToolCall, CallID: "call-2", ToolName: "read"},
+			}},
+			resultMsg("call-2", "read ok"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withToolResult", sels[0].Field)
+	})
+
 	t.Run("orphaned result degrades to a user message", func(t *testing.T) {
 		// The adopted conversation dropped the call (self-compaction,
 		// summarize-and-restart): a tool_result block with no matching tool_use

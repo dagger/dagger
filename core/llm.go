@@ -1814,19 +1814,22 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 // to `target` — normally the LLM that made the calls, but after a continuation
 // (MCP.adoptLLM) an arbitrary conversation the tool handed back.
 //
-// Providers require every tool_result to follow the matching tool_use, keyed by
-// call ID. An adopted conversation need not contain this turn's tool call at
-// all — a self-compaction or summarize-and-restart continuation legitimately
-// drops it — so appending the result as a tool-result block there would produce
-// a protocol-invalid history. Such an orphaned result is instead appended as a
+// Providers require every tool_result to directly follow the matching
+// tool_use, keyed by call ID: the call must be in the last assistant message,
+// and nothing may already answer it. An adopted conversation need not satisfy
+// that — a self-compaction or summarize-and-restart continuation drops the call
+// altogether, and one that ran further turns of its own (a sub-agent's
+// conversation handed back) has moved past it — so appending the result as a
+// tool-result block there would produce a protocol-invalid history, which the
+// provider rejects on every later step. Such a result is instead appended as a
 // plain user message carrying the same information, so nothing is lost and the
-// history stays valid. Where the call IS present (the install/reload case,
-// which preserves history) results append normally.
+// history stays valid. Where the call IS still the pending one (the
+// install/reload case, which preserves history) results append normally.
 func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]string) []dagql.Selector {
 	var sels []dagql.Selector
 	for _, msg := range msgs {
 		callID := msg.ToolResultCallID()
-		if target != nil && !hasToolCall(target.Messages, callID) {
+		if target != nil && !toolResultAttachable(target.Messages, callID) {
 			name := toolNames[callID]
 			if name == "" {
 				name = callID
@@ -1915,18 +1918,44 @@ func stateDeltaSelectors(m *MCP, wsBefore *call.ID, toolsBefore []boundToolBindi
 	return sels
 }
 
-// hasToolCall reports whether any message in the history contains a tool-call
-// block with the given call ID — i.e. whether a tool result for it would have
-// something to attach to.
-func hasToolCall(msgs []*LLMMessage, callID string) bool {
+// toolResultAttachable reports whether a tool result for callID can be appended
+// to the history as a tool-result block: the call must be in the LAST assistant
+// message, and nothing after that message may already answer it. That is the
+// shape providers accept — a tool_result directly following its tool_use — so
+// merely finding the call somewhere in the history is not enough: a
+// conversation that went on to further assistant turns, or that already
+// carries a result for the call, has moved past it.
+func toolResultAttachable(msgs []*LLMMessage, callID string) bool {
 	if callID == "" {
 		return false
 	}
-	for _, msg := range msgs {
-		for _, block := range msg.Content {
-			if block != nil && block.Kind == LLMContentToolCall && block.CallID == callID {
-				return true
-			}
+	last := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i] != nil && msgs[i].Role == LLMMessageRoleAssistant {
+			last = i
+			break
+		}
+	}
+	if last < 0 || !messageHasBlock(msgs[last], LLMContentToolCall, callID) {
+		return false
+	}
+	for _, msg := range msgs[last+1:] {
+		if messageHasBlock(msg, LLMContentToolResult, callID) {
+			return false
+		}
+	}
+	return true
+}
+
+// messageHasBlock reports whether msg contains a content block of the given
+// kind for the given call ID.
+func messageHasBlock(msg *LLMMessage, kind LLMContentBlockKind, callID string) bool {
+	if msg == nil {
+		return false
+	}
+	for _, block := range msg.Content {
+		if block != nil && block.Kind == kind && block.CallID == callID {
+			return true
 		}
 	}
 	return false
