@@ -2062,48 +2062,6 @@ func TestRemoteWorkspaceAddress(t *testing.T) {
 	require.Equal(t, "https://github.com/dagger/dagger/services/payment@main", remoteWorkspaceAddress("https://github.com/dagger/dagger", "services/payment", "main"))
 }
 
-func TestParseWorkspaceRemoteRef(t *testing.T) {
-	t.Parallel()
-
-	t.Run("supports address fragment ref", func(t *testing.T) {
-		t.Parallel()
-
-		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main")
-		require.NoError(t, err)
-		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, ".", ref.workspaceSubdir)
-	})
-
-	t.Run("supports address fragment ref and subdir", func(t *testing.T) {
-		t.Parallel()
-
-		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main:toolchains/changelog")
-		require.NoError(t, err)
-		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
-	})
-
-	t.Run("supports legacy at-ref syntax", func(t *testing.T) {
-		t.Parallel()
-
-		ref, err := parseWorkspaceRemoteRef(context.Background(), "github.com/dagger/dagger/toolchains/changelog@main")
-		require.NoError(t, err)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
-	})
-
-	t.Run("preserves legacy https at-ref syntax", func(t *testing.T) {
-		t.Parallel()
-
-		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger@main")
-		require.NoError(t, err)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, ".", ref.workspaceSubdir)
-	})
-}
-
 func TestGatherModuleLoadRequests(t *testing.T) {
 	t.Parallel()
 
@@ -2253,30 +2211,6 @@ func TestArbitrateResolvedModuleLoads(t *testing.T) {
 
 		err := arbitrateResolvedModuleLoads(loads, resolved)
 		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module entrypoints: extra1, extra2")
-	})
-}
-
-func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
-	t.Parallel()
-
-	t.Run("empty becomes dot", func(t *testing.T) {
-		t.Parallel()
-		got, err := normalizeWorkspaceRemoteSubdir("")
-		require.NoError(t, err)
-		require.Equal(t, ".", got)
-	})
-
-	t.Run("absolute gets normalized to relative", func(t *testing.T) {
-		t.Parallel()
-		got, err := normalizeWorkspaceRemoteSubdir("/toolchains/changelog")
-		require.NoError(t, err)
-		require.Equal(t, "toolchains/changelog", got)
-	})
-
-	t.Run("rejects escaping paths", func(t *testing.T) {
-		t.Parallel()
-		_, err := normalizeWorkspaceRemoteSubdir("../outside")
-		require.ErrorContains(t, err, "outside repository")
 	})
 }
 

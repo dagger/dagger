@@ -451,6 +451,35 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
 	}
+	// This path reads dagger.toml directly rather than through the Workspace
+	// object, so it has to apply the includes itself; without it a module an
+	// included config contributes would not resolve by name.
+	includeSource := core.IncludeSource{}
+	explicitKeys := map[string]bool{}
+	if len(cfg.Include) > 0 {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, false, err
+		}
+		includeSource = core.IncludeSource{
+			Dag:       dag,
+			ConfigDir: filepath.Dir(ws.ConfigFile),
+			ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+				return bk.ReadCallerHostFile(ctx, filepath.Join(ws.Root, wsPath))
+			},
+		}
+		explicitKeys, err = workspace.ExplicitConfigKeys(contents)
+		if err != nil {
+			return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
+		}
+	}
+	// ApplyIncludes also runs the effective-config validation, without which a
+	// config every other read path rejects would be reported here as a plain
+	// "not found".
+	cfg, err = core.ApplyIncludes(ctx, includeSource, cfg, explicitKeys)
+	if err != nil {
+		return inst, false, err
+	}
 	entry, ok := cfg.Modules[name]
 	if !ok || entry.Source == "" {
 		return inst, false, nil

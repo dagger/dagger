@@ -247,6 +247,19 @@ func TestParse(t *testing.T) {
 				SourceUser:     "git",
 			},
 		},
+		// An HTTP remote on a custom port: the port is part of the remote's
+		// identity, so it has to survive into the clone ref.
+		{
+			urlStr: "http://github.com:8080/shykes/daggerverse/ci",
+			want: Parsed{
+				ModPath:        "github.com/shykes/daggerverse/ci",
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				Scheme:         SchemeHTTP,
+				RepoRootSubdir: "ci",
+				CloneRef:       "http://github.com:8080/shykes/daggerverse",
+				SourceCloneRef: "http://github.com:8080/shykes/daggerverse",
+			},
+		},
 		// Gerrit codereview on custom port
 		{
 			urlStr: "ssh://someuser@golang.org:29418/x/review/git-codereview",

@@ -100,9 +100,15 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return readWorkspaceFileBytes(ctx, ws, configFile)
+}
 
+// readWorkspaceFileBytes reads a workspace-relative file whichever way this
+// workspace is backed: a synthetic source directory, a host path (with any
+// overlay edit taking precedence), or a remote rootfs.
+func readWorkspaceFileBytes(ctx context.Context, ws *core.Workspace, wsPath string) ([]byte, error) {
 	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
-		data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+		data, err := core.DirectoryReadFile(ctx, rootfs, wsPath)
 		if err != nil {
 			return nil, fmt.Errorf("reading config: %w", err)
 		}
@@ -110,22 +116,22 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
-		// Host overlay edits to the config live only in the changeset's delta
-		// side (host overlays store no full read root — see overlayEdit);
-		// untouched configs read straight from the host file below.
-		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(configFile) {
-			data, err := core.DirectoryReadFile(ctx, deltaRoot, configFile)
+		// Host overlay edits live only in the changeset's delta side (host
+		// overlays store no full read root — see overlayEdit); untouched files
+		// read straight from the host below.
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(wsPath) {
+			data, err := core.DirectoryReadFile(ctx, deltaRoot, wsPath)
 			if err != nil {
 				return nil, fmt.Errorf("reading config: %w", err)
 			}
 			return data, nil
 		}
 
-		ctx, err = withWorkspaceClientContext(ctx, ws)
+		ctx, err := withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
-		configPath, err := workspaceHostPath(ws, configFile)
+		hostPath, err := workspaceHostPath(ws, wsPath)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +140,7 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 			return nil, err
 		}
 
-		data, err := bk.ReadCallerHostFile(ctx, configPath)
+		data, err := bk.ReadCallerHostFile(ctx, hostPath)
 		if err != nil {
 			return nil, fmt.Errorf("reading config: %w", err)
 		}
@@ -145,7 +151,7 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	if rootfs.Self() == nil {
 		return nil, fmt.Errorf("workspace has no host path or rootfs")
 	}
-	data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+	data, err := core.DirectoryReadFile(ctx, rootfs, wsPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
@@ -153,19 +159,89 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 }
 
 func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
+	cfg, _, err := readEffectiveWorkspaceConfig(ctx, ws)
+	return cfg, err
+}
+
+// readEffectiveWorkspaceConfig also returns the raw local config bytes, for
+// callers that need to answer about the file itself as well.
+func readEffectiveWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, []byte, error) {
 	data, err := readConfigBytes(ctx, ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cfg, err := workspace.ParseConfig(data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	return cfg, nil
+
+	cfg, err = applyWorkspaceIncludes(ctx, ws, cfg, data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, data, nil
+}
+
+// applyWorkspaceIncludes merges the config's includes underneath it. data is
+// the raw config bytes cfg was parsed from, which is what tells an explicitly
+// set key from an absent one.
+//
+// The include resolves in the workspace owner's client context: a git lookup
+// records its pin in that workspace's lockfile, which is the wrong one when the
+// receiver is not the caller's own workspace, and a local include reads through
+// that workspace's filesystem.
+func applyWorkspaceIncludes(
+	ctx context.Context,
+	ws *core.Workspace,
+	cfg *workspace.Config,
+	data []byte,
+) (*workspace.Config, error) {
+	if cfg == nil || len(cfg.Include) == 0 {
+		return core.ApplyIncludes(ctx, core.IncludeSource{}, cfg, nil)
+	}
+
+	if ws.ClientID != "" {
+		clientCtx, err := withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		ctx = clientCtx
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	source, err := workspaceIncludeSource(ws, dag)
+	if err != nil {
+		return nil, err
+	}
+	explicitKeys, err := workspace.ExplicitConfigKeys(data)
+	if err != nil {
+		return nil, err
+	}
+	return core.ApplyIncludes(ctx, source, cfg, explicitKeys)
+}
+
+// workspaceIncludeSource lets an include address a config in this workspace,
+// whichever way the workspace reads its own files.
+func workspaceIncludeSource(ws *core.Workspace, dag *dagql.Server) (core.IncludeSource, error) {
+	configFile, err := workspaceConfigFile(ws)
+	if err != nil {
+		return core.IncludeSource{}, err
+	}
+
+	return core.IncludeSource{
+		Dag:       dag,
+		ConfigDir: filepath.Dir(configFile),
+		ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+			return readWorkspaceFileBytes(ctx, ws, wsPath)
+		},
+	}, nil
 }
 
 type configReadArgs struct {
@@ -182,6 +258,40 @@ func (s *workspaceSchema) configRead(
 			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 		}
 		result, err := workspace.ReadConfigValue(nil, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+	}
+
+	// The include list is answered from the local file whatever else is layered
+	// on: it is this workspace's own declaration, and every effective view (env,
+	// user overlay, merged include) strips it, so reading it from one of those
+	// would report "key is not set" — and would resolve the include just to
+	// return something the local file already says.
+	//
+	// `include` reports one source per line rather than the raw array of
+	// tables, matching how it is written: `config include <source>`.
+	if isIncludeConfigKey(args.Key) {
+		data, err := readConfigBytes(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+		if args.Key == "include" {
+			cfg, err := workspace.ParseConfig(data)
+			if err != nil {
+				return "", err
+			}
+			if len(cfg.Include) == 0 {
+				return "", fmt.Errorf("key %q is not set", args.Key)
+			}
+			sources := make([]string, 0, len(cfg.Include))
+			for _, include := range cfg.Include {
+				sources = append(sources, include.Source)
+			}
+			return dagql.String(strings.Join(sources, "\n")), nil
+		}
+		result, err := workspace.ReadConfigValue(data, args.Key)
 		if err != nil {
 			return "", err
 		}
@@ -224,16 +334,22 @@ func (s *workspaceSchema) configRead(
 			return "", err
 		}
 
-		result, err := workspace.ReadConfigValue(workspace.SerializeConfig(merged), args.Key)
+		result, err := workspace.ReadConfigValue(effectiveConfigBytes(merged), args.Key)
 		if err != nil {
 			return "", err
 		}
 		return dagql.String(result), nil
 	}
 
-	data, err := readConfigBytes(ctx, parent)
+	cfg, data, err := readEffectiveWorkspaceConfig(ctx, parent)
 	if err != nil {
 		return "", err
+	}
+	// An include turns reads into the effective view, the same way an env
+	// selection or a user overlay already does. Without one the file is
+	// returned verbatim, comments and formatting included.
+	if len(cfg.Include) > 0 {
+		data = effectiveConfigBytes(cfg)
 	}
 
 	result, err := workspace.ReadConfigValue(data, args.Key)
@@ -241,6 +357,35 @@ func (s *workspaceSchema) configRead(
 		return "", err
 	}
 	return dagql.String(result), nil
+}
+
+func isIncludeConfigKey(key string) bool {
+	return key == "include" || strings.HasPrefix(key, "include.")
+}
+
+// effectiveConfigBytes serializes an effective config as a standalone snapshot:
+// the include that produced the inherited values is named in a comment rather
+// than left as a live key. Keeping the key would make the output a config that
+// inlines the included values *and* names the include again underneath.
+//
+// Same reasoning as effectiveWorkspaceConfigBytes clearing Env: the layer is
+// applied, so it should not be re-applicable.
+func effectiveConfigBytes(cfg *workspace.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if len(cfg.Include) == 0 {
+		return workspace.SerializeConfig(cfg)
+	}
+
+	snapshot := *cfg
+	snapshot.Include = nil
+	header := &strings.Builder{}
+	for _, include := range cfg.Include {
+		fmt.Fprintf(header, "# included: %s\n", include.Source)
+	}
+	header.WriteString("\n")
+	return append([]byte(header.String()), workspace.SerializeConfig(&snapshot)...)
 }
 
 type workspaceConfigValueArgs struct {
@@ -281,7 +426,7 @@ func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, en
 		return nil, err
 	}
 	applied.Env = nil
-	return workspace.SerializeConfig(applied), nil
+	return effectiveConfigBytes(applied), nil
 }
 
 // envScopedConfigKey maps a modules.<name>.settings.* key into the selected

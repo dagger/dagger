@@ -186,9 +186,44 @@ func (s *workspaceSchema) withoutConfigValue(
 
 	updated, err := workspace.DeleteConfigValue(staged.Data, unsetKey)
 	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
+		return dagql.ObjectResult[*core.Workspace]{}, unsetIncludedValueError(ctx, parent.Self(), staged, unsetKey, err)
 	}
 	return s.stageWorkspaceConfigBytes(ctx, parent, staged, updated)
+}
+
+// unsetIncludedValueError names the include when the key being unset is one the
+// workspace inherits rather than one it set. Unsetting only ever edits the
+// local file, and an inherited value has nothing local to remove — "key is not
+// set" is true but says nothing about where the value the user sees came from.
+func unsetIncludedValueError(
+	ctx context.Context,
+	ws *core.Workspace,
+	staged *stagedWorkspaceConfig,
+	key string,
+	cause error,
+) error {
+	if len(staged.Config.Include) == 0 {
+		return cause
+	}
+	// A key the local file does spell out was not refused for being inherited —
+	// unsetting a protected key such as modules.<name>.source fails with the
+	// entry right there in dagger.toml.
+	if _, err := workspace.ReadConfigValue(staged.Data, key); err == nil {
+		return cause
+	}
+	effective, err := readWorkspaceConfig(ctx, ws)
+	if err != nil {
+		// An include that cannot be read is the answer, not a reason to fall
+		// back to reporting the key as unset.
+		return err
+	}
+	if _, err := workspace.ReadConfigValue(workspace.SerializeConfig(effective), key); err != nil {
+		return cause
+	}
+	return fmt.Errorf(
+		"%w: it comes from the included config %q, which can be overridden here but not unset",
+		cause, staged.Config.Include[0].Source,
+	)
 }
 
 func (s *workspaceSchema) withConfigEnv(
@@ -341,8 +376,26 @@ func (s *workspaceSchema) withoutModule(
 		return s.withoutEnvModule(ctx, parent, staged, envName, args.Name)
 	}
 	entry, ok := staged.Config.Modules[args.Name]
-	if !ok {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is not installed in the workspace", args.Name)
+	overridesIncluded := false
+	if ok && entry.Source == "" {
+		overridesIncluded, err = workspaceIncludeProvidesModule(ctx, parent.Self(), staged, args.Name)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+	if overridesIncluded {
+		// A source-less entry only overrides a module an include provides:
+		// removing it drops those overrides and the inherited module comes
+		// back. There is no local module directory to remove with it.
+		delete(staged.Config.Modules, args.Name)
+		updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		return s.stageWorkspaceConfigBytes(ctx, parent, staged, updated)
+	}
+	if !ok || entry.Source == "" {
+		return dagql.ObjectResult[*core.Workspace]{}, uninstallUnavailableError(ctx, parent.Self(), staged, args.Name)
 	}
 
 	managedModulePath, removeManagedModuleDir, err := removeSDKManagedModuleReference(staged.Config, staged.ConfigDir, entry)
@@ -382,6 +435,52 @@ func (s *workspaceSchema) withoutModule(
 	}, func(ws *core.Workspace) {
 		setWorkspaceConfigSelection(ws, staged.ConfigDir)
 	})
+}
+
+// uninstallUnavailableError explains why a module cannot be uninstalled here.
+// A module an included config provides is not installed by this config, so
+// there is nothing local to remove.
+func uninstallUnavailableError(
+	ctx context.Context,
+	ws *core.Workspace,
+	staged *stagedWorkspaceConfig,
+	name string,
+) error {
+	provided, err := workspaceIncludeProvidesModule(ctx, ws, staged, name)
+	if err != nil {
+		return err
+	}
+	if !provided {
+		return fmt.Errorf("module %q is not installed in the workspace", name)
+	}
+	return fmt.Errorf(
+		"module %q comes from the included config %q and cannot be uninstalled here",
+		name, staged.Config.Include[0].Source,
+	)
+}
+
+// workspaceIncludeProvidesModule reports whether an included config supplies
+// name, which is what tells an override apart from an install and a missing
+// module apart from an inherited one.
+//
+// A failure to read the effective config is returned rather than answered as
+// "no": an unreachable or invalid include would otherwise be reported as the
+// module simply not being installed.
+func workspaceIncludeProvidesModule(
+	ctx context.Context,
+	ws *core.Workspace,
+	staged *stagedWorkspaceConfig,
+	name string,
+) (bool, error) {
+	if len(staged.Config.Include) == 0 {
+		return false, nil
+	}
+	effective, err := readWorkspaceConfig(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+	_, provided := effective.Modules[name]
+	return provided, nil
 }
 
 // withoutEnvModule removes a module from the selected env's overlay only; the

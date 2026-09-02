@@ -3,11 +3,13 @@ package workspace
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/creachadair/tomledit"
 	neontoml "github.com/neongreen/mono/lib/toml"
+	toml "github.com/pelletier/go-toml"
 )
 
 // UpdateConfigBytes rewrites config bytes while preserving existing comments
@@ -56,6 +58,10 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 		return nil, err
 	}
 	out, err = rewriteModuleAsSDKSections(out, cfg.Modules)
+	if err != nil {
+		return nil, err
+	}
+	out, err = restoreIncludeSections(out, existingData, existingCfg.Include, cfg.Include)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +152,9 @@ func configDocumentMap(cfg *Config) map[string]any {
 	if len(cfg.Modules) > 0 {
 		modules := make(map[string]any, len(cfg.Modules))
 		for name, entry := range cfg.Modules {
-			module := map[string]any{
-				"source": entry.Source,
+			module := map[string]any{}
+			if entry.Source != "" {
+				module["source"] = entry.Source
 			}
 			if entry.Entrypoint {
 				module["entrypoint"] = true
@@ -206,6 +213,10 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
+	// Top-level [[include]] blocks are intentionally NOT included here, for the
+	// same reason as the as-sdk sub-blocks below: ApplyMap would render an
+	// array of tables as an inline array. restoreIncludeSections handles them.
+	//
 	// Per-module as-sdk sub-blocks are intentionally NOT included here.
 	// The neontoml ApplyMap path can't express array-of-tables (it would
 	// emit inline arrays of inline tables and leave any pre-existing
@@ -214,6 +225,41 @@ func configDocumentMap(cfg *Config) map[string]any {
 	// the document is format-preserved.
 
 	return values
+}
+
+// ExplicitConfigKeys returns the dotted paths of every leaf key the config file
+// actually spells out. Merging an included config needs presence, not the Go
+// zero value: `entrypoint = false` and `ignore = []` are overrides of what the
+// include provides, and both parse to the same value as an absent key.
+//
+// Array-of-tables blocks (the [[modules.X.as-sdk.*]] family) are skipped: they
+// are never inherited, so their presence carries no merge decision.
+func ExplicitConfigKeys(data []byte) (map[string]bool, error) {
+	keys := map[string]bool{}
+	if len(data) == 0 {
+		return keys, nil
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse config keys: %w", err)
+	}
+	collectExplicitConfigKeys(tree, nil, keys)
+	return keys, nil
+}
+
+func collectExplicitConfigKeys(tree *toml.Tree, prefix []string, keys map[string]bool) {
+	for _, key := range tree.Keys() {
+		path := append(append([]string(nil), prefix...), key)
+		// GetPath, not Get: Get re-splits a dotted key, so a quoted table name
+		// like [modules."my.mod"] would look up my -> mod and miss.
+		switch value := tree.GetPath([]string{key}).(type) {
+		case *toml.Tree:
+			collectExplicitConfigKeys(value, path, keys)
+		case []*toml.Tree:
+		default:
+			keys[JoinConfigPath(path...)] = true
+		}
+	}
 }
 
 func configRequiresQuotedPathSegments(cfg *Config) bool {
@@ -423,6 +469,101 @@ func rewriteModuleAsSDKSections(data []byte, modules map[string]ModuleEntry) ([]
 	var formatter tomledit.Formatter
 	if err := formatter.Format(&buf, doc); err != nil {
 		return nil, fmt.Errorf("format config after as-sdk rewrite: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// restoreIncludeSections puts the document's [[include]] blocks back after the
+// map application, which drops every array of tables it was not given — the
+// same reason the as-sdk blocks need a pass of their own.
+//
+// An include list the write did not touch is restored from the original
+// document verbatim, at the index it held there, so a comment inside the block
+// and the position its author chose both survive an unrelated write. Only a
+// changed list is rendered afresh.
+func restoreIncludeSections(data, existingData []byte, existing, desired []IncludeEntry) ([]byte, error) {
+	doc, err := tomledit.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse config for include rewrite: %w", err)
+	}
+
+	kept := doc.Sections[:0]
+	for _, section := range doc.Sections {
+		if !isIncludeHeading(section) {
+			kept = append(kept, section)
+		}
+	}
+	doc.Sections = kept
+
+	if len(desired) == 0 {
+		return formatIncludeDocument(doc)
+	}
+
+	sections, at, err := originalIncludeSections(existingData, existing, desired)
+	if err != nil {
+		return nil, err
+	}
+	if sections == nil {
+		var rendered strings.Builder
+		for _, include := range desired {
+			fmt.Fprintf(&rendered, "[[include]]\nsource = %q\n\n", include.Source)
+		}
+		includeDoc, parseErr := tomledit.Parse(strings.NewReader(rendered.String()))
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse rendered include: %w", parseErr)
+		}
+		sections = includeDoc.Sections
+		// After the document's global section: a bare key cannot follow a
+		// table header, so [[include]] has to come after the top-level scalars
+		// and before the other tables.
+		at = 0
+		if len(doc.Sections) > 0 && doc.Sections[0].Heading == nil {
+			at = 1
+		}
+	}
+	if at > len(doc.Sections) {
+		at = len(doc.Sections)
+	}
+	doc.Sections = append(doc.Sections[:at], append(sections, doc.Sections[at:]...)...)
+
+	return formatIncludeDocument(doc)
+}
+
+// originalIncludeSections returns the [[include]] sections of the document
+// being updated, and the index of the first of them, when the write leaves the
+// include list alone. It returns a nil slice when they have to be rendered
+// afresh instead.
+func originalIncludeSections(existingData []byte, existing, desired []IncludeEntry) ([]*tomledit.Section, int, error) {
+	if !slices.Equal(existing, desired) {
+		return nil, 0, nil
+	}
+	prev, err := tomledit.Parse(bytes.NewReader(existingData))
+	if err != nil {
+		return nil, 0, fmt.Errorf("parse existing config for include rewrite: %w", err)
+	}
+	var sections []*tomledit.Section
+	at := 0
+	for i, section := range prev.Sections {
+		if !isIncludeHeading(section) {
+			continue
+		}
+		if sections == nil {
+			at = i
+		}
+		sections = append(sections, section)
+	}
+	return sections, at, nil
+}
+
+func isIncludeHeading(section *tomledit.Section) bool {
+	return section.Heading != nil && len(section.Heading.Name) == 1 && section.Heading.Name[0] == "include"
+}
+
+func formatIncludeDocument(doc *tomledit.Document) ([]byte, error) {
+	var buf bytes.Buffer
+	var formatter tomledit.Formatter
+	if err := formatter.Format(&buf, doc); err != nil {
+		return nil, fmt.Errorf("format config after include rewrite: %w", err)
 	}
 	return buf.Bytes(), nil
 }
