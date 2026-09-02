@@ -1,0 +1,15 @@
+kind: Added
+body: |
+  Module refs now support an https redirect mechanism: when resolving an https
+  (or schemeless) module ref, the engine probes `<ref>?dagger-get=1` and, if the
+  host answers with a single 3xx redirect to an absolute https `Location`,
+  resolution continues at that destination. Any `@version`/`@sha` suffix is
+  stripped before the probe and re-appended to the destination. This lets vanity
+  domains point `dagger install` (and all module-source resolution) at the real
+  repository, independent of git-protocol redirects. Redirect resolution runs
+  only when session infrastructure is available and its result is cached per
+  session.
+time: 2026-09-01T19:00:00Z
+custom:
+  Author: marcosnils
+  PR: ""
