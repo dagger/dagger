@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 // WorkspaceModule describes a module entry in the workspace config.
@@ -146,6 +148,47 @@ func (a WorkspaceAddresses) Sort() {
 	sort.Slice(a, func(i, j int) bool {
 		return a[i].Value < a[j].Value
 	})
+}
+
+// Addresses lists the module's functions loadable as bare "module:function"
+// address references (hack/designs/sandboxes.md §5): top-level functions on
+// the main object — the only shape resolveModuleRef can load — whose return
+// type is named typeName and which take no caller-supplied arguments.
+// Engine-supplied ones (an auto-injected Workspace, an @agent's base LLM)
+// don't count: functionRequiresCallerArgs is the rule, and resolveModuleRef
+// fills both. Whether the module can be referenced at all (an entrypoint
+// module's functions are hoisted onto the Query root) is the workspace's call,
+// not the module's.
+//
+// Values are kebab-cased on both segments, matching CLI-facing names;
+// resolveModuleRef normalizes with ToLowerCamel, so they round-trip.
+func (mod *Module) Addresses(typeName string) WorkspaceAddresses {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil
+	}
+	modName := strcase.ToKebab(mod.Name())
+	var addresses WorkspaceAddresses
+	for _, fnRes := range mainObj.Functions {
+		fn := fnRes.Self()
+		retType := fn.ReturnType.Self()
+		// A list return can't be lifted into a single object; ast.Type.Name
+		// would still report the element type's name, so rule lists out first.
+		if retType.Kind == TypeDefKindList {
+			continue
+		}
+		if retType.ToType().Name() != typeName {
+			continue
+		}
+		if functionRequiresCallerArgs(fn) {
+			continue
+		}
+		addresses = append(addresses, &WorkspaceAddress{
+			Value:       modName + ":" + strcase.ToKebab(fn.Name),
+			Description: fn.Description,
+		})
+	}
+	return addresses
 }
 
 // WorkspaceSDK describes a module entry installed as an SDK in the workspace

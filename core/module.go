@@ -263,10 +263,10 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// FunctionRequiresCallerArgs reports whether a function has required arguments
+// functionRequiresCallerArgs reports whether a function has required arguments
 // the caller has to supply, which disqualifies it from no-arg enumeration: the
 // mod tree rollups (checks, generators, services, agents) and the bare
-// "module:function" address contract (Workspace.addresses, resolveModuleRef).
+// "module:function" address contract (Module.Addresses, resolveModuleRef).
 //
 // Engine-supplied arguments don't count, because nothing is asked of the
 // caller: an @agent function's single required LLM! is the base the compose
@@ -276,7 +276,7 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 // so, and both are filled in before the call. Every path that enumerates
 // functions by this rule has to fill both in the same way, or it lists what it
 // then cannot call.
-func FunctionRequiresCallerArgs(fn *Function) bool {
+func functionRequiresCallerArgs(fn *Function) bool {
 	baseExempted := false
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()

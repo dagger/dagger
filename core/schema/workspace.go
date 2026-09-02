@@ -3559,11 +3559,9 @@ func (s *workspaceSchema) agents(
 }
 
 // addresses lists module functions loadable as bare "module:function" address
-// references (hack/designs/sandboxes.md §5): top-level functions on each
-// installed module's main object — the only shape resolveModuleRef can load —
-// whose return type name matches the requested type and which take no
-// caller-supplied arguments. Engine-supplied ones (an auto-injected Workspace,
-// an @agent's base LLM) don't count, and resolveModuleRef fills both.
+// references (hack/designs/sandboxes.md §5). The workspace plumbing lives
+// here: which modules are in play and which of them can be referenced at all.
+// What each module contributes is Module.Addresses.
 func (s *workspaceSchema) addresses(
 	ctx context.Context,
 	parent *core.Workspace,
@@ -3609,35 +3607,10 @@ func (s *workspaceSchema) addresses(
 
 	var addresses core.WorkspaceAddresses
 	for _, mod := range mods {
-		modName := mod.Self().Name()
-		if entrypoints[strcase.ToKebab(modName)] {
+		if entrypoints[strcase.ToKebab(mod.Self().Name())] {
 			continue
 		}
-		mainObj, ok := mod.Self().MainObject()
-		if !ok {
-			continue
-		}
-		for _, fnRes := range mainObj.Functions {
-			fn := fnRes.Self()
-			retType := fn.ReturnType.Self()
-			// A list return can't be lifted into a single object; ast.Type.Name
-			// would still report the element type's name, so rule lists out first.
-			if retType.Kind == core.TypeDefKindList {
-				continue
-			}
-			if retType.ToType().Name() != args.Type {
-				continue
-			}
-			if core.FunctionRequiresCallerArgs(fn) {
-				continue
-			}
-			// Kebab-case both segments for consistency with CLI-facing names;
-			// resolveModuleRef normalizes with ToLowerCamel, so this round-trips.
-			addresses = append(addresses, &core.WorkspaceAddress{
-				Value:       strcase.ToKebab(modName) + ":" + strcase.ToKebab(fn.Name),
-				Description: fn.Description,
-			})
-		}
+		addresses = append(addresses, mod.Self().Addresses(args.Type)...)
 	}
 	addresses.Sort()
 	return addresses, nil

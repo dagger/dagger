@@ -1011,7 +1011,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			// Engine-supplied ones (an @agent's `base: LLM!`, a `Workspace!`)
 			// are filled in at selection time, so a leaf declaring one must
 			// still be discovered — see boundWorkspaceArgs.
-			if FunctionRequiresCallerArgs(fn) {
+			if functionRequiresCallerArgs(fn) {
 				continue
 			}
 			returnType := fn.ReturnType.Self().ToType().Name()

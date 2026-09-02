@@ -153,8 +153,9 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// resolves the same way it does everywhere else — the workspace bound into
 	// the context, else the session's current one. An @agent function's
 	// required LLM! is engine-supplied the same way (see withAgentBaseArg).
-	// Together these are exactly the arguments core.FunctionRequiresCallerArgs
-	// exempts, so every function Workspace.addresses lists is callable here.
+	// Together these are exactly the arguments core's caller-arg rule exempts
+	// (see Module.Addresses), so every function Workspace.addresses lists is
+	// callable here.
 	ctorArgs := core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)
 	var fnArgs []dagql.NamedInput
 	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
