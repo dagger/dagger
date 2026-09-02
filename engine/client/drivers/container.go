@@ -33,6 +33,7 @@ func init() {
 		podmanImageDriver,
 		finchImageDriver,
 		nerdctlImageDriver,
+		kubectlImageDriver,
 	)
 	register("container",
 		dockerContainerDriver,
@@ -56,6 +57,8 @@ func init() {
 
 	register("image+nerdctl", nerdctlImageDriver)
 	register("container+nerdctl", nerdctlContainerDriver)
+
+	register("image+kubectl", kubectlImageDriver)
 }
 
 var (
