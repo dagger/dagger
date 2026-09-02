@@ -132,6 +132,37 @@ entrypoint = true
 		]}}`, out)
 	})
 
+	t.Run("interface addresses", func(ctx context.Context, t *testctx.T) {
+		// An interface name lists functions returning any implementor, with
+		// the concrete type alongside so the caller can pick a loader.
+		// Container and Directory are Exportable; LLM is not.
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{addresses(type:"Exportable"){value type}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"addresses":[
+			{"value":"sandboxes:data","type":"Directory"},
+			{"value":"sandboxes:go","type":"Container"},
+			{"value":"sandboxes:plain","type":"Container"},
+			{"value":"sandboxes:ws-aware","type":"Container"}
+		]}}`, out)
+
+		// All three are Syncers; the caller-arg rule still applies (custom is
+		// a Container but needs an argument) and so does the object rule
+		// (greet is a String).
+		out, err = base.
+			With(daggerQuery(`{currentWorkspace{addresses(type:"Syncer"){value type}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"addresses":[
+			{"value":"sandboxes:coder","type":"LLM"},
+			{"value":"sandboxes:data","type":"Directory"},
+			{"value":"sandboxes:go","type":"Container"},
+			{"value":"sandboxes:plain","type":"Container"},
+			{"value":"sandboxes:ws-aware","type":"Container"}
+		]}}`, out)
+	})
+
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerQuery(`{currentWorkspace{addresses(type:"Service"){value}}}`)).

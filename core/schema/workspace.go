@@ -413,9 +413,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("addresses", s.addresses).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Addresses loadable from the workspace's installed modules: functions whose return type matches `type` and which take no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references.").
+			Doc("Addresses loadable from the workspace's installed modules: functions returning `type` and taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references.").
 			Args(
-				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container".`),
+				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container". Naming an interface, e.g. "Syncer", lists functions returning any type that implements it.`),
 			),
 		migrateField,
 	}.Install(srv)
@@ -3605,15 +3605,42 @@ func (s *workspaceSchema) addresses(
 		}
 	}
 
+	implements, err := servedImplements(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var addresses core.WorkspaceAddresses
 	for _, mod := range mods {
 		if entrypoints[strcase.ToKebab(mod.Self().Name())] {
 			continue
 		}
-		addresses = append(addresses, mod.Self().Addresses(args.Type)...)
+		addresses = append(addresses, mod.Self().Addresses(args.Type, implements)...)
 	}
 	addresses.Sort()
 	return addresses, nil
+}
+
+// servedImplements reports interface implementation as the workspace's served
+// schema records it. dagql matches interfaces structurally when a schema is
+// built and notes the implementors on each interface, for core interfaces
+// (Syncer, Exportable, Node) and module-defined ones alike.
+func servedImplements(ctx context.Context) (dagql.ImplementsChecker, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	served, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+	srv, err := served.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return func(typeName, ifaceName string) bool {
+		iface, ok := srv.InterfaceType(ifaceName)
+		return ok && iface.HasImplementor(typeName)
+	}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

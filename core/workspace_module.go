@@ -107,6 +107,7 @@ func (m WorkspaceModules) Sort() {
 type WorkspaceAddress struct {
 	Value       string `field:"true" doc:"The address value, e.g. \"sandboxes:go\"."`
 	Description string `field:"true" doc:"The function's doc string."`
+	TypeName    string `field:"true" name:"type" doc:"Name of the type the address resolves to, e.g. \"Container\"."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceAddress)(nil)
@@ -152,17 +153,24 @@ func (a WorkspaceAddresses) Sort() {
 
 // Addresses lists the module's functions loadable as bare "module:function"
 // address references (hack/designs/sandboxes.md §5): top-level functions on
-// the main object — the only shape resolveModuleRef can load — whose return
-// type is named typeName and which take no caller-supplied arguments.
-// Engine-supplied ones (an auto-injected Workspace, an @agent's base LLM)
-// don't count: functionRequiresCallerArgs is the rule, and resolveModuleRef
-// fills both. Whether the module can be referenced at all (an entrypoint
-// module's functions are hoisted onto the Query root) is the workspace's call,
-// not the module's.
+// the main object — the only shape resolveModuleRef can load — returning
+// typeName and taking no caller-supplied arguments. Engine-supplied ones (an
+// auto-injected Workspace, an @agent's base LLM) don't count:
+// functionRequiresCallerArgs is the rule, and resolveModuleRef fills both.
+// Whether the module can be referenced at all (an entrypoint module's
+// functions are hoisted onto the Query root) is the workspace's call, not the
+// module's.
+//
+// typeName may name an interface: objects and interfaces share GraphQL's type
+// namespace, so a function returning any implementor is listed too. Which
+// types implement which interfaces is a relation of the served schema, not of
+// the typedef, so the caller supplies it as implements; a nil checker matches
+// by name only. Each address carries the concrete type it resolves to, so a
+// caller that asked by interface can pick the right Address loader.
 //
 // Values are kebab-cased on both segments, matching CLI-facing names;
 // resolveModuleRef normalizes with ToLowerCamel, so they round-trip.
-func (mod *Module) Addresses(typeName string) WorkspaceAddresses {
+func (mod *Module) Addresses(typeName string, implements dagql.ImplementsChecker) WorkspaceAddresses {
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil
@@ -177,7 +185,8 @@ func (mod *Module) Addresses(typeName string) WorkspaceAddresses {
 		if retType.Kind == TypeDefKindList {
 			continue
 		}
-		if retType.ToType().Name() != typeName {
+		retName := retType.ToType().Name()
+		if retName != typeName && (implements == nil || !implements(retName, typeName)) {
 			continue
 		}
 		if functionRequiresCallerArgs(fn) {
@@ -186,6 +195,7 @@ func (mod *Module) Addresses(typeName string) WorkspaceAddresses {
 		addresses = append(addresses, &WorkspaceAddress{
 			Value:       modName + ":" + strcase.ToKebab(fn.Name),
 			Description: fn.Description,
+			TypeName:    retName,
 		})
 	}
 	return addresses
