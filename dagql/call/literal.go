@@ -155,11 +155,18 @@ func (lit *LiteralDigestedString) Modules() []*Module {
 	return nil
 }
 
-func (lit *LiteralDigestedString) Display() string {
-	if lit.digest == "" {
-		return "<digested-string>"
+// DisplayDigestedString renders a value's identity and byte size without
+// exposing its serialized contents.
+func DisplayDigestedString(value string, dgst digest.Digest) string {
+	digestLabel := dgst.String()
+	if digestLabel == "" {
+		digestLabel = "none"
 	}
-	return fmt.Sprintf("<digested-string:%s>", lit.digest)
+	return fmt.Sprintf("<digested-string digest=%s size=%dB>", digestLabel, len(value))
+}
+
+func (lit *LiteralDigestedString) Display() string {
+	return DisplayDigestedString(lit.value, lit.digest)
 }
 
 func (lit *LiteralDigestedString) ToInput() any {
@@ -167,12 +174,8 @@ func (lit *LiteralDigestedString) ToInput() any {
 }
 
 func (lit *LiteralDigestedString) ToAST() *ast.Value {
-	raw := "<digested-string>"
-	if lit.digest != "" {
-		raw = fmt.Sprintf("<digested-string:%s>", lit.digest)
-	}
 	return &ast.Value{
-		Raw:  strconv.Quote(raw),
+		Raw:  strconv.Quote(lit.Display()),
 		Kind: ast.StringValue,
 	}
 }
