@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -404,5 +405,95 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 			`current-workspace | file CONTINUED.txt | contents`,
 		)).Stdout(ctx)
 		require.Error(t, err)
+	})
+}
+
+// TestAddressableToolArgs covers address lifting of object-typed tool args end
+// to end (hack/designs/sandboxes.md §4): a module function with a required
+// Container! arg still becomes a tool — the arg renders as an address string,
+// and a model-supplied image ref is lifted into a real container via
+// Query.address at dispatch — while a required arg of any other object type
+// (here Directory!) still disqualifies its function, since Container is the
+// only type to have passed the capability review for model-typed address
+// strings (liftableTypes in core/llm_object_tools.go).
+func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-addressable-args")
+
+	t.Run("a required Container arg renders as an address", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShell("llm | with-tools $(runner) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// exec IS a tool despite its required Container! arg...
+		require.Contains(t, tools, "## exec\n")
+		// ...and its sandbox parameter is described as an address — with the
+		// type's syntax hint from liftableTypes — not as a bare ID.
+		require.Contains(t, tools, "(Container address:")
+		require.Contains(t, tools, "or a Container ID from a prior tool result")
+
+		// lsDir's required Directory! arg is not liftable (host-path
+		// fallback), so lsDir is not exposed as a tool.
+		require.NotContains(t, tools, "## lsDir\n")
+	})
+
+	t.Run("an image ref lifts into a real container", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("what OS is the sandbox running?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",
+					Arguments: dagger.JSON(fmt.Sprintf(`{"cmd":["cat","/etc/os-release"],"sandbox":%q}`, alpineImage))},
+			}).
+			// Placeholder result: the real tool runs during replay (tool
+			// results are excluded from the replayer's history matching), so
+			// the live stdout flows through.
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "what OS is the sandbox running?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The tool result is the stdout of the command run inside the lifted
+		// container — proof the address resolved to the real image. "Alpine
+		// Linux" appears only in /etc/os-release; the tool call's argument
+		// says "alpine:<version>", so a failed lift can't false-positive.
+		require.Contains(t, out, "Alpine Linux")
+	})
+
+	t.Run("an encoded Container ID round-trips", func(ctx context.Context, t *testctx.T) {
+		const marker = "address-lift round-trip"
+		ctrID, err := c.Container().From(alpineImage).
+			WithNewFile("/marker.txt", marker).ID(ctx)
+		require.NoError(t, err)
+		args, err := json.Marshal(map[string]any{
+			"cmd":     []string{"cat", "/marker.txt"},
+			"sandbox": string(ctrID),
+		})
+		require.NoError(t, err)
+
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("read the marker").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",
+					Arguments: dagger.JSON(args)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "read the marker" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The marker is plaintext only inside the container's filesystem —
+		// in the tool call's arguments it is buried in the encoded
+		// (protobuf+base64) ID — so seeing it in the transcript proves the
+		// ID decoded directly into the same container, no address lookup.
+		require.Contains(t, out, marker)
 	})
 }
