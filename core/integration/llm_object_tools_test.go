@@ -561,7 +561,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	}
 
 	t.Run("a continuation reached out of order refuses the work it would drop", func(ctx context.Context, t *testctx.T) {
-		// Wrapping the continuation in the timeout builtin runs it in the
+		// Wrapping the continuation in the Timeout builtin runs it in the
 		// destructive phase instead of last, so the changeset phase runs after
 		// it — on a workspace the adopted conversation will never see. The
 		// changeset call is refused rather than silently dropped, the model is
@@ -569,7 +569,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		model := cannedReplayModel(ctx, t, c, c.LLM().
 			WithPrompt("continue then edit").
 			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "timeout",
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "Timeout",
 					Arguments: dagger.JSON(`{"duration":"1m","tool":"continueWithMarker","arguments":{}}`)},
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
 			}).

@@ -217,7 +217,7 @@ func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 // turn: step() resumes from the continuation, so a change made after it would
 // be dropped without a trace. Continuations normally run last (see
 // SplitContinuationCalls), so this only fires when one was reached some other
-// way, e.g. wrapped in the timeout builtin.
+// way, e.g. wrapped in the Timeout builtin.
 var errContinuationAdopted = errors.New("a conversation-replacing tool call already ran this turn; re-issue this call in the next turn so it applies to the continued conversation")
 
 // guardStateChange is called by the state rings before they mutate this MCP.
@@ -631,7 +631,7 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 //     (SplitContinuationCalls), with the turn's workspace and binding changes
 //     already folded into the conversation they receive, so a continuation
 //     transforms what the turn produced. If one is reached out of order (e.g.
-//     wrapped in the timeout builtin) the stateChanged check below refuses it
+//     wrapped in the Timeout builtin) the stateChanged check below refuses it
 //     rather than let it drop earlier work, and errContinuationAdopted refuses
 //     later work rather than let the continuation drop it.
 //   - tool results: step() appends the turn's tool results to the adopted LLM,
@@ -2244,7 +2244,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.listServicesTool(srv),
 	})
 	allTools.Add(LLMTool{
-		Name:        "timeout",
+		Name:        "Timeout",
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
@@ -2270,6 +2270,9 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 }
 
+// timeoutTool runs one of the currently exposed tools under a deadline. The
+// nested call is dispatched the way the loop dispatches every tool call, so it
+// shows up in the trace as a tool call of its own beneath the Timeout call.
 func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 	return func(ctx context.Context, rawArgs any) (any, error) {
 		args, ok := rawArgs.(map[string]any)
@@ -2292,13 +2295,33 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		if !ok {
 			return nil, fmt.Errorf("invalid nested tool arguments: expected object")
 		}
-		tool, err := m.LookupTool(toolName, allTools.Order)
-		if err != nil {
+		if _, err := m.LookupTool(toolName, allTools.Order); err != nil {
 			return nil, err
+		}
+		encodedArgs, err := json.Marshal(toolArgs)
+		if err != nil {
+			return nil, fmt.Errorf("encode nested tool arguments: %w", err)
 		}
 		ctx, cancel := context.WithTimeout(ctx, duration)
 		defer cancel()
-		return tool.Call(ctx, toolArgs)
+
+		// Run the nested call as the loop runs every tool call: under a
+		// tool-call display span of its own, so the trace shows it as the
+		// tool call it is with its arguments and logs rolled up beneath it,
+		// and through MCP.Call, for the tool attributes, workspace binding and
+		// result bounding that path applies.
+		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
+		displays := newDisplayPhases(ctx, "")
+		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
+		res, failed := m.Call(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
+		endToolCallDisplay(displays.toolCalls, call.CallID, failed, res)
+		if failed {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
+			}
+			return nil, errors.New(res)
+		}
+		return res, nil
 	}
 }
 

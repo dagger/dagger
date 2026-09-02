@@ -56,7 +56,9 @@ func TestTimeoutTool(t *testing.T) {
 
 		result, err := tool.Call(t.Context(), timeoutArgs("1s", "echo", wantArgs))
 		require.NoError(t, err)
-		require.Equal(t, wantResult, result)
+		// The nested call goes through MCP.Call, which renders a non-string
+		// result the way the model would see it.
+		require.JSONEq(t, `{"status":"ok"}`, result.(string))
 		require.Equal(t, wantArgs, gotArgs)
 	})
 
@@ -77,6 +79,7 @@ func TestTimeoutTool(t *testing.T) {
 
 		_, err := tool.Call(t.Context(), timeoutArgs("10ms", "wait", map[string]any{}))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorContains(t, err, `tool "wait" did not finish within 10ms`)
 		require.ErrorIs(t, <-observed, context.DeadlineExceeded)
 	})
 
@@ -110,10 +113,41 @@ func TestTimeoutTool(t *testing.T) {
 		})
 		innerArgs := map[string]any{"message": "hello"}
 
-		result, err := tool.Call(t.Context(), timeoutArgs("1s", "timeout",
+		result, err := tool.Call(t.Context(), timeoutArgs("1s", "Timeout",
 			timeoutArgs("1s", "echo", innerArgs)))
 		require.NoError(t, err)
-		require.Equal(t, innerArgs, result)
+		require.JSONEq(t, `{"message":"hello"}`, result.(string))
+	})
+
+	t.Run("nested call is traced as a tool call of its own", func(t *testing.T) {
+		sr, ctx := replayTestRecorder(t)
+		tool := timeoutToolForTest(t, LLMTool{
+			Name:   "echo",
+			Server: "Echoes",
+			Call: func(ctx context.Context, _ any) (any, error) {
+				// Dispatched through MCP.Call, the nested tool runs beneath a
+				// tool-call span of its own rather than the Timeout span.
+				require.True(t, trace.SpanFromContext(ctx).SpanContext().IsValid())
+				return "echoed", nil
+			},
+		})
+		_, err := tool.Call(ctx, timeoutArgs("1s", "echo", map[string]any{"message": "hello"}))
+		require.NoError(t, err)
+
+		var found bool
+		for _, span := range sr.Ended() {
+			if span.Name() != "echo" {
+				continue
+			}
+			found = true
+			toolAttr, ok := spanAttr(span, telemetry.LLMToolAttr)
+			require.True(t, ok)
+			require.Equal(t, "echo", toolAttr.AsString())
+			serverAttr, ok := spanAttr(span, telemetry.LLMToolServerAttr)
+			require.True(t, ok)
+			require.Equal(t, "Echoes", serverAttr.AsString())
+		}
+		require.True(t, found, "no tool-call span for the nested call")
 	})
 }
 
@@ -125,7 +159,7 @@ func timeoutToolForTest(t *testing.T, targets ...LLMTool) *LLMTool {
 		require.True(t, allTools.Add(target))
 	}
 	m.loadBuiltins(nil, allTools)
-	tool, err := m.LookupTool("timeout", allTools.Order)
+	tool, err := m.LookupTool("Timeout", allTools.Order)
 	require.NoError(t, err)
 	return tool
 }
