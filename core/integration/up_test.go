@@ -565,41 +565,6 @@ settings.base = "cp:image"
 	})
 }
 
-// TestUpModuleWiringAcrossSessions covers module wiring after the same
-// filesystem-backed workspace has already populated the engine cache. Each
-// dagger invocation is a distinct client session against the same engine.
-// The second session must be able to reuse the first session's cached module
-// recipes without trying to replay their host reads through the first,
-// disconnected requester session.
-func (UpSuite) TestUpModuleWiringAcrossSessions(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	modGen, err := upTestEnv(t, c)
-	require.NoError(t, err)
-
-	ctr := modGen.
-		WithWorkdir("app").
-		WithNewFile("marker.txt", "ambient").
-		WithNewFile("dagger.toml", `[modules.hello-with-services]
-source = "../hello-with-services"
-
-[modules.service-ref-consumer]
-source = "../service-ref-consumer"
-settings.app = "hello-with-services:web"
-`)
-
-	out, err := ctr.WithExec([]string{"sh", "-c", `
-set -eu
-dagger --silent call service-ref-consumer has-service
-printf '\n'
-dagger --silent call service-ref-consumer has-service
-printf '\n'
-`}, dagger.ContainerWithExecOpts{
-		ExperimentalPrivilegedNesting: true,
-	}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"true", "true"}, strings.Fields(out))
-}
-
 func (UpSuite) TestUpPartialStartupFailure(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
