@@ -27,6 +27,102 @@ source = "github.com/acme/dep"
 	require.Equal(t, "github.com/acme/dep", cfg.Dependencies[0].Source)
 }
 
+func TestParseModuleManifestV2(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseModuleConfigForFilename([]byte(`
+manifestVersion = 2
+name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`), Filename)
+	require.NoError(t, err)
+	require.Equal(t, ModuleManifestVersion2, cfg.ManifestVersion)
+	require.Equal(t, "tiny", cfg.Name)
+	require.Equal(t, &ModuleEntrypointConfig{
+		Kind:   ModuleEntrypointKindDang,
+		Source: "./entrypoint",
+	}, cfg.Entrypoint)
+	require.Nil(t, cfg.SDK)
+}
+
+func TestParseModuleManifestV2RejectsInvalidFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		cfg  string
+		want string
+	}{
+		{
+			name: "unsupported version",
+			cfg:  "manifestVersion = 3\nname = \"tiny\"\n",
+			want: "unsupported dagger-module.toml manifest version 3",
+		},
+		{
+			name: "missing name",
+			cfg:  "manifestVersion = 2\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
+			want: "requires name",
+		},
+		{
+			name: "missing entrypoint",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\n",
+			want: "requires entrypoint",
+		},
+		{
+			name: "invalid kind",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\n[entrypoint]\nkind = \"container\"\nsource = \".\"\n",
+			want: "unsupported entrypoint kind",
+		},
+		{
+			name: "missing source",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\n[entrypoint]\nkind = \"dang\"\n",
+			want: "requires entrypoint.source",
+		},
+		{
+			name: "legacy field",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\nengineVersion = \"latest\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\n",
+			want: "does not support \"engineVersion\"",
+		},
+		{
+			name: "entrypoint field",
+			cfg:  "manifestVersion = 2\nname = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \".\"\ndriver = \"dang\"\n",
+			want: "entrypoint does not support \"driver\"",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseModuleConfigForFilename([]byte(tc.cfg), Filename)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestMarshalModuleManifestV2(t *testing.T) {
+	t.Parallel()
+
+	out, err := MarshalModuleConfigForFilename(&ModuleConfigWithUserFields{
+		ModuleConfig: ModuleConfig{
+			ManifestVersion: ModuleManifestVersion2,
+			Name:            "tiny",
+			Entrypoint: &ModuleEntrypointConfig{
+				Kind:   ModuleEntrypointKindDang,
+				Source: "./entrypoint",
+			},
+		},
+	}, Filename)
+	require.NoError(t, err)
+	require.Equal(t, `manifestVersion = 2
+name = "tiny"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`, string(out))
+}
+
 func TestParseCurrentModuleConfigAllowsDependencyNameDefault(t *testing.T) {
 	t.Parallel()
 
