@@ -37,4 +37,19 @@ type WorkspaceContainerProvider {
       .from("alpine:3.22.1")
       .withEnvVariable("PROVIDED_BY", "workspace-container-provider:" + ws.file("marker.txt").contents)
   }
+
+  """Returns the Dockerfile context so another session can reuse its recipe."""
+  pub contextDirectory(ws: Workspace!): Directory! {
+    ws.directory(path: "context")
+  }
+
+  """
+  Builds a Dockerfile from a host-backed workspace directory. Dockerfile
+  conversion embeds the directory's recipe in the returned Container ID.
+  """
+  pub dockerfileImage(ws: Workspace!): Container! {
+    ws.directory(path: "context")
+      .dockerBuild()
+      .withEnvVariable("PROVIDED_BY", "workspace-container-provider:dockerfile")
+  }
 }

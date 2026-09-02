@@ -2461,10 +2461,8 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 	// along, and pending un-exported edits survive the round trip. Every
 	// superseded binding recorded on the spine is simply not emitted.
 	//
-	// A bare currentWorkspace binding is carried too, and is safe to carry:
-	// currentWorkspace is per-invocation (PerCallInput), so a loaded session
-	// re-detects the live workspace rather than pinning a stale detection.
-	// Emitting it unconditionally is what keeps a restored session bound —
+	// A bare currentWorkspace binding is carried too. Emitting it
+	// unconditionally is what keeps a restored session bound —
 	// an unbound LLM fails LLM.workspace and silently degrades tool behavior
 	// (e.g. a workspace-returning tool reporting no diff).
 	if llm.mcp.workspace.Self() != nil {
