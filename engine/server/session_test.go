@@ -2202,6 +2202,87 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 	require.False(t, dedupResolved[1].primaryEntrypoint)
 }
 
+// dagger/dagger#14013
+func TestDedupeResolvedModuleLoadsKeepsSameSourceUnderDifferentNames(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/rust"
+	const commit = "deadbeef"
+
+	loads := []moduleLoadRequest{
+		{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "msrv"}},
+		{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "rust"}},
+	}
+	resolved := []resolvedModuleLoad{
+		{primary: sessionTestModuleResultWithGitSource(t, "msrv", cloneRef, commit)},
+		{primary: sessionTestModuleResultWithGitSource(t, "rust", cloneRef, commit)},
+	}
+
+	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
+	require.Len(t, dedupLoads, 2)
+	require.Equal(t, "msrv", dedupLoads[0].mod.Name)
+	require.Equal(t, "rust", dedupLoads[1].mod.Name)
+	require.Len(t, dedupResolved, 2)
+}
+
+func TestResolvedModuleLoadIdentity(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/rust"
+	const commit = "deadbeef"
+
+	rust := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "rust", cloneRef, commit))
+	msrv := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "msrv", cloneRef, commit))
+	require.NotEqual(t, rust, msrv, "same source under different names must be distinct instances")
+
+	other := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "rust", "github.com/acme/other", commit))
+	require.NotEqual(t, rust, other)
+
+	// Spelling variants are one CLI command name, so one instance.
+	kebab := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "my-mod", cloneRef, commit))
+	camel := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "myMod", cloneRef, commit))
+	require.Equal(t, kebab, camel)
+}
+
+func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/app"
+	const commit = "deadbeef"
+
+	sameSourceTwice := func(canonicalDefaults, realDefaults map[string]any) ([]moduleLoadRequest, []resolvedModuleLoad) {
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "canonical", Entrypoint: true, ConfigDefaults: canonicalDefaults}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "real", Entrypoint: true, ConfigDefaults: realDefaults}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: sessionTestModuleResultWithGitSource(t, "canonical", cloneRef, commit), primaryEntrypoint: true},
+			{primary: sessionTestModuleResultWithGitSource(t, "real", cloneRef, commit), primaryEntrypoint: true},
+		}
+		return loads, resolved
+	}
+
+	t.Run("same settings under two names collapse to one nomination", func(t *testing.T) {
+		t.Parallel()
+
+		loads, resolved := sameSourceTwice(nil, nil)
+		require.NoError(t, arbitrateResolvedModuleLoads(loads, resolved))
+		require.True(t, resolved[0].primaryEntrypoint)
+		require.False(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("different settings under two names stay a conflict", func(t *testing.T) {
+		t.Parallel()
+
+		loads, resolved := sameSourceTwice(
+			map[string]any{"version": "1.98"},
+			map[string]any{"version": "1.97"},
+		)
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: canonical, real")
+	})
+}
+
 func TestArbitrateResolvedModuleLoads(t *testing.T) {
 	t.Parallel()
 
@@ -2328,6 +2409,37 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	require.NoError(t, err)
 	res, err := dagql.NewObjectResultForCall(
 		&core.Module{NameField: name},
+		dag,
+		&dagql.ResultCall{SyntheticOp: "session-test-module-" + name},
+	)
+	require.NoError(t, err)
+	return res
+}
+
+func sessionTestModuleResultWithGitSource(t *testing.T, name, cloneRef, commit string) dagql.ObjectResult[*core.Module] {
+	t.Helper()
+
+	dag, err := dagql.NewServer(t.Context(), &core.Module{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+	src, err := dagql.NewObjectResultForCall(
+		&core.ModuleSource{
+			Kind: core.ModuleSourceKindGit,
+			Git: &core.GitModuleSource{
+				CloneRef: cloneRef,
+				Commit:   commit,
+			},
+			SourceRootSubpath: ".",
+		},
+		dag,
+		&dagql.ResultCall{SyntheticOp: "session-test-module-source-" + name},
+	)
+	require.NoError(t, err)
+	res, err := dagql.NewObjectResultForCall(
+		&core.Module{
+			NameField: name,
+			Source:    dagql.NonNull(src),
+		},
 		dag,
 		&dagql.ResultCall{SyntheticOp: "session-test-module-" + name},
 	)

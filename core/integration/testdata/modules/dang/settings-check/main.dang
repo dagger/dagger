@@ -1,0 +1,26 @@
+"""
+A settings-dependent module, so two workspace entries installing this one
+source under different names stay tellable apart.
+"""
+type SettingsCheck {
+  let version: String! = "unset"
+
+  new(version: String! = "unset") {
+    self.version = version
+    self
+  }
+
+  """
+  The version this instance was configured with.
+  """
+  pub reportVersion: String! {
+    version
+  }
+
+  """
+  A check that always passes.
+  """
+  pub versionCheck: Void @check {
+    null
+  }
+}

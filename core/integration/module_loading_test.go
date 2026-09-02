@@ -119,6 +119,50 @@ entrypoint = true
 		require.Equal(t, "hello", strings.TrimSpace(string(out)))
 	})
 
+	t.Run("same source installed twice under different names stays two modules", func(ctx context.Context, t *testctx.T) {
+		// dagger/dagger#14013
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		copyTestdataFixture(ctx, t, filepath.Join(workdir, "shared"), "modules", "dang", "settings-check")
+		writeWorkspaceConfigFile(t, workdir, `[modules.rust]
+source = "shared"
+settings.version = "1.98"
+
+[modules.msrv]
+source = "shared"
+settings.version = "1.97"
+`)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "check", "-l")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "rust:version-check")
+		require.Contains(t, string(out), "msrv:version-check")
+
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "call", "--help")
+		require.NoError(t, err)
+		require.Regexp(t, `(?m)^\s+rust\s`, string(out))
+		require.Regexp(t, `(?m)^\s+msrv\s`, string(out))
+
+		// Both in one session: a request naming a single module loads only that
+		// module, so separate calls would pass even unfixed.
+		queryPath := writeQueryDoc(t, t.TempDir(), "same-source.graphql", `{
+  rust {
+    reportVersion
+  }
+  msrv {
+    reportVersion
+  }
+}
+`)
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"rust": {"reportVersion": "1.98"},
+			"msrv": {"reportVersion": "1.97"}
+		}`, string(out))
+	})
+
 	t.Run("source may point to ancestor within context", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
