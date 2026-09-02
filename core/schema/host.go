@@ -45,8 +45,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Host]{
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.RequestedCacheInput("noCache"), dagql.PerSessionInput).
-			NotReplayable("Reads the live host filesystem; a recorded read is a snapshot, not a reproducible value.").
+			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
