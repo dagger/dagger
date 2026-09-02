@@ -38,7 +38,7 @@ dagger workspace config include ../common
 
 The included config's own modules come with it. A module entry there whose source is a local path names a directory beside *that* config, not beside yours, so it is re-addressed rather than resolved as written:
 
-```
+```text
 shared/tester/          the module
 common/dagger.toml      [modules.tester] source = "../shared/tester"
 project-a/dagger.toml   [[include]] source = "../common"
