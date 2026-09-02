@@ -5107,17 +5107,94 @@ func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
-	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+	t.Run("legacy compatibility", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := c.Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
-			WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"sh", "-c", `
+test -n "${DAGGER_SESSION_PORT:-}"
+test -n "${DAGGER_SESSION_TOKEN:-}"
+test -z "${DAGGER_NESTING+x}"
+dagger query --doc /query.graphql
+`}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Sync(ctx)
 		require.NoError(t, err)
+	})
+
+	t.Run("explicit nested client", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/query.graphql", `{ defaultPlatform }`).
+			WithExec([]string{"sh", "-c", `
+test -n "${DAGGER_SESSION_PORT:-}"
+test -n "${DAGGER_SESSION_TOKEN:-}"
+test "${DAGGER_NESTING:-}" = NESTED_CLIENT
+dagger query --doc /query.graphql
+`}, dagger.ContainerWithExecOpts{
+				DaggerNesting: dagger.DaggerNestingNestedClient,
+			}).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("independent peer sessions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/peer-sessions.go", independentPeerSessionsProgram).
+			WithExec([]string{"go", "run", "/peer-sessions.go"}, dagger.ContainerWithExecOpts{
+				DaggerNesting: dagger.DaggerNestingIndependentSessions,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "independent peer sessions ok")
+	})
+
+	t.Run("independent peer sessions through Go SDK", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		thisRepoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+		code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+			Include: []string{
+				"core/integration/testdata/independent-peer-sessions/",
+				"sdk/go/",
+				"go.mod",
+				"go.sum",
+			},
+		})
+
+		out, err := c.Container().From(golangImage).
+			With(goCache(c)).
+			WithMountedDirectory("/src", code).
+			WithWorkdir("/src").
+			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			WithExec([]string{"go", "run", "./core/integration/testdata/independent-peer-sessions"}, dagger.ContainerWithExecOpts{
+				DaggerNesting: dagger.DaggerNestingIndependentSessions,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "independent Go SDK peer sessions ok")
+	})
+
+	t.Run("dagger nesting conflicts", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := c.Container().From(alpineImage).
+			WithDefaultTerminalCmd([]string{"sh"}, dagger.ContainerWithDefaultTerminalCmdOpts{
+				ExperimentalPrivilegedNesting: true,
+				DaggerNesting:                 dagger.DaggerNestingNestedClient,
+			}).
+			Sync(ctx)
+		require.ErrorContains(t, err, "experimentalPrivilegedNesting cannot be combined with daggerNesting")
 	})
 
 	t.Run("caching", func(ctx context.Context, t *testctx.T) {
@@ -5173,6 +5250,145 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, output1b, output2b)
 	})
 }
+
+const independentPeerSessionsProgram = `package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"strconv"
+	"time"
+)
+
+type connectParams struct {
+	Port         int    ` + "`json:\"port\"`" + `
+	SessionToken string ` + "`json:\"session_token\"`" + `
+	SessionID    string ` + "`json:\"session_id\"`" + `
+}
+
+type peer struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stderr *bytes.Buffer
+	params connectParams
+}
+
+func main() {
+	if got := os.Getenv("DAGGER_NESTING"); got != "INDEPENDENT_SESSIONS" {
+		fatalf("unexpected DAGGER_NESTING %q", got)
+	}
+	port, err := strconv.Atoi(os.Getenv("DAGGER_SESSION_PORT"))
+	if err != nil || port < 1 {
+		fatalf("invalid inherited DAGGER_SESSION_PORT: %q", os.Getenv("DAGGER_SESSION_PORT"))
+	}
+	for _, name := range []string{"DAGGER_SESSION_TOKEN", "DAGGER_ENGINE_NUM_CPU"} {
+		if _, ok := os.LookupEnv(name); ok {
+			fatalf("%s must not be inherited", name)
+		}
+	}
+
+	first := mustStartPeer()
+	defer first.close()
+	second := mustStartPeer()
+	defer second.close()
+
+	if first.params.SessionID == second.params.SessionID {
+		fatalf("peers reused session ID %q", first.params.SessionID)
+	}
+	if first.params.SessionToken == second.params.SessionToken {
+		fatalf("peers reused local SDK token")
+	}
+	first.queryVersion()
+	second.queryVersion()
+
+	first.close()
+	second.queryVersion()
+	second.close()
+
+	fmt.Println("independent peer sessions ok")
+}
+
+func mustStartPeer() *peer {
+	cmd := exec.Command("/bin/dagger", "session", "--skip-workspace-modules")
+	cmd.Env = os.Environ()
+	stderr := new(bytes.Buffer)
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		fatalf("stdout pipe: %v", err)
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		fatalf("stdin pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		fatalf("start dagger session: %v", err)
+	}
+
+	p := &peer{cmd: cmd, stdin: stdin, stderr: stderr}
+	if err := json.NewDecoder(stdout).Decode(&p.params); err != nil {
+		fatalf("decode connect params: %v; stderr: %s", err, stderr.String())
+	}
+	if p.params.Port < 1 || p.params.SessionToken == "" || p.params.SessionID == "" {
+		fatalf("incomplete connect params: %+v", p.params)
+	}
+	return p
+}
+
+func (p *peer) queryVersion() {
+	body := bytes.NewBufferString(` + "`{\"query\":\"{version}\"}`" + `)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/query", p.params.Port), body)
+	if err != nil {
+		fatalf("new query request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(p.params.SessionToken, "")
+	client := &http.Client{Timeout: 30 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		fatalf("query peer %s: %v", p.params.SessionID, err)
+	}
+	defer res.Body.Close()
+	payload, err := io.ReadAll(res.Body)
+	if err != nil {
+		fatalf("read peer response: %v", err)
+	}
+	if res.StatusCode != http.StatusOK || !bytes.Contains(payload, []byte(` + "`\"version\"`" + `)) {
+		fatalf("peer %s query failed: status=%s body=%s", p.params.SessionID, res.Status, payload)
+	}
+}
+
+func (p *peer) close() {
+	if p.cmd == nil {
+		return
+	}
+	if err := p.stdin.Close(); err != nil {
+		fatalf("close peer %s stdin: %v", p.params.SessionID, err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- p.cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			fatalf("wait for peer %s: %v; stderr: %s", p.params.SessionID, err, p.stderr.String())
+		}
+	case <-time.After(2 * time.Minute):
+		_ = p.cmd.Process.Kill()
+		fatalf("timed out closing peer %s", p.params.SessionID)
+	}
+	p.cmd = nil
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	os.Exit(1)
+}
+`
 
 func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	// if an exec makes no changes, the diff should be empty, including of files

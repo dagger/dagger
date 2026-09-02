@@ -262,14 +262,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	nestedSessionPort, isNestedSession, independentSessions, err := nestedSessionEnv()
+	if err != nil {
+		return nil, err
+	}
 	if isNestedSession {
-		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
-		if err != nil {
-			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
-		}
 		c.nestedSessionPort = nestedSessionPort
-		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
 		if numCPUVal != "" {
 			numCPU, err := strconv.Atoi(numCPUVal)
@@ -278,17 +276,20 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 			}
 			c.numCPU = numCPU
 		}
-		c.httpClient = c.newHTTPClient()
-		if err := c.init(connectCtx); err != nil {
-			return nil, fmt.Errorf("initialize nested client: %w", err)
+		if !independentSessions {
+			c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+			c.httpClient = c.newHTTPClient()
+			if err := c.init(connectCtx); err != nil {
+				return nil, fmt.Errorf("initialize nested client: %w", err)
+			}
+			if err := c.subscribeTelemetry(connectCtx); err != nil {
+				return nil, fmt.Errorf("subscribe to telemetry: %w", err)
+			}
+			if err := c.daggerConnect(connectCtx); err != nil {
+				return nil, fmt.Errorf("failed to connect to dagger: %w", err)
+			}
+			return c, nil
 		}
-		if err := c.subscribeTelemetry(connectCtx); err != nil {
-			return nil, fmt.Errorf("subscribe to telemetry: %w", err)
-		}
-		if err := c.daggerConnect(connectCtx); err != nil {
-			return nil, fmt.Errorf("failed to connect to dagger: %w", err)
-		}
-		return c, nil
 	}
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -301,15 +302,17 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	c.stableClientID = GetHostStableID(slog)
 
-	if err := c.startEngine(connectCtx, params); err != nil {
-		return nil, fmt.Errorf("start engine: %w", err)
-	}
-	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
-		return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
+	if !independentSessions {
+		if err := c.startEngine(connectCtx, params); err != nil {
+			return nil, fmt.Errorf("start engine: %w", err)
+		}
+		if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
+			return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
+		}
 	}
 
 	defer func() {
-		if rerr != nil {
+		if rerr != nil && c.bkClient != nil {
 			c.bkClient.Close()
 		}
 	}()
@@ -333,6 +336,37 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 
 	return c, nil
+}
+
+// nestedSessionEnv parses the inherited nested-session environment. It returns
+// the inherited listener port, whether an inherited session environment is
+// present, and whether the DAGGER_NESTING marker routes this process through
+// independent-session provisioning instead of the direct nested-client path.
+// A missing marker with an inherited port is the legacy nested-client path.
+func nestedSessionEnv() (port int, isNested bool, independent bool, err error) {
+	portVal, isNested := os.LookupEnv("DAGGER_SESSION_PORT")
+	nesting := os.Getenv("DAGGER_NESTING")
+	switch nesting {
+	case "":
+	case "NESTED_CLIENT", "INDEPENDENT_SESSIONS":
+		if !isNested {
+			return 0, false, false, fmt.Errorf("DAGGER_NESTING=%s requires DAGGER_SESSION_PORT", nesting)
+		}
+		independent = nesting == "INDEPENDENT_SESSIONS"
+	default:
+		return 0, false, false, fmt.Errorf("unknown DAGGER_NESTING value %q", nesting)
+	}
+	if !isNested {
+		return 0, false, false, nil
+	}
+	port, err = strconv.Atoi(portVal)
+	if err != nil {
+		return 0, true, independent, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
+	}
+	if nesting != "" && port < 1 {
+		return 0, true, independent, fmt.Errorf("DAGGER_NESTING=%s requires a positive DAGGER_SESSION_PORT", nesting)
+	}
+	return port, true, independent, nil
 }
 
 func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {

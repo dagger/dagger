@@ -127,6 +127,14 @@ type ExecutionMetadata struct {
 	HostAliasFQDNs map[string]string `json:"-"`
 }
 
+type DaggerNestingMode uint8
+
+const (
+	DaggerNestingNone DaggerNestingMode = iota
+	DaggerNestingNestedClient
+	DaggerNestingIndependentSessions
+)
+
 func (c *Client) Run(
 	ctx context.Context,
 	id string,
@@ -138,6 +146,7 @@ func (c *Client) Run(
 	execMD *ExecutionMetadata,
 	sessionID string,
 	callerClientID string,
+	daggerNesting DaggerNestingMode,
 	nestedClientMetadata *engine.ClientMetadata,
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
@@ -160,6 +169,7 @@ func (c *Client) Run(
 		execMD,
 		sessionID,
 		callerClientID,
+		daggerNesting,
 		nestedClientMetadata,
 		nestedClientModule,
 		nestedClientFunctionCall,

@@ -16,7 +16,7 @@ abstract class Connection
     {
         $connection = static::newEnvSession();
 
-        if (!empty($workingDir)) {
+        if (null !== $connection && !empty($workingDir)) {
             throw new InvalidArgumentException(
                 'cannot configure workdir for existing session' .
                 ' (please use --workdir or host.directory with absolute paths instead)'
@@ -32,8 +32,30 @@ abstract class Connection
 
     public static function newEnvSession(): ?EnvSessionConnection
     {
+        $nesting = getenv('DAGGER_NESTING');
         $port = getenv('DAGGER_SESSION_PORT');
         $token = getenv('DAGGER_SESSION_TOKEN');
+
+        if (
+            false !== $nesting
+            && '' !== $nesting
+            && !in_array($nesting, ['NESTED_CLIENT', 'INDEPENDENT_SESSIONS'], true)
+        ) {
+            throw new InvalidArgumentException("unknown DAGGER_NESTING value {$nesting}");
+        }
+        if (in_array($nesting, ['NESTED_CLIENT', 'INDEPENDENT_SESSIONS'], true) && false === $port) {
+            throw new InvalidArgumentException("DAGGER_NESTING={$nesting} requires DAGGER_SESSION_PORT");
+        }
+        if ('NESTED_CLIENT' === $nesting && false === $token) {
+            throw new InvalidArgumentException('DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT');
+        }
+        if ('INDEPENDENT_SESSIONS' === $nesting) {
+            if (!ctype_digit((string) $port) || (int) $port < 1) {
+                throw new InvalidArgumentException("invalid DAGGER_SESSION_PORT value {$port}");
+            }
+
+            return null;
+        }
 
         if (false === $port || false === $token) {
             return null;

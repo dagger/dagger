@@ -1,0 +1,1111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detachable Dagger sessions: independent peer sessions for nested processes</title>
+  <style>
+    :root { --ink:#17212b; --muted:#52606d; --line:#d8dee6; --soft:#f5f7fa; --accent:#3157a4; --accent-soft:#edf3ff; --good:#176b3a; --warn:#8a5200; --bad:#a12c2c; --code:#f0f2f5; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1440px; margin:0 auto; padding:36px 42px 80px; }
+    h1,h2,h3,h4 { line-height:1.2; scroll-margin-top:20px; }
+    h1 { margin:0 0 8px; font-size:34px; }
+    h2 { margin:42px 0 14px; padding-top:8px; border-top:2px solid var(--ink); font-size:25px; }
+    h3 { margin:28px 0 10px; font-size:19px; }
+    h4 { margin:20px 0 8px; font-size:16px; }
+    p { max-width:1120px; margin:8px 0 12px; }
+    a { color:#234da0; text-decoration-thickness:1px; text-underline-offset:2px; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    code { background:var(--code); padding:1px 4px; border-radius:3px; font-size:.92em; }
+    pre { margin:12px 0 18px; padding:15px 17px; overflow:auto; background:#17212b; color:#f8fafc; border-radius:6px; line-height:1.45; font-size:13px; }
+    pre code { padding:0; color:inherit; background:transparent; }
+    ul,ol { max-width:1160px; margin:8px 0 14px; padding-left:26px; }
+    li { margin:4px 0; }
+    .meta,.callout,.decision,.finding { max-width:1180px; margin:14px 0; padding:13px 16px; border:1px solid var(--line); border-left:5px solid var(--accent); background:var(--accent-soft); border-radius:4px; }
+    .meta { color:var(--muted); background:var(--soft); border-left-color:#7b8794; }
+    .finding { background:#eef8f2; border-left-color:var(--good); }
+    .decision { background:#fff7e8; border-left-color:var(--warn); }
+    .warning { background:#fff1f1; border-left-color:var(--bad); }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .toc { max-width:980px; columns:2; column-gap:38px; padding:14px 20px 14px 38px; background:var(--soft); border:1px solid var(--line); border-radius:5px; }
+    .toc li { break-inside:avoid; }
+    .table-wrap { width:100%; overflow-x:auto; margin:12px 0 22px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; line-height:1.42; }
+    th,td { padding:9px 10px; text-align:left; vertical-align:top; border:1px solid var(--line); }
+    th { background:#e9edf2; font-weight:650; }
+    tbody tr:nth-child(even) { background:#fafbfc; }
+    td ul,td ol { margin:0; padding-left:18px; }
+    td p { margin:0 0 7px; }
+    .wide { min-width:1360px; }
+    .medium { min-width:1020px; }
+    .yes { color:var(--good); font-weight:650; }
+    .no { color:var(--bad); font-weight:650; }
+    .conditional { color:var(--warn); font-weight:650; }
+    .tag { display:inline-block; margin:1px 3px 1px 0; padding:1px 6px; border:1px solid var(--line); border-radius:999px; background:#fff; font-size:11px; white-space:nowrap; }
+    @media(max-width:850px){ main{padding:24px 18px 60px}.toc{columns:1} }
+    @media print { main{max-width:none;padding:0}.table-wrap{overflow:visible}table{font-size:10px}pre{white-space:pre-wrap} }
+  </style>
+</head>
+<body><main>
+  <h1>Detachable Dagger sessions: independent peer sessions for nested processes</h1>
+  <p class="muted">A companion to the <a href="detachable-sessions.html">detachable-session design</a>, the <a href="detachable-sessions-p0-implementation.html">reviewed P0 implementation plan</a>, and the <a href="detachable-sessions-client-cache-ownership.html">client-specific cache-ownership investigation</a></p>
+
+  <div class="meta">
+    <strong>Investigation base:</strong> the reviewed detachable-session P0 implementation at
+    <a href="https://github.com/dagger/dagger/tree/322c50b200058c348b1c3a7a2bad306c39413b4b"><code>322c50b200058c348b1c3a7a2bad306c39413b4b</code></a>.
+    Its upstream base is <code>eb0ba40f8008eac2ef3356aed44d85db1c2a1d57</code>.
+    The starting worktree was clean.
+    This document contains investigation and design only.
+    It proposes no production implementation.
+  </div>
+
+  <h3>Contents</h3>
+  <ol class="toc">
+    <li><a href="#decision">Decision and scope</a></li>
+    <li><a href="#problem">Problem and target use case</a></li>
+    <li><a href="#terms">Terms and invariants</a></li>
+    <li><a href="#current-connection">Current connection model</a></li>
+    <li><a href="#current-ownership">Current ownership and cleanup</a></li>
+    <li><a href="#recommended-model">Recommended peer-session model</a></li>
+    <li><a href="#protocol">API, protocol, CLI, and SDK shape</a></li>
+    <li><a href="#lifecycle">Lifecycle and failure sequences</a></li>
+    <li><a href="#portability">Session-boundary rule</a></li>
+    <li><a href="#cleanup">Existing session cleanup</a></li>
+    <li><a href="#operations">Concurrency, operations, and performance</a></li>
+    <li><a href="#options">Options and direct comparison</a></li>
+    <li><a href="#first-track">Comparison with client cache ownership</a></li>
+    <li><a href="#changes">Exact package and file changes</a></li>
+    <li><a href="#plan">Phased implementation plan</a></li>
+    <li><a href="#tests">Test and fault-injection plan</a></li>
+    <li><a href="#acceptance">Acceptance criteria</a></li>
+    <li><a href="#risks">Risks and unresolved decisions</a></li>
+    <li><a href="#tailcall-example">Appendix: Tailcall example</a></li>
+    <li><a href="#evidence">Investigation record and conclusion</a></li>
+  </ol>
+
+  <h2 id="decision">1. Decision and scope</h2>
+
+  <div class="finding">
+    <strong>A process inside a container can be the main client of a fresh session.</strong>
+    The engine already creates a new peer <code>daggerSession</code> when a direct client sends a fresh <code>ClientMetadata.SessionID</code>.
+    The missing product capability is a safe route from an opted-in exec or service to that top-level path.
+    The existing nested route cannot negotiate a fresh session.
+  </div>
+
+  <p>Recommend a <code>DaggerNesting</code> enum on execs and services which opt into Dagger access.</p>
+  <p><code>NESTED_CLIENT</code> selects the current parent-session route.</p>
+  <p><code>INDEPENDENT_SESSIONS</code> selects a fresh-session route on the same process listener.</p>
+  <p>One process receives one selected mode.</p>
+  <p>The capability creates ordinary peer sessions only in the first phase.</p>
+  <p>The first client in each peer is its main client.</p>
+  <p>Closing the peer uses the existing whole-session cleanup path.</p>
+  <p>Ordinary sessions and current same-session nesting remain unchanged.</p>
+  <p>Module function runtimes continue to join their caller's session.</p>
+
+  <div class="decision">
+    <strong>Do not expose the raw engine socket or TCP listener as the product API.</strong>
+    A raw engine transport can create a peer today, but it can also reach engine-wide detachable-session control routes.
+    Those routes are handled before normal session lookup.
+    The independent listener mode accepts only fresh ordinary sessions created through that listener.
+  </div>
+
+  <p>This model is materially smaller than client-specific cache ownership when a process boundary is sufficient.</p>
+  <p>It does not release objects created by another client that remains in the long-lived parent session.</p>
+  <p>It does not solve per-module-call or per-callback lifetime inside one long-lived peer.</p>
+  <p>It therefore replaces the first-track proposal only where a whole peer session is the right lifetime boundary.</p>
+  <p>It defers, rather than disproves, client-specific ownership for finer same-session release.</p>
+
+  <h2 id="problem">2. Problem, target use case, constraints, and non-goals</h2>
+
+  <h3>Target use case</h3>
+  <p>A long-running Dagger session may create many exec and service processes over weeks or months.</p>
+  <p>Those processes may call Dagger and may start further services or nested execs.</p>
+  <p>An explicitly selected process should be able to place its Dagger API work in a separate session.</p>
+  <p>Closing that peer should release its session state without closing the parent session.</p>
+
+  <h3>Current problem</h3>
+  <p><code>dagql.Cache.trackSessionResult</code> records one root edge for each result first observed by a session.</p>
+  <p><code>dagql.Cache.ReleaseSession</code> removes those edges only when the whole session ends.</p>
+  <p>A nested client currently uses its parent's <code>SessionID</code>.</p>
+  <p>Its objects therefore remain rooted by the long-running parent session.</p>
+  <p>The same session also keeps initialized nested <code>daggerClient</code> objects and their telemetry providers.</p>
+
+  <h3>Required constraints</h3>
+  <ul>
+    <li>Keep existing session-level cache ownership.</li>
+    <li>Keep default same-session nesting.</li>
+    <li>Make independent-session selection explicit.</li>
+    <li>Do not force module function calls across a session boundary.</li>
+    <li>Do not depend on engine restart recovery.</li>
+    <li>Do not create a workflow database, distributed scheduler, or engine-HA design.</li>
+    <li>Do not pass Dagger object IDs across an independent-session boundary.</li>
+    <li>Do not give a nested process engine-wide session-management authority.</li>
+  </ul>
+
+  <h3>Non-goals</h3>
+  <ul>
+    <li>This design does not make persisted DagQL entries disappear synchronously.</li>
+    <li>It does not delete BuildKit cache records or cache-volume data at session close.</li>
+    <li>It does not persist live sessions or service processes across engine restart.</li>
+    <li>It does not add attachment or recovery to ordinary peer sessions.</li>
+    <li>It does not change application storage semantics.</li>
+    <li>It does not release the parent session's own roots while that session remains open.</li>
+  </ul>
+
+  <h2 id="terms">3. Terms and invariants</h2>
+
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Term</th><th>Definition in this document</th></tr></thead><tbody>
+    <tr><td>Ordinary session</td><td>A current attached-lifetime session. Its main client's last connection schedules whole-session teardown. It is not a P0 detachable session.</td></tr>
+    <tr><td>Parent session</td><td>The <code>daggerSession</code> that owns the exec or service process which receives a Dagger connection capability.</td></tr>
+    <tr><td>Nested-client listener mode</td><td>The current loopback route advertised through <code>DAGGER_SESSION_PORT</code> and <code>DAGGER_SESSION_TOKEN</code>. Its handler always substitutes the parent <code>SessionID</code>.</td></tr>
+    <tr><td>Independent-session listener mode</td><td>The same process-local listener shape with a different handler selected when the exec or service is created. It accepts fresh ordinary sessions and does not set a parent caller. It adds no listener-admission token.</td></tr>
+    <tr><td>Peer session</td><td>A fresh top-level <code>daggerSession</code> in the same engine. It has a new <code>SessionID</code>. It is not stored as a child of the parent session.</td></tr>
+    <tr><td>Main client</td><td>The first <code>daggerClient</code> created in a session. <code>getOrInitClient</code> fixes <code>mainClientCallerID</code> and <code>creatorClientID</code> from that client.</td></tr>
+    <tr><td>Listener claim</td><td>The internal record of peer SessionIDs created through one independent-mode listener. It authorizes same-listener reconnect and bounds cleanup without granting engine-wide session management.</td></tr>
+  </tbody></table></div>
+
+  <p>A peer session shares the engine's DagQL cache, BuildKit worker, content store, snapshotter, lease manager, network provider, and engine state root.</p>
+  <p>It owns a separate <code>daggerSession</code>, <code>core.Services</code>, resolver, registry auth source, client map, telemetry providers, session resources, container references, and cache roots.</p>
+  <p>Process containment does not create an engine parent-child session relationship.</p>
+
+  <h2 id="current-connection">4. Exact current nesting and session connection model</h2>
+
+  <h3>Direct top-level connection</h3>
+  <pre><code>host or container SDK
+        │
+        ├── starts "dagger session"
+        │
+        └── engine/client.Connect
+                ├── startEngine
+                ├── create fresh SessionID, ClientID, and token
+                ├── GET /sessionAttachables
+                ├── start client attachable providers
+                ├── subscribe to telemetry
+                └── POST /init and /query
+                         │
+                         ▼
+               engine/server.getOrInitClient
+                         │
+                         └── missing SessionID creates peer daggerSession
+                                  └── first client is main client</code></pre>
+
+  <p><code>engine/client/client.go: connect</code> takes this path when <code>DAGGER_SESSION_PORT</code> is absent.</p>
+  <p><code>engine/client.Client.startSession</code> upgrades <code>engine.SessionAttachablesEndpoint</code> and serves the normal main-client attachables.</p>
+  <p><code>internal/cmd/dagger/session.go: EngineSession</code> exposes a local SDK listener only after <code>withEngine</code> has completed the engine connection.</p>
+
+  <h3>Current nested connection</h3>
+  <pre><code>parent query
+   │
+   ├── core/container_exec.go or core/service.go
+   │       creates nested ClientMetadata
+   │       SessionID = parent SessionID
+   │
+   └── engine/engineutil.setupNestedClient
+           ├── opens loopback listener in process network namespace
+           ├── injects DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN
+           └── every request calls ServeHTTPToNestedClient
+                        │
+                        ├── overwrites request identity with fixed metadata
+                        ├── sets CallerClientID
+                        ├── may set ModuleContext and FunctionCall
+                        ├── clears detachable and observer roles
+                        └── calls serveHTTPToClient
+                                  │
+                                  └── getOrInitClient(parent SessionID)</code></pre>
+
+  <p><code>engine/server/session.go: ServeHTTPToNestedClient</code> does not trust a request-supplied session identity.</p>
+  <p><code>setupNestedClient</code> also injects <code>DAGGER_ENGINE_NUM_CPU</code> and copies the process's SSH-agent path and optional Dagger version into the fixed nested metadata.</p>
+  <p><code>nestedClientMetadataForRequest</code> copies only request-shaping fields such as client version and workspace selection.</p>
+  <p>It keeps the executor-provided <code>SessionID</code>.</p>
+  <p>It clears <code>DetachableSession</code>, <code>AttachSession</code>, and <code>AttachmentID</code>.</p>
+  <p>It rejects every path recognized by <code>isSessionControlPath</code>.</p>
+
+  <div class="finding">
+    <strong>The nested endpoint reaches the engine, but it reaches only the current session.</strong>
+    A request may open <code>/sessionAttachables</code> through that listener.
+    It still registers a client inside the fixed parent session.
+    No request header can turn it into a fresh root session.
+  </div>
+
+  <h3>SDK precedence</h3>
+  <p><code>sdk/go/engineconn.Get</code> chooses an explicit connection first and <code>DAGGER_SESSION_PORT</code> second.</p>
+  <p>It chooses a local or downloaded CLI only after the nested environment check.</p>
+  <p><code>dagger.WithRunnerHost</code> therefore does not override a nested route.</p>
+  <p>Python, TypeScript, Java, PHP, Rust, Elixir, and generated runtime clients use the same practical precedence.</p>
+  <p>A nested service cannot request a peer through current SDK configuration while the join environment is present.</p>
+
+  <h3>Existing proof that a peer is possible inside a container</h3>
+  <p>Normal local provisioning ultimately reaches the engine's Unix listeners, including <code>/run/dagger/engine.sock</code> and the BuildKit socket.</p>
+  <p>The containerized engine driver can expose its engine API over TCP, and the integration dev engine listens on port 1234.</p>
+  <p>A normal user service receives neither raw endpoint.</p>
+  <p>It receives only the loopback join listener created in its network namespace.</p>
+  <p><code>core/integration/engine_test.go: engineClientContainer</code> gives a container a direct dev-engine service endpoint through <code>_EXPERIMENTAL_DAGGER_RUNNER_HOST</code>.</p>
+  <p>The CLI in that container creates top-level sessions.</p>
+  <p>Tests using this helper prove that a client inside a container can become main in a separate session.</p>
+  <p>This is a technical proof.</p>
+  <p>It is not a safe production endpoint for a nested process.</p>
+
+  <h3>Why the raw engine route is too strong</h3>
+  <p><code>engine/server/session.go: serveHTTPToClient</code> handles session-control paths before <code>getOrInitClient</code>.</p>
+  <p><code>engine/server/session_control.go</code> does not authenticate those paths to one existing session.</p>
+  <p>A process that can reach the raw transport can list, inspect, attach to, or terminate detachable sessions visible to that engine.</p>
+  <p>It can also create arbitrary top-level sessions.</p>
+  <p>Mutual TLS may protect a remote engine transport from outsiders.</p>
+  <p>It does not scope one authenticated transport holder to one process.</p>
+
+  <h2 id="current-ownership">5. Current ownership and cleanup diagrams</h2>
+
+  <h3>Current same-session nesting</h3>
+  <pre><code>long-running session S
+        │
+        ├── roots observed by the main client
+        ├── roots observed by every nested client
+        ├── service registry and leases
+        ├── session resource bindings
+        └── daggerSession.clients
+                ├── main client
+                ├── nested client 1
+                ├── nested client 2
+                └── module and exec clients
+
+nested transport closes
+        └── releaseClientConnection does not remove a non-main client
+
+only removeDaggerSession(S)
+        ├── stops services
+        ├── drains DagQL work
+        ├── releases clients and container refs
+        ├── Cache.ReleaseSession(S)
+        └── schedules GC</code></pre>
+
+  <p><code>releaseClientConnection</code> reaps an ordinary session only when the main client's last connection closes.</p>
+  <p>A non-main nested client with <code>activeCount == 0</code> remains in <code>daggerSession.clients</code>.</p>
+  <p>Its schema, workspace state, telemetry providers, and keepalive client database remain until session teardown.</p>
+
+  <h3>Independent process and peer session</h3>
+  <pre><code>parent session P
+        │
+        └── owns opted-in process X
+                 │
+                 ├── listener mode = INDEPENDENT_SESSIONS
+                 └── main connection keeps peer session Q alive
+                              │
+                              ├── Q cache roots
+                              ├── Q clients and telemetry
+                              ├── Q session resources
+                              └── Q services and leases
+
+X closes its SDK or exits
+        └── Q follows ordinary session teardown
+                 ├── stops Q-owned services
+                 └── Cache.ReleaseSession(Q)
+
+P still owns the graph used to create X.</code></pre>
+
+  <h3>Ownership and cancellation directions</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Event</th><th>Result</th></tr></thead><tbody>
+    <tr><td>Parent session terminates</td><td>The parent stops X. X's process-local listener and accepted connections close. Q follows ordinary session teardown.</td></tr>
+    <tr><td>X exits</td><td>Its main transport closes. Q reaps. The parent observes the process or service exit.</td></tr>
+    <tr><td>Q closes while X remains alive</td><td>Q-owned work stops. X must exit, remain disconnected, or open another peer.</td></tr>
+  </tbody></table></div>
+
+  <div class="finding">
+    <strong>There is no engine ownership cycle.</strong>
+    P owns X.
+    X owns a transport which keeps Q alive.
+    Q does not own X.
+    Parent cancellation flows through X's transport to Q.
+  </div>
+
+  <h2 id="recommended-model">6. Recommended peer-session model</h2>
+
+  <h3>One existing listener with one selected mode</h3>
+  <p>Keep the current per-process loopback listener created by <code>engine/engineutil.setupNestedClient</code>.</p>
+  <p>Generalize its internal configuration from “nested client present” to a <code>DaggerNesting</code> mode.</p>
+  <p><code>NESTED_CLIENT</code> keeps the current <code>ServeHTTPToNestedClient</code> handler.</p>
+  <p><code>INDEPENDENT_SESSIONS</code> installs a fresh-session handler on that same listener.</p>
+  <p>Each opted-in process has exactly one Dagger listener and one port.</p>
+  <p>The selected handler is fixed when the exec or service is created.</p>
+  <p>A request cannot switch modes.</p>
+
+  <h3>Fresh peer requirement</h3>
+  <p><code>engine/client.connect</code> already generates a fresh <code>SessionID</code> and <code>ClientID</code> before it checks <code>DAGGER_SESSION_PORT</code>.</p>
+  <p>The current nested handler ignores that requested session identity and substitutes the executor-provided parent metadata.</p>
+  <p>The independent handler instead parses the normal client metadata.</p>
+  <p>A first request must name a SessionID that does not exist.</p>
+  <p>The server creates a normal ordinary <code>daggerSession</code> and records that the process listener claimed it.</p>
+  <p>Later requests may continue only a session and main-client tuple claimed by the same listener.</p>
+  <p>One independent listener may claim several peer sessions.</p>
+  <p>It may never join a parent, unrelated peer, or detachable session.</p>
+
+  <h3>Main-client initialization</h3>
+  <p>The independent handler does not set <code>CallerClientID</code>.</p>
+  <p>It does not supply <code>ModuleContext</code>, <code>FunctionCall</code>, or a host-service proxy.</p>
+  <p><code>getOrInitClient</code> therefore treats the first client as main.</p>
+  <p>The main client must run normal <code>startSession</code> and serve its own attachables.</p>
+  <p>This requires a small client-side distinction even though endpoint selection is fixed by the exec's <code>DaggerNesting</code> value.</p>
+  <p>The current nested environment path skips <code>startSession</code>.</p>
+  <p>Language SDKs also connect directly to the inherited port instead of starting a local CLI.</p>
+  <p><code>INDEPENDENT_SESSIONS</code> must route them through the normal CLI-backed main-client path without asking application code to choose another mode.</p>
+  <p>Its normal main-client providers originate in that process.</p>
+
+  <h3>Ordinary lifetime and listener cleanup</h3>
+  <p>Phase one accepts ordinary sessions only.</p>
+  <p>It rejects detachable, observer, attachment, and global session-control requests in the handler.</p>
+  <p>The main attachable connection keeps each peer alive.</p>
+  <p>Last main-client disconnect schedules the existing <code>reapDaggerSession</code>.</p>
+  <p>Process cleanup first marks the listener closing, rejects new claims, closes accepted connections, and terminates any claimed peers which ordinary disconnect has not reaped.</p>
+  <p>The listener path and ordinary disconnect path converge through existing session lifecycle state.</p>
+  <p>Claim tracking is needed for scoped reconnect and failure cleanup.</p>
+  <p>It is not a second public session-management API.</p>
+
+  <h3>Process-local scope</h3>
+  <p>A process with <code>INDEPENDENT_SESSIONS</code> may open one or several ordinary peer sessions.</p>
+  <p>Dagger does not classify the application's reason for opening them.</p>
+  <p>Each peer follows its own main-client connection lifetime.</p>
+  <p>Any child exec or service receives its own explicit <code>DaggerNesting</code> value when it is created.</p>
+
+  <h2 id="protocol">7. Exact API, protocol, metadata, CLI, and SDK shape</h2>
+
+  <h3>Core GraphQL options</h3>
+  <pre><code>enum DaggerNesting {
+  NESTED_CLIENT
+  INDEPENDENT_SESSIONS
+}
+
+# Current parent-session behavior under the new API.
+container.withExec(
+  args: [...],
+  daggerNesting: NESTED_CLIENT
+)
+
+# New independent-session behavior
+container.withExec(
+  args: [...],
+  daggerNesting: INDEPENDENT_SESSIONS
+)
+
+container.asService(
+  daggerNesting: INDEPENDENT_SESSIONS
+)
+
+# Deprecated compatibility path. Behavior is unchanged.
+container.withExec(
+  args: [...],
+  experimentalPrivilegedNesting: true
+)</code></pre>
+
+  <p>Omitting both fields gives the process no Dagger connection capability.</p>
+  <p><code>NESTED_CLIENT</code> selects the existing parent-session behavior.</p>
+  <p><code>INDEPENDENT_SESSIONS</code> selects the new fresh-session behavior.</p>
+  <p><code>experimentalPrivilegedNesting</code> remains supported with its exact current behavior and is deprecated in favor of <code>daggerNesting: NESTED_CLIENT</code>.</p>
+  <p>Setting the deprecated flag to true together with any <code>daggerNesting</code> value is an input error.</p>
+  <p>Application code does not make another selection when it connects.</p>
+
+  <h3>Schema view</h3>
+  <p><code>DaggerNesting</code> and every new public <code>daggerNesting</code> argument are v1 API.</p>
+  <p>Install the complete enum with <code>AfterVersion("v1.0.0-0")</code>.</p>
+  <p>Apply <code>View(AfterVersion("v1.0.0-0"))</code> to every new argument.</p>
+  <p>Do not gate the existing <code>withExec</code>, <code>asService</code>, terminal, or related fields themselves.</p>
+  <p>Pre-v1 views keep their current schema and continue to expose <code>experimentalPrivilegedNesting</code>.</p>
+  <p>V1 views expose the enum and new arguments and mark the legacy argument deprecated with “Use daggerNesting: NESTED_CLIENT.”</p>
+  <p>Where deprecation metadata is view-specific, define the unchanged legacy argument with <code>BeforeVersion("v1.0.0-0")</code> and the deprecated form with <code>AfterVersion("v1.0.0-0")</code>.</p>
+
+  <h3>Injected environment</h3>
+  <pre><code># New nested-client API:
+DAGGER_SESSION_PORT
+DAGGER_SESSION_TOKEN
+DAGGER_NESTING=NESTED_CLIENT
+
+# New independent-session API:
+DAGGER_SESSION_PORT
+DAGGER_NESTING=INDEPENDENT_SESSIONS
+# No inherited DAGGER_SESSION_TOKEN.
+
+# Deprecated experimentalPrivilegedNesting compatibility path:
+DAGGER_SESSION_PORT
+DAGGER_SESSION_TOKEN
+# DAGGER_NESTING is absent.</code></pre>
+
+  <p>Nested-client mode keeps the existing port and token contract.</p>
+  <p>Independent-session mode injects only the listener port and mode marker.</p>
+  <p>The new enum is injected as <code>DAGGER_NESTING</code>.</p>
+  <p>The deprecated flag keeps the current environment byte-for-byte, so a missing marker continues to mean nested-client behavior.</p>
+  <p>The marker tells SDK provisioning and <code>engine/client</code> how to use the inherited endpoint.</p>
+  <p>It is not an application-selected connection option.</p>
+  <p>Independent mode does not authenticate admission with an inherited listener token.</p>
+  <p>The design does not treat another process in the same network namespace as a separate security principal.</p>
+
+  <h3>SDK and CLI routing</h3>
+  <p>No public SDK session-mode option is required.</p>
+  <p>No user-facing or hidden <code>dagger session --session-mode</code> flag is required.</p>
+  <p>When the marker is absent or <code>NESTED_CLIENT</code>, every SDK connects directly to the parent-session listener.</p>
+  <p>When the marker is <code>INDEPENDENT_SESSIONS</code>, an SDK must not use its direct environment-session shortcut.</p>
+  <p>It starts the normal local <code>dagger session</code> helper.</p>
+  <p>The helper inherits the port and <code>DAGGER_NESTING</code> value.</p>
+  <p>It generates its own fresh <code>SessionID</code>, <code>ClientID</code>, and <code>ClientSecretToken</code> exactly like an external main client.</p>
+  <p><code>engine/client.connect</code> uses the inherited listener instead of calling <code>startEngine</code>, but otherwise follows the ordinary main-client path beginning with <code>startSession</code>.</p>
+  <p>Each SDK <code>Connect</code> call therefore creates one fresh peer.</p>
+  <p>Several calls from one process may create several peers through the same listener.</p>
+  <p>Generated module runtimes keep their current same-session behavior.</p>
+  <p>This proposal does not change module function execution or any process that does not explicitly select <code>INDEPENDENT_SESSIONS</code>.</p>
+
+  <p><code>internal/cmd/dagger/session.go: EngineSession</code> continues to expose its local SDK listener only after attachables, telemetry subscription, and initialization succeed.</p>
+  <p>Its connect JSON may add the peer identity for application diagnostics:</p>
+  <pre><code>{
+  "port": 49152,
+  "session_token": "...",
+  "session_id": "..."
+}</code></pre>
+  <p>This <code>session_token</code> is generated by the normal local helper for its SDK listener.</p>
+  <p>It is not inherited from the containing process.</p>
+  <p>Existing SDK JSON decoders must tolerate the optional field.</p>
+  <p>The SDK does not need to expose it as a connection selector.</p>
+
+  <h3>Independent listener metadata rules</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Field</th><th>Independent-mode behavior</th></tr></thead><tbody>
+    <tr><td><code>SessionID</code></td><td>Required. It must be fresh or already claimed by the same process listener and exact main-client tuple.</td></tr>
+    <tr><td><code>ClientID</code></td><td>Required. The first value becomes <code>mainClientCallerID</code>.</td></tr>
+    <tr><td><code>ClientSecretToken</code></td><td>Required. The client generates it normally. It authenticates reuse of that client record and is not listener-admission state.</td></tr>
+    <tr><td><code>DetachableSession</code></td><td>Rejected in phase one.</td></tr>
+    <tr><td><code>AttachSession</code> and <code>AttachmentID</code></td><td>Rejected in phase one.</td></tr>
+    <tr><td><code>CallerClientID</code></td><td>Not set.</td></tr>
+    <tr><td><code>ModuleContext</code> and <code>FunctionCall</code></td><td>Not set.</td></tr>
+    <tr><td>Workspace, version, labels, cache config, stable client ID, and client profile</td><td>Handled like a normal top-level main client. The independent environment branch must not inherit the current nested branch's omissions.</td></tr>
+  </tbody></table></div>
+
+  <h3>Scoped management</h3>
+  <p>An ordinary peer is not attachable under P0.</p>
+  <p><code>dagger sessions list</code> currently lists detachable sessions only.</p>
+  <p>Phase one does not change that command.</p>
+  <p>The process that opens a peer retains the SDK client handle and terminates the peer by closing that client.</p>
+  <p>Stopping the containing process also closes its peers.</p>
+  <p>Process-listener cleanup is the engine backstop.</p>
+  <p>No new public list, attach, or terminate API is required in phase one.</p>
+  <p>The process listener must not proxy the engine-wide <code>/v1/sessions</code> routes.</p>
+
+  <h2 id="lifecycle">8. Detailed lifecycle and failure sequences</h2>
+
+  <h3>Opening and closing a peer</h3>
+  <ol>
+    <li>A session creates an exec or service process with <code>daggerNesting: INDEPENDENT_SESSIONS</code>.</li>
+    <li>The executor starts one independent-mode listener and injects its port plus <code>DAGGER_NESTING=INDEPENDENT_SESSIONS</code>.</li>
+    <li>The process starts a normal SDK client.</li>
+    <li>The SDK sees <code>DAGGER_NESTING=INDEPENDENT_SESSIONS</code> and starts its local <code>dagger session</code> helper instead of directly joining the inherited endpoint.</li>
+    <li>The helper generates fresh client identities, runs <code>startSession</code>, and connects through the inherited listener.</li>
+    <li>The engine atomically records the listener claim and creates peer session Q.</li>
+    <li>The process is Q's main client and supplies Q's attachables.</li>
+    <li>Queries through that client acquire Q's session roots.</li>
+    <li>A later SDK <code>Connect</code> call from the same process may create another peer.</li>
+    <li>Closing the SDK client closes Q's main connection.</li>
+    <li>Q stops Q-owned services and runs <code>Cache.ReleaseSession(Q)</code>.</li>
+  </ol>
+
+  <h3>Failure before a connected client handle exists</h3>
+  <p>The CLI generates Q's <code>SessionID</code> before its first engine request.</p>
+  <p>The listener records its claim atomically with fresh-session publication.</p>
+  <p>The CLI does not publish local connect JSON until initialization succeeds.</p>
+  <p>If attachable upgrade, telemetry subscription, <code>/init</code>, or output fails, client cleanup closes the upgraded connection.</p>
+  <p>Process-listener cleanup terminates a claimed peer if ordinary disconnect cleanup has not already done so.</p>
+
+  <h3>Parent termination while a peer remains connected</h3>
+  <p>The parent session calls <code>core.Services.StopSessionServices</code>.</p>
+  <p>The containing process is canceled.</p>
+  <p><code>engine/engineutil</code> marks its listener closing, rejects new sessions, and closes accepted connections.</p>
+  <p>The peer's main attachable connection loses its transport.</p>
+  <p><code>releaseClientConnection</code> schedules peer reap.</p>
+  <p>Listener cleanup races that reap idempotently for each claimed peer.</p>
+  <p>Peer services stop before peer cache release.</p>
+
+  <h3>Peer close while the containing process remains alive</h3>
+  <p>The peer's <code>/shutdown</code> drains workspace locks, stops peer services, and flushes peer telemetry.</p>
+  <p>The main attachable connection closes.</p>
+  <p>Session teardown continues in the background.</p>
+  <p>The containing process remains alive because its lifecycle belongs to the session that created it.</p>
+  <p>It may exit, remain disconnected, or open another peer.</p>
+  <p>API state from the closed peer is gone with that session.</p>
+
+  <h3>Transport loss and reconnect</h3>
+  <p>An ordinary session has a narrow reconnect race before scheduled reap acquires the lifecycle lock.</p>
+  <p>The independent listener permits reconnection only to a session and main-client tuple already in its own claim set.</p>
+  <p>Current SDK connect parameters do not provide a durable reconnection contract across CLI process loss.</p>
+  <p>Phase one treats loss of the peer CLI or main attachable connection as loss of the peer session.</p>
+  <p>The application opens a new peer and rebuilds API state from its own durable application state.</p>
+  <p>Do not describe this as detachable reconnect.</p>
+
+  <h3>Child service must survive main-client disconnect</h3>
+  <p>An ordinary peer always stops its services when its main client closes.</p>
+  <p>The main process may keep its connection open for the full service lifetime.</p>
+  <p>If a child service must survive that disconnect, the peer itself needs detachable semantics.</p>
+  <p>That case requires scoped session-ID retention, termination authority, and attachment recovery.</p>
+  <p>It is a separate phase.</p>
+  <p>Phase one requires the main connection to remain open for the required peer lifetime.</p>
+
+  <h3>Engine shutdown or restart</h3>
+  <p><code>Server.GracefulStop</code> terminates every live session.</p>
+  <p>All peer and parent service processes stop.</p>
+  <p>In-memory listener claims, session roots, and client records disappear.</p>
+  <p>Persisted cache records follow existing clean-shutdown behavior.</p>
+  <p>Application storage follows its existing persistence semantics.</p>
+  <p>No peer or detachable P0 session reconnects after restart.</p>
+
+  <h2 id="portability">9. Session-boundary rule</h2>
+
+  <div class="finding">
+    <strong>An independent process behaves like any external main client that opens a new ordinary session.</strong>
+    Dagger object IDs do not cross that session boundary.
+    The design adds no cross-session handoff or resource translation.
+    The process's filesystem, environment, and network are simply the new client's execution environment.
+    Everything else follows existing ordinary-session behavior.
+  </div>
+
+  <h2 id="cleanup">10. Existing session cleanup is the lifetime boundary</h2>
+
+  <p><code>engine/server.removeDaggerSession</code> already defines ordinary session teardown.</p>
+  <p>It stops that session's work and services, removes its clients and providers, and calls <code>Cache.ReleaseSession</code> after in-flight DagQL work drains.</p>
+  <p>This releases the peer's active cache roots. It does not promise immediate deletion of persisted DagQL or BuildKit cache data.</p>
+  <p>It does not affect roots owned by the parent session or another peer.</p>
+
+  <div class="decision">
+    <strong>Closing a peer does not make the parent forget the graph used to create the containing process.</strong>
+    The parent continues to retain every result it observed while creating that process.
+    Stopping a service process releases its live service lease.
+    It does not remove the parent's DagQL session roots.
+  </div>
+
+  <p>The peer still removes the separate API graph created through the peer.</p>
+  <p>It does not release unrelated parent-session intermediates.</p>
+  <p>If the remaining parent growth is material, the application must move more work into peers, periodically replace its parent session, or revisit the first-track design.</p>
+  <p>The peer boundary also removes the peer's other ordinary session state. It does not bound engine-global persisted data or parent-session state.</p>
+
+  <h2 id="operations">11. Concurrency, inspection, limits, races, and performance</h2>
+
+  <h3>Concurrent sessions from one process</h3>
+  <p>The server stores sessions in <code>Server.daggerSessions</code> by <code>SessionID</code>.</p>
+  <p>One process may run several local <code>dagger session</code> children.</p>
+  <p>Each child creates a peer with one main attachable connection.</p>
+  <p>No hard session-count or client-count limit was found in the reviewed code.</p>
+  <p><code>Server.ConnectedClients</code> currently returns the number of <code>daggerSessions</code>, despite its name.</p>
+  <p><code>engine/clientdb/store_stream.go</code> targets a 2 MiB in-memory tail and applies a 32 MiB blocking hard cap to each of the three telemetry streams by default.</p>
+  <p>Older rows spill to append-only files, so the cap bounds a stream's live tail rather than its disk history.</p>
+  <p><code>removeDaggerSession</code> gives teardown a 60-second safeguard context.</p>
+  <p><code>engine/client.Client.shutdownServer</code> uses a 10-second default client timeout, configurable through <code>_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT</code>.</p>
+
+  <h3>Per-session fixed cost</h3>
+  <ul>
+    <li>One <code>daggerSession</code>, resolver, auth source, attachable manager, service manager, analytics object, and lifecycle state.</li>
+    <li>At least one full <code>daggerClient</code>, forked schema, engine utility client, root query, workspace state, and module state.</li>
+    <li>One tracer provider, logger provider, meter provider, exporters, and periodic metric reader.</li>
+    <li>One keepalive client database with span, log, and metric streams.</li>
+    <li>One upgraded attachable connection and ordinary HTTP and telemetry connections.</li>
+    <li>One local CLI process for SDKs that use <code>dagger session</code>.</li>
+  </ul>
+
+  <p>Peer sessions are appropriate where a full session is the intended lifetime boundary.</p>
+  <p>They are not appropriate per GraphQL field or module call.</p>
+
+  <h3>Measured warmed baseline</h3>
+  <p>A disposable source-built integration probe used the current direct Go SDK and CLI path against one warmed dev engine.</p>
+  <p>It discarded one warmup and measured five sequential peers.</p>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Measurement</th><th>Observed values</th><th>Interpretation</th></tr></thead><tbody>
+    <tr><td><code>dagger.Connect</code></td><td>65.6, 107.4, 113.0, 126.2, and 132.0 ms</td><td>Includes local CLI process startup and top-level attachable establishment.</td></tr>
+    <tr><td>First <code>version</code> query</td><td>28.5, 47.8, 47.8, 53.2, and 55.5 ms</td><td>A trivial warmed query.</td></tr>
+    <tr><td><code>Client.Close</code></td><td>215.7, 217.9, 220.4, 222.6, and 223.0 ms</td><td>Includes client telemetry and process orchestration. Engine shutdown-drain logs were sub-millisecond in this no-work case.</td></tr>
+    <tr><td>Ten concurrent full cycles</td><td>548.8 ms wall time</td><td>Shows no immediate serialization at ten peers on this host.</td></tr>
+  </tbody></table></div>
+
+  <p>These values are one warmed development host.</p>
+  <p>They are an upper-bound baseline for the current CLI-mediated route, not a production service-level objective.</p>
+  <p>They do not measure memory, file descriptors, heavy cache release, or service shutdown.</p>
+
+  <h3>Required production benchmark</h3>
+  <ol>
+    <li>Measure 1, 10, 100, and the expected maximum concurrent ordinary peers.</li>
+    <li>Separate CLI spawn, claim registration, attachable readiness, <code>/init</code>, first query, <code>/shutdown</code>, background session removal, and post-close GC.</li>
+    <li>Record p50, p95, and p99 latency.</li>
+    <li>Record engine and client RSS, heap, goroutines, processes, file descriptors, sockets, clientdb bytes, and DagQL root counts.</li>
+    <li>Repeat with 0, 1,000, and 100,000 peer-owned DagQL results.</li>
+    <li>Repeat with representative processes and active services.</li>
+    <li>Force parent termination during every startup and teardown phase.</li>
+    <li>Wait past the one-hour clientdb retention window and verify disk returns to baseline.</li>
+  </ol>
+
+  <h3>Listing, inspection, attachment, and termination</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Operation</th><th>Phase-one behavior</th></tr></thead><tbody>
+    <tr><td>List</td><td>The engine's detachable-session list remains unchanged. Engine diagnostics may count all live sessions.</td></tr>
+    <tr><td>Inspect</td><td>Engine logs and telemetry use SessionID. No new public ordinary-session inspection route is required initially.</td></tr>
+    <tr><td>Attach</td><td>Unsupported for ordinary peers. Do not apply P0 observer semantics implicitly.</td></tr>
+    <tr><td>Terminate</td><td>Close the owned SDK client, or stop the containing service. Independent-listener cleanup terminates only that listener's claimed peers as a backstop.</td></tr>
+  </tbody></table></div>
+
+  <h3>Important races</h3>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Race</th><th>Required ordering</th><th>Safe result</th></tr></thead><tbody>
+    <tr><td>Listener cleanup versus first session publication</td><td>Mark the listener closing before enumerating claims. Session creation checks that state while it atomically records the listener claim.</td><td>The new session is rejected or included in cleanup.</td></tr>
+    <tr><td>Attachable upgrade versus process exit</td><td>Process cleanup closes the listener and accepted connections. A claimed session is torn down even if the client never receives the upgrade response.</td><td>No unreachable ordinary peer.</td></tr>
+    <tr><td>Main disconnect versus reconnect</td><td>Existing <code>reapDaggerSession</code> rechecks <code>activeCount</code> under <code>lifecycleMu</code>.</td><td>A live reconnect wins or teardown wins. A removed tombstone returns a retryable error.</td></tr>
+    <tr><td>Main disconnect versus listener backstop</td><td>Both paths use session lifecycle state and listener-claim checks.</td><td>Exactly one teardown performs cleanup.</td></tr>
+    <tr><td>Peer close versus parent service stop</td><td>Both may close the same transport. Cleanup functions are idempotent and session teardown is single-owner.</td><td>Peer services stop once and cache roots release once.</td></tr>
+    <tr><td>Peer service exit versus session close</td><td><code>StopSessionServices</code> waits for service cleanup before cache release.</td><td>Service callbacks do not run against released session state.</td></tr>
+    <tr><td>Engine shutdown versus listener cleanup</td><td>Both select on server shutdown and session lifecycle state.</td><td>No listener waiter prevents <code>GracefulStop</code>.</td></tr>
+  </tbody></table></div>
+
+  <h2 id="options">12. Options and direct comparison</h2>
+
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Option</th><th>Lifetime boundary</th><th>What it solves</th><th>Main costs and failures</th><th>Assessment</th></tr></thead><tbody>
+    <tr><td>A. Current same-session nested clients</td><td>The whole parent session.</td><td>Preserves current module and nested execution behavior with no session startup boundary.</td><td>All nested cache roots and initialized clients remain until the long-running session ends.</td><td class="no">Insufficient when the process needs a shorter lifetime boundary.</td></tr>
+    <tr><td>B. First-track client-specific cache ownership</td><td>Client epochs, service owners, and module handoff gates inside one session.</td><td>Fine-grained same-session DagQL root release without sacrificing object graph interoperability.</td><td>Changes every DagQL acquisition path, resource bindings, prune roots, service ownership, module returns, nested lifetime signals, and stale client epochs. It does not initially remove client-map or telemetry retention.</td><td class="conditional">Necessary only when same-session fine granularity is required.</td></tr>
+    <tr><td>C. Independent peer session</td><td>An ordinary session opened by the opted-in process.</td><td>Bounds the process's API graph with existing session ownership and cleanup.</td><td>Needs the independent handler on the existing process listener and internal SDK environment routing. The parent still retains the graph used to create the containing process.</td><td class="yes">Recommended where a full session is the right boundary.</td></tr>
+    <tr><td>D. Raw engine endpoint in the process</td><td>A normal top-level session created through the raw transport.</td><td>Mechanically works with current direct connection code.</td><td>Grants engine-wide session control, accepts arbitrary session identities, exposes a broad engine capability, and is awkward under current SDK env precedence.</td><td class="no">Reject as a product surface.</td></tr>
+    <tr><td>E. Cache-only sub-session inside one <code>daggerSession</code></td><td>A new synthetic owner scope.</td><td>Could avoid a full resolver and telemetry stack.</td><td>Must add a second ownership model across cache and session cleanup paths. This converges on first-track machinery.</td><td class="no">No simpler code-supported boundary was found.</td></tr>
+  </tbody></table></div>
+
+  <h3>Is there a narrower current API?</h3>
+  <p>Existing leases and handles scope individual subsystems.</p>
+  <p>None scopes a complete client, service manager, resource table, and cache roots together.</p>
+  <p><code>core.Services</code> is already a useful process boundary, but its lifetime remains inside one session.</p>
+  <p>The existing full <code>daggerSession</code> is the narrowest coherent resource scope found in current code.</p>
+
+  <h2 id="first-track">13. Critical comparison with client-specific cache ownership</h2>
+
+  <p>The first-track document is technically serious.</p>
+  <p>It correctly finds that no client-owned cache reference exists today.</p>
+  <p>It correctly rejects release at <code>activeCount == 0</code>.</p>
+  <p>It identifies real module return and service callback handoff gaps.</p>
+  <p>It also states that its cache change does not solve retained <code>daggerClient</code> objects or telemetry files.</p>
+
+  <h3>Machinery avoided by a peer</h3>
+  <ul>
+    <li>No new <code>CacheOwner</code> registry or owner kind.</li>
+    <li>No owner context on every cache hit, miss, waiter, attach, receiver, list child, and ID load.</li>
+    <li>No owner-indexed arbitrary-call roots, provenance, or prune union.</li>
+    <li>No client-epoch resource-binding sequence and conditional unbind.</li>
+    <li>No service cache owner beside the existing service lease.</li>
+    <li>No module function return gate.</li>
+    <li>No <code>moduleTypes</code> result handoff gate.</li>
+    <li>No same-client retired-epoch schema replacement rule.</li>
+    <li>No explicit-owner failure mode in detachable GraphQL contexts.</li>
+  </ul>
+
+  <p>The peer uses the existing session owner for all of these categories.</p>
+  <p>It calls the existing <code>ReleaseSession</code> only when the coherent peer ends.</p>
+
+  <h3>Costs unique to a peer</h3>
+  <ul>
+    <li>A fresh-session handler on the existing process listener and claim-checked ordinary-session cleanup.</li>
+    <li>Internal SDK and engine-client routing based on the injected listener mode.</li>
+    <li>One full session stack per active peer.</li>
+    <li>The opening process must retain each SDK client handle it intends to close explicitly.</li>
+  </ul>
+
+  <h3>Cases the first track handles better</h3>
+  <p>A module function can return an object to its caller without crossing sessions.</p>
+  <p>A long-running same-session service can release one callback client's intermediate roots while the service continues.</p>
+  <p>A short helper need not pay full peer startup cost.</p>
+
+  <h3>Cases the peer handles better</h3>
+  <p>Closing a peer releases the whole peer session rather than only its cache owner.</p>
+  <p>It removes the peer's client map, resolver, services, workspace state, session resources, and telemetry providers.</p>
+  <p>It reuses heavily tested session teardown instead of adding a second liveness graph inside DagQL.</p>
+  <p>Its principal correctness boundary is transport and session creation.</p>
+
+  <div class="decision">
+    <strong>Recommendation relative to first-track work:</strong>
+    implement and soak restricted ordinary peers before client-specific cache ownership for this use case.
+    Treat the first track as deferred.
+    Resume it only if measurement shows unacceptable parent-session growth or if one peer itself needs smaller lifetimes.
+  </div>
+
+  <p>C does not make B obsolete.</p>
+  <p>C solves a coarser subset with less cache machinery.</p>
+
+  <h2 id="changes">14. Exact proposed package, file, type, and function changes</h2>
+
+  <h3>Core API and service values</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>File</th><th>Change</th></tr></thead><tbody>
+    <tr><td><code>core/dagger_nesting.go</code></td><td>Define the public <code>DaggerNesting</code> enum with <code>NESTED_CLIENT</code> and <code>INDEPENDENT_SESSIONS</code>.</td></tr>
+    <tr><td><code>core/schema/query.go</code></td><td>Install the complete enum with <code>core.DaggerNestings.Install(srv, AfterVersion("v1.0.0-0"))</code>. The registry symbol name may follow repository naming, but the view must apply to the whole enum.</td></tr>
+    <tr><td><code>core/container_exec.go</code></td><td>Add optional <code>DaggerNesting</code> to <code>ContainerExecOpts</code>. Keep <code>ExperimentalPrivilegedNesting</code>. Reject a true legacy flag together with any enum value. Resolve both APIs to one internal mode for <code>engineutil.Client.Run</code>.</td></tr>
+    <tr><td><code>core/container.go</code></td><td>Add the enum to <code>ContainerAsServiceArgs</code> and preserve it in service construction. Keep the legacy field.</td></tr>
+    <tr><td><code>core/service.go</code></td><td>Add and persist the enum on <code>Service</code>. Retain the persisted legacy boolean for compatibility. Resolve either form before service execution.</td></tr>
+    <tr><td><code>core/schema/container.go</code>, <code>core/schema/service.go</code>, and <code>core/schema/directory.go</code></td><td>Expose, validate, and replay <code>daggerNesting</code> anywhere the legacy argument appears. Apply <code>View(AfterVersion("v1.0.0-0"))</code> to every new argument. Keep the legacy argument unchanged before v1 and mark its v1 view deprecated with “Use daggerNesting: NESTED_CLIENT.”</td></tr>
+    <tr><td><code>core/terminal.go</code></td><td>Propagate the enum through terminal exec helpers while preserving the legacy compatibility path.</td></tr>
+    <tr><td><code>core/sdk.go</code> and SDK runtime construction call sites</td><td>Migrate Dagger-owned module runtime execs from the deprecated flag to <code>NESTED_CLIENT</code>. Their session behavior remains unchanged.</td></tr>
+    <tr><td>Generated schemas and SDKs</td><td>Regenerate option structs and documentation after the reviewed core field lands.</td></tr>
+  </tbody></table></div>
+
+  <h3>Executor-side listener mode</h3>
+  <pre><code>type DaggerNestingMode uint8
+
+const (
+    DaggerNestingNone DaggerNestingMode = iota
+    DaggerNestingNestedClient
+    DaggerNestingIndependentSessions
+)
+
+type sessionHandler interface {
+    ServeHTTPToNestedClient(...)
+    ServeHTTPToIndependentClient(
+        http.ResponseWriter,
+        *http.Request,
+        string, // process listener ID
+    )
+    CloseIndependentClientListener(context.Context, string) error
+}</code></pre>
+
+  <div class="table-wrap"><table class="medium"><thead><tr><th>File</th><th>Change</th></tr></thead><tbody>
+    <tr><td><code>engine/engineutil/client.go</code></td><td>Extend the internal <code>sessionHandler</code> interface. Keep these APIs in-process.</td></tr>
+    <tr><td><code>engine/engineutil/executor.go</code></td><td>Carry one optional <code>DaggerNestingMode</code>. Nested-client mode also carries the existing fixed metadata. Independent-sessions mode carries only an internal listener ID.</td></tr>
+    <tr><td><code>engine/engineutil/executor_spec.go</code></td><td>Generalize <code>setupNestedClient</code> to select one handler while reusing its loopback HTTP/1 and h2c listener, environment injection, server pool, and process cleanup. Keep the current token injection in nested-client mode. Independent mode injects no listener token. Inject <code>DAGGER_NESTING</code> for the new enum and keep it absent for the deprecated flag.</td></tr>
+  </tbody></table></div>
+
+  <h3>Server-side listener claims and cleanup</h3>
+  <pre><code>type independentClientListener struct {
+    ID       string
+    closing  bool
+    sessions map[string]mainClientClaim
+}
+
+type ClientInitOpts struct {
+    // existing fields
+    IndependentClientListenerID string
+    RequireFreshSession         bool
+}
+
+type daggerSession struct {
+    // existing fields
+    independentClientListenerID string
+}</code></pre>
+
+  <div class="table-wrap"><table class="medium"><thead><tr><th>File</th><th>Change</th></tr></thead><tbody>
+    <tr><td><code>engine/server/session.go</code></td><td>Add <code>ServeHTTPToIndependentClient</code> beside <code>ServeHTTPToNestedClient</code>. Reject control and detachable roles, parse normal top-level client metadata, and atomically enforce fresh-or-same-listener-claim rules. Do not add listener-token admission. Keep normal <code>initializeDaggerSession</code>, <code>initializeDaggerClient</code>, <code>serveSessionAttachables</code>, <code>serveQuery</code>, and <code>removeDaggerSession</code>.</td></tr>
+    <tr><td><code>engine/server/server.go</code></td><td>Store process-listener claim state and expose aggregate diagnostics. Do not expose listener IDs as metric labels.</td></tr>
+    <tr><td><code>engine/server/session_control.go</code></td><td>Leave public detachable-session control unchanged. Reuse only package-private teardown primitives after listener-claim validation.</td></tr>
+  </tbody></table></div>
+
+  <p>Listener closure first marks the claim set closing.</p>
+  <p>It then prevents new peer publication.</p>
+  <p>It finds only sessions claimed by the exact process listener.</p>
+  <p>It invokes ordinary teardown through lifecycle state.</p>
+  <p>It waits with the same bounded session-shutdown safeguard used by engine shutdown.</p>
+
+  <h3>Engine client and CLI</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>File</th><th>Change</th></tr></thead><tbody>
+    <tr><td><code>engine/client/client.go</code></td><td>Parse <code>DAGGER_NESTING</code> when <code>DAGGER_SESSION_PORT</code> is present. Treat absent and <code>NESTED_CLIENT</code> as the current nested branch. For <code>INDEPENDENT_SESSIONS</code>, use the inherited port without requiring <code>DAGGER_SESSION_TOKEN</code>, preserve the normally generated <code>ClientSecretToken</code>, skip <code>startEngine</code>, and execute <code>startSession</code>, telemetry, init, query, and shutdown. Reject unknown values.</td></tr>
+    <tr><td><code>internal/cmd/dagger/session.go</code></td><td>No session-mode flag. Inherit the listener environment through normal provisioning and include optional <code>session_id</code> in <code>connectParams</code>.</td></tr>
+    <tr><td><code>internal/cmd/dagger/sessions.go</code></td><td>No phase-one semantic change. An ordinary peer remains managed through its opening client.</td></tr>
+  </tbody></table></div>
+
+  <h3>SDK connection packages</h3>
+  <ul>
+    <li><code>sdk/go/engineconn/engineconn.go</code> and <code>sdk/go/engineconn/session.go</code>: inspect <code>DAGGER_NESTING</code> before requiring the legacy port-and-token pair. When it is <code>INDEPENDENT_SESSIONS</code>, require only the port, skip direct <code>FromSessionEnv</code>, and start the normal CLI session helper. Add no public connect option.</li>
+    <li><code>sdk/python/src/dagger/client/_session.py</code> and its provisioning path: make the same environment-driven routing change.</li>
+    <li><code>sdk/typescript/src/common/graphql/connect.ts</code> and <code>sdk/typescript/src/provisioning/engineconn.ts</code>: make the same environment-driven routing change.</li>
+    <li><code>sdk/java/dagger-java-sdk/src/main/java/io/dagger/client/engineconn/Connection.java</code> and provisioning configuration: make the same environment-driven routing change.</li>
+    <li><code>sdk/php/src/Connection.php</code>, <code>ProcessSessionConnection.php</code>, and <code>EnvSessionConnection.php</code>: make the same environment-driven routing change.</li>
+    <li><code>sdk/rust/crates/dagger-sdk/src/core/engine.rs</code> and <code>sdk/elixir/lib/dagger/core/engine_conn.ex</code>: make the same environment-driven routing change.</li>
+    <li>Generated module-runtime connection snippets use <code>NESTED_CLIENT</code> and retain current parent-session behavior.</li>
+  </ul>
+
+  <h3>Telemetry and diagnostics</h3>
+  <p>Keep telemetry stores separate per peer.</p>
+  <p>Propagate W3C trace context through the CLI and process listener.</p>
+  <p>Add a low-cardinality session-origin attribute such as <code>dagger.io/session.origin=independent-listener</code>.</p>
+  <p>Do not add parent SessionID or application-specific identifiers as Prometheus labels.</p>
+  <p>Add correct aggregate counts for live sessions, total <code>daggerClient</code> records, listener-claimed sessions, and listener cleanup outcomes.</p>
+
+  <h3>Files intentionally unchanged in semantics</h3>
+  <ul>
+    <li><code>dagql/cache.go</code>, <code>dagql/cache_prune.go</code>, and persistence code keep session ownership.</li>
+    <li><code>core/function.go</code>, module return conversion, and moduleTypes handoff remain unchanged because module runtimes stay same-session.</li>
+    <li><code>core/services.go</code> keeps one service registry per session and current stop ordering.</li>
+    <li><code>engine/clientdb</code> keeps current one-hour collection policy.</li>
+    <li>Detachable P0 request, result, telemetry, attachment, and termination formats remain unchanged.</li>
+  </ul>
+
+  <h2 id="plan">15. Phased implementation plan</h2>
+
+  <h3>Phase 0: prototype and security proof</h3>
+  <ul>
+    <li>Add package-private server and executor test seams.</li>
+    <li>Prototype the fresh-session handler as a mode on the current per-exec listener.</li>
+    <li>Prove that each process has exactly one listener and port.</li>
+    <li>Prove that raw session-control routes, existing SessionIDs, detachable roles, and observer roles are rejected.</li>
+    <li>Measure fixed per-peer resources and teardown with 1, 10, and 100 peers.</li>
+  </ul>
+
+  <h3>Phase 1: Go CLI, Go SDK, and nested exec</h3>
+  <ul>
+    <li>Add the executor listener mode and server-side claim ownership.</li>
+    <li>Add <code>DaggerNesting</code>, deprecate <code>experimentalPrivilegedNesting</code>, and add the environment-driven engine-client branch.</li>
+    <li>Return the optional SessionID from the existing CLI helper.</li>
+    <li>Teach the Go SDK to provision the CLI when it inherits <code>INDEPENDENT_SESSIONS</code>.</li>
+    <li>Expose <code>daggerNesting</code> on <code>withExec</code>.</li>
+    <li>Support ordinary peers only.</li>
+  </ul>
+
+  <h3>Phase 2: services and process lifecycle</h3>
+  <ul>
+    <li>Propagate the capability through <code>asService</code> and service execution.</li>
+    <li>Add opted-in exec and service process fixtures.</li>
+    <li>Add application-visible SessionID and required aggregate diagnostics.</li>
+    <li>Run peer close, process stop, process crash, parent termination, and engine shutdown tests.</li>
+    <li>Soak peer creation and teardown before SDK expansion.</li>
+  </ul>
+
+  <h3>Phase 3: SDK parity</h3>
+  <ul>
+    <li>Add environment-driven independent routing to every host SDK connection package.</li>
+    <li>Keep generated module runtimes on <code>NESTED_CLIENT</code>.</li>
+    <li>Add language-specific marker, precedence, and malformed-environment tests.</li>
+  </ul>
+
+  <h3>Phase 4: operational hardening</h3>
+  <ul>
+    <li>Set reviewed concurrency and resource limits if benchmarks require them.</li>
+    <li>Add process-listener-scoped list and terminate only if an operational need is demonstrated.</li>
+    <li>Add operator diagnostics for stale claims and cleanup duration.</li>
+    <li>Run a month-scale accelerated churn soak with representative application state.</li>
+  </ul>
+
+  <h3>Deferred phase: detachable peers</h3>
+  <ul>
+    <li>Define why a peer service must survive main disconnect.</li>
+    <li>Define scoped attachment and termination authority.</li>
+    <li>Reuse P0 state transitions only after proving independent-listener claims cannot reach unrelated sessions.</li>
+    <li>Keep engine restart outside the guarantee.</li>
+  </ul>
+
+  <h3>Decision gate before first-track cache ownership</h3>
+  <p>Measure parent session roots, client count, clientdb bytes, and heap after realistic process and peer churn.</p>
+  <p>Measure the same state inside a long-lived peer.</p>
+  <p>Proceed to client-specific cache ownership only if the remaining same-session slope is material and cannot be addressed by a clearer peer boundary.</p>
+
+  <h2 id="tests">16. Unit, race, engine lifecycle, integration, and fault-injection plan</h2>
+
+  <h3>Engine server unit tests</h3>
+  <ul>
+    <li>An independent-mode request creates a fresh ordinary <code>daggerSession</code> and the first client is main.</li>
+    <li>The independent handler cannot join a pre-existing parent, unrelated peer, or detachable session.</li>
+    <li>A second process listener cannot claim the same SessionID.</li>
+    <li>The same listener and exact main-client tuple may continue its own open peer.</li>
+    <li>Wrong client token, client ID, or listener claim fails.</li>
+    <li>Every session-control path returns forbidden.</li>
+    <li>Detachable, observer, and attachment metadata is rejected.</li>
+    <li>Listener close rejects new publication and terminates every exact claimed ordinary peer.</li>
+    <li>Listener close cannot terminate an unclaimed ordinary session or any detachable session.</li>
+    <li>Duplicate disconnect and listener cleanup perform one teardown.</li>
+    <li>One listener can claim several distinct ordinary peers without sharing their session state.</li>
+  </ul>
+
+  <h3>Engine client and SDK unit tests</h3>
+  <ul>
+    <li><code>DAGGER_SESSION_PORT</code> without <code>DAGGER_NESTING</code> joins the parent exactly as today.</li>
+    <li><code>DAGGER_NESTING=NESTED_CLIENT</code> also joins the parent through the direct environment-session connector.</li>
+    <li><code>DAGGER_NESTING=INDEPENDENT_SESSIONS</code> makes every host SDK provision the local CLI.</li>
+    <li>The CLI's engine client reuses the inherited port, keeps its freshly generated client token, skips <code>startEngine</code>, and runs <code>startSession</code>.</li>
+    <li><code>INDEPENDENT_SESSIONS</code> supplies normal attachables, stable-client metadata, cache configuration, and client profile.</li>
+    <li>Independent mode reads one inherited port and does not require an inherited token.</li>
+    <li>An unknown <code>DAGGER_NESTING</code> value fails instead of joining the parent or provisioning another engine.</li>
+    <li>A missing port fails before any engine request.</li>
+    <li>A missing <code>DAGGER_SESSION_TOKEN</code> is valid in independent mode.</li>
+    <li>The CLI does not write connect JSON before full connection readiness.</li>
+    <li>The CLI includes the optional peer SessionID.</li>
+    <li>Closing the SDK closes the local CLI and ordinary peer.</li>
+    <li>Two SDK <code>Connect</code> calls under one independent listener create two peer SessionIDs.</li>
+  </ul>
+
+  <h3>Core and service unit tests</h3>
+  <ul>
+    <li>Omitting both APIs gives the process no Dagger endpoint.</li>
+    <li>Each <code>DaggerNesting</code> value selects its documented mode.</li>
+    <li>Pre-v1 schema views contain neither <code>DaggerNesting</code> nor any <code>daggerNesting</code> argument.</li>
+    <li>V1 schema views contain the complete enum and every new argument.</li>
+    <li><code>TestBaseSchemaAllowlist</code> remains unchanged.</li>
+    <li><code>experimentalPrivilegedNesting: true</code> retains current behavior and appears as deprecated in v1 introspection and generated SDK documentation.</li>
+    <li>Setting the legacy flag to true with any enum value returns a deterministic input error.</li>
+    <li>Service persistence and decode preserve both the enum and legacy compatibility field.</li>
+    <li>The executor opens exactly one Dagger listener in the selected <code>DaggerNesting</code> mode.</li>
+    <li>A module runtime receives <code>NESTED_CLIENT</code>, never <code>INDEPENDENT_SESSIONS</code>, through internal SDK setup.</li>
+    <li>A peer-owned service remains in the peer <code>core.Services</code> registry and stops at peer close.</li>
+  </ul>
+
+  <h3>Race tests</h3>
+  <ul>
+    <li>Race independent-listener close against new session registration before and after registry publication.</li>
+    <li>Race process exit against attachable hijack and acknowledgment.</li>
+    <li>Race ordinary main disconnect, reconnect, and listener backstop.</li>
+    <li>Race peer <code>/shutdown</code> against parent session termination.</li>
+    <li>Race peer service exit against peer teardown.</li>
+    <li>Race two concurrent peers from one listener with the same and different generated IDs.</li>
+    <li>Run existing session tombstone, reconnect, and duplicate-reap tests under <code>-race</code>.</li>
+  </ul>
+
+  <h3>Source-built core and integration tests</h3>
+  <ul>
+    <li>Use <code>dagger api call engine-dev test</code> for every engine-backed test.</li>
+    <li>Start a long-running parent fixture and an opted-in service process.</li>
+    <li>Prove the process opens a different SessionID and is that peer's main client.</li>
+    <li>Prove both the deprecated flag and <code>NESTED_CLIENT</code> use the parent SessionID.</li>
+    <li>Prove a module function remains in the caller session and returns its normal result.</li>
+    <li>Have the opted-in process start a service and nested exec in its peer.</li>
+    <li>Close the peer and prove those children stop while the containing process remains until explicitly stopped.</li>
+    <li>Stop the containing process first and prove the peer disappears.</li>
+    <li>Terminate the parent session and prove all ordinary peers disappear.</li>
+    <li>Attempt every global session-control route through the independent listener and assert forbidden.</li>
+    <li>Set the legacy flag to true with either enum value and assert failure before process creation.</li>
+    <li>Inspect each process environment and prove the legacy path has no new marker, both enum paths contain the exact selected value, and independent mode has no inherited <code>DAGGER_SESSION_TOKEN</code>.</li>
+    <li>Open two peers from one process and prove closing one does not affect the other.</li>
+  </ul>
+
+  <h3>Cache and cleanup assertions</h3>
+  <ul>
+    <li>Record DagQL session roots before peer creation, at peak, after peer removal, and after normal prune.</li>
+    <li>Assert the closed peer no longer appears in session-root snapshots.</li>
+    <li>Assert peer session resources and volatile variables disappear.</li>
+    <li>Assert service leases disappear after service stop.</li>
+    <li>Separate persisted DagQL entries and BuildKit cache records from active peer ownership.</li>
+    <li>Assert the parent roots do not falsely appear to decrease.</li>
+    <li>Wait through clientdb garbage collection and assert closed-peer files disappear.</li>
+  </ul>
+
+  <h3>Fault-injection seams</h3>
+  <p>Add package-private channel hooks at these exact boundaries:</p>
+  <ul>
+    <li>after an independent request enters the listener handler and before metadata parse;</li>
+    <li>after fresh-session reservation and before <code>daggerSession</code> publication;</li>
+    <li>after publication and before attachable upgrade response;</li>
+    <li>after the attachable acknowledgment and before local connect JSON;</li>
+    <li>after <code>/init</code> and before telemetry subscription reports ready;</li>
+    <li>after listener closing state is set and before claimed-session enumeration;</li>
+    <li>after peer service cancellation and before service lease release;</li>
+    <li>after <code>Cache.ReleaseSession</code> starts and before session registry deletion.</li>
+  </ul>
+  <p>Hooks block on channels.</p>
+  <p>They do not sleep.</p>
+  <p>They are nil outside tests.</p>
+
+  <h3>Performance and soak tests</h3>
+  <ul>
+    <li>Run the benchmark described in section 11 on source-built engine code.</li>
+    <li>Run at expected production concurrency with representative process images, active services, and telemetry.</li>
+    <li>Churn at least 10,000 peers while preserving a fixed set of active peers.</li>
+    <li>Fit a slope to post-prune engine heap, active roots, goroutines, file descriptors, and clientdb bytes.</li>
+    <li>Run a 24-hour soak before deciding that extrapolation to one month is acceptable.</li>
+  </ul>
+
+  <h2 id="acceptance">17. Acceptance criteria</h2>
+
+  <ol>
+    <li>The default nested SDK path is byte-for-byte compatible in metadata and lifecycle behavior.</li>
+    <li><code>DaggerNesting</code> has exactly <code>NESTED_CLIENT</code> and <code>INDEPENDENT_SESSIONS</code>.</li>
+    <li>The complete enum and every new public argument use <code>AfterVersion("v1.0.0-0")</code>; pre-v1 schema and generated SDK surfaces remain unchanged.</li>
+    <li><code>experimentalPrivilegedNesting</code> retains current behavior, is deprecated in v1 views, and conflicts with an explicitly selected enum value.</li>
+    <li><code>INDEPENDENT_SESSIONS</code> uses exactly one per-process listener and port and receives no inherited listener token.</li>
+    <li>Application SDK calls need no independent-session selector because the containing exec fixes the listener mode.</li>
+    <li>Module function and generated module-runtime behavior remain unchanged.</li>
+    <li>An explicitly opted-in service can create a fresh ordinary peer and become its main client.</li>
+    <li>The peer has a different SessionID from the containing session.</li>
+    <li>The independent listener cannot reach global session control or join another listener's session.</li>
+    <li>Stopping the containing process removes every peer claimed by its listener.</li>
+    <li>Closing a peer stops only peer-owned services and does not directly cancel the parent-owned process.</li>
+    <li>Parent termination eventually removes all dependent ordinary peers without a leaked session, service, lease, listener, goroutine, or client provider.</li>
+    <li><code>Cache.ReleaseSession</code> removes the peer's active roots and resources.</li>
+    <li>Tests distinguish those releases from persisted DagQL and BuildKit cache retention.</li>
+    <li>Independent clients follow ordinary main-client semantics, and the design adds no cross-session ID support.</li>
+    <li>The peer lifecycle passes focused race tests and a 24-hour churn soak.</li>
+    <li>Per-peer startup and teardown meet a reviewed service-level objective measured on production-like hardware.</li>
+    <li>The parent-session retention slope is measured before first-track work is canceled.</li>
+    <li>Engine restart remains documented as terminal for every live session.</li>
+  </ol>
+
+  <h2 id="risks">18. Risks and unresolved decisions</h2>
+
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Decision</th><th>Why it matters</th><th>Recommended default</th></tr></thead><tbody>
+    <tr><td>Does one process need parent-session access and independent-session creation at the same time?</td><td><code>DaggerNesting</code> selects one listener mode. Supporting both would require two capabilities or a per-connection selector.</td><td>Assume no in phase one.</td></tr>
+    <tr><td>Must a peer survive loss of its opening process?</td><td>An ordinary peer ends when its main connections disappear.</td><td>Do not add detachable peers in phase one.</td></tr>
+    <tr><td>Is parent retention of the containing process's construction graph acceptable?</td><td>Peer close does not release parent-session roots. This may still produce a long-running slope.</td><td>Measure first. Revisit first-track ownership if material.</td></tr>
+    <tr><td>What is the intended peer lifetime?</td><td>A long-lived peer does not bound repeated churn inside that peer.</td><td>Use one peer per meaningful lifetime. Avoid per-query peers.</td></tr>
+    <tr><td>Must ordinary peers be listed or terminated through Dagger CLI?</td><td>Adding scoped control increases protocol and authorization work.</td><td>Use owned client handles in phase one.</td></tr>
+    <tr><td>What concurrent peer count must the engine support?</td><td>There is no current hard session limit. Every peer adds a CLI process, providers, connections, and clientdb files.</td><td>Set a limit only after the 1/10/100/target benchmark.</td></tr>
+    <tr><td>How many peers may one independent listener open?</td><td>Every SDK <code>Connect</code> call creates another full peer.</td><td>Allow several. Set an operational limit only after benchmarking.</td></tr>
+    <tr><td>What startup and teardown latency is acceptable?</td><td>The warmed probe is encouraging but not a production SLO.</td><td>Define p95 and p99 targets before rollout.</td></tr>
+    <tr><td>When should the first-track work resume?</td><td>It remains the analyzed design for fine-grained release inside one session.</td><td>Resume only for measured parent or within-peer same-session growth.</td></tr>
+  </tbody></table></div>
+
+  <h3>Principal risks</h3>
+  <ul>
+    <li>The independent handler may accidentally become a raw engine proxy.</li>
+    <li>A session may publish after listener cleanup enumerates claims.</li>
+    <li>An SDK may treat the independent endpoint as an ordinary nested environment connection and omit main-client attachables.</li>
+    <li>An opted-in process may unexpectedly require parent-session access which its selected mode deliberately withholds.</li>
+    <li>Many peers may exhaust file descriptors, processes, clientdb disk, or telemetry capacity before cache memory becomes a problem.</li>
+    <li>The parent may retain significant roots from constructing the containing process.</li>
+    <li>Persisted cache and BuildKit data may be mistaken for a failed session cleanup.</li>
+    <li>Adding independent mode to generated module runtimes would reintroduce the module return handoff problem.</li>
+    <li>Detachable peer support may expand into a second session-control product before ordinary peers are proven.</li>
+  </ul>
+
+  <h2 id="tailcall-example">19. Appendix: Tailcall example</h2>
+
+  <p>Tailcall is one motivating application of this Dagger capability.</p>
+  <p>Its detachable daemon session may live for a month while it creates and retires agent services.</p>
+  <p>A direct mapping is:</p>
+  <ul>
+    <li>the Tailcall daemon uses <code>daggerNesting: NESTED_CLIENT</code> in its long-running parent session;</li>
+    <li>each agent service receives <code>daggerNesting: INDEPENDENT_SESSIONS</code>;</li>
+    <li>the agent becomes main client of its own ordinary peer session;</li>
+    <li>agent-created child processes use <code>NESTED_CLIENT</code> unless they define another autonomous lifetime;</li>
+    <li>archiving an agent stops its containing service, which closes the peer's main connection.</li>
+  </ul>
+  <p>This layout leaves the agent service's construction graph in the daemon's parent session.</p>
+  <p>Tailcall could instead run the daemon process with <code>INDEPENDENT_SESSIONS</code>, open one peer per agent, and create each agent service inside its peer with <code>NESTED_CLIENT</code>.</p>
+  <p>That layout keeps the agent service graph in the peer, but the daemon cannot also join its containing parent session and daemon exit closes every peer it opened.</p>
+  <p>These are Tailcall deployment choices. They are not Dagger modes or client kinds.</p>
+  <p>If retained parent roots remain material, Tailcall can revisit the first-track ownership design.</p>
+  <p>Tailcall's durable application data continues to use existing Dagger storage semantics. This design adds no Tailcall-specific protocol.</p>
+
+  <h2 id="evidence">20. Investigation record and concise conclusion</h2>
+
+  <h3>Source review</h3>
+  <p>The investigation started at <code>322c50b200058c348b1c3a7a2bad306c39413b4b</code>.</p>
+  <p>It read every file under <code>internal-docs</code>, every applicable repository instruction file, both detachable-session HTML documents, the complete P0 commit range and upstream diff, and all P0 implementation and test files.</p>
+  <p>It traced direct and nested connection paths, SDK routing, module runtimes, service lifetime, session cleanup, DagQL ownership, telemetry, clientdb, shutdown, and restart.</p>
+  <p>The independent model and recommendation were fixed before reading the first-track HTML from the secondary worktree.</p>
+  <p>The final transport shape selects one mode on the existing per-process listener.</p>
+
+  <h3>Focused source-built validation</h3>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Command or probe</th><th>Question</th><th>Result</th></tr></thead><tbody>
+    <tr><td><code>dagger api call engine-dev test --pkg ./engine/server --run '^(...six focused lifecycle and nested-control tests...)$'</code></td><td>Do main disconnect, reconnect, duplicate reap, nested role stripping, control-route denial, and ordinary management denial behave as read?</td><td>Passed in 16.8s. Trace <code>723a7db9342c9ea550eb705750ad3646</code>.</td></tr>
+    <tr><td><code>dagger api call engine-dev test --pkg ./dagql --run '^(...five release and resource tests...)$'</code></td><td>What does <code>ReleaseSession</code> collect, retain, and isolate?</td><td>Passed in 18.0s. Trace <code>db90870af77fa0cf39dda7fa4f384d2c</code>.</td></tr>
+    <tr><td><code>dagger api call engine-dev test --pkg ./engine/server --run '^(...three reap tests...)$' --race=true</code></td><td>Are the ordinary disconnect, reconnect, and duplicate-reap paths race-clean?</td><td>Passed in 16.2s. Trace <code>8d74ecff58d9fc1b75afa5ec0c0fcf34</code>.</td></tr>
+    <tr><td>Disposable warmed direct-session timing probe</td><td>Is current peer startup obviously too expensive for a practical lifetime boundary?</td><td>The corrected probe passed in 47.5s overall. Trace <code>4aa6f0ecd8ff94614f3a2dbf156be696</code>. A diagnostic-only final failure emitted the exact samples listed in section 11. Trace <code>4ae9566e6393e5b3078f1910eac097eb</code>.</td></tr>
+  </tbody></table></div>
+
+  <p>The first timing-probe attempt did not compile because it called the generated Go <code>Query</code> field as a method.</p>
+  <p>No engine behavior ran in that attempt.</p>
+  <p>The line was corrected before measurement.</p>
+  <p>The disposable probe file was removed.</p>
+  <p>No production code or investigation test remains.</p>
+  <p>No raw OTLP capture or pprof trace was needed because the focused source-built tests and server logs answered the concrete questions.</p>
+
+  <h3>Conclusion</h3>
+  <div class="finding">
+    <strong>Yes, independent peer sessions can provide a shorter cache lifetime inside a long-running session with materially less machinery.</strong>
+    They are technically possible inside a container when a direct route exists.
+    The current nested route cannot create them.
+    A fresh-session handler selected by <code>DaggerNesting</code> on the existing per-process listener is the simplest safe product design found.
+  </div>
+
+  <p>The reduction is real because the design reuses the current session owner, service manager, resource table, client cleanup, and <code>Cache.ReleaseSession</code>.</p>
+  <p>The reduction is bounded because a full peer is coarser than a client epoch.</p>
+  <p>Closing a peer releases that peer's cache roots and adjacent session state.</p>
+  <p>It does not release the parent session's own roots.</p>
+  <p>It does not solve module or callback churn inside a peer that remains open.</p>
+  <p>Prototype ordinary peers first.</p>
+  <p>Measure the remaining parent and within-peer slopes.</p>
+  <p>Defer the first-track cache-ownership work unless those measurements prove that a peer boundary is too coarse.</p>
+
+</main></body>
+</html>

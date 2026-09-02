@@ -10,6 +10,7 @@ import * as tar from "tar"
 
 import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
+import { withGQLClient } from "../common/graphql/connect.js"
 import { connect, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
@@ -285,6 +286,38 @@ describe("TypeScript sdk Connect", function () {
       fs.rmSync(tempDir, { recursive: true })
       fs.rmSync(cacheDir, { recursive: true })
     })
+  })
+})
+
+describe("DAGGER_NESTING environment", function () {
+  let oldEnv: string
+
+  beforeEach(() => {
+    oldEnv = JSON.stringify(process.env)
+    delete process.env.DAGGER_SESSION_PORT
+    delete process.env.DAGGER_SESSION_TOKEN
+  })
+
+  afterEach(() => {
+    process.env = JSON.parse(oldEnv)
+  })
+
+  it("rejects unknown nesting modes", async function () {
+    process.env.DAGGER_NESTING = "UNKNOWN"
+
+    await assert.rejects(
+      withGQLClient({}, async () => undefined),
+      /unknown DAGGER_NESTING/,
+    )
+  })
+
+  it("requires a port for independent sessions", async function () {
+    process.env.DAGGER_NESTING = "INDEPENDENT_SESSIONS"
+
+    await assert.rejects(
+      withGQLClient({}, async () => undefined),
+      /requires DAGGER_SESSION_PORT/,
+    )
   })
 })
 

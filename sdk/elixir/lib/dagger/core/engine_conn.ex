@@ -14,17 +14,53 @@ defmodule Dagger.Core.EngineConn do
       {:error, :workdir_configure_on_session} = error ->
         error
 
-      _otherwise ->
+      {:error, :no_session} ->
         case from_local_cli(opts) do
           {:ok, conn} -> {:ok, conn}
           {:error, :no_executable} -> from_remote_cli(opts)
           otherwise -> otherwise
         end
+
+      other ->
+        other
     end
   end
 
   @doc false
   def from_session_env(opts) do
+    case System.get_env("DAGGER_NESTING") do
+      nil -> from_nested_session_env(opts)
+      "" -> from_nested_session_env(opts)
+      "NESTED_CLIENT" -> from_explicit_nested_session_env(opts)
+      "INDEPENDENT_SESSIONS" -> from_independent_session_env()
+      unknown ->
+        {:error, {:unknown_dagger_nesting, unknown}}
+    end
+  end
+
+  defp from_explicit_nested_session_env(opts) do
+    case {System.fetch_env("DAGGER_SESSION_PORT"), System.fetch_env("DAGGER_SESSION_TOKEN")} do
+      {:error, _} -> {:error, {:missing_session_port, "NESTED_CLIENT"}}
+      {_, :error} -> {:error, :missing_session_token}
+      _ -> from_nested_session_env(opts)
+    end
+  end
+
+  defp from_independent_session_env do
+    case System.fetch_env("DAGGER_SESSION_PORT") do
+      {:ok, port} -> validate_independent_session_port(port)
+      :error -> {:error, {:missing_session_port, "INDEPENDENT_SESSIONS"}}
+    end
+  end
+
+  defp validate_independent_session_port(port) do
+    case Integer.parse(port) do
+      {parsed, ""} when parsed > 0 -> {:error, :no_session}
+      _ -> {:error, {:invalid_session_port, port}}
+    end
+  end
+
+  defp from_nested_session_env(opts) do
     with {:ok, port} <- System.fetch_env("DAGGER_SESSION_PORT"),
          {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN"),
          false <- Keyword.has_key?(opts, :workdir) do

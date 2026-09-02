@@ -62,8 +62,9 @@ import (
 )
 
 type daggerSession struct {
-	sessionID          string
-	mainClientCallerID string
+	sessionID                   string
+	mainClientCallerID          string
+	independentClientListenerID string
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
@@ -136,6 +137,21 @@ type daggerSession struct {
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
 }
+
+type mainClientClaim struct {
+	session           *daggerSession
+	clientID          string
+	clientSecretToken string
+}
+
+type independentClientListener struct {
+	ID             string
+	closing        bool
+	sessions       map[string]mainClientClaim
+	activeRequests sync.WaitGroup
+}
+
+const independentClientListenerShutdownTimeout = 60 * time.Second
 
 type workspaceLockKey struct {
 	ownerClientID string
@@ -699,17 +715,41 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 // still this exact session pointer. It is used for failed initialization, which
 // does not make the session ID single-use.
 func (srv *Server) deleteSession(sess *daggerSession) {
+	if sess.independentClientListenerID != "" {
+		srv.independentClientListenersMu.Lock()
+		defer srv.independentClientListenersMu.Unlock()
+	}
 	srv.daggerSessionsMu.Lock()
 	if srv.daggerSessions[sess.sessionID] == sess {
 		delete(srv.daggerSessions, sess.sessionID)
+		srv.removeListenerClaimLocked(sess)
 	}
 	srv.daggerSessionsMu.Unlock()
+}
+
+// removeListenerClaimLocked drops the session's exact independent-listener
+// claim, if any. When the session has a listener ID the caller must hold
+// independentClientListenersMu, and daggerSessionsMu in all cases, so claim
+// removal is atomic with registry removal.
+func (srv *Server) removeListenerClaimLocked(sess *daggerSession) {
+	if sess.independentClientListenerID == "" {
+		return
+	}
+	if listener := srv.independentClientListeners[sess.independentClientListenerID]; listener != nil {
+		if claim, ok := listener.sessions[sess.sessionID]; ok && claim.session == sess {
+			delete(listener.sessions, sess.sessionID)
+		}
+	}
 }
 
 // retireSession records a successfully initialized session ID as released and
 // atomically removes that session's registry tombstone. Call only after teardown
 // is complete and lifecycleMu has been released.
 func (srv *Server) retireSession(sess *daggerSession) {
+	if sess.independentClientListenerID != "" {
+		srv.independentClientListenersMu.Lock()
+		defer srv.independentClientListenersMu.Unlock()
+	}
 	srv.daggerSessionsMu.Lock()
 	if srv.daggerSessions[sess.sessionID] == sess {
 		if srv.releasedSessionIDs == nil {
@@ -717,6 +757,7 @@ func (srv *Server) retireSession(sess *daggerSession) {
 		}
 		srv.releasedSessionIDs[sess.sessionID] = struct{}{}
 		delete(srv.daggerSessions, sess.sessionID)
+		srv.removeListenerClaimLocked(sess)
 	}
 	srv.daggerSessionsMu.Unlock()
 }
@@ -816,6 +857,9 @@ type ClientInitOpts struct {
 
 	// If the client is running from a function in a module, this is that function call.
 	FunctionCall *core.FunctionCall
+
+	IndependentClientListenerID string
+	RequireFreshSession         bool
 }
 
 // requires that client.stateMu is held
@@ -1141,6 +1185,62 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 	return client, nil
 }
 
+// getOrCreateDaggerSession atomically publishes an ordinary session and, for
+// independent listeners, its exact main-client claim. Listener state is always
+// locked before the global session registry so listener close and publication
+// have one ordering.
+func (srv *Server) getOrCreateDaggerSession(
+	opts *ClientInitOpts,
+	sessionID string,
+	clientID string,
+	token string,
+) (*daggerSession, bool, error) {
+	var listener *independentClientListener
+	if opts.IndependentClientListenerID != "" {
+		srv.independentClientListenersMu.Lock()
+		defer srv.independentClientListenersMu.Unlock()
+		listener = srv.independentClientListeners[opts.IndependentClientListenerID]
+		if listener == nil || listener.closing {
+			return nil, false, fmt.Errorf("independent client listener %q is closed", opts.IndependentClientListenerID)
+		}
+	}
+
+	srv.daggerSessionsMu.Lock()
+	defer srv.daggerSessionsMu.Unlock()
+	if srv.isShuttingDown() {
+		return nil, false, errServerShuttingDown
+	}
+
+	if listener != nil {
+		if sess := srv.daggerSessions[sessionID]; sess != nil {
+			claim, claimed := listener.sessions[sessionID]
+			if !claimed || claim.session != sess || claim.clientID != clientID || claim.clientSecretToken != token || sess.independentClientListenerID != listener.ID {
+				return nil, false, fmt.Errorf("session %q is not claimed by this independent client listener and exact main client", sessionID)
+			}
+		} else if !opts.RequireFreshSession {
+			return nil, false, errors.New("independent client listener requires a fresh session")
+		}
+	}
+
+	// A newly constructed session is still unreachable when lifecycleMu is
+	// acquired, so this is the one unpublished-object exception to the rule that
+	// lifecycleMu and daggerSessionsMu are not nested. A concurrent
+	// independent-listener request can find the session only after both the
+	// registry entry and listener claim exist; a retired peer ID fails the
+	// released-session check rather than creating a replacement session.
+	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
+	if err != nil {
+		return nil, false, err
+	}
+	if createdSession && listener != nil {
+		sess.independentClientListenerID = listener.ID
+		listener.sessions[sessionID] = mainClientClaim{
+			session: sess, clientID: clientID, clientSecretToken: token,
+		}
+	}
+	return sess, createdSession, nil
+}
+
 // initialize session+client if needed, return:
 // * the initialized client
 // * a cleanup func to run when the call is done
@@ -1174,20 +1274,10 @@ func (srv *Server) getOrInitClient(
 
 	// get or initialize the session as a whole
 
-	srv.daggerSessionsMu.Lock()
-	if srv.isShuttingDown() {
-		srv.daggerSessionsMu.Unlock()
-		return nil, nil, errServerShuttingDown
-	}
-	// A newly constructed session is still unreachable when lifecycleMu is
-	// acquired, so this is the one unpublished-object exception to the rule that
-	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
+	sess, createdSession, err := srv.getOrCreateDaggerSession(opts, sessionID, clientID, token)
 	if err != nil {
-		srv.daggerSessionsMu.Unlock()
 		return nil, nil, err
 	}
-	srv.daggerSessionsMu.Unlock()
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
@@ -1515,6 +1605,162 @@ func (srv *Server) ServeHTTPToNestedClient(
 	}).ServeHTTP(w, r)
 }
 
+func (srv *Server) RegisterIndependentClientListener(listenerID string) error {
+	if listenerID == "" {
+		return errors.New("independent client listener ID is required")
+	}
+	srv.independentClientListenersMu.Lock()
+	defer srv.independentClientListenersMu.Unlock()
+	if srv.isShuttingDown() {
+		return errServerShuttingDown
+	}
+	if _, exists := srv.independentClientListeners[listenerID]; exists {
+		return fmt.Errorf("independent client listener %q already exists", listenerID)
+	}
+	if srv.independentClientListeners == nil {
+		srv.independentClientListeners = make(map[string]*independentClientListener)
+	}
+	srv.independentClientListeners[listenerID] = &independentClientListener{
+		ID:       listenerID,
+		sessions: map[string]mainClientClaim{},
+	}
+	return nil
+}
+
+func (srv *Server) beginIndependentClientRequest(listenerID string) (*independentClientListener, error) {
+	srv.independentClientListenersMu.Lock()
+	defer srv.independentClientListenersMu.Unlock()
+	listener := srv.independentClientListeners[listenerID]
+	if listener == nil {
+		return nil, fmt.Errorf("independent client listener %q not found", listenerID)
+	}
+	if listener.closing {
+		return nil, fmt.Errorf("independent client listener %q is closing", listenerID)
+	}
+	listener.activeRequests.Add(1)
+	return listener, nil
+}
+
+func (srv *Server) validateIndependentClientClaim(listenerID string, md *engine.ClientMetadata) error {
+	srv.independentClientListenersMu.Lock()
+	defer srv.independentClientListenersMu.Unlock()
+	listener := srv.independentClientListeners[listenerID]
+	if listener == nil || listener.closing {
+		return fmt.Errorf("independent client listener %q is closed", listenerID)
+	}
+	claim, ok := listener.sessions[md.SessionID]
+	if !ok || claim.clientID != md.ClientID || claim.clientSecretToken != md.ClientSecretToken {
+		return fmt.Errorf("session %q is not claimed by this independent client listener and exact main client", md.SessionID)
+	}
+	if claim.session.state.Load() == sessionStateRemoved {
+		return fmt.Errorf("session %q is closing", md.SessionID)
+	}
+	return nil
+}
+
+// ServeHTTPToIndependentClient serves ordinary main clients through a
+// process-scoped listener. It deliberately performs no listener-admission
+// authentication; the fresh client token remains responsible only for exact
+// reuse of its client record.
+func (srv *Server) ServeHTTPToIndependentClient(w http.ResponseWriter, r *http.Request, listenerID string) {
+	listener, err := srv.beginIndependentClientRequest(listenerID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	defer listener.activeRequests.Done()
+
+	clientMetadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get client metadata: %v", err), http.StatusBadRequest)
+		return
+	}
+	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(clientMetadata.ClientVersion), engine.MinimumClientVersion) {
+		http.Error(w, fmt.Sprintf("incompatible client version %s", engine.NormalizeVersion(clientMetadata.ClientVersion)), http.StatusInternalServerError)
+		return
+	}
+	if r.Method == http.MethodGet && (r.URL.Path == "/v1/traces" || r.URL.Path == "/v1/logs" || r.URL.Path == "/v1/metrics") {
+		if err := srv.validateIndependentClientClaim(listenerID, clientMetadata); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
+	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
+		ClientMetadata:              clientMetadata,
+		IndependentClientListenerID: listenerID,
+		RequireFreshSession:         true,
+	}).ServeHTTP(w, r)
+}
+
+func (srv *Server) CloseIndependentClientListener(ctx context.Context, listenerID string) error {
+	srv.independentClientListenersMu.Lock()
+	listener := srv.independentClientListeners[listenerID]
+	if listener == nil {
+		srv.independentClientListenersMu.Unlock()
+		return nil
+	}
+	listener.closing = true
+	claims := make([]mainClientClaim, 0, len(listener.sessions))
+	for _, claim := range listener.sessions {
+		claims = append(claims, claim)
+	}
+	srv.independentClientListenersMu.Unlock()
+
+	var errs error
+	for _, claim := range claims {
+		sess := claim.session
+		sess.lifecycleMu.Lock()
+		removal := func(*daggerSession) {}
+		switch sess.state.Load() {
+		case sessionStateInitialized:
+			errs = errors.Join(errs, srv.removeDaggerSession(ctx, sess))
+			// Torn-down peer IDs are single-use, like every other successfully
+			// initialized session ID.
+			removal = srv.retireSession
+		case sessionStateUninitialized:
+			// A published session normally remains lifecycle-locked until its
+			// initializer succeeds or rolls it back. Handle a bare unpublished
+			// test seam defensively without invoking teardown on nil resources.
+			sess.state.Store(sessionStateRemoved)
+			removal = srv.deleteSession
+		case sessionStateRemoved:
+			// The ordinary reap or initialization-failure owner is still
+			// releasing resources and owns removal of this tombstone.
+		}
+		sess.lifecycleMu.Unlock()
+		removal(sess)
+	}
+
+	// Session teardown cancels hijacked attachable transports. Wait until every
+	// request which entered before the closing transition has observed that
+	// cancellation before dropping the listener tombstone. Keep this backstop
+	// bounded by the same safeguard used for ordinary session teardown.
+	requestsDone := make(chan struct{})
+	go func() {
+		listener.activeRequests.Wait()
+		close(requestsDone)
+	}()
+	waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), independentClientListenerShutdownTimeout)
+	select {
+	case <-requestsDone:
+	case <-waitCtx.Done():
+		errs = errors.Join(errs, fmt.Errorf("wait for independent client listener requests: %w", waitCtx.Err()))
+	}
+	cancel()
+	srv.independentClientListenersMu.Lock()
+	if srv.independentClientListeners[listenerID] == listener {
+		delete(srv.independentClientListeners, listenerID)
+	}
+	srv.independentClientListenersMu.Unlock()
+	if errs != nil {
+		srv.independentListenerCleanupFailed.Add(1)
+	} else {
+		srv.independentListenerCleanupSucceeded.Add(1)
+	}
+	return errs
+}
+
 func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.ClientMetadata) *engine.ClientMetadata {
 	clientMetadata := *nestedClientMetadata
 	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
@@ -1815,6 +2061,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		var span trace.Span
 		attrs := []attribute.KeyValue{
 			attribute.Bool(telemetry.UIPassthroughAttr, true),
+		}
+		if sess.independentClientListenerID != "" {
+			attrs = append(attrs, attribute.String("dagger.io/session.origin", "independent-listener"))
 		}
 		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
 			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))

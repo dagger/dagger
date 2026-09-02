@@ -68,6 +68,7 @@ const (
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerNestingEnv      = "DAGGER_NESTING"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
@@ -121,6 +122,7 @@ type execState struct {
 	execMD                   *ExecutionMetadata
 	sessionID                string
 	callerClientID           string
+	daggerNesting            DaggerNestingMode
 	nestedClientMetadata     *engine.ClientMetadata
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
@@ -139,6 +141,7 @@ func newExecState(
 	execMD *ExecutionMetadata,
 	sessionID string,
 	callerClientID string,
+	daggerNesting DaggerNestingMode,
 	nestedClientMetadata *engine.ClientMetadata,
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
@@ -160,6 +163,7 @@ func newExecState(
 		execMD:                   execMDCopy,
 		sessionID:                sessionID,
 		callerClientID:           callerClientID,
+		daggerNesting:            daggerNesting,
 		nestedClientMetadata:     nestedClientMetadata,
 		nestedClientModule:       nestedClientModule,
 		nestedClientFunctionCall: nestedClientFunctionCall,
@@ -1060,45 +1064,52 @@ func (c *Client) createCWD(_ context.Context, state *execState) error {
 }
 
 func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
-	if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
+	mode := state.daggerNesting
+	legacyNestedClient := mode == DaggerNestingNone && state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != ""
+	if mode == DaggerNestingNone && !legacyNestedClient {
 		return nil
 	}
+	if mode == DaggerNestingNestedClient || legacyNestedClient {
+		if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
+			return errors.New("nested-client mode requires nested client metadata")
+		}
+		if state.nestedClientMetadata.ClientSecretToken == "" {
+			state.nestedClientMetadata.ClientSecretToken = randid.NewID()
+		}
+		if state.nestedClientMetadata.ClientHostname == "" {
+			state.nestedClientMetadata.ClientHostname = state.spec.Hostname
+		}
 
-	if state.nestedClientMetadata.ClientSecretToken == "" {
-		state.nestedClientMetadata.ClientSecretToken = randid.NewID()
-	}
-	if state.nestedClientMetadata.ClientHostname == "" {
-		state.nestedClientMetadata.ClientHostname = state.spec.Hostname
+		if legacyNestedClient {
+			state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
+		}
+		state.nestedClientMetadata.ClientStableID = randid.NewID()
+
+		// include SSH_AUTH_SOCK if it's set in the exec's env vars
+		if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
+			if strings.HasPrefix(sockPath, "~") {
+				if homeDir, ok := state.origEnvMap["HOME"]; ok {
+					expandedPath, err := pathutil.ExpandHomeDir(homeDir, sockPath)
+					if err != nil {
+						return fmt.Errorf("failed to expand homedir: %w", err)
+					}
+					state.nestedClientMetadata.SSHAuthSocketPath = expandedPath
+				} else {
+					return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
+				}
+			} else {
+				state.nestedClientMetadata.SSHAuthSocketPath = sockPath
+			}
+		}
+
+		// include overridden client version if it's set in the exec's env vars
+		if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
+			state.nestedClientMetadata.ClientVersion = version
+		}
 	}
 
 	// propagate trace ctx to session attachables
 	ctx = trace.ContextWithSpanContext(ctx, state.causeCtx)
-
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
-
-	state.nestedClientMetadata.ClientStableID = randid.NewID()
-
-	// include SSH_AUTH_SOCK if it's set in the exec's env vars
-	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
-		if strings.HasPrefix(sockPath, "~") {
-			if homeDir, ok := state.origEnvMap["HOME"]; ok {
-				expandedPath, err := pathutil.ExpandHomeDir(homeDir, sockPath)
-				if err != nil {
-					return fmt.Errorf("failed to expand homedir: %w", err)
-				}
-				state.nestedClientMetadata.SSHAuthSocketPath = expandedPath
-			} else {
-				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
-			}
-		} else {
-			state.nestedClientMetadata.SSHAuthSocketPath = sockPath
-		}
-	}
-
-	// include overridden client version if it's set in the exec's env vars
-	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
-		state.nestedClientMetadata.ClientVersion = version
-	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
@@ -1118,8 +1129,47 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if !ok {
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()))
+	portEnv := DaggerSessionPortEnv + "=" + strconv.Itoa(tcpAddr.Port)
+	switch mode {
+	case DaggerNestingNestedClient:
+		state.spec.Process.Env = withoutEnvVariables(state.spec.Process.Env,
+			DaggerSessionPortEnv, DaggerSessionTokenEnv, DaggerNestingEnv, DaggerEngineNumCPUEnv)
+		state.spec.Process.Env = append(state.spec.Process.Env,
+			portEnv,
+			DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken,
+			DaggerNestingEnv+"=NESTED_CLIENT",
+			DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()),
+		)
+	case DaggerNestingIndependentSessions:
+		// Independent mode deliberately inherits no parent-session token (or
+		// other nested-client metadata), even if the container configured a
+		// colliding reserved environment variable itself.
+		state.spec.Process.Env = withoutEnvVariables(state.spec.Process.Env,
+			DaggerSessionPortEnv, DaggerSessionTokenEnv, DaggerNestingEnv, DaggerEngineNumCPUEnv)
+		state.spec.Process.Env = append(state.spec.Process.Env,
+			portEnv,
+			DaggerNestingEnv+"=INDEPENDENT_SESSIONS",
+		)
+	default:
+		// Preserve the deprecated experimentalPrivilegedNesting environment
+		// byte-for-byte: token was appended above, followed by port and CPU.
+		state.spec.Process.Env = append(state.spec.Process.Env,
+			portEnv,
+			DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()),
+		)
+	}
+
+	var independentListenerID string
+	var closeIndependentListener cleanups.CleanupFunc
+	if mode == DaggerNestingIndependentSessions {
+		independentListenerID = randid.NewID()
+		if err := c.SessionHandler.RegisterIndependentClientListener(independentListenerID); err != nil {
+			return fmt.Errorf("register independent client listener: %w", err)
+		}
+		closeIndependentListener = state.cleanups.Add("close independent client listener", func() error {
+			return c.SessionHandler.CloseIndependentClientListener(context.WithoutCancel(ctx), independentListenerID)
+		})
+	}
 
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
@@ -1130,7 +1180,12 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			switch mode {
+			case DaggerNestingIndependentSessions:
+				c.SessionHandler.ServeHTTPToIndependentClient(resp, req, independentListenerID)
+			default:
+				c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			}
 		}),
 		Protocols: protocols,
 	}
@@ -1149,8 +1204,20 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.cleanups.Add("cancel nested client server pool", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
+	if independentListenerID != "" {
+		// Re-add so listener closing is the first cleanup action. The original
+		// registration-site cleanup remains as a failure-safe and is once-wrapped.
+		state.cleanups.ReAdd(closeIndependentListener)
+	}
 
 	return nil
+}
+
+func withoutEnvVariables(env []string, names ...string) []string {
+	return slices.DeleteFunc(env, func(entry string) bool {
+		name, _, ok := strings.Cut(entry, "=")
+		return ok && slices.Contains(names, name)
+	})
 }
 
 func (c *Client) installCACerts(ctx context.Context, state *execState) error {

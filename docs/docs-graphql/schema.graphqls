@@ -371,7 +371,10 @@ type Container implements Exportable & Node & Syncer {
     useEntrypoint: Boolean = false
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -833,7 +836,10 @@ type Container implements Exportable & Node & Syncer {
     cmd: [String!] = []
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -872,7 +878,10 @@ type Container implements Exportable & Node & Syncer {
     useEntrypoint: Boolean = false
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -927,7 +936,10 @@ type Container implements Exportable & Node & Syncer {
     args: [String!]!
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1107,7 +1119,10 @@ type Container implements Exportable & Node & Syncer {
     expect: ReturnType = SUCCESS
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -1852,6 +1867,15 @@ type CurrentModuleAsSDKModule implements Node {
   path: String!
 }
 
+"""How a process may connect back to Dagger."""
+enum DaggerNesting {
+  """Connect to the session that created the process."""
+  NESTED_CLIENT
+
+  """Allow the process to create independent ordinary sessions."""
+  INDEPENDENT_SESSIONS
+}
+
 type DiffStat implements Node {
   """Number of added lines for this path."""
   addedLines: Int!
@@ -2163,7 +2187,10 @@ type Directory implements Exportable & Node & Syncer {
     cmd: [String!] = []
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Use daggerNesting: NESTED_CLIENT.")
+
+    """Configure how the executed command may connect back to Dagger."""
+    daggerNesting: DaggerNesting
 
     """
     Execute the command with all root capabilities. This is similar to running a
