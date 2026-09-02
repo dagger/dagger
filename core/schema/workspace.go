@@ -413,9 +413,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("addresses", s.addresses).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Addresses loadable from the workspace's installed modules: functions returning `type` and taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references.").
+			Doc("Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.").
 			Args(
-				dagql.Arg("type").Doc(`Name of the type the function must return to be listed, e.g. "Container". Naming an interface, e.g. "Syncer", lists functions returning any type that implements it.`),
+				dagql.Arg("types").Doc(`Only list functions returning one of these types, e.g. ["Container"]. An interface name, e.g. "Syncer", matches functions returning any type that implements it.`),
+				dagql.Arg("directives").Doc(`Only list functions whose field carries one of these directives, e.g. ["check"].`),
 			),
 		migrateField,
 	}.Install(srv)
@@ -3163,8 +3164,8 @@ func (s *workspaceSchema) checks(
 		return &core.CheckGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
-	skip := workspaceIncludePatterns(args.Skip)
+	include := optionalStrings(args.Include)
+	skip := optionalStrings(args.Skip)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3290,7 +3291,7 @@ func (s *workspaceSchema) generators(
 		return &core.GeneratorGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3423,7 +3424,7 @@ func (s *workspaceSchema) services(
 		return &core.UpGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3518,7 +3519,7 @@ func (s *workspaceSchema) agents(
 		return &core.AgentGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3566,7 +3567,8 @@ func (s *workspaceSchema) addresses(
 	ctx context.Context,
 	parent *core.Workspace,
 	args struct {
-		Type string
+		Types      dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Directives dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) ([]*core.WorkspaceAddress, error) {
 	if isSyntheticWorkspace(parent) {
@@ -3605,8 +3607,15 @@ func (s *workspaceSchema) addresses(
 		}
 	}
 
-	implements, err := servedImplements(ctx)
+	srv, err := servedSchema(ctx)
 	if err != nil {
+		return nil, err
+	}
+	filter := core.AddressFilter{
+		Types:      optionalStrings(args.Types),
+		Directives: optionalStrings(args.Directives),
+	}
+	if err := filter.Validate(srv); err != nil {
 		return nil, err
 	}
 	var addresses core.WorkspaceAddresses
@@ -3614,17 +3623,17 @@ func (s *workspaceSchema) addresses(
 		if entrypoints[strcase.ToKebab(mod.Self().Name())] {
 			continue
 		}
-		addresses = append(addresses, mod.Self().Addresses(args.Type, implements)...)
+		addresses = append(addresses, mod.Self().Addresses(srv, filter)...)
 	}
 	addresses.Sort()
 	return addresses, nil
 }
 
-// servedImplements reports interface implementation as the workspace's served
-// schema records it. dagql matches interfaces structurally when a schema is
-// built and notes the implementors on each interface, for core interfaces
-// (Syncer, Exportable, Node) and module-defined ones alike.
-func servedImplements(ctx context.Context) (dagql.ImplementsChecker, error) {
+// servedSchema is the workspace's served schema — every installed module and
+// the core — which Query.address resolves against. Interface implementors and
+// field directives are relations of this schema rather than of the typedefs,
+// so address discovery reads them from here.
+func servedSchema(ctx context.Context) (*dagql.Server, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -3633,25 +3642,20 @@ func servedImplements(ctx context.Context) (dagql.ImplementsChecker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("current served deps: %w", err)
 	}
-	srv, err := served.Schema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return func(typeName, ifaceName string) bool {
-		iface, ok := srv.InterfaceType(ifaceName)
-		return ok && iface.HasImplementor(typeName)
-	}, nil
+	return served.Schema(ctx)
 }
 
-func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
-	if !includeArg.Valid {
+// optionalStrings unwraps an optional list argument, keeping the distinction
+// between an absent list (nil) and an empty one.
+func optionalStrings(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
+	if !arg.Valid {
 		return nil
 	}
-	patterns := make([]string, 0, len(includeArg.Value))
-	for _, pattern := range includeArg.Value {
-		patterns = append(patterns, pattern.String())
+	out := make([]string, 0, len(arg.Value))
+	for _, s := range arg.Value {
+		out = append(out, s.String())
 	}
-	return patterns
+	return out
 }
 
 func filterGeneratorsByInclude(

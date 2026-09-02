@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // WorkspaceModule describes a module entry in the workspace config.
@@ -105,9 +107,10 @@ func (m WorkspaceModules) Sort() {
 // "module:function" reference that Query.address resolves (see
 // hack/designs/sandboxes.md §5).
 type WorkspaceAddress struct {
-	Value       string `field:"true" doc:"The address value, e.g. \"sandboxes:go\"."`
-	Description string `field:"true" doc:"The function's doc string."`
-	TypeName    string `field:"true" name:"type" doc:"Name of the type the address resolves to, e.g. \"Container\"."`
+	Value       string   `field:"true" doc:"The address value, e.g. \"sandboxes:go\"."`
+	Description string   `field:"true" doc:"The function's doc string."`
+	TypeName    string   `field:"true" name:"type" doc:"Name of the type the address resolves to, e.g. \"Container\"."`
+	Directives  []string `field:"true" doc:"Names of the directives on the function, e.g. [\"check\"]."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceAddress)(nil)
@@ -151,54 +154,131 @@ func (a WorkspaceAddresses) Sort() {
 	})
 }
 
+// AddressFilter narrows Module.Addresses. Each list is a disjunction over one
+// dimension and the lists conjoin: a function is listed when it matches any
+// entry of every non-nil list. A nil list does not filter; an empty one is an
+// empty disjunction and matches nothing.
+type AddressFilter struct {
+	// Types the function's return type must be, or implement. Objects and
+	// interfaces share GraphQL's type namespace, so an interface name lists
+	// functions returning any of its implementors.
+	Types []string
+	// Directives the function's field definition must carry, by name.
+	Directives []string
+}
+
+// Validate rejects names the served schema does not declare, so a typo errors
+// instead of matching nothing. Types must be objects or interfaces, since
+// nothing else can be loaded as an address.
+func (f AddressFilter) Validate(srv *dagql.Server) error {
+	for _, name := range f.Types {
+		if _, ok := srv.ObjectType(name); ok {
+			continue
+		}
+		if _, ok := srv.InterfaceType(name); ok {
+			continue
+		}
+		return fmt.Errorf("unknown object or interface type %q", name)
+	}
+	if len(f.Directives) > 0 {
+		declared := srv.Schema().Directives
+		for _, name := range f.Directives {
+			if _, ok := declared[name]; !ok {
+				return fmt.Errorf("unknown directive %q", name)
+			}
+		}
+	}
+	return nil
+}
+
 // Addresses lists the module's functions loadable as bare "module:function"
 // address references (hack/designs/sandboxes.md §5): top-level functions on
-// the main object — the only shape resolveModuleRef can load — returning
-// typeName and taking no caller-supplied arguments. Engine-supplied ones (an
+// the main object — the only shape resolveModuleRef can load — taking no
+// caller-supplied arguments and passing filter. Engine-supplied arguments (an
 // auto-injected Workspace, an @agent's base LLM) don't count:
 // functionRequiresCallerArgs is the rule, and resolveModuleRef fills both.
 // Whether the module can be referenced at all (an entrypoint module's
 // functions are hoisted onto the Query root) is the workspace's call, not the
 // module's.
 //
-// typeName may name an interface: objects and interfaces share GraphQL's type
-// namespace, so a function returning any implementor is listed too. Which
-// types implement which interfaces is a relation of the served schema, not of
-// the typedef, so the caller supplies it as implements; a nil checker matches
-// by name only. Each address carries the concrete type it resolves to, so a
-// caller that asked by interface can pick the right Address loader.
+// srv is the served schema the addresses resolve against. Which types
+// implement which interfaces, and which directives a function's field carries,
+// are relations of that schema rather than of the typedef, so both filters and
+// both descriptive fields read from it. Each address carries the concrete type
+// it resolves to, so a caller that asked by interface can pick the right
+// Address loader.
 //
 // Values are kebab-cased on both segments, matching CLI-facing names;
 // resolveModuleRef normalizes with ToLowerCamel, so they round-trip.
-func (mod *Module) Addresses(typeName string, implements dagql.ImplementsChecker) WorkspaceAddresses {
+func (mod *Module) Addresses(srv *dagql.Server, filter AddressFilter) WorkspaceAddresses {
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil
 	}
+	objType, _ := srv.ObjectType(mainObj.Name)
 	modName := strcase.ToKebab(mod.Name())
 	var addresses WorkspaceAddresses
 	for _, fnRes := range mainObj.Functions {
 		fn := fnRes.Self()
 		retType := fn.ReturnType.Self()
-		// A list return can't be lifted into a single object; ast.Type.Name
-		// would still report the element type's name, so rule lists out first.
-		if retType.Kind == TypeDefKindList {
+		// Only an object can be loaded as an address: every Address loader
+		// yields one, so scalars and lists are never listed, whatever the
+		// filter says. (A list's ast.Type.Name would still report the element
+		// type, so the kind check has to come before any name comparison.)
+		if retType.Kind != TypeDefKindObject && retType.Kind != TypeDefKindInterface {
 			continue
 		}
 		retName := retType.ToType().Name()
-		if retName != typeName && (implements == nil || !implements(retName, typeName)) {
+		if filter.Types != nil && !slices.ContainsFunc(filter.Types, func(name string) bool {
+			return name == retName || implementsInterface(srv, retName, name)
+		}) {
 			continue
 		}
 		if functionRequiresCallerArgs(fn) {
+			continue
+		}
+		directives := fieldDirectiveNames(objType, fn.Name, srv.View)
+		if filter.Directives != nil && !slices.ContainsFunc(filter.Directives, func(name string) bool {
+			return slices.Contains(directives, name)
+		}) {
 			continue
 		}
 		addresses = append(addresses, &WorkspaceAddress{
 			Value:       modName + ":" + strcase.ToKebab(fn.Name),
 			Description: fn.Description,
 			TypeName:    retName,
+			Directives:  directives,
 		})
 	}
 	return addresses
+}
+
+// implementsInterface reports whether the served schema records typeName as
+// an implementor of ifaceName. dagql matches interfaces structurally when a
+// schema is built and notes the implementors on each interface, for core
+// interfaces (Syncer, Exportable, Node) and module-defined ones alike.
+func implementsInterface(srv *dagql.Server, typeName, ifaceName string) bool {
+	iface, ok := srv.InterfaceType(ifaceName)
+	return ok && iface.HasImplementor(typeName)
+}
+
+// fieldDirectiveNames lists the directives on a field as the schema renders
+// them, so a lookup by directive is true to its name: whatever the SDL shows
+// on the field, @deprecated and @sourceMap included, is what matches. Always
+// non-nil, since the field is served as a non-null list.
+func fieldDirectiveNames(objType dagql.ObjectType, field string, view call.View) []string {
+	names := []string{}
+	if objType == nil {
+		return names
+	}
+	spec, ok := objType.FieldSpec(field, view)
+	if !ok {
+		return names
+	}
+	for _, d := range spec.FieldDefinition(view).Directives {
+		names = append(names, d.Name)
+	}
+	return names
 }
 
 // WorkspaceSDK describes a module entry installed as an SDK in the workspace

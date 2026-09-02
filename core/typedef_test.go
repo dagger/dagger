@@ -134,3 +134,19 @@ func TestFunctionCallReturnRequiresActiveCall(t *testing.T) {
 
 	require.ErrorContains(t, fnCall.ReturnValue(context.Background(), JSON(`"x"`)), "not active")
 }
+
+func TestFunctionDirectivesMarkers(t *testing.T) {
+	names := func(fn *Function) []string {
+		var out []string
+		for _, d := range fn.Directives() {
+			out = append(out, d.Name)
+		}
+		return out
+	}
+	require.Empty(t, names(&Function{}))
+	// Every marker shows up in the schema, in declaration order, so a lookup
+	// by directive (Workspace.addresses) can find any of them.
+	require.Equal(t, []string{"check", "generate", "up", "agent"},
+		names(&Function{IsCheck: true, IsGenerator: true, IsUp: true, IsAgent: true}))
+	require.Equal(t, []string{"generate"}, names(&Function{IsGenerator: true}))
+}
