@@ -361,6 +361,41 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 	require.Contains(t, entries2, "foo.txt")
 }
 
+// TestCrossSessionWorkspaceDockerfileRecipe covers a host-directory recipe
+// crossing a session boundary through module wiring. The first CLI session
+// persists the provider's host-backed Workspace.directory result. The second
+// session resolves a different provider function through settings and passes
+// a fresh, content-equivalent directory through the Dockerfile converter.
+// Loading that converted Container ID must not replay the first session's
+// Host.directory call in the provider module's client context, which has no
+// host filesync attachable.
+func (ModuleSuite) TestCrossSessionWorkspaceDockerfileRecipe(ctx context.Context, t *testctx.T) {
+	root := t.TempDir()
+	initGitRepo(ctx, t, root)
+	copyTestdataFixture(ctx, t, filepath.Join(root, "workspace-container-provider"), "services", "workspace-container-provider")
+	copyTestdataFixture(ctx, t, filepath.Join(root, "service-ref-consumer"), "services", "service-ref-consumer")
+	app := filepath.Join(root, "app")
+	require.NoError(t, os.MkdirAll(filepath.Join(app, "context"), 0o755))
+	unique := identity.NewID()
+	require.NoError(t, os.WriteFile(filepath.Join(app, "marker.txt"), []byte(unique), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "context", "Dockerfile"), []byte("FROM scratch\nCOPY marker.txt /marker.txt\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "context", "marker.txt"), []byte(unique), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "dagger.toml"), []byte(`[modules.workspace-container-provider]
+source = "../workspace-container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "workspace-container-provider:dockerfile-image"
+`), 0o644))
+
+	prime, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "workspace-container-provider", "context-directory", "entries")
+	require.NoError(t, err, string(prime))
+
+	out, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "service-ref-consumer", "container-provided-by")
+	require.NoError(t, err, string(out))
+	require.Equal(t, "workspace-container-provider:dockerfile", strings.TrimSpace(string(out)))
+}
+
 func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
 	t.Run("core git", func(ctx context.Context, t *testctx.T) {
 		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")

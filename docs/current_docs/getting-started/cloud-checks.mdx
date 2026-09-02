@@ -6,15 +6,13 @@ description: "Run workspace Checks automatically after Git events"
 
 # Set up Cloud Checks
 
-Complete the [Quickstart](./quickstart.mdx) before you start. Verify that `dagger check` passes in the workspace.
+In this guide, you will connect your GitHub repository to Dagger Cloud, and run your Checks automatically after each push.
 
-In this guide, you will connect your GitHub repository to Dagger Cloud. You will push a commit to start Cloud Checks.
+Complete the [Quickstart](./quickstart.mdx) before you start.
 
-A Git event, such as a push or pull request, starts Cloud Checks. Cloud Checks run your Checks on Cloud Engines.
+A Git event, such as a push or pull request, starts Cloud Checks. They run your Checks on Cloud Engines. You do not need a CI workflow file.
 
-You do not need a CI workflow file.
-
-The workspace must be in a GitHub repository. Its Git `origin` remote must point to that repository.
+Your project must be a GitHub repository, and its Git `origin` remote must point to that repository.
 
 ## Sign in to Dagger Cloud
 
@@ -24,9 +22,7 @@ Sign in or create an account:
 dagger cloud login
 ```
 
-Complete authentication in the browser.
-
-Create or select a Dagger Cloud organization when requested.
+Complete the authentication in the browser. Create or select a Dagger Cloud organization when requested.
 
 ## Connect the repository
 
@@ -36,15 +32,11 @@ Connect the GitHub account or organization that owns the repository:
 dagger cloud integration create github --open
 ```
 
-Complete the setup in the browser.
-
-Select the GitHub account or organization that owns the repository.
-
-Grant Dagger access to the repository.
+In the browser, select that account or organization, then grant Dagger access to the repository.
 
 ## Enable Cloud Checks
 
-Run this command from the workspace:
+From your project root:
 
 ```shell
 dagger cloud check on
@@ -54,59 +46,37 @@ Dagger gets the repository from the Git `origin` remote. The command prints `on`
 
 ## Trigger Cloud Checks
 
-Review the files that the Quickstart changed:
-
-```shell
-git status --short
-```
-
-Stage `dagger.toml`:
+Commit the files that the Quickstart created, then push them:
 
 ```shell
 git add dagger.toml
-```
-
-For each additional file that you changed during Quickstart, run this command. Replace the example path with the applicable path:
-
-```shell
-git add path/to/changed-file
-```
-
-Commit all staged files:
-
-```shell
 git commit -m "Set up Dagger"
-```
-
-Push the commit to GitHub:
-
-```shell
 git push -u origin HEAD
 ```
 
-The push is a Git event. Cloud Checks run the same Checks that `dagger check` runs locally.
+If `dagger generate` changed other files, stage those too. Run `git status --short` to list them.
 
-## View the result
+## Watch the Checks pass
 
-Cloud Checks start after the push. Show the latest activity:
+The push started your Checks. Watch them run:
 
 ```shell
 dagger activity
 ```
 
-Find the row with `Set up Dagger` in the `DESCRIPTION` column.
+Find the row for `Set up Dagger`. It can take a moment to appear. Run the command again until its `CHECKS` column is green.
 
-If the row is absent, wait and run `dagger activity` again.
+If a Check turns red, run `dagger check` locally. Fix the failure. Then commit and push the fix.
 
-If `CHECKS` contains `🟡`, wait and run the command again.
+Green means that every Check passed.
 
-You are done when `CHECKS` shows only `🟢N`. `N` is the number of Checks that passed.
+## What you accomplished
 
-If `CHECKS` contains `🔴`, run `dagger check` locally. Fix the failure. Then commit and push the fix.
+Your project now checks itself. Every push and every pull request runs your Checks automatically, on Dagger's Cloud Engines.
 
-Cloud Checks are now enabled for the repository. Future pushes and pull requests start the Checks automatically.
+You did not write a CI workflow file. You do not maintain a build server. The Checks that run on each push are the same Checks that `dagger check` runs on your machine, so the two cannot drift apart.
 
 ## Next steps
 
-- [Run selected Checks](../cli/checking.mdx)
-- [Manage Cloud Checks from the CLI](../cli/reference/index.mdx#dagger-cloud-check)
+- [Run selected Checks](../using/checking.mdx)
+- [Manage Cloud Checks from the CLI](../reference/cli/index.mdx#dagger-cloud-check)

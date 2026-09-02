@@ -2188,3 +2188,77 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 		require.Error(t, err)
 	})
 }
+
+// TestMergePhantomStatOnlyChanges pins that stat-only differences between
+// content-identical snapshots cannot corrupt the git-backed changeset merge.
+//
+// A changeset's declared paths come from a content comparison, but its
+// materialized diff comes from the stat-sensitive snapshot differ, so a file
+// whose content is identical yet whose timestamps diverge (as happens when
+// content-addressed caching pairs physically different materializations of
+// the same tree) rides along in the diff without ever being declared. When
+// the changeset's before directory carries a .git directory, that phantom
+// used to include .git/HEAD, and applying it mid-merge clobbered the
+// temporary repository's HEAD: the ours commit landed on the wrong branch
+// and the merge silently resolved to the other side. This was the root cause
+// of flaky workspace module inits under concurrent identical initializations.
+func (ChangesetSuite) TestMergePhantomStatOnlyChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	baseDir := c.Directory().
+		WithNewFile(".git/HEAD", "ref: refs/heads/master\n").
+		WithNewFile("app.txt", "original app content").
+		WithNewFile("other.txt", "untouched content")
+
+	// Restamping changes every file's mtime while leaving content identical,
+	// standing in for dedup handing Before and After physically different but
+	// content-equal snapshots.
+	restamped := baseDir.WithTimestamps(1700000000)
+
+	// Precondition: the snapshot differ flags stat-only changes, so the
+	// phantom entries exist for the merge to defend against. If this ever
+	// fails, diffs became content-defined and this scenario is obsolete.
+	diffEntries, err := baseDir.Diff(restamped).Entries(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, diffEntries)
+
+	ours := restamped.
+		WithNewFile("app.txt", "app edited in ours").
+		Changes(baseDir)
+
+	// The declared paths stay clean: content comparison sees only the real
+	// edit, none of the phantom entries.
+	modified, err := ours.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"app.txt"}, modified)
+	added, err := ours.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, added)
+
+	theirs := baseDir.
+		WithNewFile("added.txt", "added in theirs").
+		Changes(baseDir)
+
+	merged := ours.WithChangeset(theirs)
+
+	modified, err = merged.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"app.txt"}, modified)
+	added, err = merged.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"added.txt"}, added)
+
+	result := baseDir.WithChanges(merged)
+	appContent, err := result.File("app.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app edited in ours", appContent)
+	addedContent, err := result.File("added.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "added in theirs", addedContent)
+	otherContent, err := result.File("other.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "untouched content", otherContent)
+	headContent, err := result.File(".git/HEAD").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ref: refs/heads/master\n", headContent)
+}

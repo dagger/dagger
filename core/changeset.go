@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1391,6 +1392,42 @@ func (ch *Changeset) content(ctx context.Context) (*changesetContent, error) {
 	return content, nil
 }
 
+// gitMetaPath reports whether p is the workspace-root .git directory or a
+// path inside it. The merge workspace's temporary repository lives at that
+// path, so changeset content must never be applied there;
+// mergeBeforeDirectories excludes the same path from the merge base. Stat-only
+// snapshot differences can plant such entries in a changeset's materialized
+// diff without ComputePaths ever reporting them, and applying a stale
+// .git/HEAD mid-merge silently redirects branch commits.
+func gitMetaPath(p string) bool {
+	p = strings.TrimPrefix(path.Clean(p), "/")
+	return p == ".git" || strings.HasPrefix(p, ".git/")
+}
+
+// withoutGitMeta returns a copy of ch with all entries under the
+// workspace-root .git directory removed.
+func (ch *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
+	dropGitMeta := func(paths []string) []string {
+		return slices.DeleteFunc(slices.Clone(paths), gitMetaPath)
+	}
+	filtered := &ChangesetPaths{
+		Added:      dropGitMeta(ch.Added),
+		Modified:   dropGitMeta(ch.Modified),
+		Removed:    dropGitMeta(ch.Removed),
+		AllRemoved: dropGitMeta(ch.AllRemoved),
+	}
+	if ch.Renamed != nil {
+		filtered.Renamed = make(map[string]string, len(ch.Renamed))
+		for newPath, oldPath := range ch.Renamed {
+			if gitMetaPath(newPath) || gitMetaPath(oldPath) {
+				continue
+			}
+			filtered.Renamed[newPath] = oldPath
+		}
+	}
+	return filtered
+}
+
 // gitMergeWorkspace is a mounted scratch copy of the merge base that git
 // branches are built in.
 type gitMergeWorkspace struct {
@@ -1404,7 +1441,10 @@ type gitMergeWorkspace struct {
 // directories are recreated (the diff snapshot does not carry them). This
 // mirrors Directory.WithChanges' application of the same content.
 func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changesetContent) error {
-	if err := removeChangesetPaths(ws.root, ws.dir, content.paths.Removed); err != nil {
+	// Never let changeset content reach the temporary repository's .git.
+	paths := content.paths.withoutGitMeta()
+
+	if err := removeChangesetPaths(ws.root, ws.dir, paths.Removed); err != nil {
 		return fmt.Errorf("remove paths: %w", err)
 	}
 
@@ -1445,6 +1485,15 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 						// work tree crosses devices, so every attempt would
 						// just fail into the copy fallback.
 						DisableSourceHardlinks: true,
+						// The diff snapshot can carry .git entries that
+						// ComputePaths never reported: the stat-sensitive
+						// differ flags files whose content is identical but
+						// whose timestamps diverge across content-deduped
+						// snapshots. Overlaying those onto the temporary
+						// repository corrupts the merge.
+						Filter: layercopy.Filter{
+							Exclude: []string{".git"},
+						},
 					},
 				)
 			}, mountRefAsReadOnly)
@@ -1454,10 +1503,10 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		}
 	}
 
-	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, content.paths); err != nil {
+	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, paths); err != nil {
 		return err
 	}
-	return ws.touchAppliedPaths(content.paths)
+	return ws.touchAppliedPaths(paths)
 }
 
 // touchAppliedPaths bumps the mtime of every path the changeset wrote so git
@@ -1480,6 +1529,40 @@ func (ws *gitMergeWorkspace) touchAppliedPaths(paths *ChangesetPaths) error {
 		if err != nil && !errors.Is(err, unix.ENOENT) {
 			return fmt.Errorf("touch %s: %w", p, err)
 		}
+	}
+	return nil
+}
+
+// verifyMergedPaths confirms that every file-level path the given changesets
+// declared as added or modified exists in the merged worktree. A conflict-free
+// merge has no legitimate way to drop one; a missing path means the temporary
+// repository lost applied content (a lost path here once meant a stale
+// .git/HEAD from a changeset diff had redirected the ours commit onto the
+// wrong branch, letting the merge silently resolve to one side).
+func (ws *gitMergeWorkspace) verifyMergedPaths(contents ...*changesetContent) error {
+	var missing []string
+	for _, content := range contents {
+		if content == nil {
+			continue
+		}
+		paths := content.paths.withoutGitMeta()
+		for _, p := range slices.Concat(paths.Added, paths.Modified) {
+			if strings.HasSuffix(p, "/") {
+				continue
+			}
+			full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+			if err != nil {
+				return err
+			}
+			if _, err := os.Lstat(full); errors.Is(err, os.ErrNotExist) {
+				missing = append(missing, p)
+			} else if err != nil {
+				return TrimErrPathPrefix(err, ws.root)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("merge dropped declared changes: %s (engine bug: the merge workspace lost applied content)", strings.Join(missing, ", "))
 	}
 	return nil
 }
@@ -1596,6 +1679,12 @@ func gitMergeChangesets(
 			}
 		}
 
+		if mergeErr == nil && conflicts.IsEmpty() {
+			if err := ws.verifyMergedPaths(ours, theirs); err != nil {
+				return err
+			}
+		}
+
 		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
 			return fmt.Errorf("remove temporary merge git repository: %w", err)
 		}
@@ -1647,6 +1736,12 @@ func gitOctopusMergeChangesets(
 			return err
 		}
 
+		// An octopus merge refuses to run with conflicts, so on success every
+		// declared path must have survived.
+		if err := ws.verifyMergedPaths(append([]*changesetContent{ourContent}, otherContents...)...); err != nil {
+			return err
+		}
+
 		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
 			return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
 		}
@@ -1674,7 +1769,7 @@ var gitEphemeralConfig = []string{
 	"-c", "core.trustctime=false",
 }
 
-func runGit(ctx context.Context, dir string, args ...string) error {
+func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)
@@ -1689,10 +1784,26 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 		"GIT_COMMITTER_NAME=Dagger",
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
 	}
-	if output, err := cmd.CombinedOutput(); err != nil {
+	return cmd
+}
+
+func runGit(ctx context.Context, dir string, args ...string) error {
+	if output, err := gitCmd(ctx, dir, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("git %v: %w: %s", args, err, output)
 	}
 	return nil
+}
+
+// runGitOutput runs git and returns its stdout.
+func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := gitCmd(ctx, dir, args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %v: %w: %s", args, err, stderr.String())
+	}
+	return string(out), nil
 }
 
 func initGitRepo(ctx context.Context, dir string) error {
@@ -1718,15 +1829,205 @@ func createBranchWithContent(ctx context.Context, ws *gitMergeWorkspace, branchN
 	if err := ws.applyContent(ctx, content); err != nil {
 		return fmt.Errorf("apply %s changes: %w", branchName, err)
 	}
-	// Always commit (even if empty) to ensure consistent commit structure
-	// This is needed so that HEAD~1 references work correctly
 	if err := runGit(ctx, ws.workDir, "add", "-A"); err != nil {
 		return err
 	}
-	if err := runGit(ctx, ws.workDir, "commit", "--allow-empty", "-m", branchName); err != nil {
+	staged, err := runGitOutput(ctx, ws.workDir, "diff", "--cached", "--name-only")
+	if err != nil {
+		return err
+	}
+	// Each branch must contribute exactly one commit so HEAD~1 resolves to the
+	// base, so genuinely empty branches (empty or directory-only changesets,
+	// or changes the merge base already carries) still commit with
+	// --allow-empty. But an empty commit where git *should* have staged
+	// something silently erases the changeset from the merge, so before
+	// permitting one, verify the applied content actually reached the
+	// worktree.
+	commitArgs := []string{"commit", "-m", branchName}
+	if strings.TrimSpace(staged) == "" {
+		if err := ws.verifyBranchContentLanded(ctx, content); err != nil {
+			return fmt.Errorf("branch %s staged no changes: %w", branchName, err)
+		}
+		commitArgs = []string{"commit", "--allow-empty", "-m", branchName}
+	}
+	if err := runGit(ctx, ws.workDir, commitArgs...); err != nil {
 		return err
 	}
 	return nil
+}
+
+// verifyBranchContentLanded discriminates the legitimate reasons a branch can
+// stage nothing (empty or directory-only changeset, changes the merge base
+// already carries, gitignored paths) from the silent-corruption ones: applied
+// content that never reached the worktree, or a stale index stat-cache making
+// git skip a real edit. Both corruption modes have produced wrong merges that
+// reported success (see the touchAppliedPaths comment for the stat-cache
+// history), so failing here is what keeps them from escaping as merged
+// results.
+func (ws *gitMergeWorkspace) verifyBranchContentLanded(ctx context.Context, content *changesetContent) error {
+	paths := content.paths.withoutGitMeta()
+
+	var files []string
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if !strings.HasSuffix(p, "/") {
+			files = append(files, p)
+		}
+	}
+
+	// A tracked file whose worktree bytes differ from HEAD must stage; if git
+	// saw nothing, its stat cache lied about the file being clean.
+	for _, p := range paths.Modified {
+		if strings.HasSuffix(p, "/") {
+			continue
+		}
+		wt, err := ws.readWorktreePath(p)
+		if err != nil {
+			return err
+		}
+		headBytes, tracked := gitBlobBytes(ctx, ws.workDir, p)
+		if !tracked {
+			// Untracked (e.g. gitignored in the base); the diff comparison
+			// below still validates that the content landed.
+			continue
+		}
+		if wt == nil || !bytes.Equal(wt, headBytes) {
+			return fmt.Errorf("worktree content for %q differs from HEAD but git staged nothing (index stat cache failure)", p)
+		}
+	}
+
+	for _, p := range paths.AllRemoved {
+		if strings.HasSuffix(p, "/") {
+			// A removed directory can coexist with paths the same changeset
+			// re-adds beneath it; only file removals are checkable here.
+			continue
+		}
+		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+		if err != nil {
+			return err
+		}
+		if _, err := os.Lstat(full); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("removal of %q was not applied to the merge worktree", p)
+		}
+	}
+
+	if len(files) == 0 {
+		return nil
+	}
+	if content.diff.Self() == nil {
+		return fmt.Errorf("changeset declared file changes %v but materialized no diff content", files)
+	}
+	return ws.withDiffDir(ctx, content, func(diffDir string) error {
+		for _, p := range files {
+			same, err := ws.worktreeMatchesDiff(p, diffDir)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return fmt.Errorf("applied content for %q did not land in the merge worktree", p)
+			}
+		}
+		return nil
+	})
+}
+
+// readWorktreePath returns the worktree content for a changeset path: file
+// bytes for regular files, the target for symlinks, nil if the path does not
+// exist.
+func (ws *gitMergeWorkspace) readWorktreePath(p string) ([]byte, error) {
+	full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+	if err != nil {
+		return nil, err
+	}
+	fi, err := os.Lstat(full)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, TrimErrPathPrefix(err, ws.root)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(full)
+		if err != nil {
+			return nil, TrimErrPathPrefix(err, ws.root)
+		}
+		return []byte(target), nil
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return nil, TrimErrPathPrefix(err, ws.root)
+	}
+	return data, nil
+}
+
+// worktreeMatchesDiff reports whether the worktree content for p matches the
+// materialized diff's copy of it.
+func (ws *gitMergeWorkspace) worktreeMatchesDiff(p, diffDir string) (bool, error) {
+	wt, err := ws.readWorktreePath(p)
+	if err != nil {
+		return false, err
+	}
+	if wt == nil {
+		return false, nil
+	}
+	full, err := RootPathWithoutFinalSymlink(diffDir, p)
+	if err != nil {
+		return false, err
+	}
+	fi, err := os.Lstat(full)
+	if errors.Is(err, os.ErrNotExist) {
+		// The path is declared but absent from the diff snapshot; nothing to
+		// compare against, and its presence in the worktree is all that can
+		// be verified.
+		return true, nil
+	} else if err != nil {
+		return false, TrimErrPathPrefix(err, diffDir)
+	}
+	var want []byte
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(full)
+		if err != nil {
+			return false, TrimErrPathPrefix(err, diffDir)
+		}
+		want = []byte(target)
+	} else {
+		want, err = os.ReadFile(full)
+		if err != nil {
+			return false, TrimErrPathPrefix(err, diffDir)
+		}
+	}
+	return bytes.Equal(wt, want), nil
+}
+
+// withDiffDir mounts the changeset's materialized diff snapshot read-only and
+// hands its directory to fn.
+func (ws *gitMergeWorkspace) withDiffDir(ctx context.Context, content *changesetContent, fn func(diffDir string) error) error {
+	diffRef, err := content.diff.Self().Snapshot.GetOrEval(ctx, content.diff.Result)
+	if err != nil {
+		return fmt.Errorf("diff snapshot: %w", err)
+	}
+	diffPath, err := content.diff.Self().Dir.GetOrEval(ctx, content.diff.Result)
+	if err != nil {
+		return fmt.Errorf("diff path: %w", err)
+	}
+	if diffPath == "" {
+		diffPath = "/"
+	}
+	return MountRef(ctx, diffRef, func(srcRoot string, _ *mount.Mount) error {
+		dir, err := containerdfs.RootPath(srcRoot, diffPath)
+		if err != nil {
+			return err
+		}
+		return fn(dir)
+	}, mountRefAsReadOnly)
+}
+
+// gitBlobBytes returns the HEAD blob for path p, or tracked=false if HEAD has
+// no such blob (untracked or gitignored paths).
+func gitBlobBytes(ctx context.Context, workDir, p string) (data []byte, tracked bool) {
+	out, err := runGitOutput(ctx, workDir, "cat-file", "blob", "HEAD:"+p)
+	if err != nil {
+		return nil, false
+	}
+	return []byte(out), true
 }
 
 // resolveModifyDeleteConflicts handles conflicts where one side modified and the other deleted.
