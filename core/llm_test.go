@@ -355,7 +355,7 @@ func TestOpenAIRequestUsesNonStrictNullableToolSchema(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	schema := objectToolsTestSchema(t)
-	toolSchema, err := objectMethodSchema(schema, fieldByName(schema.Types["Doug"], "read"))
+	toolSchema, err := objectMethodSchema(schema, fieldByName(schema.Types["Doug"], "read"), conversationToolArgs)
 	require.NoError(t, err)
 
 	endpoint := &LLMEndpoint{

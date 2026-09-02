@@ -122,6 +122,11 @@ type MCP struct {
 	// the changes into a fresh selfLLM before the continuation phase, which
 	// resets this (see SetSelfLLM). Transient: cleared by Clone.
 	stateChanged bool
+	// standalone marks an MCP serving tools without a driving conversation
+	// (dagger mcp): no selfLLM will ever be set, so LLM-typed tool arguments
+	// have nothing to be filled from and are treated as unsatisfiable (see
+	// implicitToolArgs). Unlike the per-step scratch above, it survives Clone.
+	standalone bool
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -180,6 +185,17 @@ func (m *MCP) Clone() *MCP {
 	cp.stateChanged = false
 	cp.mu = &sync.Mutex{}
 	return &cp
+}
+
+// Standalone returns a copy that serves tools without a driving conversation,
+// e.g. to an external MCP client (dagger mcp). LLM-typed tool arguments are
+// then unsatisfiable: a method requiring one is not offered at all, and an
+// optional one is exposed by ID like any other object argument (see
+// implicitToolArgs).
+func (m *MCP) Standalone() *MCP {
+	m = m.Clone()
+	m.standalone = true
+	return m
 }
 
 // SetSelfLLM records the conversation dispatching this step's tool calls, so

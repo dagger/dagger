@@ -65,6 +65,9 @@ type Doug {
   "Compact the current conversation — MCP supplies the LLM argument."
   compact(llm: ID! @expectedType(name: "LLM")): LLM!
 
+  "Note the conversation, if there is one — an optional LLM argument."
+  annotate(llm: ID @expectedType(name: "LLM")): Doug!
+
   "Apply a changeset — requires a non-liftable object arg, so ineligible."
   apply(changes: ID! @expectedType(name: "Changeset")): Doug!
 
@@ -128,36 +131,44 @@ func TestObjectToolEligible(t *testing.T) {
 
 	// Methods whose required args are all scalars (or the auto-injected Workspace)
 	// are eligible.
-	require.True(t, objectToolEligible(fieldByName(doug, "read"), nil))
-	require.True(t, objectToolEligible(fieldByName(doug, "write"), nil))
-	require.True(t, objectToolEligible(fieldByName(doug, "todoWrite"), nil))
+	require.True(t, objectToolEligible(fieldByName(doug, "read"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "write"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "todoWrite"), nil, conversationToolArgs))
 
 	// A required object-typed argument disqualifies the method — the model has no
 	// handle to pass.
-	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil))
+	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil, conversationToolArgs))
 
 	// The LLM handle is supplied by MCP at object-tool dispatch, so this
-	// required argument does not disqualify the method.
-	require.True(t, objectToolEligible(fieldByName(doug, "compact"), nil))
+	// required argument does not disqualify the method...
+	require.True(t, objectToolEligible(fieldByName(doug, "compact"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, conversationToolArgs))
+
+	// ...unless the tools are served without a conversation to fill it from
+	// (dagger mcp). Then an LLM argument is unsatisfiable like any other
+	// object argument: a required one disqualifies the method, an optional one
+	// is left to the caller.
+	require.False(t, objectToolEligible(fieldByName(doug, "compact"), nil, standaloneToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, standaloneToolArgs))
 
 	// ...or when the type is LIFTABLE: a required Container arg renders as an
 	// address string and is lifted via the core Address API at dispatch time.
-	require.True(t, objectToolEligible(fieldByName(doug, "exec"), nil))
+	require.True(t, objectToolEligible(fieldByName(doug, "exec"), nil, conversationToolArgs))
 
 	// A required LIST of liftable objects is not lifted, so it still
 	// disqualifies.
-	require.False(t, objectToolEligible(fieldByName(doug, "execAll"), nil))
+	require.False(t, objectToolEligible(fieldByName(doug, "execAll"), nil, conversationToolArgs))
 
 	// An optional object arg never disqualified; still doesn't — liftable or
 	// not.
-	require.True(t, objectToolEligible(fieldByName(doug, "debug"), nil))
-	require.True(t, objectToolEligible(fieldByName(doug, "withDir"), nil))
+	require.True(t, objectToolEligible(fieldByName(doug, "debug"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "withDir"), nil, conversationToolArgs))
 
 	// Directory IS address-resolvable (the CLI lifts it for flags), but it is
 	// NOT in the liftableTypes allowlist — its Address decoder falls back to
 	// HOST paths, a capability the model must not gain from a string — so a
 	// required Directory arg disqualifies.
-	require.False(t, objectToolEligible(fieldByName(doug, "importDir"), nil))
+	require.False(t, objectToolEligible(fieldByName(doug, "importDir"), nil, conversationToolArgs))
 
 	// Secret is deliberately not liftable: Address.secret resolves env:// /
 	// file:// / op:// URIs, so lifting would let the model MINT secrets by
@@ -165,31 +176,42 @@ func TestObjectToolEligible(t *testing.T) {
 	// joins the allowlist only after its own capability review — see
 	// hack/designs/sandboxes.md §4, "The liftable set is a capability
 	// decision".
-	require.False(t, objectToolEligible(fieldByName(doug, "withToken"), nil))
+	require.False(t, objectToolEligible(fieldByName(doug, "withToken"), nil, conversationToolArgs))
 
 	// except drops a method by name.
-	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}))
+	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}, conversationToolArgs))
 
 	// Reserved / internal / deprecated fields are never tools.
-	require.False(t, objectToolEligible(fieldByName(doug, "id"), nil))
-	require.False(t, objectToolEligible(fieldByName(doug, "sync"), nil))
-	require.False(t, objectToolEligible(fieldByName(doug, "old"), nil))
+	require.False(t, objectToolEligible(fieldByName(doug, "id"), nil, conversationToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "sync"), nil, conversationToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "old"), nil, conversationToolArgs))
 }
 
 func TestObjectMethodSchema(t *testing.T) {
 	schema := objectToolsTestSchema(t)
 	doug := schema.Types["Doug"]
 
-	readSchema, err := objectMethodSchema(schema, fieldByName(doug, "read"))
+	readSchema, err := objectMethodSchema(schema, fieldByName(doug, "read"), conversationToolArgs)
 	require.NoError(t, err)
 	props := readSchema["properties"].(map[string]any)
 
 	// Workspace remains contextual, while the LLM argument is filled directly
 	// by MCP. Neither is exposed to the model's tool schema.
 	require.NotContains(t, props, "source")
-	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"))
+	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"), conversationToolArgs)
 	require.NoError(t, err)
 	require.NotContains(t, compactSchema["properties"], "llm")
+	annotateSchema, err := objectMethodSchema(schema, fieldByName(doug, "annotate"), conversationToolArgs)
+	require.NoError(t, err)
+	require.NotContains(t, annotateSchema["properties"], "llm")
+
+	// Served without a conversation, MCP has nothing to fill an LLM argument
+	// from, so an optional one is exposed by ID like any other object.
+	annotateSchema, err = objectMethodSchema(schema, fieldByName(doug, "annotate"), standaloneToolArgs)
+	require.NoError(t, err)
+	annotateLLM := annotateSchema["properties"].(map[string]any)["llm"].(map[string]any)
+	require.Equal(t, "(LLM ID)", annotateLLM["description"])
+	require.Equal(t, "string", requireNullableJSONSchema(t, annotateLLM)["type"])
 
 	// Scalar args are surfaced with their JSON types; required tracks non-null
 	// args without a default.
@@ -204,7 +226,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, false, readSchema["additionalProperties"])
 
 	// A list arg with a default is optional and rendered as an array of scalars.
-	todoSchema, err := objectMethodSchema(schema, fieldByName(doug, "todoWrite"))
+	todoSchema, err := objectMethodSchema(schema, fieldByName(doug, "todoWrite"), conversationToolArgs)
 	require.NoError(t, err)
 	todoProps := todoSchema["properties"].(map[string]any)
 	pending := todoProps["pending"].(map[string]any)
@@ -216,7 +238,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	// address — with the type's own syntax hint from liftableTypes — and is
 	// required.
 	const containerHint = `(Container address: an image ref like "golang:1.26", an installed module function like "mymod:dev", or a Container ID from a prior tool result)`
-	execSchema, err := objectMethodSchema(schema, fieldByName(doug, "exec"))
+	execSchema, err := objectMethodSchema(schema, fieldByName(doug, "exec"), conversationToolArgs)
 	require.NoError(t, err)
 	execProps := execSchema["properties"].(map[string]any)
 	sandbox := execProps["sandbox"].(map[string]any)
@@ -226,7 +248,7 @@ func TestObjectMethodSchema(t *testing.T) {
 
 	// An optional liftable object arg says "address" too — dispatch lifts
 	// both.
-	debugSchema, err := objectMethodSchema(schema, fieldByName(doug, "debug"))
+	debugSchema, err := objectMethodSchema(schema, fieldByName(doug, "debug"), conversationToolArgs)
 	require.NoError(t, err)
 	debugProperty := debugSchema["properties"].(map[string]any)["sandbox"].(map[string]any)
 	debug := requireNullableJSONSchema(t, debugProperty)
@@ -236,7 +258,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	// An optional arg of an addressable-but-not-liftable type keeps the ID
 	// convention: the model may hand back an ID from a prior tool result, but
 	// is not invited to write an address (dispatch would refuse it anyway).
-	dirSchema, err := objectMethodSchema(schema, fieldByName(doug, "withDir"))
+	dirSchema, err := objectMethodSchema(schema, fieldByName(doug, "withDir"), conversationToolArgs)
 	require.NoError(t, err)
 	dirProperty := dirSchema["properties"].(map[string]any)["dir"].(map[string]any)
 	dir := requireNullableJSONSchema(t, dirProperty)
@@ -244,14 +266,14 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, "(Directory ID)", dirProperty["description"])
 
 	// A non-addressable object arg keeps the ID convention.
-	applySchema, err := objectMethodSchema(schema, fieldByName(doug, "apply"))
+	applySchema, err := objectMethodSchema(schema, fieldByName(doug, "apply"), conversationToolArgs)
 	require.NoError(t, err)
 	changes := applySchema["properties"].(map[string]any)["changes"].(map[string]any)
 	require.Equal(t, "(Changeset ID)", changes["description"])
 
 	// A LIST of liftable objects is not lifted, so it keeps the ID
 	// convention as well.
-	execAllSchema, err := objectMethodSchema(schema, fieldByName(doug, "execAll"))
+	execAllSchema, err := objectMethodSchema(schema, fieldByName(doug, "execAll"), conversationToolArgs)
 	require.NoError(t, err)
 	sandboxes := execAllSchema["properties"].(map[string]any)["sandboxes"].(map[string]any)
 	require.Equal(t, "array", sandboxes["type"])
@@ -416,6 +438,7 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{Typed: &Directory{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Address]{Typed: &Address{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*LLM]{Typed: &LLM{}}))
 	dagql.Fields[*Query]{
 		dagql.Func("address", func(_ context.Context, _ *Query, args struct {
 			Value dagql.String
@@ -458,8 +481,75 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 			}
 			return args.Date.Value, nil
 		}),
+		// compact requires the calling conversation; annotate merely accepts
+		// one. See TestStandaloneToolsTreatLLMArgsAsUnsatisfiable.
+		dagql.Func("compact", func(_ context.Context, _ *liftTestRunner, _ struct {
+			LLM dagql.ID[*LLM]
+		}) (dagql.String, error) {
+			return "compacted", nil
+		}),
+		dagql.Func("annotate", func(_ context.Context, _ *liftTestRunner, args struct {
+			LLM dagql.Optional[dagql.ID[*LLM]]
+		}) (dagql.String, error) {
+			if !args.LLM.Valid {
+				return "no conversation", nil
+			}
+			return "conversation", nil
+		}),
 	}.Install(srv)
 	return srv
+}
+
+// TestStandaloneToolsTreatLLMArgsAsUnsatisfiable covers the tools an MCP serves
+// without a conversation to drive them (dagger mcp): an LLM argument then has
+// nothing to be filled from, so a method that requires one is not offered, and
+// an optional one is simply left unset.
+func TestStandaloneToolsTreatLLMArgsAsUnsatisfiable(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "standalone-test",
+		SessionID: "standalone-test",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newAddressLiftTestServer(t)
+	var runner dagql.AnyObjectResult
+	require.NoError(t, srv.Select(ctx, srv.Root(), &runner, dagql.Selector{Field: "runner"}))
+
+	toolNames := func(t *testing.T, m *MCP) []string {
+		t.Helper()
+		toolsets, err := m.boundToolsets(srv)
+		require.NoError(t, err)
+		require.Len(t, toolsets, 1)
+		names := make([]string, 0, len(toolsets[0].tools))
+		for _, tool := range toolsets[0].tools {
+			names = append(names, tool.Name)
+		}
+		return names
+	}
+
+	conversation := newMCP().WithTools(runner, srv.Schema(), nil)
+	require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir"}, toolNames(t, conversation))
+
+	// Standalone, the method that REQUIRES a conversation is not offered...
+	standalone := conversation.Standalone()
+	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir"}, toolNames(t, standalone))
+	// ...and survives cloning, which every binding does.
+	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir"}, toolNames(t, standalone.Clone()))
+
+	// ...while the optional argument is left unset, so the method sees null.
+	annotateField := fieldByName(srv.Schema().Types["LiftTestRunner"], "annotate")
+	require.NotNil(t, annotateField)
+	sel, err := standalone.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), annotateField, map[string]any{})
+	require.NoError(t, err)
+	var out dagql.String
+	require.NoError(t, srv.Select(ctx, runner, &out, sel))
+	require.Equal(t, "no conversation", out.String())
+
+	// Driven by a conversation, the argument is MCP's to fill: a missing
+	// dispatching conversation is then a bug, not a silent null.
+	_, err = conversation.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), annotateField, map[string]any{})
+	require.ErrorContains(t, err, "requires the current conversation")
 }
 
 func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
@@ -485,7 +575,7 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 		for _, tool := range toolsets[0].tools {
 			names = append(names, tool.Name)
 		}
-		require.ElementsMatch(t, []string{"exec", "nullable", "withDir"}, names)
+		require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir"}, names)
 		require.NotContains(t, names, "replacement")
 		return toolsets[0].tools
 	}

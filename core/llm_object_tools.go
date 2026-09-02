@@ -431,12 +431,13 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 	if def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface) {
 		return nil, fmt.Errorf("bound object type %q is not an object in its defining schema", typeName)
 	}
+	implicit := m.implicitArgs()
 	var tools []LLMTool
 	for _, field := range def.Fields {
-		if !objectToolEligible(field, b.Except) {
+		if !objectToolEligible(field, b.Except, implicit) {
 			continue
 		}
-		methodSchema, err := objectMethodSchema(toolSchema, field)
+		methodSchema, err := objectMethodSchema(toolSchema, field, implicit)
 		if err != nil {
 			return nil, fmt.Errorf("build schema for %s.%s: %w", typeName, field.Name, err)
 		}
@@ -470,11 +471,11 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 // objectToolEligible reports whether a field becomes a tool: it must not be in
 // except, must not be an internal/reserved field, and every REQUIRED argument
 // must be expressible without an object handle — a required object-typed arg
-// (other than the auto-injected Workspace) disqualifies it, since the model has
-// no handle to pass. Exception: a required arg of a LIFTABLE type (see
+// (other than those implicit supplies) disqualifies it, since the model has no
+// handle to pass. Exception: a required arg of a LIFTABLE type (see
 // liftableTypes) does not disqualify — the model can supply an address string,
 // lifted into the object at dispatch time via the core Address API.
-func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
+func objectToolEligible(field *ast.FieldDefinition, except []string, implicit implicitToolArgs) bool {
 	if slices.Contains(except, field.Name) {
 		return false
 	}
@@ -494,7 +495,7 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		return false
 	}
 	for _, arg := range field.Arguments {
-		if isImplicitToolArg(arg) {
+		if implicit.supplies(arg) {
 			// MCP supplies this argument; the model does not need an object handle.
 			continue
 		}
@@ -572,14 +573,43 @@ func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 	return name.Value.Raw, true
 }
 
-// isImplicitToolArg reports whether MCP supplies an object-tool argument rather
-// than asking the model for it. Workspace retains its existing contextual
-// behavior; LLM is passed directly by the object-tool adapter. This
+// implicitToolArgs decides which object-tool arguments MCP supplies itself,
+// hidden from the tool schema, rather than asking the model for them. This
 // classification affects only the generated MCP tool and never rewrites the
 // module's GraphQL schema.
-func isImplicitToolArg(arg *ast.ArgumentDefinition) bool {
+//
+// Workspace is always contextual: it is filled from the bound workspace. LLM is
+// filled from the conversation dispatching the call, which only exists while
+// an LLM drives the tools (LLM.step); a standalone server (dagger mcp) has
+// none. There an LLM argument is an ordinary object argument the caller cannot
+// satisfy: a required one disqualifies its method (objectToolEligible), and an
+// optional one is exposed by ID like any other object, so it can at least be
+// left unset.
+type implicitToolArgs struct {
+	// llm reports whether a conversation is available to fill LLM arguments.
+	llm bool
+}
+
+var (
+	// conversationToolArgs is the policy of tools driven by an LLM.
+	conversationToolArgs = implicitToolArgs{llm: true}
+	// standaloneToolArgs is the policy of tools served without a conversation.
+	standaloneToolArgs = implicitToolArgs{}
+)
+
+// supplies reports whether MCP fills arg itself under this policy.
+func (p implicitToolArgs) supplies(arg *ast.ArgumentDefinition) bool {
 	return isExpectedTypeArg(arg, workspaceTypeName) ||
-		isExpectedTypeArg(arg, llmTypeName)
+		(p.llm && isExpectedTypeArg(arg, llmTypeName))
+}
+
+// implicitArgs returns the policy this MCP serves tools under: standalone when
+// no conversation will ever drive it (see MCP.Standalone), else conversation.
+func (m *MCP) implicitArgs() implicitToolArgs {
+	if m == nil || m.standalone {
+		return standaloneToolArgs
+	}
+	return conversationToolArgs
 }
 
 func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
@@ -593,15 +623,15 @@ func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 
 // objectMethodSchema builds a tool's JSON-schema parameters from a field's
 // visible arguments — its scalars, enums, lists, and input objects — omitting
-// the Workspace, LLM, and Agent arguments supplied by MCP. Object arguments
-// render as ID strings annotated with their expected type; liftable object
-// arguments (required or optional) render as address strings instead, with
-// the type's syntax hint.
-func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
+// the arguments MCP supplies itself (implicit). Object arguments render as ID
+// strings annotated with their expected type; liftable object arguments
+// (required or optional) render as address strings instead, with the type's
+// syntax hint.
+func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit implicitToolArgs) (map[string]any, error) {
 	properties := map[string]any{}
 	var required []string
 	for _, arg := range field.Arguments {
-		if isImplicitToolArg(arg) {
+		if implicit.supplies(arg) {
 			continue
 		}
 		argSchema, err := argTypeToJSONSchema(schema, arg.Type)
@@ -817,7 +847,9 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 // implicitToolInput fills the runtime-local arguments supported by the MCP
 // object-tool adapter. These values are ordinary explicit selector arguments:
 // module function schemas and general DAGQL input resolution know nothing about
-// this convention.
+// this convention. An argument the policy does not supply (see
+// implicitToolArgs) is reported not found, so it is left to the caller like any
+// other object argument.
 func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
@@ -827,8 +859,8 @@ func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputS
 	var obj dagql.IDable
 	switch {
 	case isExpectedTypeArg(astArg, llmTypeName):
-		if m == nil {
-			return nil, true, errors.New("no MCP context for current conversation")
+		if !m.implicitArgs().llm {
+			return nil, false, nil
 		}
 		llm := m.currentLLM()
 		if llm.Self() == nil {

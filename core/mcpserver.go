@@ -164,7 +164,7 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
 			mcpserver.WithInstructions(instructions)),
 		dag,
-		llm.mcp,
+		llm.mcp.Standalone(),
 		rwc,
 	}
 
