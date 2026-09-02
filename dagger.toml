@@ -109,6 +109,9 @@ legacy-default-path = true
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
+[modules.tiny]
+source = ".dagger/modules/tiny"
+
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true

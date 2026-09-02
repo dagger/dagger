@@ -1103,6 +1103,8 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
+	src.ManifestVersion = modCfg.ManifestVersion
+	src.Entrypoint = modCfg.Entrypoint
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
@@ -1112,6 +1114,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
+	if modCfg.ManifestVersion == modules.ModuleManifestVersion2 {
+		engineVersion = engine.Version
+	}
 	switch engineVersion {
 	case "":
 		// older versions of dagger might not produce an engine version -
@@ -1146,6 +1151,10 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 			Config:       modCfg.SDK.Config,       //nolint:staticcheck // deprecated; read for legacy JSON config compat
 			Experimental: modCfg.SDK.Experimental, //nolint:staticcheck // deprecated; read for legacy JSON config compat
 		}
+	} else if modCfg.Entrypoint != nil && modCfg.Entrypoint.Kind == modules.ModuleEntrypointKindDang {
+		// SDK is an internal adapter for the existing module execution path. The
+		// manifest contains only the entrypoint configuration.
+		src.SDK = &core.SDKConfig{Source: string(modules.ModuleEntrypointKindDang)}
 	}
 
 	var sdkSource string
@@ -2515,6 +2524,16 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
+	if src.ManifestVersion == modules.ModuleManifestVersion2 {
+		return &modules.ModuleConfigWithUserFields{
+			ModuleConfig: modules.ModuleConfig{
+				ManifestVersion: src.ManifestVersion,
+				Name:            src.ModuleOriginalName,
+				Entrypoint:      src.Entrypoint,
+			},
+		}, nil
+	}
+
 	// construct the module config based on any config read during load and any settings changed via with* APIs
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,

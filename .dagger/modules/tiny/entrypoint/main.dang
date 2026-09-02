@@ -1,0 +1,35 @@
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(
+          function("", typeDef.withObject("Tiny")),
+        )
+        .withFunction(
+          function(
+            "Hello",
+            typeDef.withKind(TypeDefKind.STRING_KIND),
+          ),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (receiverType != "Tiny") {
+      raise "unknown receiver type: " + receiverType
+    } else if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Hello") {
+      ("\"hello\"" :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}

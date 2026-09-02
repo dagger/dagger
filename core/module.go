@@ -104,6 +104,15 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	if src := mod.GetSource(); src != nil && src.ManifestVersion == modules.ModuleManifestVersion2 {
+		for _, objDef := range mod.ObjectDefs {
+			if objDef.Self().AsObject.Valid && objDef.Self().AsObject.Value.Self().Constructor.Valid {
+				return objDef.Self().AsObject.Value.Self(), true
+			}
+		}
+		return nil, false
+	}
+
 	// Use OriginalName for type lookup: the SDK registers the main object
 	// under the intrinsic module name (from dagger.json), which may differ
 	// from NameField when a workspace config renames the module.
