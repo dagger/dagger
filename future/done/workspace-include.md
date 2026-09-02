@@ -40,7 +40,7 @@ machine or to the file itself.
   A path include has nothing to pin.
 - A module the included config installs is usable here, whether it named a
   remote ref or a directory beside itself. What it must never do is resolve a
-  path of the included config's against the *consuming* workspace.
+  path of the included config's against the _consuming_ workspace.
 - The merged result is what read surfaces (`dagger workspace config`, module
   listing, env listing) report, so the effect is visible rather than silent.
 
@@ -295,7 +295,7 @@ Resolving it as written resolves it against the **consuming** workspace, via
 path the user never wrote. So it cannot be passed through untouched. It also
 must not simply be dropped, because sharing the modules is the point:
 
-```
+```text
 monorepo/
   shared/tester/          the module
   common/dagger.toml      [modules.tester] source = "../shared/tester"
@@ -665,7 +665,7 @@ path include needs no fixture beyond a second file in the workspace.
    installs them by relative path, `project-a/` and `project-b/` include
    `../common`. From either project, `dagger installed` lists the shared
    modules, `dagger call <module> …` runs them, the effective config shows them
-   addressed relative to the *including* project, and `project-b` overrides one
+   addressed relative to the _including_ project, and `project-b` overrides one
    of their settings without repeating a source.
 7. **An inherited module reaches the command tree**: a module a path include
    contributes appears in `dagger functions`, `dagger call --help`,
