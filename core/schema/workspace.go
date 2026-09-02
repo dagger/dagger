@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
 )
 
@@ -410,6 +411,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
 			),
+		dagql.Func("addresses", s.addresses).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare \"module:function\" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.").
+			Args(
+				dagql.Arg("types").Doc(`Only list functions returning one of these types, e.g. ["Container"]. An interface name, e.g. "Syncer", matches functions returning any type that implements it.`),
+				dagql.Arg("directives").Doc(`Only list functions whose field carries one of these directives, e.g. ["check"].`),
+			),
 		migrateField,
 	}.Install(srv)
 
@@ -419,6 +427,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigration](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigrationStep](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceAddress](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.WorkspaceGit]{
 		dagql.NodeFunc("__repository", s.workspaceGitRepository).
@@ -438,6 +447,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceAddress]{}.Install(srv)
 }
 
 type workspaceArgs struct {
@@ -3154,8 +3164,8 @@ func (s *workspaceSchema) checks(
 		return &core.CheckGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
-	skip := workspaceIncludePatterns(args.Skip)
+	include := optionalStrings(args.Include)
+	skip := optionalStrings(args.Skip)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3281,7 +3291,7 @@ func (s *workspaceSchema) generators(
 		return &core.GeneratorGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3414,7 +3424,7 @@ func (s *workspaceSchema) services(
 		return &core.UpGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3509,7 +3519,7 @@ func (s *workspaceSchema) agents(
 		return &core.AgentGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
+	include := optionalStrings(args.Include)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -3549,15 +3559,103 @@ func (s *workspaceSchema) agents(
 	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
-func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
-	if !includeArg.Valid {
+// addresses lists module functions loadable as bare "module:function" address
+// references (hack/designs/sandboxes.md §5). The workspace plumbing lives
+// here: which modules are in play and which of them can be referenced at all.
+// What each module contributes is Module.Addresses.
+func (s *workspaceSchema) addresses(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Types      dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Directives dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) ([]*core.WorkspaceAddress, error) {
+	if isSyntheticWorkspace(parent) {
+		return []*core.WorkspaceAddress{}, nil
+	}
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort, like generators: discovery lists what is loadable, and a
+	// module that fails to load contributes no loadable addresses anyway
+	// (resolveModuleRef hard-errors on it). A broken module must not hide the
+	// rest of the workspace's addresses; its load failure surfaces as a
+	// warning from EnsureWorkspaceModules.
+	if _, err := ensureWorkspaceModulesLoaded(ctx, nil, true); err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// An entrypoint module's functions are hoisted onto the Query root and no
+	// module field is served for it, so a "module:function" reference can never
+	// resolve (see demandLoadInstalledModule); exclude those modules here.
+	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	entrypoints := make(map[string]bool, len(cfg.Modules))
+	for name, entry := range cfg.Modules {
+		if entry.Entrypoint {
+			entrypoints[strcase.ToKebab(name)] = true
+		}
+	}
+
+	srv, err := servedSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filter := core.AddressFilter{
+		Types:      optionalStrings(args.Types),
+		Directives: optionalStrings(args.Directives),
+	}
+	if err := filter.Validate(srv); err != nil {
+		return nil, err
+	}
+	var addresses core.WorkspaceAddresses
+	for _, mod := range mods {
+		if entrypoints[strcase.ToKebab(mod.Self().Name())] {
+			continue
+		}
+		addresses = append(addresses, mod.Self().Addresses(srv, filter)...)
+	}
+	addresses.Sort()
+	return addresses, nil
+}
+
+// servedSchema is the workspace's served schema — every installed module and
+// the core — which Query.address resolves against. Interface implementors and
+// field directives are relations of this schema rather than of the typedefs,
+// so address discovery reads them from here.
+func servedSchema(ctx context.Context) (*dagql.Server, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	served, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+	return served.Schema(ctx)
+}
+
+// optionalStrings unwraps an optional list argument, keeping the distinction
+// between an absent list (nil) and an empty one.
+func optionalStrings(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
+	if !arg.Valid {
 		return nil
 	}
-	patterns := make([]string, 0, len(includeArg.Value))
-	for _, pattern := range includeArg.Value {
-		patterns = append(patterns, pattern.String())
+	out := make([]string, 0, len(arg.Value))
+	for _, s := range arg.Value {
+		out = append(out, s.String())
 	}
-	return patterns
+	return out
 }
 
 func filterGeneratorsByInclude(

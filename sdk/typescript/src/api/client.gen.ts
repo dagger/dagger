@@ -3110,6 +3110,18 @@ export function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceAddressesOpts = {
+  /**
+   * Only list functions returning one of these types, e.g. ["Container"]. An interface name, e.g. "Syncer", matches functions returning any type that implements it.
+   */
+  types?: string[]
+
+  /**
+   * Only list functions whose field carries one of these directives, e.g. ["check"].
+   */
+  directives?: string[]
+}
+
 export type WorkspaceAgentsOpts = {
   /**
    * Only include agents matching the specified patterns
@@ -3487,6 +3499,14 @@ export class Address extends BaseClient {
   gitRepository = (): GitRepository => {
     const ctx = this._ctx.select("gitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.
+   */
+  llm = (): LLM => {
+    const ctx = this._ctx.select("llm")
+    return new LLM(ctx)
   }
 
   /**
@@ -15107,6 +15127,28 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare "module:function" references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.
+   * @param opts.types Only list functions returning one of these types, e.g. ["Container"]. An interface name, e.g. "Syncer", matches functions returning any type that implements it.
+   * @param opts.directives Only list functions whose field carries one of these directives, e.g. ["check"].
+   */
+  addresses = async (
+    opts?: WorkspaceAddressesOpts,
+  ): Promise<WorkspaceAddress[]> => {
+    type addresses = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("addresses", { ...opts }).select("id")
+
+    const response: Awaited<addresses[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceAddress(ctx.copy().selectNode(r.id, "WorkspaceAddress")),
+    )
+  }
+
+  /**
    * Return all agent middlewares from modules loaded in the workspace.
    * @param opts.include Only include agents matching the specified patterns
    */
@@ -15722,6 +15764,105 @@ export class Workspace extends BaseClient {
    */
   with = (arg: (param: Workspace) => Workspace) => {
     return arg(this)
+  }
+}
+
+/**
+ * A module function loadable as an address.
+ */
+export class WorkspaceAddress extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _type?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _description?: string,
+    _type?: string,
+    _value?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._type = _type
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this WorkspaceAddress.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The function's doc string.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Names of the directives on the function, e.g. ["check"].
+   */
+  directives = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("directives")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Name of the type the address resolves to, e.g. "Container".
+   */
+  type_ = async (): Promise<string> => {
+    if (this._type) {
+      return this._type
+    }
+
+    const ctx = this._ctx.select("type")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The address value, e.g. "sandboxes:go".
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

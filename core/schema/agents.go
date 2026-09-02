@@ -59,32 +59,44 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args
 			return dagql.ObjectResult[*core.LLM]{}, err
 		}
 	} else {
-		// Seed a fresh workspace-bound LLM — the sole base-LLM seed point
-		// (hack/designs/workspace-agents.md §3). Every folded leaf then gets base
-		// passed explicitly. llm() starts unbound (NewLLM no longer binds the
-		// ambient workspace), so bind the workspace this group was rolled up from
-		// explicitly — an @agent leaf reads it via LLM.workspace and acts on it
-		// through its tools.
-		sels := []dagql.Selector{{Field: "llm"}}
+		// Bind the workspace this group was rolled up from — an @agent leaf
+		// reads it via LLM.workspace and acts on it through its tools.
+		var ws dagql.Input
 		if parent.BoundWorkspace.Self() != nil {
 			wsID, err := parent.BoundWorkspace.ID()
 			if err != nil {
 				return dagql.ObjectResult[*core.LLM]{}, err
 			}
-			sels = append(sels, dagql.Selector{
-				Field: "withWorkspace",
-				Args: []dagql.NamedInput{{
-					Name:  "workspace",
-					Value: dagql.NewID[*core.Workspace](wsID),
-				}},
-			})
+			ws = dagql.NewID[*core.Workspace](wsID)
 		}
-		if err := srv.Select(ctx, srv.Root(), &base, sels...); err != nil {
+		base, err = seedBaseLLM(ctx, srv, ws)
+		if err != nil {
 			return dagql.ObjectResult[*core.LLM]{}, err
 		}
 	}
 
 	return parent.Compose(ctx, base)
+}
+
+// seedBaseLLM builds the fresh LLM an @agent middleware is composed onto when
+// the caller supplies no base — the sole base-LLM seed point
+// (hack/designs/workspace-agents.md §3), shared by AgentGroup.compose and by a
+// bare "module:agent" address reference (resolveModuleRef), so the two cannot
+// drift. llm() starts unbound (NewLLM no longer binds the ambient workspace),
+// so the workspace is bound explicitly here; a nil workspace leaves it unbound.
+func seedBaseLLM(ctx context.Context, srv *dagql.Server, workspace dagql.Input) (dagql.ObjectResult[*core.LLM], error) {
+	sels := []dagql.Selector{{Field: "llm"}}
+	if workspace != nil {
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args:  []dagql.NamedInput{{Name: "workspace", Value: workspace}},
+		})
+	}
+	var base dagql.ObjectResult[*core.LLM]
+	if err := srv.Select(ctx, srv.Root(), &base, sels...); err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	return base, nil
 }
 
 func (s agentsSchema) name(_ context.Context, parent *core.Agent, args struct{}) (string, error) {

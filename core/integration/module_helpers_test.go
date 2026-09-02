@@ -54,6 +54,19 @@ func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContain
 	}
 }
 
+// daggerQueryFail runs a query expected to fail, so the caller can assert on
+// the error the CLI prints.
+func daggerQueryFail(query string, args ...any) dagger.WithContainerFunc {
+	query = fmt.Sprintf(query, args...)
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
 func daggerCall(args ...string) dagger.WithContainerFunc {
 	return daggerCallAt("", args...)
 }

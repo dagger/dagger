@@ -1788,6 +1788,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\WorkspaceAddress",
+			"p": "Dagger/WorkspaceAddress.html",
+			"d": "<p>A module function loadable as an address.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\WorkspaceGit",
 			"p": "Dagger/WorkspaceGit.html",
 			"d": "<p>Local git state for a workspace.</p>",
@@ -1977,6 +1987,12 @@
 			"n": "Dagger\\Address::id",
 			"p": "Dagger/Address.html#method_id",
 			"d": "<p>A unique identifier for this Address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::llm",
+			"p": "Dagger/Address.html#method_llm",
+			"d": "<p>Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.</p>"
 		},
 		{
 			"t": "M",
@@ -7308,6 +7324,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::addresses",
+			"p": "Dagger/Workspace.html#method_addresses",
+			"d": "<p>Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare &quot;module:function&quot; references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::agents",
 			"p": "Dagger/Workspace.html#method_agents",
 			"d": "<p>Return all agent middlewares from modules loaded in the workspace.</p>"
@@ -7575,6 +7597,36 @@
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceAddress::description",
+			"p": "Dagger/WorkspaceAddress.html#method_description",
+			"d": "<p>The function's doc string.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceAddress::directives",
+			"p": "Dagger/WorkspaceAddress.html#method_directives",
+			"d": "<p>Names of the directives on the function, e.g. [&quot;check&quot;].</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceAddress::id",
+			"p": "Dagger/WorkspaceAddress.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceAddress.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceAddress::type",
+			"p": "Dagger/WorkspaceAddress.html#method_type",
+			"d": "<p>Name of the type the address resolves to, e.g. &quot;Container&quot;.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceAddress::value",
+			"p": "Dagger/WorkspaceAddress.html#method_value",
+			"d": "<p>The address value, e.g. &quot;sandboxes:go&quot;.</p>"
 		},
 		{
 			"t": "M",

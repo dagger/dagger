@@ -44,7 +44,7 @@ func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], 
 	return dagql.ObjectResult[*Workspace]{}, false
 }
 
-// workspaceArgValue resolves the Workspace that a framework-built call should
+// WorkspaceArgValue resolves the Workspace that a framework-built call should
 // pass for a required Workspace argument: the one an enclosing group bound into
 // the context, else the session's ambient current workspace. Returns a nil
 // input when neither applies, leaving the argument off so dagql reports it as
@@ -54,7 +54,7 @@ func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], 
 // for calls that can rely on dagql's injection hook. A required argument can't:
 // preselect rejects a missing non-null argument before the hook runs, so the
 // value has to be on the selector instead.
-func workspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, error) {
+func WorkspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, error) {
 	if ws, ok := WorkspaceFromContext(ctx); ok {
 		wsID, err := ws.ID()
 		if err != nil {
@@ -131,7 +131,7 @@ func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.Input
 	if !arg.Type.Type().NonNull || !inputSpecIsWorkspace(arg) {
 		return nil, false
 	}
-	val, err := workspaceArgValue(ctx, srv)
+	val, err := WorkspaceArgValue(ctx, srv)
 	if err != nil || val == nil {
 		return nil, false
 	}

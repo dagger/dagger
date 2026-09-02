@@ -264,14 +264,18 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 }
 
 // functionRequiresCallerArgs reports whether a function has required arguments
-// the caller has to supply, which disqualifies it from no-arg enumeration.
+// the caller has to supply, which disqualifies it from no-arg enumeration: the
+// mod tree rollups (checks, generators, services, agents) and the bare
+// "module:function" address contract (Module.Addresses, resolveModuleRef).
 //
 // Engine-supplied arguments don't count, because nothing is asked of the
 // caller: an @agent function's single required LLM! is the base the compose
 // fold supplies explicitly (hack/designs/workspace-agents.md §3), and a
 // Workspace! — exempted in argRequired, alongside contextual args — resolves
 // from the workspace in scope. Both are declared required so the signature says
-// so, and both are filled in before the call.
+// so, and both are filled in before the call. Every path that enumerates
+// functions by this rule has to fill both in the same way, or it lists what it
+// then cannot call.
 func functionRequiresCallerArgs(fn *Function) bool {
 	baseExempted := false
 	for _, argRes := range fn.Args {

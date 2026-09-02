@@ -286,7 +286,9 @@
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::asScalar</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.</p></dd><dt><a href="Dagger/Workspace.html#method_address">
 <abbr title="Dagger\Workspace">Workspace</abbr>::address</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p></dd><dt><a href="Dagger/Workspace.html#method_agents">
+                    <dd><p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p></dd><dt><a href="Dagger/Workspace.html#method_addresses">
+<abbr title="Dagger\Workspace">Workspace</abbr>::addresses</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Addresses loadable from the workspace's installed modules: functions taking no caller-supplied arguments (an auto-injected Workspace or an @agent's base LLM doesn't count), rendered as bare &quot;module:function&quot; references. Each filter list matches any of its entries, and the lists both apply; a null list does not filter, an empty one matches nothing.</p></dd><dt><a href="Dagger/Workspace.html#method_agents">
 <abbr title="Dagger\Workspace">Workspace</abbr>::agents</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return all agent middlewares from modules loaded in the workspace.</p></dd>        </dl><h2 id="letterB">B</h2>
         <dl id="indexB"><dt><a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -580,7 +582,11 @@
 <abbr title="Dagger\Up">Up</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>The description of the service</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Returns a Directory from the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_description">
+                    <dd><p>Returns a Directory from the workspace.</p></dd><dt><a href="Dagger/WorkspaceAddress.html#method_description">
+<abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a></em></dt>
+                    <dd><p>The function's doc string.</p></dd><dt><a href="Dagger/WorkspaceAddress.html#method_directives">
+<abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr>::directives</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a></em></dt>
+                    <dd><p>Names of the directives on the function, e.g. [&quot;check&quot;].</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_description">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
                     <dd><p>Generic summary of this step's purpose and impact.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_description">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
@@ -1035,7 +1041,9 @@
 <abbr title="Dagger\Volume">Volume</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Volume.</p></dd><dt><a href="Dagger/Workspace.html#method_id">
 <abbr title="Dagger\Workspace">Workspace</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
+                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceAddress.html#method_id">
+<abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this WorkspaceAddress.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
 <abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceGit.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -1069,7 +1077,9 @@
                     <dd><p>The kind of type this is (e.g. primitive, list, object).</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_key">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::key</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
                     <dd><p>The setting key.</p></dd>        </dl><h2 id="letterL">L</h2>
-        <dl id="indexL"><dt><a href="Dagger/AgentGroup.html#method_list">
+        <dl id="indexL"><dt><a href="Dagger/Address.html#method_llm">
+<abbr title="Dagger\Address">Address</abbr>::llm</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
+                    <dd><p>Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.</p></dd><dt><a href="Dagger/AgentGroup.html#method_list">
 <abbr title="Dagger\AgentGroup">AgentGroup</abbr>::list</a>() &mdash; <em>Method in class <a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a></em></dt>
                     <dd><p>Return a list of individual agents and their details</p></dd><dt><a href="Dagger/Attribute/ListOfType.html"><abbr title="Dagger\Attribute\ListOfType">ListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Changeset.html#method_layer">
@@ -1646,7 +1656,9 @@
                     <dd><p>An interactive terminal that clients can connect to.</p></dd><dt><a href="Dagger/TerminalId.html"><abbr title="Dagger\TerminalId">TerminalId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a parameter or return type in a Module.</p></dd><dt><a href="Dagger/TypeDefId.html"><abbr title="Dagger\TypeDefId">TypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd>        </dl><h2 id="letterU">U</h2>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceAddress.html#method_type">
+<abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr>::type</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a></em></dt>
+                    <dd><p>Name of the type the address resolves to, e.g. &quot;Container&quot;.</p></dd>        </dl><h2 id="letterU">U</h2>
         <dl id="indexU"><dt><a href="Dagger/Container.html#method_up">
 <abbr title="Dagger\Container">Container</abbr>::up</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.</p></dd><dt><a href="Dagger/Container.html#method_user">
@@ -1705,7 +1717,9 @@
                     <dd><p>The label value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_version">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The specified version of the git repo this source points to.</p></dd><dt><a href="Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A filesystem volume that can be mounted into containers.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_value">
+                    <dd><p>A filesystem volume that can be mounted into containers.</p></dd><dt><a href="Dagger/WorkspaceAddress.html#method_value">
+<abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a></em></dt>
+                    <dd><p>The address value, e.g. &quot;sandboxes:go&quot;.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_value">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
                     <dd><p>The configured value after applying the selected workspace environment, or empty when unset.</p></dd>        </dl><h2 id="letterW">W</h2>
         <dl id="indexW"><dt><a href="Dagger/Address.html#method_workspace">
@@ -2217,7 +2231,8 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a module removed from its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceAddress.html"><abbr title="Dagger\WorkspaceAddress">WorkspaceAddress</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A module function loadable as an address.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Local git state for a workspace.</p></dd><dt><a href="Dagger/WorkspaceGitId.html"><abbr title="Dagger\WorkspaceGitId">WorkspaceGitId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>

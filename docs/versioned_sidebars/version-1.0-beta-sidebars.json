@@ -210,6 +210,7 @@
                 "api/reference/up",
                 "api/reference/up-group",
                 "api/reference/volume",
+                "api/reference/workspace-address",
                 "api/reference/workspace-git",
                 "api/reference/workspace-migration",
                 "api/reference/workspace-migration-step",

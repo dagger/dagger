@@ -100,6 +100,15 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Load an LLM from a module reference. An @agent function is composed onto a fresh LLM bound to the workspace in scope, as Workspace.agents.compose does with no base.
+     */
+    public function llm(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a secret from the address.
      */
     public function secret(): Secret

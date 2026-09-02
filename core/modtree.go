@@ -751,7 +751,7 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 	if argName == "" {
 		return nil, nil
 	}
-	wsID, err := workspaceArgValue(ctx, srv)
+	wsID, err := WorkspaceArgValue(ctx, srv)
 	if err != nil {
 		return nil, err
 	}

@@ -174,6 +174,11 @@ func (fn *Function) Directives() []*ast.Directive {
 			Name: "check",
 		})
 	}
+	if fn.IsGenerator {
+		directives = append(directives, &ast.Directive{
+			Name: "generate",
+		})
+	}
 	if fn.IsUp {
 		directives = append(directives, &ast.Directive{
 			Name: "up",
