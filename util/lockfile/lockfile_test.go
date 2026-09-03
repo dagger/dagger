@@ -34,6 +34,21 @@ func TestParseRejectsFutureVersion(t *testing.T) {
 	require.True(t, versionErr.IsNewer())
 }
 
+func TestParseRejectsMergeConflict(t *testing.T) {
+	input := strings.Join([]string{
+		`<<<<<<< HEAD`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"old"]`,
+		`=======`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"new"]`,
+		`>>>>>>> branch`,
+	}, "\n")
+
+	_, err := Parse([]byte(input))
+	require.ErrorIs(t, err, ErrMergeConflict)
+}
+
 func TestMarshalDeterministicOrdering(t *testing.T) {
 	lock := New()
 	require.NoError(t, lock.Set("b", "lookup", []any{"x"}, "r3"))

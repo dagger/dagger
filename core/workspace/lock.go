@@ -140,6 +140,17 @@ func FutureLockfileVersionError(err error) error {
 	)
 }
 
+// LockfileMergeConflictError turns lockfile conflict markers into actionable
+// guidance. It returns nil for all other parse errors.
+func LockfileMergeConflictError(err error) error {
+	if !errors.Is(err, lockfile.ErrMergeConflict) {
+		return nil
+	}
+	return fmt.Errorf(
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+}
+
 // NewLock returns an empty workspace lock.
 func NewLock() *Lock {
 	return &Lock{file: lockfile.New()}
