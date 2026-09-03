@@ -399,6 +399,8 @@ type ContainerWithMountedTempLazy struct {
 	Size   int
 }
 
+// ContainerWithMountedSecretLazy resolves named ownership in its metadata
+// group, which reads /etc/passwd from the parent's rootfs.
 type ContainerWithMountedSecretLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -427,6 +429,8 @@ type ContainerWithSymlinkLazy struct {
 	LinkPath string
 }
 
+// ContainerWithUnixSocketLazy resolves named ownership in its metadata
+// group, which reads /etc/passwd from the parent's rootfs.
 type ContainerWithUnixSocketLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -3885,11 +3889,6 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			}
 			target := absPath(container.Config.WorkingDir, lazy.Target)
 			if source == nil {
-				if mnt := container.mountAt(target); mnt != nil {
-					source = mnt.DirectorySource
-				}
-			}
-			if source == nil {
 				source = new(LazyAccessor[*Directory, *Container])
 			}
 			container.Mounts = container.Mounts.With(ContainerMount{
@@ -3988,11 +3987,6 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 				return err
 			}
 			target := absPath(container.Config.WorkingDir, lazy.Target)
-			if source == nil {
-				if mnt := container.mountAt(target); mnt != nil {
-					source = mnt.FileSource
-				}
-			}
 			if source == nil {
 				source = new(LazyAccessor[*File, *Container])
 			}
@@ -4095,12 +4089,6 @@ func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EvaluateContainerGroup
 				return err
 			}
 			target = absPath(container.Config.WorkingDir, lazy.Target)
-			if directorySource == nil && fileSource == nil {
-				if mnt := container.mountAt(target); mnt != nil {
-					directorySource = mnt.DirectorySource
-					fileSource = mnt.FileSource
-				}
-			}
 			mount := ContainerMount{Target: target, Readonly: lazy.Readonly}
 			if fileSource != nil {
 				mount.FileSource = fileSource
@@ -6212,37 +6200,29 @@ func (container *Container) WithMountedPathDockerfileCompat(
 		return nil, err
 	}
 
-	if path.Clean(sourcePath) == "/" {
-		sourceDir, err := cloneDetachedDirectoryForContainerResult(ctx, source.Self())
+	var srv *dagql.Server
+	if path.Clean(sourcePath) != "/" {
+		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return nil, err
 		}
-		mountSource := new(LazyAccessor[*Directory, *Container])
-		mountSource.setValue(sourceDir)
-		container.Mounts = container.Mounts.With(ContainerMount{
-			DirectorySource: mountSource,
-			Target:          target,
-			Readonly:        readonly,
-		})
-		container.ImageRef = ""
-		return container, nil
+		srv, err = query.Server.Server(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	stat, err := source.Self().Stat(ctx, source, srv, sourcePath, false)
+	sourceIsFile, err := DockerfileCompatMountSourceIsFile(ctx, source, srv, sourcePath)
 	if err != nil {
 		return nil, err
 	}
 
-	if stat.FileType == FileTypeDirectory {
-		sourceDir, err := detachedDirectoryAtSourcePath(ctx, source, sourcePath)
+	if !sourceIsFile {
+		var sourceDir *Directory
+		if path.Clean(sourcePath) == "/" {
+			sourceDir, err = cloneDetachedDirectoryForContainerResult(ctx, source.Self())
+		} else {
+			sourceDir, err = detachedDirectoryAtSourcePath(ctx, source, sourcePath)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -6273,6 +6253,38 @@ func (container *Container) WithMountedPathDockerfileCompat(
 	})
 	container.ImageRef = ""
 	return container, nil
+}
+
+// DockerfileCompatMountSourceIsFile decides which accessor kind a bind mount
+// needs. It uses the same normalized source path as materialization.
+func DockerfileCompatMountSourceIsFile(
+	ctx context.Context,
+	source dagql.ObjectResult[*Directory],
+	srv *dagql.Server,
+	sourcePath string,
+) (bool, error) {
+	if source.Self() == nil {
+		return false, fmt.Errorf("dockerfile bind mount source is nil")
+	}
+	return dockerfileCompatMountSourceIsFile(sourcePath, func(sourcePath string) (FileType, error) {
+		stat, err := source.Self().Stat(ctx, source, srv, sourcePath, false)
+		if err != nil {
+			return "", err
+		}
+		return stat.FileType, nil
+	})
+}
+
+func dockerfileCompatMountSourceIsFile(sourcePath string, stat func(string) (FileType, error)) (bool, error) {
+	sourcePath = cleanDockerfileCompatMountSourcePath(sourcePath)
+	if path.Clean(sourcePath) == "/" {
+		return false, nil
+	}
+	fileType, err := stat(sourcePath)
+	if err != nil {
+		return false, err
+	}
+	return fileType != FileTypeDirectory, nil
 }
 
 func cleanDockerfileCompatMountSourcePath(sourcePath string) string {
