@@ -243,7 +243,9 @@ impl Node for NodeClient {
 /// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
 pub trait Syncer {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send;
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send
+    where
+        Self: Sized;
 }
 #[derive(Clone)]
 pub struct SyncerClient {
@@ -299,13 +301,13 @@ impl Syncer for SyncerClient {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
@@ -1415,19 +1417,19 @@ impl Syncer for Changeset {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Changeset"),
                 graphql_client,
             })
         }
@@ -4823,19 +4825,19 @@ impl Syncer for Container {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Container"),
                 graphql_client,
             })
         }
@@ -6597,19 +6599,19 @@ impl Syncer for Directory {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Directory"),
                 graphql_client,
             })
         }
@@ -8120,19 +8122,19 @@ impl Syncer for File {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("File"),
                 graphql_client,
             })
         }
@@ -11486,19 +11488,19 @@ impl Syncer for Llm {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("LLM"),
                 graphql_client,
             })
         }
@@ -12333,19 +12335,19 @@ impl Syncer for Module {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Module"),
                 graphql_client,
             })
         }
@@ -13074,19 +13076,19 @@ impl Syncer for ModuleSource {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("ModuleSource"),
                 graphql_client,
             })
         }
@@ -14951,19 +14953,19 @@ impl Syncer for Service {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Service"),
                 graphql_client,
             })
         }
@@ -15207,19 +15209,19 @@ impl Syncer for Terminal {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send {
         let query = self.selection.select("sync");
         let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
         async move {
             let id: Id = query.execute(graphql_client.clone()).await?;
-            Ok(SyncerClient {
+            Ok(Self {
                 proc,
                 selection: query
                     .root()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("Syncer"),
+                    .inline_fragment("Terminal"),
                 graphql_client,
             })
         }
