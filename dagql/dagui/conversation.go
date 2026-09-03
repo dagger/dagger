@@ -147,7 +147,7 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 // Scoping by AGENT rather than by span is what makes it whole. A resume after
 // a failure relaunches the loop under a fresh span
 // (hack/designs/async-agents.md §9), which is why AgentNode keys on the
-// spawn-minted instance ID and keeps a list; a caller that scoped to
+// spawn-minted runtime handle and keeps a list; a caller that scoped to
 // AgentNode.Span() alone would silently drop everything said before the last
 // relaunch.
 //

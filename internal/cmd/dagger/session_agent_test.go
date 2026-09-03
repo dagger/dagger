@@ -65,10 +65,9 @@ func (f *fakeRuntime) Interrupt(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.interrupts++
+	f.state = dagger.AgentStatePaused
 	return nil
 }
-
-func (f *fakeRuntime) WaitFor(context.Context, dagger.AgentState) error { return nil }
 
 func (f *fakeRuntime) State(context.Context) (dagger.AgentState, error) {
 	f.mu.Lock()
@@ -142,7 +141,7 @@ func (fakeMessage) Delivery(context.Context) (dagger.AgentMessageDelivery, error
 	return dagger.AgentMessageDeliverySteered, nil
 }
 
-func (fakeMessage) Await(context.Context) (string, error) { return "", nil }
+func (fakeMessage) Response(context.Context) (string, error) { return "", nil }
 
 // testSession builds a session with no dagger client or frontend: enough for
 // the routing and ownership policies, which must not need either.
@@ -441,7 +440,7 @@ func TestInterruptSkipsAnIdleRuntime(t *testing.T) {
 }
 
 // TestInterruptTargetCancelsItsOwnTurn: with a turn in flight on the focused
-// conversation, cancelling that turn's await is the interrupt -- WithPrompt
+// conversation, cancelling that turn's response request is the interrupt -- WithPrompt
 // then issues the server-side preempt and re-roots on the kept prefix, so
 // interrupting twice would be wrong.
 func TestInterruptTargetCancelsItsOwnTurn(t *testing.T) {
@@ -617,7 +616,7 @@ func TestReseedKeepsTheInstance(t *testing.T) {
 // TestFocusResolvesToAnExistingConversation: focusing an agent the session
 // already drives -- its own, most importantly -- must retarget it rather than
 // attach a second conversation to one runtime. That correlation is exactly
-// what the runtime's instance ID buys.
+// what the runtime's runtime handle buys.
 func TestFocusResolvesToAnExistingConversation(t *testing.T) {
 	s, agents := testSession(t, "chief", "scout")
 	chief, scout := agents[0], agents[1]

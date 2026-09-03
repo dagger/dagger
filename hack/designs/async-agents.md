@@ -103,14 +103,14 @@ synchronous API just never looks at the handle. `llm.loop` becomes sugar for
 free: module-driven loops stop being opaque, because any running evaluation
 is an addressable agent.
 
-An `Agent` is a **spawned instance**: `llm.spawn` mints a unique instance ID
+An `Agent` is a **spawned instance**: `llm.spawn` mints a unique runtime handle
 per call and pins it into the returned handle's chain via the pure
-`agent(id:)` lookup — Agent joins `AgentMessage` in the minted-and-pinned
+`agent(handle:)` lookup — Agent joins `AgentMessage` in the minted-and-pinned
 identity family (§8). The value itself stays a pure, content-addressed dagql
-value (seed conversation, minted instance ID, display name), and starting it
+value (seed conversation, minted runtime handle, display name), and starting it
 registers a runtime entry — mailbox, loop goroutine on a detached context,
 computed state — in a session-scoped runtime table **keyed by that minted
-instance ID**. Every spawn therefore gets a fresh entry: two spawns of one
+runtime handle**. Every spawn therefore gets a fresh entry: two spawns of one
 composition are two agents, and a stopped instance's slot can never be
 resolved to by a later spawn. The key is the ID and nothing else, which is
 what lets a handle rebuilt from telemetry address the live entry even though
@@ -178,8 +178,8 @@ type Agent implements Node {
   """Resume draining the mailbox."""
   resume: ID! @expectedType(name: "Agent")
 
-  """Block until the agent reaches the given state."""
-  waitFor(state: AgentState = IDLE): ID! @expectedType(name: "Agent")
+  """Block until the agent settles: IDLE, FAILED, or STOPPED."""
+  wait: ID! @expectedType(name: "Agent")
 
   """
   Release the runtime. The tombstone (state, snapshot) stays readable for
@@ -209,10 +209,10 @@ type AgentMessage implements Node {
 
   """
   Block until the turn that consumed this message ends, and return that
-  turn's reply. Idempotent: cancel and re-await freely; concurrent waiters
-  share the result.
+  turn's reply. Idempotent: cancel and request it again freely; concurrent
+  waiters share the result.
   """
-  await: String!
+  response: String!
 }
 
 enum AgentState {
@@ -245,10 +245,10 @@ type LLM {
   spawn(name: String): ID! @expectedType(name: "Agent")
 
   """
-  Rehydrate a spawned agent's handle from its instance ID: the pure lookup
+  Rehydrate a spawned agent's handle from its runtime handle: the pure lookup
   spawn pins instance identity through. Never creates an instance.
   """
-  agent(id: String!, name: String!): Agent!
+  agent(handle: String!, name: String!): Agent!
 }
 ```
 
@@ -257,10 +257,10 @@ type LLM {
   the calling loop — the async sibling of `LLM!` injection (which hands a
   tool the conversation *value* for continuation-style handoff, the `Agent!`
   form hands it a live *channel*). This is the child→parent channel: a
-  spawned worker holds its spawner's handle and can `parent.send(...).await`.
+  spawned worker holds its spawner's handle and can `parent.send(...).response`.
   Tailcall's equivalent is the per-agent MCP token identity.
 
-There is deliberately **no `ask` field**: `ask(m)` ≡ `send(m).await`, and the
+There is deliberately **no `ask` field**: `ask(m)` ≡ `send(m).response`, and the
 handle form is strictly more expressive (fire-and-forget, deferred await,
 shared awaiting). The off-the-record variant needs no verb at all — see §3.2.
 
@@ -286,7 +286,7 @@ history (with provenance), and tailcall independently converged on the same
 design: a delivered ask *is* a user message in the askee's conversation,
 source-agnostic, with per-turn provenance stamped alongside.
 
-Reply correlation rides the handle: `AgentMessage.await` returns the final
+Reply correlation rides the handle: `AgentMessage.response` returns the final
 reply of *the turn that consumed the message* — under multiple senders,
 `send + waitFor(IDLE) + snapshot.lastReply` is racy (idle may follow a turn
 that consumed someone else's message), which is why the handle exists. There
@@ -324,7 +324,7 @@ type Team {
   }
 
   askWorker(name: String!, message: String!): String! {
-    members.find { m => m.name == name }.send(message).await
+    members.find { m => m.name == name }.send(message).response
   }
 
   collect(name: String!): String! {
@@ -406,7 +406,7 @@ conclusion stands unchanged.
   instance from that snapshot. Services *free* a running entry's registry key
   on exit (`delete(ss.running, key)`, services.go:1116–1137; tombstones go to a
   capped side list) precisely because their keys are reusable composition
-  digests. An agent's key IS its spawn-minted instance ID — born unique, never
+  digests. An agent's key IS its spawn-minted runtime handle — born unique, never
   reusable — so keeping the keyed slot is what lets a stopped agent retain its
   history and identity across relaunch.
 - **`FAILED`** holds the completed prefix in `snapshot`; `resume` re-enters
@@ -493,7 +493,7 @@ The work, in the order the constraints force:
 - **Resume must not re-execute recorded imperative verbs.** Item 13's
   non-atomic replay finding is the constraint: a chain load that fails
   partway leaves a world that never existed, and the compensating verb is
-  the one most likely skipped. Reattach by instance ID (item 13's
+  the one most likely skipped. Reattach by runtime handle (item 13's
   recommended fix) rather than replaying `spawn`.
 - **Persist the recipe form, not the handle form.** A post-evaluation
   `Result.ID()` is an engine-local shared-result reference that dies with its
@@ -518,7 +518,7 @@ Two boundaries to settle before promising cross-machine migration:
 The shell's client-driven step loop, its single-slot `queuedMsg`, and the
 racy `alt+up` recall all collapse: the prompt line becomes `agent.send`, and
 the frontend becomes a pure observer — spans for progress (unchanged),
-`state`/`waitingOn` for the ball-in-your-court moment, `AgentMessage.await`
+`state`/`waitingOn` for the ball-in-your-court moment, `AgentMessage.response`
 when it wants a turn's reply. Ctrl-C maps to `interrupt` (prefix-preserving)
 instead of cancelling the turn context and rolling back client-side state.
 `dagger agent` spawns a real Agent and attaches to it; a second terminal (or
@@ -742,9 +742,9 @@ core/integration/agent_runtime_test.go), ratified here:
   cancel-and-re-await contract across requests. The fix follows the schema's
   established pattern for delicate runtime identity (the same trick `step()`
   uses to materialize state as selectors): after enqueueing, `send` re-execs
-  through a lookup field — `Agent.message(id: String!): AgentMessage!` —
+  through a lookup field — `Agent.message(handle: String!): AgentMessage!` —
   via a real Select, so the returned handle's ID is an honest, replayable
-  chain (`…agent(id:…)!message(id:"…")`) pinned to the generated message ID
+  chain (`…agent(handle:…)!message(handle:"…")`) pinned to the generated message ID
   and addressable from any request in the session.
 - **Agent identity is minted at spawn and pinned by re-exec.** Ratified
   after live QA surfaced the failure the original model guaranteed: with
@@ -755,11 +755,11 @@ core/integration/agent_runtime_test.go), ratified here:
   the chain, making this the common case, not an edge). Prior art is
   unanimous — Temporal workflowID/runID + reuse policies, Erlang name/Pid,
   Akka path/ref-with-UID ("a new incarnation … is not the same actor"),
-  k8s name/UID + generateName — a reusable name is never the instance ID,
+  k8s name/UID + generateName — a reusable name is never the runtime handle,
   and uniqueness is minted where instances are born, never by callers. So
   the pure constructor `asAgent(name)` became the effectful verb
-  `spawn(name)`: it mints the instance ID in the resolver and pins it
-  through the pure `LLM.agent(id:, name:)` lookup — extending the
+  `spawn(name)`: it mints the runtime handle in the resolver and pins it
+  through the pure `LLM.agent(handle:, name:)` lookup — extending the
   message-identity pattern (previous bullet) one level up — and, being
   imperative, returns `ID!` with `@expectedType` like every other verb.
   The registry keys on that minted ID directly (originally on the agent
@@ -774,7 +774,7 @@ core/integration/agent_runtime_test.go), ratified here:
   handle). Stop no longer ends the instance identity: it ends the current
   loop, and the held ID is the capability that may relaunch it.
 - **Imperative verbs are ID-returning, sync-style.** `spawn`, `start`,
-  `send`, `interrupt`, `pause`, `resume`, `waitFor`, and `stop` return
+  `send`, `interrupt`, `pause`, `resume`, `wait`, and `stop` return
   `ID!` with `@expectedType`, exactly like `Service.start`/`stop` and the
   `sync` fields. Lazy clients (Dang) force scalar-returning fields at the
   call site and re-hydrate the ID into an object via the annotation, so the
@@ -783,7 +783,7 @@ core/integration/agent_runtime_test.go), ratified here:
   at codegen time: an `ID!` return with `@expectedType` is loaded as that
   object, so `spawn` hands back an `Agent` and `send` an `AgentMessage`
   rather than their IDs. Reads stay
-  object-returning: `agent(id:)` and `message(id:)` (pure lookups), and
+  object-returning: `agent(handle:)` and `message(handle:)` (pure lookups), and
   `snapshot`. For `spawn` and `send` the returned ID is the pinned lookup
   chain (previous bullets), so re-hydrating it replays the lookup, not the
   mint/enqueue.
@@ -811,7 +811,7 @@ core/integration/agent_runtime_test.go), ratified here:
 - **Telemetry is the directory, and it needed no new schema.** Discovery is a
   purely client-side derivation from the trace a client already ingests: the
   capability was in every trace before any of this was written. `spawn` pins
-  instance identity through an internal `Select` of `agent(id:, name:)`
+  instance identity through an internal `Select` of `agent(handle:, name:)`
   (core/schema/llm.go:523-538), and every dagql call span carries the full
   protobuf `Call` (`DagCallAttr`, core/telemetry.go:92-105), so a client
   reconstructs a *sendable* handle from a carried digest exactly as
@@ -894,7 +894,7 @@ core/integration/agent_runtime_test.go), ratified here:
   open — so the tombstone-sealing transition in `stop`, which runs after the
   loop has already returned, still reaches a client's roster instead of
   leaving a FAILED agent apparently retryable forever.
-- **A handle can be asked which instance it is.** `Agent.instanceID` returns
+- **A handle can be asked which instance it is.** `Agent.handle` returns
   the spawn-minted ID — the same value the loop span publishes as
   `dagger.io/agent.id`. It was added for focus (§5.1): a client that
   discovers agents through telemetry keys its roster on that ID, and without
@@ -1024,7 +1024,7 @@ Semantics ratified during implementation:
   same adoption exposed as a client-facing verb, and the CLI's `updateLLM`
   now routes every replacement through it, dropping only as a fallback.
   The premise behind the old drop — "a different value digest is a
-  different instance by design" — had already died with the InstanceID
+  different instance by design" — had already died with the Handle
   registry pivot (§10.2); the drop was a workaround for the missing verb.
   The verb is argument-shaped where `rehydrate` is receiver-shaped, and
   the split is a rule, not an accident: creation verbs (`spawn`,
@@ -1064,24 +1064,24 @@ Semantics ratified during implementation:
 
 What is BUILT (see also §8 for ratified semantics):
 
-- **Core runtime**: `core/agent.go` (Agent value with spawn-minted
-  `InstanceID`, `AgentRuntimes` session registry keyed by that ID —
+- **Core runtime**: `core/agent.go` (Agent value with a spawn-minted runtime
+  handle, `AgentRuntimes` session registry keyed by that handle —
   collision-free by construction, and stable across the re-execution a
   telemetry-rebuilt handle performs (§10.2) — loop with mailbox drained at
   step boundaries, tombstones), `core/schema/agent.go` (fields: `name`,
-  `state`, `snapshot`, `start`, `send`, `message`, `waitFor`, `pause`,
-  `resume`, `interrupt`, `stop`; `AgentMessage.{delivery,await}`;
+  `state`, `snapshot`, `start`, `send`, `message`, `wait`, `pause`,
+  `resume`, `interrupt`, `stop`; `AgentMessage.{delivery,response}`;
   `AgentState`, `AgentMessageDelivery`). Registry wiring in
   `engine/server/session.go` alongside `Services`.
 - **Spawned instance identity**: `LLM.spawn(name)` mints a unique instance
-  per call and pins it through the pure `LLM.agent(id:, name:)` lookup
+  per call and pins it through the pure `LLM.agent(handle:, name:)` lookup
   (§8), in `core/schema/llm.go`; name is display-only. `asAgent` is gone.
-- **Message identity**: re-exec pinning via `Agent.message(id:)` (§8) —
-  handles are honest chains, cancel-and-re-await works across requests.
+- **Message identity**: re-exec pinning via `Agent.message(handle:)` (§8) —
+  handles are honest chains, and a canceled response request can be retried.
 - **ID-returning verbs**: the imperative fields (`spawn`, `start`, `send`,
-  `interrupt`, `pause`, `resume`, `waitFor`, `stop`) return `ID!` with
-  `@expectedType`, `Service.start`-style (§8); reads (`agent(id:)`,
-  `snapshot`, `message(id:)`) stay object-returning. Typed SDKs
+  `interrupt`, `pause`, `resume`, `wait`, `stop`) return `ID!` with
+  `@expectedType`, `Service.start`-style (§8); reads (`agent(handle:)`,
+  `snapshot`, `message(handle:)`) stay object-returning. Typed SDKs
   re-hydrate self-returning verbs natively; `spawn`'s agent ID and
   `send`'s message ID re-hydrate via `node(id:)` (`dagger.Ref` in the Go
   SDK).
@@ -1142,7 +1142,7 @@ What is BUILT (see also §8 for ratified semantics):
   faking a handle, and the cycle steps over such entries rather than
   reporting one the user never named. Submission asks the target first and
   queues only behind a serial turn; Ctrl-C interrupts the focused runtime
-  (§8). `Agent.instanceID` is what correlates a held handle with its roster
+  (§8). `Agent.handle` is what correlates a held handle with its roster
   entry. Tests: `internal/cmd/dagger/session_agent_test.go` (routing,
   ownership and interrupt policy against a fake runtime, no engine) and
   `dagql/idtui/agent_focus_test.go` (routing, Ctrl-C, focus keys in both
@@ -1174,7 +1174,7 @@ What is BUILT (see also §8 for ratified semantics):
   against this change. It is a regression test rather than an iteration
   one, which is what item 7 proposes to make explicit.
 - **CLI prompt mode** (`internal/cmd/dagger/session_agent.go`, `shell.go`,
-  `dagql/idtui/frontend_pretty.go`): submit = send + resume + await,
+  `dagql/idtui/frontend_pretty.go`): submit = send + resume + response,
   re-rooting on `snapshot` at turn end; mid-turn submissions send
   immediately (STEERED); Ctrl-C → `interrupt` (PAUSED, prefix kept), next
   submit resumes; wholesale LLM replacement stops the stale runtime and the
@@ -1186,7 +1186,7 @@ What is BUILT (see also §8 for ratified semantics):
   pattern), with each worker given an `askChief` line home. Rebuilt on
   the event-driven messaging kernel (below): `ask` is gone, `askChief`
   delivers without blocking, `sendTo` answers questions via `replyTo`,
-  `collect` rides `waitSettled`, and `spawn` subscribes the chief to each
+  `collect` rides `wait`, and `spawn` subscribes the chief to each
   worker's lifecycle. TEMPORARILY deregistered from dagger.toml (dev and
   codex envs): the module now uses Agent fields only a from-source engine
   serves, and a module that fails to compile takes its env's whole module
@@ -1203,10 +1203,10 @@ What is BUILT (see also §8 for ratified semantics):
   model-facing attribution headers (`LLMMessage.origin` for clients);
   reply correlation via `send(replyTo:)` with `AgentMessage.ref` as the
   short token; lifecycle subscriptions via `Agent.notify` delivering
-  IDLE/FAILED events as mailbox messages; `Agent.waitSettled` +
+  IDLE/FAILED events as mailbox messages; `Agent.wait` +
   `Agent.error` as the safe supervisor wait; and waits-for edges with
   cycle refusal at all four blocking primitives (awaitMessage,
-  messageDelivery, waitFor, waitSettled). That doc's §10 carries the
+  messageDelivery, wait). That doc's §10 carries the
   as-built record — including the ordinal-ref delta, the replayer
   leading-SYSTEM trim fix (item 15), and the de-race pattern recorded
   cross-agent tests need.
@@ -1232,7 +1232,7 @@ What is BUILT (see also §8 for ratified semantics):
   spawn with an attributed task → non-blocking askChief steering into the
   chief's open turn with its header → idle events carrying final replies →
   mid-turn sendTo(replyTo:) waking the worker with the paired answer) +
-  `agent_notify_test.go` (wake-on-event, waitSettled-on-FAILED), all
+  `agent_notify_test.go` (wake-on-event, wait-on-FAILED), all
   against the keyless `replay/` provider, including
   genuinely mid-turn STEERED and mid-step interrupt via a slow-tool
   recording synchronized on a cache-volume marker. Spawn semantics are
@@ -1249,7 +1249,7 @@ rather than being renumbered away:
 
 1. **Roster follow-ups** (§5.1): addressing itself is BUILT (above), but
    three threads it exposes are not. **Attaching prompts a runtime the
-   session does not own**: submit is send + resume + await, and that resume
+   session does not own**: submit is send + resume + response, and that resume
    un-pauses somebody else's worker — whether that is right ("prompt it
    exactly like your own") or wants a resume-only-if-owned rule is
    undecided. **Save identity is still session-wide**: `initialPrompt`/
@@ -1304,7 +1304,7 @@ rather than being renumbered away:
    (agent-messaging.md §4.3–4.4, §10): lifecycle events delivered as
    mailbox messages mean a supervisor never waits on N agents — spawn
    subscribes the chief, completions and failures arrive as they happen,
-   none missed. `Agent.waitSettled` (returns on IDLE/FAILED/STOPPED, with
+   none missed. `Agent.wait` (returns on IDLE/FAILED/STOPPED, with
    `Agent.error` carrying the why) replaced collect's waitFor(IDLE), which
    hung forever on FAILED. A combinator for non-model orchestrator CODE
    remains open there.*
@@ -1402,7 +1402,7 @@ rather than being renumbered away:
     Mechanism, established: **the runtime registry is per-session**
     (`engine/server/session.go:532` allocates a fresh `NewAgentRuntimes()`).
     Keys are stable across sessions — the agent's content digest, minted
-    `InstanceID` included — but the table they index is not, so the same key
+    `Handle` included — but the table they index is not, so the same key
     resolves to a FRESH entry. Every creating verb routes through
     `GetOrCreate` (core/agent.go:250) and mints from `Seed` rather than
     reattaching; `send` then signal-with-starts it. That is exactly "RUNNING
@@ -1466,11 +1466,11 @@ rather than being renumbered away:
     addressed or stopped from the UI. The blast radius is bounded per session
     — the registry dies with it — but the recipe on disk resurrects them next
     time, so the cause is not bounded at all.
-    Fix, recommended: **reattach by instance ID** — make registry lookup
-    session-independent, keyed on the spawn-minted `InstanceID` that already
+    Fix, recommended: **reattach by runtime handle** — make registry lookup
+    session-independent, keyed on the spawn-minted `Handle` that already
     rides the pinned chain, so a resumed session finds the live entry instead
     of minting one. **Half of this has landed**: the registry now keys on
-    `InstanceID` (§10.2, fixing a different defect), so what remains is
+    `Handle` (§10.2, fixing a different defect), so what remains is
     purely the session-independence — the table is still allocated per
     session, so a resumed session misses whatever the key is and
     `GetOrCreate` still mints from `Seed`. It is the only option where resume
@@ -1665,9 +1665,9 @@ rather than being renumbered away:
     (measured: the client's DB held two spans carrying that digest).
     RESOLVED WITH IT: **Mode B**, where the chain rebuilds completely and the
     rebuilt handle then addresses a different, inert entry — `state` reads
-    `IDLE` while `name` and `instanceID` read back correctly, because they
+    `IDLE` while `name` and `handle` read back correctly, because they
     are literals in the recipe. Fixed by keying the runtime registry on the
-    spawn-minted `InstanceID` rather than the agent value's content digest;
+    spawn-minted `Handle` rather than the agent value's content digest;
     §10.2 carries the reasoning, including why the capability objection to
     that key dissolved on inspection. The live report that forced it also
     corrected the symptom's description: a missed lookup is not inert,
@@ -1701,7 +1701,7 @@ session by hand:
   Both failure modes are fixed: the loud one (a read-only `·` after the name,
   "cannot be addressed") by the call-payload log channel, and the silent one
   (an entry that renders normally but reads `IDLE` while the worker is really
-  running) by keying the registry on the instance ID. If you see either again
+  running) by keying the registry on the runtime handle. If you see either again
   — especially a focused agent whose state disagrees with `staff.status`, or a
   prompt that lands in a conversation with no history while the original loop
   keeps going — that is a regression worth reporting, not the known condition
@@ -1739,7 +1739,7 @@ session by hand:
 **STATUS.** Both modes are FIXED. MODE A (the loud "never reached this
 client") was resolved by the call-payload log channel, explained below. MODE B
 (the silent IDLE-from-absence) was resolved by keying the runtime registry on
-the spawn-minted `InstanceID` instead of the agent value's content digest —
+the spawn-minted `Handle` instead of the agent value's content digest —
 option (a) below, taken after the security objection to it dissolved on
 inspection. A recurrence of either is a bug report, not an expected condition.
 Switching to a worker whose seed carries `currentWorkspace` now lands on the
@@ -1770,7 +1770,7 @@ first thing to do with any new report, because they need opposite fixes:
   to chase.
 - **MODE B, silent and worse.** The chain rebuilds COMPLETELY, and the handle
   then addresses a different, inert entry: `state` reads `IDLE` while the live
-  runtime is something else, and `name`/`instanceID` read back CORRECTLY
+  runtime is something else, and `name`/`handle` read back CORRECTLY
   because they are literals in the recipe and never touch the registry. A
   handle that looks healthy and points at nothing. **ROOT-CAUSED AND FIXED**
   — see "Mode B: resolved" below.
@@ -1804,11 +1804,11 @@ single agent behaving bizarrely rather than as two runtimes. Any future
 registry-miss bug should be assumed generative, not merely blind: on this path
 a miss is a constructor.
 
-**Mode B: resolved — the registry keys on `InstanceID`.** Option (a) below,
+**Mode B: resolved — the registry keys on `Handle`.** Option (a) below,
 and what settled it was noticing that its stated cost does not exist. The
 objection was that the whole-value digest doubles as proof of possession
 ("you can only address a runtime by presenting the entire composition",
-§3.3's capability model), while `InstanceID` is PUBLISHED as
+§3.3's capability model), while `Handle` is PUBLISHED as
 `dagger.io/agent.id`. But the composition is published too, and by the same
 channel: §10.2's own Mode A fix emits the TRANSITIVE CLOSURE of every call's
 ID as log records precisely so that a client can rebuild the full recipe from
@@ -1825,7 +1825,7 @@ the trace. It no longer decides anything: anything that can read the IDs can
 read the compositions, so (a) and the status quo have identical exposure. The
 question is worth answering for its own sake, but it does not block this.
 
-What the change is, concretely: `agentKey` returns `agent.Self().InstanceID`
+What the change is, concretely: `agentKey` returns `agent.Self().Handle`
 rather than `ContentPreferredDigest`, and `AgentRuntimes.entries` /
 `AgentRuntime.key` / `AgentMessage.AgentKey` are strings. Two consequences
 worth stating because they are now load-bearing:
@@ -1835,8 +1835,8 @@ worth stating because they are now load-bearing:
   never consulted and cannot displace the conversation the loop has been
   building. That is what makes a rebuilt handle safe to *use* rather than
   merely safe to construct — it names an instance, it does not redefine one.
-- **An empty instance ID is rejected** rather than silently sharing one key.
-  `LLM.agent(id: "")` is the only way to build such a value, and under digest
+- **An empty runtime handle is rejected** rather than silently sharing one key.
+  `LLM.agent(handle: "")` is the only way to build such a value, and under digest
   keying it was harmless; under ID keying it would be a collision, so
   `agentKey` errors.
 
@@ -1846,15 +1846,15 @@ on both `currentWorkspace` cases and passes the `host.directory` one —
 reproducing this section's table exactly. With the ID key, all three pass, and
 the failing run's trace shows why in one glance: each read off the rebuilt
 handle re-executes `LLM.withWorkspace(workspace: currentWorkspace)` afresh
-while `LLM.agent(id: "m39gowtw3zfw4e71g5ta490jp", …)` carries the identical ID
+while `LLM.agent(handle: "m39gowtw3zfw4e71g5ta490jp", …)` carries the identical ID
 literal every time.
 
 **Not fixed by this, deliberately.** Item 13 (a session restart re-animating
 workers) is a different defect and survives: the registry is still
 per-SESSION, so a resumed session's lookup misses whatever the key is, and
 `GetOrCreate` still mints from `Seed`. Item 13's recommended fix was
-"reattach by instance ID — make registry lookup session-independent, keyed on
-the spawn-minted `InstanceID`"; this lands the keying half only. The
+"reattach by runtime handle — make registry lookup session-independent, keyed on
+the spawn-minted `Handle`"; this lands the keying half only. The
 session-independence half is what opens §4's unanswered lifetime question
 (when does an agent outlive every session that can see it?), and it still
 needs an owner.
@@ -1876,11 +1876,11 @@ rejects the legitimate rebuild it was added to enable.
 
 **The options as they stood**, kept because the reasoning is reusable:
 
-- **(a) Key on `InstanceID`** — TAKEN. Survives any leaf: the ID is minted at
+- **(a) Key on `Handle`** — TAKEN. Survives any leaf: the ID is minted at
   spawn, unique by construction, and already rides the pinned chain as a
-  literal (which is exactly why `instanceID` read back correctly even while
+  literal (which is exactly why `handle` read back correctly even while
   broken). Its stated cost dissolved, per above.
-- **(b) Key on `InstanceID`, put authority in another layer** — the spawning
+- **(b) Key on `Handle`, put authority in another layer** — the spawning
   session, or the ownership flag the CLI already carries (§10 slice 2). Still
   available if addressing ever needs to be narrower than "can read the trace";
   (a) does not foreclose it.
@@ -2014,7 +2014,7 @@ skips it used to carry are gone, along with the `broken` table column — the
 assertions past the rebuild (`state`, the transcript marker, the QUEUED send)
 were written as the CORRECT expectations precisely so that fixing the registry
 would be a deletion, and it was. Everything before that seam — the rebuild
-itself and the literal-derived identity (`name`, `instanceID`) — remains Mode
+itself and the literal-derived identity (`name`, `handle`) — remains Mode
 A coverage and always passed.
 
 **One hazard for whoever picks this up.** Do not open the investigation by

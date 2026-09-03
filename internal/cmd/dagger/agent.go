@@ -153,7 +153,7 @@ func init() {
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
 		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
-		"With --trace, focus this restored agent (instance ID or name) instead of the top-level one")
+		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
 		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
 }

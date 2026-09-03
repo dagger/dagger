@@ -42,9 +42,9 @@ func (f *fakeRestorePlan) EncodedIDForCallDigest(digest string) (string, error) 
 type fakeRestoreTarget struct {
 	calls    []string
 	focused  string
-	adopted  map[string]string // instance ID -> encoded agent handle
-	failOn   string            // instance ID whose Rehydrate fails
-	rehydrat map[string]string // instance ID -> snapshot it was re-hydrated from
+	adopted  map[string]string // runtime handle -> encoded agent handle
+	failOn   string            // runtime handle whose Rehydrate fails
+	rehydrat map[string]string // runtime handle -> snapshot it was re-hydrated from
 }
 
 var _ restoreTarget = (*fakeRestoreTarget)(nil)
@@ -173,7 +173,7 @@ func TestRestoreFocusesTheMostRecentlyActiveOfSeveral(t *testing.T) {
 	require.Equal(t, "agent-second", dst.focused)
 }
 
-// TestRestoreFocusOverride covers --agent: by display name, by instance ID,
+// TestRestoreFocusOverride covers --agent: by display name, by runtime handle,
 // and the two ways of naming one that cannot be resolved. A name is a label
 // two agents may legitimately share, so an ambiguous one is refused rather
 // than resolved arbitrarily.
@@ -186,7 +186,7 @@ func TestRestoreFocusOverride(t *testing.T) {
 		require.Equal(t, "agent-scout", dst.focused)
 	})
 
-	t.Run("by instance ID", func(t *testing.T) {
+	t.Run("by runtime handle", func(t *testing.T) {
 		src, dst := chiefAndWorkers(), newFakeRestoreTarget()
 		req := restoreRequest()
 		req.agent = "agent-tests"
@@ -211,7 +211,7 @@ func TestRestoreFocusOverride(t *testing.T) {
 		req := restoreRequest()
 		req.agent = "twin"
 		err := executeRestorePlan(context.Background(), src, dst, req)
-		require.ErrorContains(t, err, "name one by instance ID")
+		require.ErrorContains(t, err, "name one by runtime handle")
 		require.ErrorContains(t, err, "agent-scout")
 		require.Empty(t, dst.focused)
 	})
