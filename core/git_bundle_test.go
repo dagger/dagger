@@ -9,8 +9,31 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolveGitBundleTargetPreservesAnnotatedTag(t *testing.T) {
+	tagSHA := "1111111111111111111111111111111111111111"
+	commitSHA := "2222222222222222222222222222222222222222"
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/heads/v1.0.0", SHA: commitSHA},
+		{Name: "refs/tags/v1.0.0", SHA: tagSHA},
+		{Name: "refs/tags/v1.0.0^{}", SHA: commitSHA},
+	}}
+
+	branch, err := resolveGitBundleTarget(remote, "v1.0.0")
+	require.NoError(t, err)
+	require.Equal(t, "refs/heads/v1.0.0", branch.exact.Name)
+	require.Equal(t, commitSHA, branch.exact.SHA)
+	require.Same(t, branch.checkout, branch.exact)
+
+	tag, err := resolveGitBundleTarget(remote, "refs/tags/v1.0.0")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v1.0.0", tag.exact.Name)
+	require.Equal(t, tagSHA, tag.exact.SHA)
+	require.Equal(t, commitSHA, tag.checkout.SHA)
+}
 
 func TestParseGitBundleHeader(t *testing.T) {
 	t.Run("version 2", func(t *testing.T) {

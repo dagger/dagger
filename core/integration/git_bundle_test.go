@@ -206,6 +206,58 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.ErrorContains(t, err, baseSHA)
 }
 
+func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repoCtr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"sh", "-ec", `
+			git init -q -b main /repo
+			git -C /repo config user.name Bundle
+			git -C /repo config user.email bundle@example.com
+			echo content > /repo/file.txt
+			git -C /repo add file.txt
+			git -C /repo commit -q -m initial
+			git -C /repo tag -a v1.0.0 -m release
+		`})
+	tagSHA, err := repoCtr.
+		WithExec([]string{"git", "-C", "/repo", "rev-parse", "refs/tags/v1.0.0"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	tagSHA = strings.TrimSpace(tagSHA)
+
+	bundle := repoCtr.Directory("/repo").AsGit().Bundle([]string{"refs/tags/v1.0.0"})
+	refs, err := bundle.Refs(ctx)
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	bundleSHA, err := refs[0].Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tagSHA, bundleSHA)
+
+	gitDaemon, repoURL := gitService(ctx, t, c, repoCtr.Directory("/repo"))
+	remoteBundle := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Bundle([]string{"refs/tags/v1.0.0"})
+	remoteRefs, err := remoteBundle.Refs(ctx)
+	require.NoError(t, err)
+	require.Len(t, remoteRefs, 1)
+	remoteBundleSHA, err := remoteRefs[0].Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tagSHA, remoteBundleSHA)
+
+	objectType, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedFile("/repository.bundle", remoteBundle.AsFile()).
+		WithExec([]string{"sh", "-ec", `
+			git init -q --bare /verify
+			git -C /verify fetch -q /repository.bundle refs/tags/v1.0.0:refs/tags/v1.0.0
+			git -C /verify cat-file -t refs/tags/v1.0.0
+		`}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "tag", strings.TrimSpace(objectType))
+}
+
 func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base\n"))

@@ -461,7 +461,7 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 		return nil, fmt.Errorf("git bundle ref count %d exceeds limit %d", len(refs), MaxGitBundleRefs)
 	}
 
-	targets := make([]*gitutil.Ref, 0, len(refs))
+	targets := make([]*gitBundleTarget, 0, len(refs))
 	backends := make([]GitRefBackend, 0, len(refs)+1)
 	seen := map[string]struct{}{}
 	remote, err := repo.LoadRemote(ctx)
@@ -472,18 +472,18 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 		if name == "" || strings.HasPrefix(name, "-") {
 			return nil, fmt.Errorf("invalid git bundle ref %q", name)
 		}
-		ref, err := remote.Lookup(name)
+		ref, err := resolveGitBundleTarget(remote, name)
 		if err != nil {
 			return nil, fmt.Errorf("resolve git bundle ref %q: %w", name, err)
 		}
-		if ref.Name == "" {
+		if ref.exact.Name == "" {
 			return nil, fmt.Errorf("git bundle ref %q does not resolve to a named ref", name)
 		}
-		if _, exists := seen[ref.Name]; exists {
-			return nil, fmt.Errorf("git bundle ref %q resolves to duplicate ref %q", name, ref.Name)
+		if _, exists := seen[ref.exact.Name]; exists {
+			return nil, fmt.Errorf("git bundle ref %q resolves to duplicate ref %q", name, ref.exact.Name)
 		}
-		seen[ref.Name] = struct{}{}
-		backend, err := repo.Backend.Get(ctx, ref)
+		seen[ref.exact.Name] = struct{}{}
+		backend, err := repo.Backend.Get(ctx, ref.checkout)
 		if err != nil {
 			return nil, err
 		}
@@ -537,15 +537,29 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 			if _, err := runGitEnv(ctx, scratch, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
 				return fmt.Errorf("initialize git bundle repository: %w", err)
 			}
+			fetchGit := source.New(
+				gitutil.WithDir(scratch),
+				gitutil.WithGitDir(""),
+				gitutil.WithWorkTree(""),
+			)
 			for _, target := range targets {
-				if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, target.SHA+":"+target.Name); err != nil {
-					return fmt.Errorf("fetch git bundle ref %s: %w", target.Name, err)
+				fetchURL := sourceURL
+				if target.exact.SHA != target.checkout.SHA {
+					if remoteRepo, ok := repo.Backend.(*RemoteGitRepository); ok {
+						// A canonical mirror fetched by peeled commit need not contain
+						// the annotated tag object. Fetch that exact advertised object
+						// from the configured origin with the backend's auth and network.
+						fetchURL = remoteRepo.URL.Remote()
+					}
+				}
+				if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetchURL, target.exact.SHA+":"+target.exact.Name); err != nil {
+					return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
 				}
 			}
 
 			bundleArgs := []string{"bundle", "create", "--version=3", filepath.Join(root, "repository.bundle")}
 			for _, target := range targets {
-				bundleArgs = append(bundleArgs, target.Name)
+				bundleArgs = append(bundleArgs, target.exact.Name)
 			}
 			if base != nil {
 				baseRef := "refs/dagger/bundle/base"
@@ -588,6 +602,32 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 	file.File.setValue("/repository.bundle")
 	file.Snapshot.setValue(snapshot)
 	return file, nil
+}
+
+type gitBundleTarget struct {
+	checkout *gitutil.Ref
+	exact    *gitutil.Ref
+}
+
+// resolveGitBundleTarget uses checkout-style lookup to choose the canonical
+// ref name, then preserves the exact advertised object for tags. Checkout
+// callers want an annotated tag peeled to its commit, but a bundle must carry
+// the tag object itself so its annotation and signature survive transport.
+func resolveGitBundleTarget(remote *gitutil.Remote, name string) (*gitBundleTarget, error) {
+	ref, err := remote.Lookup(name)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(ref.Name, "refs/tags/") {
+		return &gitBundleTarget{checkout: ref, exact: ref}, nil
+	}
+	advertised := remote.Get(ref.Name)
+	if advertised == nil {
+		return nil, fmt.Errorf("resolved tag %q is not advertised", ref.Name)
+	}
+	target := *ref
+	target.SHA = advertised.SHA
+	return &gitBundleTarget{checkout: ref, exact: &target}, nil
 }
 
 // ImportGitBundle materializes a canonical bare repository containing the
