@@ -15,40 +15,48 @@ import (
 type commandCapability string
 
 const (
+	mayCallEngine     commandCapability = "MayCallEngine"
 	mayRenderPipeline commandCapability = "MayRenderPipeline"
 
-	commandCapabilitiesAnnotation = "dagger.io/command-capabilities"
-	flagCapabilitiesAnnotation    = "dagger.io/flag-capabilities"
+	commandCapabilitiesAnnotation      = "dagger.io/command-capabilities"
+	localCommandCapabilitiesAnnotation = "dagger.io/local-command-capabilities"
+	flagCapabilitiesAnnotation         = "dagger.io/flag-capabilities"
 )
 
 // setCommandCapabilities declares behavior that a command can expose. A
-// capability declared by a non-root parent applies to its subcommands. A root
-// capability applies only to the root command itself, so it does not make the
-// capability global again.
+// capability declared by a parent applies to its subcommands.
 func setCommandCapabilities(cmd *cobra.Command, capabilities ...commandCapability) {
+	addCommandCapabilities(cmd, commandCapabilitiesAnnotation, capabilities...)
+}
+
+// setLocalCommandCapabilities declares behavior for only cmd, without making
+// the capability available to its subcommands.
+func setLocalCommandCapabilities(cmd *cobra.Command, capabilities ...commandCapability) {
+	addCommandCapabilities(cmd, localCommandCapabilitiesAnnotation, capabilities...)
+}
+
+func addCommandCapabilities(cmd *cobra.Command, annotation string, capabilities ...commandCapability) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
 
-	declared := strings.Fields(cmd.Annotations[commandCapabilitiesAnnotation])
+	declared := strings.Fields(cmd.Annotations[annotation])
 	for _, capability := range capabilities {
 		name := string(capability)
 		if !slices.Contains(declared, name) {
 			declared = append(declared, name)
 		}
 	}
-	cmd.Annotations[commandCapabilitiesAnnotation] = strings.Join(declared, " ")
+	cmd.Annotations[annotation] = strings.Join(declared, " ")
 }
 
 func commandHasCapability(cmd *cobra.Command, capability commandCapability) bool {
-	selected := cmd
+	name := string(capability)
+	if slices.Contains(strings.Fields(cmd.Annotations[localCommandCapabilitiesAnnotation]), name) {
+		return true
+	}
 	for current := cmd; current != nil; current = current.Parent() {
-		// The root command can still run legacy shell input directly, but its
-		// capability must not be inherited by every subcommand.
-		if current != selected && current.Parent() == nil {
-			continue
-		}
-		if slices.Contains(strings.Fields(current.Annotations[commandCapabilitiesAnnotation]), string(capability)) {
+		if slices.Contains(strings.Fields(current.Annotations[commandCapabilitiesAnnotation]), name) {
 			return true
 		}
 	}
@@ -173,13 +181,14 @@ func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {
 }
 
 func init() {
+	setLocalCommandCapabilities(rootCmd, mayCallEngine, mayRenderPipeline)
+	setLocalCommandCapabilities(workspaceCmd, mayCallEngine)
+
 	for _, cmd := range []*cobra.Command{
-		rootCmd,
 		checksCmd,
 		generateCmd,
 		upCmd,
 		agentCmd,
-		traceCmd,
 		apiCallCmd.Command(),
 		callModCmd.Command(),
 		callCoreCmd.Command(),
@@ -196,6 +205,41 @@ func init() {
 		mcpCmd,
 		moduleSdkCmd,
 	} {
-		setCommandCapabilities(cmd, mayRenderPipeline)
+		setCommandCapabilities(cmd, mayCallEngine, mayRenderPipeline)
+	}
+	setCommandCapabilities(traceCmd, mayRenderPipeline)
+
+	for _, cmd := range []*cobra.Command{
+		apiFunctionsCmd,
+		functionsAliasCmd,
+		moduleDepInstallCmd,
+		moduleDepUninstallCmd,
+		moduleUpdateCmd,
+		installedCmd,
+		settingsCmd,
+		workspaceSettingsCmd,
+		workspaceRootCmd,
+		workspaceCwdCmd,
+		workspaceConfigFileCmd,
+		workspaceConfigCmd,
+		workspaceRemotesCmd,
+		moduleDepsAddCmd,
+		moduleDepsRmCmd,
+		moduleDepsUpdateCmd,
+		moduleDepsListCmd,
+		moduleEngineRequiredCmd,
+		moduleEngineRequireCmd,
+		moduleEngineRequireLatestCmd,
+		moduleEngineRequireCurrentCmd,
+		moduleInitCmd,
+		apiClientInitCmd,
+		apiClientListCmd,
+		sdkInstallCmd,
+		sdkUninstallCmd,
+		sdkModuleOptionsCmd,
+		sdkClientOptionsCmd,
+		setupCmd,
+	} {
+		setCommandCapabilities(cmd, mayCallEngine)
 	}
 }

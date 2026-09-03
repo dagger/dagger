@@ -30,16 +30,19 @@ to prevent a flag from appearing before the subcommand. For example,
 | Capability | Meaning |
 |---|---|
 | `MayCallEngine` | The command can connect to and call the engine. |
+| `MaySelectWorkspace` | The command can use `-W`, `--workspace` to select or resolve a workspace. |
 | `MayRenderPipeline` | The command can show a user-facing pipeline trace. |
 | `MayProduceOutput` | The command can produce an output that can require user review before a side effect. |
 
 The capabilities are independent. A command can declare more than one.
 
-- A normal pipeline command usually declares `MayCallEngine` and
-  `MayRenderPipeline`.
+- A normal pipeline command usually declares `MayCallEngine`,
+  `MaySelectWorkspace`, and `MayRenderPipeline`.
 - `dagger trace` declares `MayRenderPipeline` but does not call the engine.
 - A configuration command can call the engine without rendering its internal
   trace to the user.
+- `dagger activity`, `dagger cloud rerun`, and `dagger workspace remote`
+  declare `MaySelectWorkspace` without declaring `MayCallEngine`.
 - `dagger check` renders pass or failure status, but does not produce an
   output. `dagger generate` and `dagger api call` can produce outputs.
 
@@ -51,6 +54,14 @@ The capability does not depend on the current output type.
 a trace, `--verbose` prints a final trace even if the command does not declare
 `MayRenderPipeline`. It does not enable the live TUI or make `--no-exit`,
 `--web`, or `--interactive` applicable.
+
+### Follow-up: `--env`
+
+`--env` is currently scoped by `MayCallEngine` because it is passed as an
+engine connection parameter. It also selects the environment overlay that a
+workspace configuration command reads or edits. If configuration editing no
+longer requires an engine call, `--env` will need a separate capability for
+this second meaning.
 
 ## Workspace Configuration
 
@@ -86,7 +97,7 @@ column means that no change is proposed.
 | Move to configuration | `--org` | Visible | `cloud.traces.org` |
 | Move to configuration | `--cloud` | Hidden | `cloud.engines.enabled` |
 | Move to configuration | `--scale-out` | Hidden | `cloud.engines.scale-out` |
-| Scope by capability | `-W`, `--workspace` | Visible | `MayCallEngine` |
+| Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
 | Scope by capability | `--env` | Visible | `MayCallEngine` |
 | Scope by capability | `-q`, `--quiet` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-s`, `--silent` | Visible | `MayRenderPipeline` |
@@ -108,4 +119,5 @@ column means that no change is proposed.
 
 ## Status
 
-Design draft. No implementation is included.
+`MayCallEngine` and `MayRenderPipeline` capability scoping are implemented.
+The other changes are planned.

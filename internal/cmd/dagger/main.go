@@ -428,7 +428,6 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
-	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
@@ -436,6 +435,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
 
+	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)
 
 	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
@@ -447,15 +447,19 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	flags.Lookup("scale-out").Hidden = true
 
-	// experimental: enable engine wall-clock profiling (wcprof) for this
-	// session; recorded events are retrieved from the engine debug endpoint
-	flags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
-	flags.Lookup("profile").Hidden = true
-
 	if err := flags.MarkHidden("workdir"); err != nil {
 		fmt.Fprintln(stdout, "Error hiding flag: workdir", err)
 		os.Exit(1)
 	}
+}
+
+func installMayCallEngineFlags(flags *pflag.FlagSet) {
+	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
+	engineFlags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
+	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
+	engineFlags.Lookup("profile").Hidden = true
+	setFlagSetCapabilities(engineFlags, mayCallEngine)
+	flags.AddFlagSet(engineFlags)
 }
 
 func installMayRenderPipelineFlags(flags *pflag.FlagSet) {

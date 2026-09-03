@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCommandCapabilityInheritanceSkipsRoot(t *testing.T) {
+func TestCommandCapabilityInheritance(t *testing.T) {
 	root := &cobra.Command{Use: "root"}
 	parent := &cobra.Command{Use: "parent"}
 	child := &cobra.Command{Use: "child"}
 	root.AddCommand(parent)
 	parent.AddCommand(child)
 
-	setCommandCapabilities(root, mayRenderPipeline)
+	setLocalCommandCapabilities(root, mayRenderPipeline)
 	require.True(t, commandHasCapability(root, mayRenderPipeline))
 	require.False(t, commandHasCapability(parent, mayRenderPipeline))
 	require.False(t, commandHasCapability(child, mayRenderPipeline))
@@ -27,6 +27,100 @@ func TestCommandCapabilityInheritanceSkipsRoot(t *testing.T) {
 	setCommandCapabilities(parent, mayRenderPipeline)
 	require.True(t, commandHasCapability(parent, mayRenderPipeline))
 	require.True(t, commandHasCapability(child, mayRenderPipeline))
+
+	setLocalCommandCapabilities(parent, mayCallEngine)
+	require.True(t, commandHasCapability(parent, mayCallEngine))
+	require.False(t, commandHasCapability(child, mayCallEngine))
+}
+
+func TestMayCallEngineFlags(t *testing.T) {
+	oldEnv := workspaceEnv
+	oldProfile := profileFlag
+	t.Cleanup(func() {
+		workspaceEnv = oldEnv
+		profileFlag = oldProfile
+	})
+
+	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
+	installMayCallEngineFlags(flags)
+
+	expected := []string{"env", "profile"}
+	var count int
+	flags.VisitAll(func(*pflag.Flag) { count++ })
+	require.Equal(t, len(expected), count)
+	for _, name := range expected {
+		flag := flags.Lookup(name)
+		require.NotNil(t, flag, name)
+		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
+	}
+	require.False(t, flags.Lookup("env").Hidden)
+	require.True(t, flags.Lookup("profile").Hidden)
+}
+
+func TestMayCallEngineCommands(t *testing.T) {
+	expected := []string{
+		"dagger",
+		"dagger agent",
+		"dagger api call",
+		"dagger api client init",
+		"dagger api client list",
+		"dagger api functions",
+		"dagger api listen",
+		"dagger api query",
+		"dagger api session",
+		"dagger api with-session",
+		"dagger call",
+		"dagger check",
+		"dagger core",
+		"dagger functions",
+		"dagger generate",
+		"dagger install",
+		"dagger installed",
+		"dagger listen",
+		"dagger mcp",
+		"dagger module deps add",
+		"dagger module deps list",
+		"dagger module deps rm",
+		"dagger module deps update",
+		"dagger module engine require",
+		"dagger module engine require-current",
+		"dagger module engine require-latest",
+		"dagger module engine required",
+		"dagger module init",
+		"dagger module sdk",
+		"dagger query",
+		"dagger run",
+		"dagger sdk client-options",
+		"dagger sdk install",
+		"dagger sdk module-options",
+		"dagger sdk uninstall",
+		"dagger session",
+		"dagger settings",
+		"dagger setup",
+		"dagger shell",
+		"dagger terminal",
+		"dagger uninstall",
+		"dagger up",
+		"dagger update",
+		"dagger workspace",
+		"dagger workspace config",
+		"dagger workspace config-file",
+		"dagger workspace cwd",
+		"dagger workspace remotes",
+		"dagger workspace root",
+		"dagger workspace settings",
+	}
+	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
+
+	for name, cmd := range map[string]*cobra.Command{
+		"activity":         activityCmd,
+		"cloud rerun":      cloudRerunCmd,
+		"sdk installed":    sdkInstalledCmd,
+		"trace":            traceCmd,
+		"workspace remote": workspaceRemoteCmd,
+	} {
+		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
+	}
 }
 
 func TestMayRenderPipelineFlags(t *testing.T) {
@@ -99,18 +193,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger trace",
 		"dagger up",
 	}
-	var actual []string
-	var visit func(*cobra.Command)
-	visit = func(cmd *cobra.Command) {
-		if slices.Contains(strings.Fields(cmd.Annotations[commandCapabilitiesAnnotation]), string(mayRenderPipeline)) {
-			actual = append(actual, cmd.CommandPath())
-		}
-		for _, child := range cmd.Commands() {
-			visit(child)
-		}
-	}
-	visit(rootCmd)
-	require.ElementsMatch(t, expected, actual)
+	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayRenderPipeline))
 
 	for name, cmd := range map[string]*cobra.Command{
 		"settings":  settingsCmd,
@@ -284,4 +367,22 @@ func commandUsage(t *testing.T, cmd *cobra.Command) string {
 	cmd.SetUsageTemplate(usageTemplate)
 	require.NoError(t, cmd.Usage())
 	return output.String()
+}
+
+func commandsDeclaringCapability(root *cobra.Command, capability commandCapability) []string {
+	var commands []string
+	var visit func(*cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		name := string(capability)
+		inherited := strings.Fields(cmd.Annotations[commandCapabilitiesAnnotation])
+		local := strings.Fields(cmd.Annotations[localCommandCapabilitiesAnnotation])
+		if slices.Contains(inherited, name) || slices.Contains(local, name) {
+			commands = append(commands, cmd.CommandPath())
+		}
+		for _, child := range cmd.Commands() {
+			visit(child)
+		}
+	}
+	visit(root)
+	return commands
 }
