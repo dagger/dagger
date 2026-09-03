@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -137,6 +139,10 @@ func newContainerPartsTestCtx(t *testing.T) (context.Context, *dagql.Cache, *dag
 	ctx = dagql.ContextWithCache(ctx, cache)
 	srv := newCoreDagqlServerForTest(t, &Query{Server: &mockServer{}})
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Container]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*CacheVolume]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Volume]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Secret]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Socket]{}))
 	return ctx, cache, srv, "container-parts-test-session"
 }
 
@@ -159,6 +165,179 @@ func attachContainerPartsTestResult(
 	})
 	require.NoError(t, err)
 	return resAny.(dagql.ObjectResult[*Container])
+}
+
+func attachContainerPartsTestObject[T dagql.Typed](
+	t *testing.T,
+	ctx context.Context,
+	cache *dagql.Cache,
+	srv *dagql.Server,
+	sessionID, op string,
+	value T,
+) dagql.ObjectResult[T] {
+	t.Helper()
+	frame := &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: op,
+		Type:        dagql.NewResultCallType(value.Type()),
+	}
+	resAny, err := cache.GetOrInitCall(ctx, sessionID, srv, &dagql.CallRequest{ResultCall: frame}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(value, srv, frame)
+	})
+	require.NoError(t, err)
+	return resAny.(dagql.ObjectResult[T])
+}
+
+func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {
+	tests := []struct {
+		name   string
+		apply  func(*testing.T, context.Context, *dagql.Cache, *dagql.Server, string, dagql.ObjectResult[*Container], *Container) Lazy[*Container]
+		assert func(*testing.T, context.Context, *Container)
+	}{
+		{
+			name: "mounted cache",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				cacheVolume := &CacheVolume{snapshot: &cacheVolumeTestMutableRef{}}
+				cacheRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mount-parts-cache", cacheVolume)
+				_, err := child.WithMountedCache(ctx, "/cache", cacheRes)
+				require.NoError(t, err)
+				return &ContainerWithMountedCacheLazy{LazyState: NewLazyState(), Parent: parent, Target: "/cache", Cache: cacheRes}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				mnt := child.mountAt("/cache")
+				require.NotNil(t, mnt)
+				require.NotNil(t, mnt.CacheSource)
+			},
+		},
+		{
+			name: "mounted temp",
+			apply: func(t *testing.T, ctx context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				_, err := child.WithMountedTemp(ctx, "/tmp", 1024)
+				require.NoError(t, err)
+				return &ContainerWithMountedTempLazy{LazyState: NewLazyState(), Parent: parent, Target: "/tmp", Size: 1024}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				mnt := child.mountAt("/tmp")
+				require.NotNil(t, mnt)
+				require.Equal(t, 1024, mnt.TmpfsSource.Size)
+			},
+		},
+		{
+			name: "mounted volume",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				volumeRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mount-parts-volume", &Volume{})
+				_, err := child.WithMountedVolume(ctx, "/volume", volumeRes, true)
+				require.NoError(t, err)
+				return &ContainerWithMountedVolumeLazy{LazyState: NewLazyState(), Parent: parent, Target: "/volume", Volume: volumeRes, Readonly: true}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				mnt := child.mountAt("/volume")
+				require.NotNil(t, mnt)
+				require.NotNil(t, mnt.VolumeSource)
+				require.True(t, mnt.Readonly)
+			},
+		},
+		{
+			name: "mounted secret",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				secretRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mount-parts-secret", &Secret{NameVal: "test"})
+				_, err := child.WithMountedSecret(ctx, parent, "/secret", secretRes, "", 0o400)
+				require.NoError(t, err)
+				return &ContainerWithMountedSecretLazy{LazyState: NewLazyState(), Parent: parent, Target: "/secret", Source: secretRes, Mode: 0o400}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				require.NotEmpty(t, child.Secrets)
+				secret := child.Secrets[len(child.Secrets)-1]
+				require.Equal(t, "/secret", secret.MountPath)
+				require.Equal(t, fs.FileMode(0o400), secret.Mode)
+			},
+		},
+		{
+			name: "without mount",
+			apply: func(t *testing.T, ctx context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				_, err := child.WithoutMount(ctx, "/old")
+				require.NoError(t, err)
+				return &ContainerWithoutMountLazy{LazyState: NewLazyState(), Parent: parent, Target: "/old"}
+			},
+			assert: func(t *testing.T, ctx context.Context, child *Container) {
+				require.Nil(t, child.mountAt("/old"))
+				groups, err := child.Lazy.(LazyContainerParts).ContainerLazyGroups(ctx, child, nil)
+				require.NoError(t, err)
+				require.NotContains(t, groups, containerDelegationGroup(ContainerPartMount("/old")))
+			},
+		},
+		{
+			name: "with unix socket",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				socketRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mount-parts-socket", &Socket{Kind: SocketKindUnixOpaque})
+				_, err := child.WithUnixSocketFromParent(ctx, parent, "/socket", socketRes, "")
+				require.NoError(t, err)
+				return &ContainerWithUnixSocketLazy{LazyState: NewLazyState(), Parent: parent, Target: "/socket", Source: socketRes}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				require.Equal(t, "/socket", child.Sockets[len(child.Sockets)-1].ContainerPath)
+			},
+		},
+		{
+			name: "without unix socket",
+			apply: func(t *testing.T, ctx context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				_, err := child.WithoutUnixSocket(ctx, "/old.sock")
+				require.NoError(t, err)
+				return &ContainerWithoutUnixSocketLazy{LazyState: NewLazyState(), Parent: parent, Target: "/old.sock"}
+			},
+			assert: func(t *testing.T, _ context.Context, child *Container) {
+				for _, socket := range child.Sockets {
+					require.NotEqual(t, "/old.sock", socket.ContainerPath)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+			baseOp := &containerPartsTestBaseOp{
+				LazyState:    NewLazyState(),
+				workdir:      "/",
+				mountTargets: []string{"/old"},
+			}
+			base := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Mounts: ContainerMounts{{
+					Target:          "/old",
+					Readonly:        true,
+					DirectorySource: new(LazyAccessor[*Directory, *Container]),
+				}},
+				Secrets:  []ContainerSecret{{MountPath: "/old"}},
+				Sockets:  []ContainerSocket{{ContainerPath: "/old.sock"}},
+				ImageRef: "parent-image",
+				Lazy:     baseOp,
+			}
+			baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "mount-parts-base-"+test.name, base)
+			clonedMounts, err := CloneContainerMounts(ctx, base.Mounts)
+			require.NoError(t, err)
+			child := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Config:       CloneContainerImageConfig(base.Config),
+				Mounts:       clonedMounts,
+				Secrets:      slices.Clone(base.Secrets),
+				Sockets:      slices.Clone(base.Sockets),
+				ImageRef:     base.ImageRef,
+			}
+			child.Lazy = test.apply(t, ctx, cache, srv, sessionID, baseRes, child)
+			childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "mount-parts-child-"+test.name, child)
+
+			require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+			test.assert(t, ctx, child)
+			require.Empty(t, child.ImageRef)
+			require.Equal(t, int32(0), baseOp.fsRuns.Load())
+			require.Equal(t, 0, baseOp.mountRunsFor("/old"))
+			require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+		})
+	}
 }
 
 // A metadata read on a pending template-A chain settles metadata through
