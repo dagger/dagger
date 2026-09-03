@@ -67,6 +67,7 @@ mod tests {
             insecure_skip_tls_verify: Some(true),
             protocol: Some(RegistryProtocol::Https),
             registry_service: None,
+            version: None,
         };
         let publish_opts = ContainerPublishOpts {
             forced_compression: None,

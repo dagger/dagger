@@ -442,6 +442,7 @@ type persistedGitModuleSourcePayload struct {
 	HTMLURL      string `json:"htmlURL,omitempty"`
 	RepoRootPath string `json:"repoRootPath,omitempty"`
 	Version      string `json:"version,omitempty"`
+	VersionQuery string `json:"versionQuery,omitempty"`
 	Commit       string `json:"commit,omitempty"`
 	Ref          string `json:"ref,omitempty"`
 }
@@ -885,6 +886,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			HTMLURL:      src.Git.HTMLURL,
 			RepoRootPath: src.Git.RepoRootPath,
 			Version:      src.Git.Version,
+			VersionQuery: src.Git.VersionQuery,
 			Commit:       src.Git.Commit,
 			Ref:          src.Git.Ref,
 		}
@@ -980,6 +982,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			HTMLURL:      persisted.Git.HTMLURL,
 			RepoRootPath: persisted.Git.RepoRootPath,
 			Version:      persisted.Git.Version,
+			VersionQuery: persisted.Git.VersionQuery,
 			Commit:       persisted.Git.Commit,
 			Ref:          persisted.Git.Ref,
 		}
@@ -1022,7 +1025,11 @@ func (src *ModuleSource) AsString() string {
 		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, src.Git.Version)
+		version := src.Git.VersionQuery
+		if version == "" {
+			version = src.Git.Version
+		}
+		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
 
 	default:
 		return ""
@@ -2037,6 +2044,9 @@ type GitModuleSource struct {
 
 	// The version of the source; may be a branch, tag, or commit hash
 	Version string
+
+	// The version query used to select Version.
+	VersionQuery string
 
 	// The resolved commit hash of the source
 	Commit string

@@ -143,9 +143,10 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 		OriginalRefString: "https://github.com/acme/dep/sdk",
 		SourceRootSubpath: "sdk",
 		Git: &core.GitModuleSource{
-			CloneRef: "https://github.com/acme/dep",
-			Version:  "v1.2.3",
-			Commit:   "1234567890abcdef",
+			CloneRef:     "https://github.com/acme/dep",
+			Version:      "v1.2.3",
+			VersionQuery: "v1.2",
+			Commit:       "1234567890abcdef",
 		},
 	}
 	parent := &core.ModuleSource{
@@ -172,8 +173,9 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	require.Contains(t, string(out), `name = "parent"`)
 	require.Contains(t, string(out), `engineVersion = "`+engine.Version+`"`)
 	require.Contains(t, string(out), `name = "dep"`)
-	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk"`)
+	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk@v1.2"`)
 	require.Contains(t, string(out), `pin = "1234567890abcdef"`)
+	require.NotContains(t, string(out), `version =`)
 }
 
 func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {

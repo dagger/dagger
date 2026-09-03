@@ -462,6 +462,43 @@ func (LockfileSuite) TestGitLatestCreatesPin(ctx context.Context, t *testctx.T) 
 	assertGitLatestLockEntry(t, lockBytes)
 }
 
+func (LockfileSuite) TestGitLatestVersionQueryCreatesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-version.graphql", `{
+  git(url: "`+lockTestGitRepoURL+`") {
+    latest(version: "v0.18") {
+      ref
+      commit
+    }
+  }
+}`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var selectedRef string
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != workspace.LockOperationGitLatest {
+			continue
+		}
+		require.Equal(t, workspace.LookupInputs(
+			[]any{lockTestGitRepoURL},
+			workspace.LookupOption{Name: "version", Value: "v0.18"},
+		), entry.Inputs)
+		selectedRef = entry.Value
+	}
+	require.True(t, strings.HasPrefix(selectedRef, "refs/tags/v0.18."), selectedRef)
+	require.Contains(t, string(out), selectedRef)
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoURL, selectedRef})
+}
+
 func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -772,6 +809,41 @@ func (LockfileSuite) TestOCILatestLockLifecycle(ctx context.Context, t *testctx.
 		staleLatestDigest,
 		requireOCISHALockValue(t, updatedLockBytes, "docker.io/library/alpine:latest"),
 	)
+}
+
+func (LockfileSuite) TestOCIVersionQueryCreatesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "oci-version.graphql", `{
+  container {
+    from(address: "alpine", version: "3.20") {
+      imageRef
+    }
+  }
+}`)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var selectedTag string
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != workspace.LockOperationOCILatest {
+			continue
+		}
+		require.Equal(t, workspace.LookupInputs(
+			[]any{"docker.io/library/alpine"},
+			workspace.LookupOption{Name: "version", Value: "3.20"},
+		), entry.Inputs)
+		selectedTag = entry.Value
+	}
+	require.True(t, strings.HasPrefix(selectedTag, "3.20."), selectedTag)
+	require.NotEmpty(t, requireOCISHALockValue(t, lockBytes, "docker.io/library/alpine:"+selectedTag))
 }
 
 func writeOCILatestLock(
