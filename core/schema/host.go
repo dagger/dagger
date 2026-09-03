@@ -848,6 +848,7 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
 	}
+	defer func() { _ = pack.Close() }()
 
 	dir, err := core.MaterializeGitCheckoutPack(ctx, pack)
 	if err != nil {

@@ -248,21 +248,8 @@ func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[
 			return fmt.Errorf("canonical checkout HEAD %s does not match uncommitted patch %s", strings.TrimSpace(head), pack.HeadSHA)
 		}
 
-		if len(pack.Patch) > 0 {
-			patch, err := os.CreateTemp("", "dagger-uncommitted-patch")
-			if err != nil {
-				return fmt.Errorf("create uncommitted patch file: %w", err)
-			}
-			patchPath := patch.Name()
-			defer os.Remove(patchPath)
-			if _, err := patch.Write(pack.Patch); err != nil {
-				patch.Close()
-				return fmt.Errorf("write uncommitted patch: %w", err)
-			}
-			if err := patch.Close(); err != nil {
-				return err
-			}
-			if _, err := runGitEnv(ctx, checkoutDir, "apply", "--binary", "--whitespace=nowarn", patchPath); err != nil {
+		if pack.PatchPath != "" {
+			if _, err := runGitEnv(ctx, checkoutDir, "apply", "--binary", "--whitespace=nowarn", pack.PatchPath); err != nil {
 				return fmt.Errorf("apply uncommitted patch: %w", err)
 			}
 		}
@@ -328,17 +315,8 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 	}
 
 	if pack.HeadSHA != "" {
-		bundle, err := os.CreateTemp("", "dagger-checkout-pack")
-		if err != nil {
-			return fmt.Errorf("create bundle temp file: %w", err)
-		}
-		defer os.Remove(bundle.Name())
-		if _, err := bundle.Write(pack.Bundle); err != nil {
-			bundle.Close()
-			return fmt.Errorf("write bundle: %w", err)
-		}
-		if err := bundle.Close(); err != nil {
-			return err
+		if pack.BundlePath == "" {
+			return fmt.Errorf("checkout pack for %s is missing its bundle file", pack.HeadSHA)
 		}
 
 		// The bundle carries every branch and tag; fetching validates object
@@ -348,7 +326,7 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// branch HEAD symbolically points at (set just above): this is a
 		// scratch reconstruction with no meaningful work tree, so git's
 		// "refusing to fetch into checked-out branch" guard does not apply.
-		if err := fetchGitBundleRefspecs(ctx, root, bundle.Name(), []string{"+refs/*:refs/*"}); err != nil {
+		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*"}); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 

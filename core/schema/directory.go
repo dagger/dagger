@@ -1831,6 +1831,7 @@ func (s *directorySchema) withGitUncommitted(
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
+	defer func() { _ = pack.Close() }()
 	return core.MaterializeGitUncommittedPack(ctx, parent, pack)
 }
 

@@ -495,6 +495,11 @@ const (
 	checkoutStateMethod   = "/dagger.git.Git/CheckoutState"
 	packCheckoutMethod    = "/dagger.git.Git/PackCheckout"
 	packUncommittedMethod = "/dagger.git.Git/PackUncommitted"
+
+	// maxGitPackBytes bounds each aggregate checkout bundle or uncommitted
+	// patch received from a client. These internal transports must accommodate
+	// large source repositories, but may not consume unbounded engine disk.
+	maxGitPackBytes int64 = 4 << 30
 )
 
 // ErrGitPackUnsupported reports that the client cannot pack a checkout with
@@ -558,19 +563,30 @@ func (c *Client) GitCheckoutState(ctx context.Context, checkoutPath string) (str
 // GitCheckoutPack is a client checkout's repository, packed by the client's
 // own git: a bundle of HEAD plus all branches and tags, with the metadata
 // needed to reconstruct a standalone repository from it. A repository with no
-// commits yet (unborn HEAD) has an empty HeadSHA and no Bundle.
+// commits yet (unborn HEAD) has an empty HeadSHA and no BundlePath. The caller
+// must call Close to release the owned bundle file.
 type GitCheckoutPack struct {
 	HeadSHA      string
 	HeadRef      string
 	ObjectFormat string
 	StateDigest  string
-	Bundle       []byte
+	BundlePath   string
+}
+
+// Close releases the checkout bundle owned by pack.
+func (pack *GitCheckoutPack) Close() error {
+	if pack == nil || pack.BundlePath == "" {
+		return nil
+	}
+	err := os.Remove(pack.BundlePath)
+	pack.BundlePath = ""
+	return err
 }
 
 // PackGitCheckout asks the client to pack a local checkout's repository with
 // its own git. See GitCheckoutPack. A checkout that is not a git repository
 // reports gitutil.ErrGitNoRepo.
-func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStateDigest string) (*GitCheckoutPack, error) {
+func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStateDigest string) (_ *GitCheckoutPack, rerr error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -591,7 +607,15 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 		return nil, fmt.Errorf("failed to open pack stream: %w", err)
 	}
 
-	var pack *GitCheckoutPack
+	var (
+		pack  *GitCheckoutPack
+		spool *gitPackSpool
+	)
+	defer func() {
+		if rerr != nil && spool != nil {
+			_ = spool.remove()
+		}
+	}()
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -627,7 +651,15 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 			if pack == nil {
 				return nil, fmt.Errorf("received bundle data before pack metadata")
 			}
-			pack.Bundle = append(pack.Bundle, msg.Chunk...)
+			if spool == nil {
+				spool, err = newGitPackSpool("dagger-checkout-pack-*", maxGitPackBytes)
+				if err != nil {
+					return nil, fmt.Errorf("create checkout pack spool: %w", err)
+				}
+			}
+			if err := spool.write(msg.Chunk); err != nil {
+				return nil, fmt.Errorf("receive checkout pack: %w", err)
+			}
 		}
 	}
 	if pack == nil {
@@ -639,26 +671,43 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 	if expectedStateDigest != "" && pack.StateDigest != expectedStateDigest {
 		return nil, fmt.Errorf("checkout pack state %s does not match expected %s: %w", pack.StateDigest, expectedStateDigest, ErrGitCheckoutStateChanged)
 	}
-	if pack.HeadSHA != "" && len(pack.Bundle) == 0 {
+	if pack.HeadSHA != "" && (spool == nil || spool.size == 0) {
 		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
+	}
+	if spool != nil {
+		pack.BundlePath, err = spool.finish()
+		if err != nil {
+			return nil, fmt.Errorf("finish checkout pack spool: %w", err)
+		}
 	}
 	return pack, nil
 }
 
 // GitUncommittedPack is a checkout's git-visible working-tree delta relative to
-// HeadSHA. Patch is a binary git patch. NestedRepositories are omitted from the
-// patch but retain their boundaries when it is materialized engine-side.
+// HeadSHA. PatchPath names an owned binary git patch. NestedRepositories are
+// omitted from the patch but retain their boundaries when it is materialized
+// engine-side. The caller must call Close to release the patch file.
 type GitUncommittedPack struct {
 	HeadSHA            string
 	NestedRepositories []string
-	Patch              []byte
+	PatchPath          string
+}
+
+// Close releases the uncommitted patch owned by pack.
+func (pack *GitUncommittedPack) Close() error {
+	if pack == nil || pack.PatchPath == "" {
+		return nil
+	}
+	err := os.Remove(pack.PatchPath)
+	pack.PatchPath = ""
+	return err
 }
 
 // PackGitUncommitted asks the client to stream the working-tree delta relative to
 // expectedHeadSHA. Older clients and checkout states without a canonical HEAD
 // report ErrGitUncommittedUnsupported so callers can retain the directory-sync
 // fallback.
-func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedHeadSHA string) (*GitUncommittedPack, error) {
+func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedHeadSHA string) (_ *GitUncommittedPack, rerr error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -679,7 +728,15 @@ func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedH
 		return nil, fmt.Errorf("failed to open uncommitted pack stream: %w", err)
 	}
 
-	var pack *GitUncommittedPack
+	var (
+		pack  *GitUncommittedPack
+		spool *gitPackSpool
+	)
+	defer func() {
+		if rerr != nil && spool != nil {
+			_ = spool.remove()
+		}
+	}()
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -711,7 +768,15 @@ func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedH
 			if pack == nil {
 				return nil, fmt.Errorf("received uncommitted patch before metadata")
 			}
-			pack.Patch = append(pack.Patch, msg.Chunk...)
+			if spool == nil {
+				spool, err = newGitPackSpool("dagger-uncommitted-pack-*", maxGitPackBytes)
+				if err != nil {
+					return nil, fmt.Errorf("create uncommitted pack spool: %w", err)
+				}
+			}
+			if err := spool.write(msg.Chunk); err != nil {
+				return nil, fmt.Errorf("receive uncommitted pack: %w", err)
+			}
 		}
 	}
 	if pack == nil {
@@ -720,7 +785,71 @@ func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedH
 	if pack.HeadSHA != expectedHeadSHA {
 		return nil, fmt.Errorf("uncommitted pack HEAD %s does not match expected %s", pack.HeadSHA, expectedHeadSHA)
 	}
+	if spool != nil {
+		pack.PatchPath, err = spool.finish()
+		if err != nil {
+			return nil, fmt.Errorf("finish uncommitted pack spool: %w", err)
+		}
+	}
 	return pack, nil
+}
+
+type gitPackSpool struct {
+	file  *os.File
+	path  string
+	size  int64
+	limit int64
+}
+
+func newGitPackSpool(pattern string, limit int64) (*gitPackSpool, error) {
+	file, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return nil, err
+	}
+	return &gitPackSpool{
+		file:  file,
+		path:  file.Name(),
+		limit: limit,
+	}, nil
+}
+
+func (spool *gitPackSpool) write(chunk []byte) error {
+	if int64(len(chunk)) > spool.limit-spool.size {
+		return fmt.Errorf("git pack exceeds limit %d", spool.limit)
+	}
+	n, err := spool.file.Write(chunk)
+	spool.size += int64(n)
+	if err != nil {
+		return err
+	}
+	if n != len(chunk) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+func (spool *gitPackSpool) finish() (string, error) {
+	if spool.file == nil {
+		return spool.path, nil
+	}
+	if err := spool.file.Close(); err != nil {
+		return "", err
+	}
+	spool.file = nil
+	return spool.path, nil
+}
+
+func (spool *gitPackSpool) remove() error {
+	if spool.file != nil {
+		_ = spool.file.Close()
+		spool.file = nil
+	}
+	if spool.path == "" {
+		return nil
+	}
+	err := os.Remove(spool.path)
+	spool.path = ""
+	return err
 }
 
 type TerminalClient struct {

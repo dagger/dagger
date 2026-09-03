@@ -61,13 +61,16 @@ handlers in `git_pack.go` and `git_uncommitted.go`):
   `object_format`, `state_digest`), then the bytes of `git bundle create <tmp>
   --branches --tags HEAD` in 1MiB chunks. The client rejects a stale expected
   digest or refs that move during bundle creation, and the engine retries under
-  a fresh cache key. A repository with no commits yet (unborn HEAD) returns
-  metadata carrying only the branch name and state digest, with no bundle.
+  a fresh cache key. The engine spools chunks to an owned temporary file under
+  a 4 GiB aggregate limit and passes that file directly to Git. A repository
+  with no commits yet (unborn HEAD) returns metadata carrying only the branch
+  name and state digest, with no bundle.
 - **`PackUncommitted(checkout_path, expected_head_sha) →
   stream(metadata, chunks)`** — the checkout's uncommitted changes
   (tracked modifications plus ordinary untracked files; ignored files and
   untracked nested repositories stay out) as one binary git patch against
-  the pinned HEAD. §6 covers the fast path built on it.
+  the pinned HEAD. The engine applies the same bounded file-spooling transport.
+  §6 covers the fast path built on it.
 
 Because the *client's* git resolves everything, every layout works natively:
 worktrees, submodules, `--separate-git-dir`, sha256 repos, alternates and
