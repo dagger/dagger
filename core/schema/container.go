@@ -1136,6 +1136,13 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
+	if args.Version != "" && !reference.IsNameOnly(refName) {
+		return inst, fmt.Errorf(
+			"version query %q cannot be used with image address %q because it contains a tag or digest",
+			args.Version,
+			args.Address,
+		)
+	}
 	latestRelease := args.Version != "" || shouldSelectLatestImageRelease(ctx, refName)
 	if latestRelease {
 		refName = reference.TrimNamed(refName)
