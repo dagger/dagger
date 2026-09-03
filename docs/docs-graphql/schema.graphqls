@@ -2699,6 +2699,9 @@ type File implements Exportable & Node & Syncer {
     expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
   ): EnvFile!
 
+  """Interpret this file as a Git bundle by lazily parsing its header."""
+  asGitBundle: GitBundle!
+
   """Parse the file contents as JSON."""
   asJSON: JSONValue!
 
@@ -3171,6 +3174,47 @@ type GeneratorGroup implements Node {
   run: GeneratorGroup!
 }
 
+"""
+A Git bundle: a self-describing container of refs and the objects needed to
+reconstruct them, optionally rooted at prerequisite commits.
+"""
+type GitBundle implements Node {
+  """Return the bundle bytes as a File."""
+  asFile: File!
+
+  """A unique identifier for this GitBundle."""
+  id: ID!
+
+  """Object format capability: sha1 or sha256."""
+  objectFormat: String!
+
+  """Commits that must already exist wherever this bundle is applied."""
+  prerequisiteSHAs: [String!]!
+
+  """Refs advertised by the bundle and the object IDs they resolve to."""
+  refs: [GitBundleRef!]!
+
+  """
+  Perform full structural verification of the bundle and error if it is malformed.
+  """
+  validate: GitBundle!
+
+  """Bundle format version (2 or 3)."""
+  version: Int!
+}
+
+"""A ref advertised by a Git bundle."""
+type GitBundleRef implements Node {
+  """A unique identifier for this GitBundleRef."""
+  id: ID!
+
+  """The advertised ref name."""
+  name: String!
+
+  """The object ID the advertised ref resolves to."""
+  sha: String!
+}
+
 """An immutable git commit."""
 type GitCommit implements Node {
   """The latest semver release tag reachable from this commit."""
@@ -3324,6 +3368,19 @@ type GitRepository implements Node {
     patterns: [String!]
   ): [String!]!
 
+  """
+  Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+  """
+  bundle(
+    """Refs to advertise in the bundle. At least one named ref is required."""
+    refs: [String!]!
+
+    """
+    A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+    """
+    base: ID @expectedType(name: "GitRef")
+  ): GitBundle!
+
   """Returns details of a commit."""
   commit(
     """
@@ -3371,6 +3428,19 @@ type GitRepository implements Node {
 
   """The URL of the git repository."""
   url: String
+
+  """
+  Import a Git bundle after fetching and verifying all of its prerequisites.
+  """
+  withBundle(
+    """The Git bundle to import."""
+    bundle: ID! @expectedType(name: "GitBundle")
+
+    """
+    An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+    """
+    prerequisiteRef: String = ""
+  ): GitRepository!
 }
 
 """An internal persistent HTTP state."""

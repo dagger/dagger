@@ -7302,6 +7302,15 @@ impl File {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Interpret this file as a Git bundle by lazily parsing its header.
+    pub fn as_git_bundle(&self) -> GitBundle {
+        let query = self.selection.select("asGitBundle");
+        GitBundle {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Parse the file contents as JSON.
     pub fn as_json(&self) -> JsonValue {
         let query = self.selection.select("asJSON");
@@ -8557,6 +8566,152 @@ impl Node for GeneratorGroup {
     }
 }
 #[derive(Clone)]
+pub struct GitBundle {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitBundle {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitBundle {
+    fn graphql_type() -> &'static str {
+        "GitBundle"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitBundle {
+    /// Return the bundle bytes as a File.
+    pub fn as_file(&self) -> File {
+        let query = self.selection.select("asFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this GitBundle.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Object format capability: sha1 or sha256.
+    pub async fn object_format(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("objectFormat");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Commits that must already exist wherever this bundle is applied.
+    pub async fn prerequisite_sh_as(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("prerequisiteSHAs");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Refs advertised by the bundle and the object IDs they resolve to.
+    pub async fn refs(&self) -> Result<Vec<GitBundleRef>, DaggerError> {
+        let query = self.selection.select("refs");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| GitBundleRef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("GitBundleRef"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Perform full structural verification of the bundle and error if it is malformed.
+    pub fn validate(&self) -> GitBundle {
+        let query = self.selection.select("validate");
+        GitBundle {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Bundle format version (2 or 3).
+    pub async fn version(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitBundle {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct GitBundleRef {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitBundleRef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitBundleRef {
+    fn graphql_type() -> &'static str {
+        "GitBundleRef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitBundleRef {
+    /// A unique identifier for this GitBundleRef.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The advertised ref name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The object ID the advertised ref resolves to.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitBundleRef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct GitCommit {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -9065,10 +9220,22 @@ pub struct GitRepositoryBranchesOpts<'a> {
     pub patterns: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryBundleOpts {
+    /// A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+    #[builder(setter(into, strip_option), default)]
+    pub base: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
     pub patterns: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryWithBundleOpts<'a> {
+    /// An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+    #[builder(setter(into, strip_option), default)]
+    pub prerequisite_ref: Option<&'a str>,
 }
 impl IntoID<Id> for GitRepository {
     fn into_id(
@@ -9160,6 +9327,49 @@ impl GitRepository {
             query = query.arg("patterns", patterns);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+    ///
+    /// # Arguments
+    ///
+    /// * `refs` - Refs to advertise in the bundle. At least one named ref is required.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn bundle(&self, refs: Vec<impl Into<String>>) -> GitBundle {
+        let mut query = self.selection.select("bundle");
+        query = query.arg(
+            "refs",
+            refs.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        GitBundle {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+    ///
+    /// # Arguments
+    ///
+    /// * `refs` - Refs to advertise in the bundle. At least one named ref is required.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn bundle_opts(
+        &self,
+        refs: Vec<impl Into<String>>,
+        opts: GitRepositoryBundleOpts,
+    ) -> GitBundle {
+        let mut query = self.selection.select("bundle");
+        query = query.arg(
+            "refs",
+            refs.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(base) = opts.base {
+            query = query.arg("base", base);
+        }
+        GitBundle {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Returns details of a commit.
     ///
@@ -9264,6 +9474,55 @@ impl GitRepository {
     pub async fn url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("url");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Import a Git bundle after fetching and verifying all of its prerequisites.
+    ///
+    /// # Arguments
+    ///
+    /// * `bundle` - The Git bundle to import.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_bundle(&self, bundle: impl IntoID<Id>) -> GitRepository {
+        let mut query = self.selection.select("withBundle");
+        query = query.arg_lazy(
+            "bundle",
+            Box::new(move || {
+                let bundle = bundle.clone();
+                Box::pin(async move { bundle.into_id().await.unwrap().quote() })
+            }),
+        );
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Import a Git bundle after fetching and verifying all of its prerequisites.
+    ///
+    /// # Arguments
+    ///
+    /// * `bundle` - The Git bundle to import.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_bundle_opts<'a>(
+        &self,
+        bundle: impl IntoID<Id>,
+        opts: GitRepositoryWithBundleOpts<'a>,
+    ) -> GitRepository {
+        let mut query = self.selection.select("withBundle");
+        query = query.arg_lazy(
+            "bundle",
+            Box::new(move || {
+                let bundle = bundle.clone();
+                Box::pin(async move { bundle.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(prerequisite_ref) = opts.prerequisite_ref {
+            query = query.arg("prerequisiteRef", prerequisite_ref);
+        }
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 impl Node for GitRepository {

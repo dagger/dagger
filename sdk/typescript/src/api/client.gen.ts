@@ -1853,11 +1853,25 @@ export type GitRepositoryBranchesOpts = {
   patterns?: string[]
 }
 
+export type GitRepositoryBundleOpts = {
+  /**
+   * A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+   */
+  base?: GitRef
+}
+
 export type GitRepositoryTagsOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
    */
   patterns?: string[]
+}
+
+export type GitRepositoryWithBundleOpts = {
+  /**
+   * An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+   */
+  prerequisiteRef?: string
 }
 
 export type HostDirectoryOpts = {
@@ -8077,6 +8091,14 @@ export class File extends BaseClient {
   }
 
   /**
+   * Interpret this file as a Git bundle by lazily parsing its header.
+   */
+  asGitBundle = (): GitBundle => {
+    const ctx = this._ctx.select("asGitBundle")
+    return new GitBundle(ctx)
+  }
+
+  /**
    * Parse the file contents as JSON.
    */
   asJSON = (): JSONValue => {
@@ -9277,6 +9299,194 @@ export class GeneratorGroup extends BaseClient {
 }
 
 /**
+ * A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.
+ */
+export class GitBundle extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _objectFormat?: string = undefined
+  private readonly _version?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _objectFormat?: string,
+    _version?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._objectFormat = _objectFormat
+    this._version = _version
+  }
+
+  /**
+   * A unique identifier for this GitBundle.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the bundle bytes as a File.
+   */
+  asFile = (): File => {
+    const ctx = this._ctx.select("asFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Object format capability: sha1 or sha256.
+   */
+  objectFormat = async (): Promise<string> => {
+    if (this._objectFormat) {
+      return this._objectFormat
+    }
+
+    const ctx = this._ctx.select("objectFormat")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Commits that must already exist wherever this bundle is applied.
+   */
+  prerequisiteSHAs = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("prerequisiteSHAs")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Refs advertised by the bundle and the object IDs they resolve to.
+   */
+  refs = async (): Promise<GitBundleRef[]> => {
+    type refs = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("refs").select("id")
+
+    const response: Awaited<refs[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitBundleRef(ctx.copy().selectNode(r.id, "GitBundleRef")),
+    )
+  }
+
+  /**
+   * Perform full structural verification of the bundle and error if it is malformed.
+   */
+  validate = (): GitBundle => {
+    const ctx = this._ctx.select("validate")
+    return new GitBundle(ctx)
+  }
+
+  /**
+   * Bundle format version (2 or 3).
+   */
+  version = async (): Promise<number> => {
+    if (this._version) {
+      return this._version
+    }
+
+    const ctx = this._ctx.select("version")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Call the provided function with current GitBundle.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitBundle) => GitBundle) => {
+    return arg(this)
+  }
+}
+
+/**
+ * A ref advertised by a Git bundle.
+ */
+export class GitBundleRef extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+  private readonly _sha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string, _sha?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+    this._sha = _sha
+  }
+
+  /**
+   * A unique identifier for this GitBundleRef.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The advertised ref name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The object ID the advertised ref resolves to.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An immutable git commit.
  */
 export class GitCommit extends BaseClient {
@@ -9801,6 +10011,16 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+   * @param refs Refs to advertise in the bundle. At least one named ref is required.
+   * @param opts.base A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+   */
+  bundle = (refs: string[], opts?: GitRepositoryBundleOpts): GitBundle => {
+    const ctx = this._ctx.select("bundle", { refs, ...opts })
+    return new GitBundle(ctx)
+  }
+
+  /**
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
@@ -9878,6 +10098,28 @@ export class GitRepository extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Import a Git bundle after fetching and verifying all of its prerequisites.
+   * @param bundle The Git bundle to import.
+   * @param opts.prerequisiteRef An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+   */
+  withBundle = (
+    bundle: GitBundle,
+    opts?: GitRepositoryWithBundleOpts,
+  ): GitRepository => {
+    const ctx = this._ctx.select("withBundle", { bundle, ...opts })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRepository.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRepository) => GitRepository) => {
+    return arg(this)
   }
 }
 

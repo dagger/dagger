@@ -958,6 +958,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitBundle",
+			"p": "Dagger/GitBundle.html",
+			"d": "<p>A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GitBundleRef",
+			"p": "Dagger/GitBundleRef.html",
+			"d": "<p>A ref advertised by a Git bundle.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitCommit",
 			"p": "Dagger/GitCommit.html",
 			"d": "<p>An immutable git commit.</p>",
@@ -4922,6 +4942,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::asGitBundle",
+			"p": "Dagger/File.html#method_asGitBundle",
+			"d": "<p>Interpret this file as a Git bundle by lazily parsing its header.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::asJSON",
 			"p": "Dagger/File.html#method_asJSON",
 			"d": "<p>Parse the file contents as JSON.</p>"
@@ -5354,6 +5380,66 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitBundle::asFile",
+			"p": "Dagger/GitBundle.html#method_asFile",
+			"d": "<p>Return the bundle bytes as a File.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::id",
+			"p": "Dagger/GitBundle.html#method_id",
+			"d": "<p>A unique identifier for this GitBundle.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::objectFormat",
+			"p": "Dagger/GitBundle.html#method_objectFormat",
+			"d": "<p>Object format capability: sha1 or sha256.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::prerequisiteSHAs",
+			"p": "Dagger/GitBundle.html#method_prerequisiteSHAs",
+			"d": "<p>Commits that must already exist wherever this bundle is applied.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::refs",
+			"p": "Dagger/GitBundle.html#method_refs",
+			"d": "<p>Refs advertised by the bundle and the object IDs they resolve to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::validate",
+			"p": "Dagger/GitBundle.html#method_validate",
+			"d": "<p>Perform full structural verification of the bundle and error if it is malformed.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::version",
+			"p": "Dagger/GitBundle.html#method_version",
+			"d": "<p>Bundle format version (2 or 3).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::id",
+			"p": "Dagger/GitBundleRef.html#method_id",
+			"d": "<p>A unique identifier for this GitBundleRef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::name",
+			"p": "Dagger/GitBundleRef.html#method_name",
+			"d": "<p>The advertised ref name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::sha",
+			"p": "Dagger/GitBundleRef.html#method_sha",
+			"d": "<p>The object ID the advertised ref resolves to.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitCommit::ancestorReleaseTag",
 			"p": "Dagger/GitCommit.html#method_ancestorReleaseTag",
 			"d": "<p>The latest semver release tag reachable from this commit.</p>"
@@ -5528,6 +5614,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::bundle",
+			"p": "Dagger/GitRepository.html#method_bundle",
+			"d": "<p>Pack the given refs and the objects needed to reconstruct them into a Git bundle.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::commit",
 			"p": "Dagger/GitRepository.html#method_commit",
 			"d": "<p>Returns details of a commit.</p>"
@@ -5579,6 +5671,12 @@
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::withBundle",
+			"p": "Dagger/GitRepository.html#method_withBundle",
+			"d": "<p>Import a Git bundle after fetching and verifying all of its prerequisites.</p>"
 		},
 		{
 			"t": "M",

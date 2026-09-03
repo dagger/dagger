@@ -26,6 +26,15 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Interpret this file as a Git bundle by lazily parsing its header.
+     */
+    public function asGitBundle(): GitBundle
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitBundle');
+        return new \Dagger\GitBundle($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Parse the file contents as JSON.
      */
     public function asJSON(): JsonValue
