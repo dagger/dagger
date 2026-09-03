@@ -2474,15 +2474,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
-	if err != nil {
-		return nil, err
-	}
-	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
-	if err != nil {
-		return nil, err
-	}
-	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2490,34 +2482,21 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
-	ctr := &core.Container{
-		FS:                 clonedFS,
-		MetaSnapshot:       clonedMeta,
-		Config:             core.CloneContainerImageConfig(parent.Self().Config),
-		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
-		Mounts:             clonedMounts,
-		Platform:           parent.Self().Platform,
-		Annotations:        slices.Clone(parent.Self().Annotations),
-		Secrets:            slices.Clone(parent.Self().Secrets),
-		Sockets:            slices.Clone(parent.Self().Sockets),
-		ImageRef:           "",
-		Ports:              slices.Clone(parent.Self().Ports),
-		Services:           slices.Clone(parent.Self().Services),
-		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
-		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
-		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
-		DefaultArgs:        parent.Self().DefaultArgs,
-		Lazy: &core.ContainerWithMountedDirectoryLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Target:    absPath(parent.Self().Config.WorkingDir, path),
-			Source:    dir,
-			Owner:     owner,
-			Readonly:  args.ReadOnly,
-		},
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedDirectory(ctx, parent, target, dir, owner, args.ReadOnly)
+		return ctr, err
+	}
+	ctr.Lazy = &core.ContainerWithMountedDirectoryLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    dir,
+		Owner:     owner,
+		Readonly:  args.ReadOnly,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
-		Target:          absPath(parent.Self().Config.WorkingDir, path),
+		Target:          target,
 		Readonly:        args.ReadOnly,
 		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
 	})
@@ -2709,7 +2688,7 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2718,6 +2697,10 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedFile(ctx, parent, target, file, owner, false)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedFileLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -2751,26 +2734,56 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	if err != nil {
 		return inst, err
 	}
+	dagqlCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
+	}
+	sourcePath := args.SourcePath
+	if sourcePath == "" {
+		sourcePath = "/"
+	}
+	sourceIsFile := false
+	if path.Clean(sourcePath) != "/" {
+		stat, err := dir.Self().Stat(ctx, dir, srv, path.Join("/", sourcePath), false)
+		if err != nil {
+			return inst, err
+		}
+		sourceIsFile = stat.FileType != core.FileTypeDirectory
+	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
 
 	target := absPath(parent.Self().Config.WorkingDir, args.Path)
-	ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
-		LazyState:  core.NewLazyState(),
-		Parent:     parent,
-		Target:     target,
-		Source:     dir,
-		SourcePath: args.SourcePath,
-		Readonly:   args.ReadOnly,
+	if !parentPendingLazy {
+		if _, err := ctr.WithMountedPathDockerfileCompat(ctx, target, dir, args.SourcePath, args.ReadOnly); err != nil {
+			return inst, err
+		}
+	} else {
+		ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Target:     target,
+			Source:     dir,
+			SourcePath: args.SourcePath,
+			Readonly:   args.ReadOnly,
+		}
+		mount := core.ContainerMount{
+			Target:   target,
+			Readonly: args.ReadOnly,
+		}
+		if sourceIsFile {
+			mount.FileSource = new(core.LazyAccessor[*core.File, *core.Container])
+		} else {
+			mount.DirectorySource = new(core.LazyAccessor[*core.Directory, *core.Container])
+		}
+		ctr.Mounts = ctr.Mounts.With(mount)
 	}
-	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
-		Target:          target,
-		Readonly:        args.ReadOnly,
-		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
-	})
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	if err != nil {
@@ -2785,13 +2798,6 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	parentDgst, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: parent digest: %w", err)
-	}
-	dagqlCache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
-		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
 	}
 	srcSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
 	if err != nil {

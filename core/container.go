@@ -3842,24 +3842,75 @@ func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, cache da
 }
 
 func (lazy *ContainerWithMountedDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedDirectory", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
-		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		_, err = container.WithMountedDirectory(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedDirectoryLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerMountWriterGroups(ctr, lazy.Target, parts)
+}
+
+func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedDirectory", group, func(ctx context.Context) error {
+			var source *LazyAccessor[*Directory, *Container]
+			if mnt := container.mountAt(absPath(container.Config.WorkingDir, lazy.Target)); mnt != nil {
+				source = mnt.DirectorySource
+			}
+			if err := materializeContainerMetadataFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			if source == nil {
+				if mnt := container.mountAt(target); mnt != nil {
+					source = mnt.DirectorySource
+				}
+			}
+			if source == nil {
+				source = new(LazyAccessor[*Directory, *Container])
+			}
+			container.Mounts = container.Mounts.With(ContainerMount{
+				Target:          target,
+				Readonly:        lazy.Readonly,
+				DirectorySource: source,
+			})
+			container.ImageRef = ""
+			return nil
+		})
+	case ContainerLazyGroupWrite:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedDirectory", group, func(ctx context.Context) error {
+			source := lazy.Source
+			var err error
+			if lazy.Owner != "" {
+				source, err = container.chownDir(ctx, lazy.Parent, source, lazy.Owner)
+				if err != nil {
+					return err
+				}
+			}
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, source); err != nil {
+				return err
+			}
+			detached, err := cloneDetachedDirectoryForContainerResult(ctx, source.Self())
+			if err != nil {
+				return err
+			}
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			mnt := container.mountAt(target)
+			if mnt == nil || mnt.DirectorySource == nil {
+				return fmt.Errorf("container withMountedDirectory: no directory mount at target %q", target)
+			}
+			mnt.DirectorySource.SetValue(detached)
+			return nil
+		})
+	default:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedDirectory", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, lazy.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerWithMountedDirectoryLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -3895,24 +3946,75 @@ func (lazy *ContainerWithMountedDirectoryLazy) EncodePersisted(ctx context.Conte
 }
 
 func (lazy *ContainerWithMountedFileLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedFile", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
-		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		_, err = container.WithMountedFile(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Readonly)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedFileLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerMountWriterGroups(ctr, lazy.Target, parts)
+}
+
+func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedFile", group, func(ctx context.Context) error {
+			var source *LazyAccessor[*File, *Container]
+			if mnt := container.mountAt(absPath(container.Config.WorkingDir, lazy.Target)); mnt != nil {
+				source = mnt.FileSource
+			}
+			if err := materializeContainerMetadataFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			if source == nil {
+				if mnt := container.mountAt(target); mnt != nil {
+					source = mnt.FileSource
+				}
+			}
+			if source == nil {
+				source = new(LazyAccessor[*File, *Container])
+			}
+			container.Mounts = container.Mounts.With(ContainerMount{
+				Target:     target,
+				Readonly:   lazy.Readonly,
+				FileSource: source,
+			})
+			container.ImageRef = ""
+			return nil
+		})
+	case ContainerLazyGroupWrite:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedFile", group, func(ctx context.Context) error {
+			source := lazy.Source
+			var err error
+			if lazy.Owner != "" {
+				source, err = container.chownFile(ctx, lazy.Parent, source, lazy.Owner)
+				if err != nil {
+					return err
+				}
+			}
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, source); err != nil {
+				return err
+			}
+			detached, err := cloneDetachedFileForContainerResult(ctx, source.Self())
+			if err != nil {
+				return err
+			}
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			mnt := container.mountAt(target)
+			if mnt == nil || mnt.FileSource == nil {
+				return fmt.Errorf("container withMountedFile: no file mount at target %q", target)
+			}
+			mnt.FileSource.SetValue(detached)
+			return nil
+		})
+	default:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedFile", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, lazy.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerWithMountedFileLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -3948,24 +4050,94 @@ func (lazy *ContainerWithMountedFileLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithMountedPathDockerfileCompatLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedPathDockerfileCompat", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
-		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		_, err = container.WithMountedPathDockerfileCompat(ctx, lazy.Target, lazy.Source, lazy.SourcePath, lazy.Readonly)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerMountWriterGroups(ctr, lazy.Target, parts)
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedPathDockerfileCompat", group, func(ctx context.Context) error {
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			var directorySource *LazyAccessor[*Directory, *Container]
+			var fileSource *LazyAccessor[*File, *Container]
+			if mnt := container.mountAt(target); mnt != nil {
+				directorySource = mnt.DirectorySource
+				fileSource = mnt.FileSource
+			}
+			if err := materializeContainerMetadataFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			target = absPath(container.Config.WorkingDir, lazy.Target)
+			if directorySource == nil && fileSource == nil {
+				if mnt := container.mountAt(target); mnt != nil {
+					directorySource = mnt.DirectorySource
+					fileSource = mnt.FileSource
+				}
+			}
+			mount := ContainerMount{Target: target, Readonly: lazy.Readonly}
+			if fileSource != nil {
+				mount.FileSource = fileSource
+			} else {
+				if directorySource == nil {
+					directorySource = new(LazyAccessor[*Directory, *Container])
+				}
+				mount.DirectorySource = directorySource
+			}
+			container.Mounts = container.Mounts.With(mount)
+			container.ImageRef = ""
+			return nil
+		})
+	case ContainerLazyGroupWrite:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedPathDockerfileCompat", group, func(ctx context.Context) error {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+				return err
+			}
+			target := absPath(container.Config.WorkingDir, lazy.Target)
+			mnt := container.mountAt(target)
+			if mnt == nil {
+				return fmt.Errorf("container withMountedPathDockerfileCompat: no mount at target %q", target)
+			}
+			sourcePath := cleanDockerfileCompatMountSourcePath(lazy.SourcePath)
+			switch {
+			case mnt.DirectorySource != nil:
+				var detached *Directory
+				if path.Clean(sourcePath) == "/" {
+					detached, err = cloneDetachedDirectoryForContainerResult(ctx, lazy.Source.Self())
+				} else {
+					detached, err = detachedDirectoryAtSourcePath(ctx, lazy.Source, sourcePath)
+				}
+				if err != nil {
+					return err
+				}
+				mnt.DirectorySource.SetValue(detached)
+				return nil
+			case mnt.FileSource != nil:
+				if dockerfileCompatMountSourcePathHasDirHint(sourcePath) {
+					return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", sourcePath)}
+				}
+				detached, err := detachedFileAtSourcePath(ctx, lazy.Source, sourcePath)
+				if err != nil {
+					return err
+				}
+				mnt.FileSource.SetValue(detached)
+				return nil
+			default:
+				return fmt.Errorf("container withMountedPathDockerfileCompat: mount at target %q has no snapshot source", target)
+			}
+		})
+	default:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.withMountedPathDockerfileCompat", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, lazy.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerWithMountedPathDockerfileCompatLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
