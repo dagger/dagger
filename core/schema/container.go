@@ -23,6 +23,7 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -2588,15 +2589,17 @@ func evaluateContainerImageParts(
 	cache *dagql.Cache,
 	containers ...dagql.ObjectResult[*core.Container],
 ) error {
+	eg, egctx := errgroup.WithContext(ctx)
 	for _, container := range containers {
 		if container.Self() == nil {
 			continue
 		}
-		if err := cache.EvaluateParts(ctx, container, core.ContainerPartMetadata, core.ContainerPartFS); err != nil {
-			return err
-		}
+		container := container
+		eg.Go(func() error {
+			return cache.EvaluateParts(egctx, container, core.ContainerPartMetadata, core.ContainerPartFS)
+		})
 	}
-	return nil
+	return eg.Wait()
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
