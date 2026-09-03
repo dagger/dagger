@@ -167,6 +167,7 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
+	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
 	activityCmd.GroupID = "daily"
 
@@ -198,6 +199,7 @@ func init() {
 		settingsCmd,
 		checksCmd,
 		upCmd,
+		terminalCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
@@ -296,6 +298,13 @@ var rootCmd = &cobra.Command{
 		cobra.OnFinalize(func() {
 			t.Close()
 		})
+
+		// Keep subscription OAuth tokens fresh for as long as this command
+		// runs: `dagger shell`/`agent` sessions outlive an hour-long access
+		// token, and refreshing ahead of expiry keeps the round-trip off the
+		// critical path. No-op unless a subscription provider is configured;
+		// the on-demand refresher hook stays the fallback.
+		cobra.OnFinalize(startOAuthTokenRefresher(cmd.Context()))
 
 		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
 

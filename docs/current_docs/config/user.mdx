@@ -1,0 +1,54 @@
+---
+title: "User configuration"
+slug: /config/user
+description: "Personal overrides that stay out of the repository"
+---
+
+# User configuration
+
+Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file, `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`.
+
+The file is shared with other Dagger subsystems (such as `[llm]`). Workspace overrides sit in a `[workspaces.*]` section, keyed by the workspace's Git remote:
+
+```toml
+# Always applied when working in the github.com/acme/api workspace:
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+
+# A personal environment, selected with `dagger --env dev ...`:
+[workspaces."github.com/acme/api".env.dev.modules.aws.settings]
+region = "us-west-2"
+```
+
+## Merge order
+
+Dagger merges the effective configuration in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments add to the repository's, all without modifying `dagger.toml`.
+
+## Writing values
+
+You don't have to edit the file by hand. Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
+
+```shell
+dagger settings -g aws profile alice-dev             # always applied here
+dagger settings -g --env dev aws region us-west-2    # personal env overlay
+dagger settings -g -u aws profile                    # remove the override
+dagger workspace config -g modules.aws.settings.profile alice-dev
+```
+
+`--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value. The repository value underneath is untouched.
+
+`-g` also composes with `-W`. A remote workspace is readable but its repository config can't be written, while its user-level overrides live in your local file:
+
+```shell
+dagger -W https://github.com/acme/api settings -g aws profile alice-dev
+```
+
+## What can be stored
+
+Only module settings: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
+
+## Workspace key
+
+The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match: `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.
+
+A repository with multiple remotes is keyed by `origin` only; a repository with no remote matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.

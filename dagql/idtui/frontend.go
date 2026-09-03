@@ -16,6 +16,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -121,6 +122,37 @@ type Frontend interface {
 	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
 
 	prompt.PromptHandler
+}
+
+// CommandFrontend is implemented by frontends that can host a command-owned
+// Tuist screen. Commands should treat this as an optional capability and keep
+// a plain-output fallback for streaming frontends.
+type CommandFrontend interface {
+	SetView(ViewFactory) ViewHandle
+	Live() bool
+}
+
+// ViewFactory constructs a command screen using services owned by the pretty
+// frontend. It is invoked on the Tuist event loop.
+type ViewFactory func(ViewContext) CommandView
+
+// CommandView is the body of a command-owned pretty TUI. SetFinal switches the
+// view from transient progress to durable terminal output.
+type CommandView interface {
+	tuist.Component
+	Update()
+	SetFinal(bool)
+}
+
+// ViewContext provides reusable trace-backed components. The trace state is
+// intentionally not mutable by commands.
+type ViewContext interface {
+	SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView
+}
+
+// ViewHandle serializes command model mutations with rendering.
+type ViewHandle interface {
+	Update(func())
 }
 
 // TraceFrontend is the optional interface 'dagger trace' drives for
@@ -646,7 +678,9 @@ func (r *renderer) renderSpan(
 			if !renderToolArgsSummary(out, span.LLMTool, span) {
 				if len(span.LLMToolArgValues) > 0 {
 					// for now, only print the first arg, the rest are likely to be noisy.
-					fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+					// Show only its first line so a large multiline value (e.g. a
+					// commit message body) doesn't dominate the row.
+					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
 				}
 			}
 			return nil
@@ -686,6 +720,13 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%f", val.Float)).Foreground(termenv.ANSIRed))
 	case *callpbv1.Literal_String_:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%q", val.String_)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_Bytes:
+		fmt.Fprint(out, out.String(call.DisplayBytes(val.Bytes)).Foreground(termenv.ANSIYellow))
+	case *callpbv1.Literal_DigestedString:
+		fmt.Fprint(out, out.String(call.DisplayDigestedString(
+			val.DigestedString.GetValue(),
+			digest.Digest(val.DigestedString.GetDigest()),
+		)).Foreground(termenv.ANSIYellow))
 	case *callpbv1.Literal_CallDigest:
 		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
 	case *callpbv1.Literal_Enum:
@@ -1022,7 +1063,14 @@ func humanizeTokens(v int64) string {
 // }
 
 func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
-	return replayPrimaryOutput(w, db, true)
+	return renderPrimaryOutputFor(w, db, db.PrimarySpan)
+}
+
+// renderPrimaryOutputFor is renderPrimaryOutput for an explicit primary span,
+// so a scoped report can replay ITS root's output without the DB's global
+// primary span having to be mutated to point at it.
+func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID) error {
+	return replayPrimaryOutput(w, db, primary, true)
 }
 
 // replayPrimaryOutput replays the primary span's log records to the CLI's
@@ -1031,8 +1079,8 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 // engine-wrapped failure output the rendered report already covers, while
 // stdout still carries the command's own results (e.g. a shell script's
 // output from before it failed).
-func replayPrimaryOutput(w io.Writer, db *dagui.DB, includeStderr bool) error {
-	logs := db.PrimaryLogs[db.PrimarySpan]
+func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
+	logs := db.PrimaryLogs[primary]
 	if !includeStderr {
 		var stdout []sdklog.Record
 		for _, l := range logs {

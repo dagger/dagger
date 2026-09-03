@@ -191,9 +191,15 @@ func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 		switch ref.Name {
 		case headRef:
 			headMatch = ref
-		case tagRef, peeledTagRef:
-			tagMatch = ref
-			tagMatch.Name = tagRef
+		case tagRef:
+			if tagMatch == nil {
+				clone := *ref
+				tagMatch = &clone
+			}
+		case peeledTagRef:
+			clone := *ref
+			clone.Name = tagRef
+			tagMatch = &clone
 		case partialRef:
 			match = ref
 		case target:

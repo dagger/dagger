@@ -10,16 +10,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/mattn/go-isatty"
+	toml "github.com/pelletier/go-toml"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // setupCmd is the idempotent "ensure environment works" doctor verb.
@@ -49,11 +55,18 @@ config lists toolchains, they are installed into a dagger.toml at the
 repository root — never a nested one. A subdirectory config with a
 blueprint is left as legacy with a warning.
 
+Toolchains of a module with an SDK are also added as dependencies in the
+migrated dagger-module.toml, since 0.21 exposed toolchains to module code
+the same way as dependencies. Remove any the module code does not use.
+
 Idempotent: safe to run anytime. No-ops what's already in good shape.
-Each step can be skipped at the prompt. With --auto-apply, all steps
-are applied without prompting. In non-interactive mode (no TTY) the
-default is to skip steps that would mutate state.`,
+Each step can be skipped at the prompt. With --auto-apply, workspace
+changes and module recommendations are applied without prompting. Cloud
+login is skipped in non-interactive mode; run dagger login separately.`,
 	Args: cobra.NoArgs,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 	RunE: runSetup,
 }
 
@@ -62,20 +75,45 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("setup does not support --env; it configures the base workspace")
 	}
 
-	out := cmd.OutOrStdout()
-
-	if err := setupStepLogin(cmd); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
-		// Login failures shouldn't block migration/recommend.
-	}
-
 	// All steps run under ONE Frontend (one live TUI) so their prompts can be
 	// huh forms the TUI renders — a raw stdin prompt would be drawn over by the
 	// progress display. withSetupSessions provides connect() so the install can
 	// run in a FRESH engine session: the per-client workspace is detected once
 	// and cached for a session's lifetime, so install must not reuse the
 	// migrate session or it would still see the legacy dagger.json.
-	return withSetupSessions(cmd.Context(), func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error {
+	var (
+		setupUI       *setupUI
+		setupLoginErr error
+	)
+	return withSetupSessions(cmd.Context(), func(ctx context.Context) {
+		setupUI = newSetupUI(Frontend)
+		setupLoginErr = setupStepLogin(ctx, cmd, cloudauth.GetCloudAuth, setupUI)
+		if setupLoginErr != nil {
+			if !errors.Is(setupLoginErr, idtui.ErrInterrupted) {
+				setupUI.setLoginFailed(setupLoginErr)
+			}
+			if setupUI == nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", setupLoginErr)
+			}
+			// Login failures shouldn't block migration/recommend.
+		}
+	}, func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) (rerr error) {
+		if errors.Is(setupLoginErr, idtui.ErrInterrupted) {
+			return setupLoginErr
+		}
+		defer func() {
+			if rerr != nil {
+				setupUI.fail(rerr)
+			}
+		}()
+		ctx, setupSpan := Tracer().Start(ctx, "setup", telemetry.Passthrough())
+		defer telemetry.EndWithCause(setupSpan, &rerr)
+		setupStdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		defer setupStdio.Close()
+		setupID := dagui.SpanID{SpanID: setupSpan.SpanContext().SpanID()}
+		Frontend.SetPrimary(setupID)
+		setupUI.setRoot(setupID)
+
 		// Session 1: migrate (apply form) or recommend (compute + install
 		// confirm form). The migrate write lands here; the session is closed
 		// before the install session opens so the workspace lock is released.
@@ -93,7 +131,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			}
 			defer closeSess()
 			dag := sess.Dagger()
-			migrated, moduleOnly, migratedConfigs, err = setupStepMigrate(ctx, cmd, dag)
+			migrated, moduleOnly, migratedConfigs, err = setupStepMigrate(ctx, dag, setupUI)
 			if err != nil {
 				return fmt.Errorf("step 2 (migrate): %w", err)
 			}
@@ -113,7 +151,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 				// here — even when the migration was declined.
 				return nil
 			}
-			recs, install, err = planRecommend(ctx, cmd, dag)
+			recs, install, err = planRecommend(ctx, dag, setupUI)
 			if err != nil {
 				return fmt.Errorf("step 3 (recommend): %w", err)
 			}
@@ -138,12 +176,12 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			// Only a migration writes SDK installs by short name, so scope the
 			// resolution to that case — never rewrite an already-native config.
 			if migrated {
-				if err := setupResolveMigratedSDKs(ctx, cmd, dag, migratedConfigs); err != nil {
+				if err := setupResolveMigratedSDKs(ctx, dag, migratedConfigs); err != nil {
 					return fmt.Errorf("step 2 (resolve SDKs): %w", err)
 				}
 			}
 			if needInstall {
-				if err := installRecommended(ctx, cmd, dag, recs); err != nil {
+				if err := installRecommended(ctx, dag, recs, setupUI); err != nil {
 					return fmt.Errorf("step 3 (install): %w", err)
 				}
 			}
@@ -151,39 +189,234 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 
 		if migrated {
 			if moduleOnly {
-				fmt.Fprintln(out, "\nMigrated the module in place; no workspace config was created.")
+				setupHumanMessage(setupUI, ctx, "module migrated", "Migrated the module in place; no workspace config was created.")
 			} else {
-				fmt.Fprintln(out, "\nRun `dagger setup` again to see recommended modules for the migrated workspace.")
+				setupHumanMessage(setupUI, ctx, "migration next steps", "Run `dagger setup` again to see recommended modules for the migrated workspace.")
 			}
 		}
-		fmt.Fprintln(out, "\nSetup complete.")
+		if setupUI != nil {
+			setupUI.complete()
+		} else {
+			fmt.Fprintln(setupStdio.Stdout, "Setup complete.")
+		}
 		return nil
 	})
 }
 
+func setupHumanMessage(ui *setupUI, ctx context.Context, name, markdown string) {
+	if ui != nil {
+		ui.setMigrationMessage(markdown)
+		return
+	}
+	setupMessage(ctx, name, markdown)
+}
+
+func setupRecommendMessage(ui *setupUI, ctx context.Context, name, markdown string) {
+	if ui != nil {
+		ui.setRecommendMessage(markdown)
+		return
+	}
+	setupMessage(ctx, name, markdown)
+}
+
+// setupMessage emits human-facing Markdown as a revealed message span. The
+// stable span name remains useful in telemetry while the TUI renders the log
+// content in its place.
+func setupMessage(ctx context.Context, name, markdown string) {
+	ctx, span := Tracer().Start(ctx, name, telemetry.Reveal(), telemetry.Encapsulate())
+	span.SetAttributes(attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	_, _ = fmt.Fprintln(stdio.Stdout, markdown)
+	stdio.Close()
+	telemetry.EndWithCause(span, nil)
+}
+
 // --- Step 1: Cloud login ---
 
-func setupStepLogin(cmd *cobra.Command) error {
-	ctx := cmd.Context()
+func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(context.Context) (*cloudauth.Cloud, error), ui *setupUI) error {
 	out := cmd.OutOrStdout()
 
-	fmt.Fprintln(out, "Step 1: Cloud login")
-
-	if _, err := cloudauth.GetCloudAuth(ctx); err == nil {
-		fmt.Fprintln(out, "  Already logged in.")
-		return nil
+	if ui == nil {
+		fmt.Fprintln(out, "Step 1: Cloud login")
+	} else {
+		ui.setLoginPending("Checking Cloud account...")
 	}
 
-	if !confirm(cmd, "  Log in to Dagger Cloud?") {
-		fmt.Fprintln(out, "  Skipped.")
+	if auth, err := getCloudAuth(ctx); err == nil && auth != nil {
+		if ui == nil {
+			fmt.Fprintln(out, "  Already logged in.")
+		} else {
+			ui.setLoginComplete("Already logged in.")
+		}
 		return nil
 	}
+	if !autoApply {
+		disabled, err := setupCloudLoginPromptDisabled()
+		if err != nil {
+			return err
+		}
+		if disabled {
+			if ui == nil {
+				fmt.Fprintln(out, "  "+setupLoginSkippedHint)
+			} else {
+				ui.setLoginSkipped(setupLoginSkippedHint)
+			}
+			return nil
+		}
+	}
 
-	if err := cloudauth.Login(ctx, cmd.ErrOrStderr(), cloudauth.WithAuthGate()); err != nil {
+	if ui != nil {
+		ui.setLoginPending("Waiting for login choice...")
+	}
+	choice, err := confirmSetupLogin(ctx, cmd, ui)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "  Logged in.")
+	if choice == setupLoginNever {
+		if err := disableSetupCloudLoginPrompt(); err != nil {
+			return err
+		}
+	}
+	if choice != setupLogin {
+		message := "Skipped."
+		if choice == setupLoginNever {
+			message = setupLoginSkippedHint
+		}
+		if ui == nil {
+			fmt.Fprintln(out, "  "+message)
+		} else {
+			ui.setLoginSkipped(message)
+		}
+		return nil
+	}
+
+	loginOut := cmd.ErrOrStderr()
+	if ui != nil && ui.live {
+		ui.setLoginPending("Waiting for authentication...")
+		loginOut = setupLoginWriter{ui: ui}
+	}
+	if err := cloudauth.Login(ctx, loginOut); err != nil {
+		return err
+	}
+	if ui == nil {
+		fmt.Fprintln(out, "  Logged in.")
+	} else {
+		ui.setLoginComplete("Logged in.")
+	}
 	return nil
+}
+
+type setupLoginChoice string
+
+const (
+	setupLogin       setupLoginChoice = "login"
+	setupLoginNotNow setupLoginChoice = "not-now"
+	setupLoginNever  setupLoginChoice = "never"
+
+	setupLoginSkippedHint = "Skipped. (dagger login to log in)"
+)
+
+func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (setupLoginChoice, error) {
+	return confirmSetupLoginInteractive(ctx, cmd, ui, isatty.IsTerminal(os.Stdin.Fd()))
+}
+
+func confirmSetupLoginInteractive(ctx context.Context, cmd *cobra.Command, ui *setupUI, interactive bool) (setupLoginChoice, error) {
+	if !interactive {
+		if ui != nil {
+			ui.setLoginSkipped("Skipped in non-interactive mode; run `dagger login` to log in.")
+		}
+		return setupLoginNotNow, nil
+	}
+	if ui == nil || !ui.live {
+		if confirm(cmd, "  Log in to Dagger Cloud?") {
+			return setupLogin, nil
+		}
+		return setupLoginNotNow, nil
+	}
+	if autoApply {
+		return setupLogin, nil
+	}
+	choice := setupLogin
+	form := huh.NewForm(huh.NewGroup(
+		idtui.NewExplicitChoice(&choice,
+			huh.NewOption("Log in", setupLogin),
+			huh.NewOption("Not now", setupLoginNotNow),
+			huh.NewOption("Never ask again", setupLoginNever),
+		).
+			Title("Log in to Dagger Cloud?").
+			TitleLink("https://dagger.io/cloud").
+			Description("For observability, compute, and persistence (ish).\nMore info: https://dagger.io/cloud"),
+	))
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+	return choice, nil
+}
+
+func setupCloudLoginPromptDisabled() (bool, error) {
+	data, err := os.ReadFile(llmconfig.ConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read Dagger config: %w", err)
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return false, fmt.Errorf("parse Dagger config: %w", err)
+	}
+	return tree.GetPath([]string{"setup", "cloud_login"}) == string(setupLoginNever), nil
+}
+
+func disableSetupCloudLoginPrompt() error {
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		tree, err := toml.LoadBytes(existing)
+		if err != nil {
+			return nil, fmt.Errorf("parse Dagger config: %w", err)
+		}
+		tree.SetPath([]string{"setup", "cloud_login"}, string(setupLoginNever))
+		out, err := tree.ToTomlString()
+		if err != nil {
+			return nil, fmt.Errorf("serialize Dagger config: %w", err)
+		}
+		return []byte(out), nil
+	})
+}
+
+func clearSetupCloudLoginPromptPreference() error {
+	if _, err := os.Stat(llmconfig.ConfigFile); os.IsNotExist(err) {
+		return nil
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		tree, err := toml.LoadBytes(existing)
+		if err != nil {
+			return nil, fmt.Errorf("parse Dagger config: %w", err)
+		}
+		path := []string{"setup", "cloud_login"}
+		if tree.HasPath(path) {
+			if err := tree.DeletePath(path); err != nil {
+				return nil, fmt.Errorf("clear setup Cloud login preference: %w", err)
+			}
+		}
+		if setup, ok := tree.Get("setup").(*toml.Tree); ok && len(setup.Keys()) == 0 {
+			if err := tree.Delete("setup"); err != nil {
+				return nil, fmt.Errorf("clear empty setup config: %w", err)
+			}
+		}
+		out, err := tree.ToTomlString()
+		if err != nil {
+			return nil, fmt.Errorf("serialize Dagger config: %w", err)
+		}
+		return []byte(out), nil
+	})
+}
+
+type setupLoginWriter struct{ ui *setupUI }
+
+func (w setupLoginWriter) Write(p []byte) (int, error) {
+	w.ui.appendLoginDetail(string(p))
+	return len(p), nil
 }
 
 // --- Step 2: Migrate ---
@@ -191,18 +424,13 @@ func setupStepLogin(cmd *cobra.Command) error {
 // emptyWorkspaceSetupHint is printed when `dagger setup` has nothing to migrate
 // and no workspace config exists yet: the greenfield case, where the useful
 // thing is to show how to get started rather than write an empty dagger.toml.
-const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to migrate.
+const emptyWorkspaceSetupHint = `No workspace loaded here yet — nothing to migrate.
 
-  To get started:
+To get started:
 
-    • Install a published module as a dependency:
-        dagger install <module>
-
-    • Install an SDK to author your own:
-        dagger sdk search
-
-    • Create a new module (after installing an SDK):
-        dagger module init <sdk> <name>
+- Install a published module as a dependency: dagger install <module>
+- Install an SDK to author your own: dagger sdk search
+- Create a new module after installing an SDK: dagger module init <sdk> <name>
 `
 
 // setupStepMigrate reports whether a migration was applied (which routes setup
@@ -216,9 +444,15 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
 // -> dagger-module.toml) and no workspace is created. It is reported whether
 // or not the migration was applied, so the caller can skip workspace-scoped
 // recommendations either way.
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (applied bool, moduleOnly bool, configs []string, _ error) {
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "\nStep 2: Workspace migration")
+func setupStepMigrate(ctx context.Context, dag *dagger.Client, ui *setupUI) (applied bool, moduleOnly bool, configs []string, rerr error) {
+	messageCtx := ctx
+	spanOpts := []trace.SpanStartOption{telemetry.Reveal()}
+	if ui != nil {
+		spanOpts = append(spanOpts, telemetry.Encapsulate())
+	}
+	ctx, span := Tracer().Start(ctx, "Workspace migration", spanOpts...)
+	ui.setMigration(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+	defer telemetry.EndWithCause(span, &rerr)
 
 	ws := dag.CurrentWorkspace()
 	migration := ws.Migrate()
@@ -246,7 +480,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		}
 		if len(skipWarnings) > 0 {
 			for _, warning := range skipWarnings {
-				fmt.Fprintf(out, "  Skipped: %s\n", warning)
+				setupHumanMessage(ui, messageCtx, "migration skipped", "Skipped: "+warning)
 			}
 			return false, true, nil, nil
 		}
@@ -259,11 +493,16 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 			// Nothing to migrate and no workspace config yet — don't seed an empty
 			// dagger.toml; guide the user to get started instead.
 			if !silent {
-				fmt.Fprint(out, emptyWorkspaceSetupHint)
+				if ui != nil {
+					ui.setMigrationMessage("Nothing to migrate.")
+					ui.setMigrationFinalMessage(emptyWorkspaceSetupHint)
+				} else {
+					setupHumanMessage(nil, messageCtx, "workspace not loaded", emptyWorkspaceSetupHint)
+				}
 			}
 			return false, false, nil, nil
 		}
-		fmt.Fprintln(out, "  No migration needed.")
+		setupHumanMessage(ui, messageCtx, "no migration needed", "No migration needed.")
 		return false, false, nil, nil
 	}
 
@@ -338,7 +577,13 @@ func migratedConfigPaths(ctx context.Context, changes *dagger.Changeset) ([]stri
 // being treated as a local path. Runs in a post-migration session where the
 // workspace is native; a no-op when nothing was recorded by short name (and
 // when the user declined migration, leaving the legacy config in place).
-func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, migratedConfigs []string) error {
+func setupResolveMigratedSDKs(ctx context.Context, dag *dagger.Client, migratedConfigs []string) (rerr error) {
+	ctx, span := Tracer().Start(ctx, "Resolve migrated SDKs", telemetry.Reveal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	out := stdio.Stdout
+
 	ws := dag.CurrentWorkspace()
 	raw, err := ws.ConfigRead(ctx)
 	if err != nil {
@@ -349,7 +594,6 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 		return err
 	}
 
-	out := cmd.OutOrStdout()
 	fixes := planMigratedSDKFixups(cfg)
 	if len(fixes) > 0 {
 		updated := ws
@@ -429,32 +673,33 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 // form) whether to install them. It runs in the same session as migrate and
 // returns the modules plus the user's decision; the actual install runs later
 // in a fresh session (see runSetup) so it re-detects the migrated workspace.
-func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (recs []recommendation, install bool, _ error) {
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "\nStep 3: Recommended modules")
+func planRecommend(ctx context.Context, dag *dagger.Client, ui *setupUI) (recs []recommendation, install bool, rerr error) {
+	messageCtx := ctx
+	ctx, span := Tracer().Start(ctx, "Find recommended modules", telemetry.Reveal(), telemetry.Encapsulate())
+	ui.setRecommend(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+	defer telemetry.EndWithCause(span, &rerr)
 
 	recs, err := runRecommend(ctx, dag)
 	if errors.Is(err, errCloudNotAuthenticated) ||
 		errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded) {
 		// Login or context issues shouldn't fail setup as a whole.
-		fmt.Fprintf(out, "  Skipped: %v\n", err)
+		setupRecommendMessage(ui, messageCtx, "recommendations skipped", "Skipped: "+err.Error())
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
 	}
 	if len(recs) == 0 {
-		fmt.Fprintln(out, "  No recommendations.")
+		setupRecommendMessage(ui, messageCtx, "no recommendations", "No recommendations.")
 		return nil, false, nil
 	}
 
-	install, err = confirmInstallRecommended(ctx, cmd, recs)
+	recs, err = selectRecommendedModules(ctx, recs, ui)
 	if err != nil {
 		return nil, false, err
 	}
-	if !install {
-		fmt.Fprintln(out, "  Skipped.")
+	if len(recs) == 0 {
 		return nil, false, nil
 	}
 	return recs, true, nil
@@ -464,55 +709,88 @@ func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) 
 // fresh session so dag.CurrentWorkspace() re-detects the workspace migrated in
 // the migrate session as native — without this, install sees the cached legacy
 // dagger.json and fails with "run dagger setup first".
-func installRecommended(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, recs []recommendation) error {
-	out := cmd.OutOrStdout()
+func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommendation, ui *setupUI) error {
 	for _, r := range recs {
-		fmt.Fprintf(out, "  Installing %s...\n", r.Module.Repo)
-		if err := installWorkspaceModule(ctx, out, dag, r.Module.Repo, "", false); err != nil {
+		err := func() (rerr error) {
+			installCtx, span := Tracer().Start(ctx, "dagger install "+r.Module.Repo,
+				telemetry.Reveal(), telemetry.Encapsulate())
+			ui.addInstall(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+			defer telemetry.EndWithCause(span, &rerr)
+
+			stdio := telemetry.SpanStdio(installCtx, InstrumentationLibrary)
+			defer stdio.Close()
+			return installWorkspaceModule(installCtx, stdio.Stdout, dag, r.Module.Repo, "", false)
+		}()
+		if err != nil {
 			return fmt.Errorf("install %s: %w", r.Module.Repo, err)
 		}
+		ui.addInstalled(r.Module.Name)
 	}
 	return nil
 }
 
-// confirmInstallRecommended asks whether to install the recommended modules.
-// It prompts through the Frontend (a huh confirm with the recommendation table
-// as its description) so it renders inside the live progress TUI — the same
-// mechanism the migrate step uses for its apply prompt. With --auto-apply it
-// returns true without prompting; in non-interactive mode it skips (the safe
-// default — don't mutate state without a TTY).
-func confirmInstallRecommended(ctx context.Context, cmd *cobra.Command, recs []recommendation) (bool, error) {
+// selectRecommendedModules lets the user choose recommendations individually.
+// Every recommendation starts selected, preserving the old affirmative path
+// while allowing irrelevant modules to be toggled off before installation.
+func selectRecommendedModules(ctx context.Context, recs []recommendation, ui *setupUI) ([]recommendation, error) {
 	if autoApply {
-		return true, nil
+		return recs, nil
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		fmt.Fprintln(cmd.OutOrStdout(), "  Install recommended modules? [skipped: non-interactive — use --auto-apply to accept]")
-		return false, nil
+		setupRecommendMessage(ui, ctx, "recommendations skipped", "Install recommended modules? Skipped in non-interactive mode; use `--auto-apply` to accept.")
+		return nil, nil
 	}
 
-	var table strings.Builder
-	w := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ADDRESS\tDESCRIPTION\tMATCHED")
+	options := make([]huh.Option[string], 0, len(recs))
+	selected := make([]string, 0, len(recs))
 	for _, r := range recs {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Module.Repo, r.Module.Description, r.Match)
+		label := fmt.Sprintf("%s — matched %s", r.Module.Repo, r.Match)
+		options = append(options, huh.NewOption(label, r.Module.Repo).Selected(true))
+		selected = append(selected, r.Module.Repo)
 	}
-	_ = w.Flush()
 
-	var install bool
-	form := idtui.NewForm(
+	install := true
+	multiSelect := huh.NewMultiSelect[string]().
+		Options(options...).
+		Value(&selected).
+		Filterable(false)
+	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Install recommended modules?").
-				Description(table.String()).
-				Affirmative("Install").
-				Negative("Skip").
-				Value(&install),
+			idtui.NewFlowMultiSelect(multiSelect, recs[len(recs)-1].Module.Repo),
+			idtui.NewExplicitConfirm("Install selected", "Skip", &install).
+				Inline(true),
 		),
 	)
 	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return false, err
+		return nil, err
 	}
-	return install, nil
+	if !install {
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations())
+		return nil, nil
+	}
+	selectedRecs := filterRecommendations(recs, selected)
+	if len(selectedRecs) == 0 {
+		setupRecommendMessage(ui, ctx, "recommendations skipped", skippedRecommendations())
+	}
+	return selectedRecs, nil
+}
+
+func skippedRecommendations() string {
+	return "Recommended modules skipped."
+}
+
+func filterRecommendations(recs []recommendation, selected []string) []recommendation {
+	wanted := make(map[string]struct{}, len(selected))
+	for _, repo := range selected {
+		wanted[repo] = struct{}{}
+	}
+	filtered := make([]recommendation, 0, len(selected))
+	for _, rec := range recs {
+		if _, ok := wanted[rec.Module.Repo]; ok {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
 }
 
 // currentWorkspaceExportPath derives the local workspace root from its file

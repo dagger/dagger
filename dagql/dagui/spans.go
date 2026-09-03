@@ -153,28 +153,10 @@ func (span *Span) Call() *callpbv1.Call {
 }
 
 func (span *Span) CallID() (*call.ID, error) {
-	spanCall := span.Call()
-	if spanCall == nil {
+	if span.CallDigest == "" {
 		return nil, fmt.Errorf("no call for span")
 	}
-
-	recipe := &callpbv1.RecipeDAG{
-		RootDigest:    spanCall.Digest,
-		CallsByDigest: map[string]*callpbv1.Call{},
-	}
-	extractIntoDAG(recipe, span.db, spanCall.Digest)
-	dag := &callpbv1.DAG{
-		Value: &callpbv1.DAG_Recipe{
-			Recipe: recipe,
-		},
-	}
-
-	var id call.ID
-	err := id.FromProto(dag)
-	if err != nil {
-		return nil, err
-	}
-	return &id, nil
+	return span.db.CallIDForDigest(span.CallDigest)
 }
 
 func (span *Span) Base() *callpbv1.Call {
@@ -303,6 +285,11 @@ type SpanSnapshot struct {
 	// skipped because it could not be loaded.
 	GenerateSkipped bool `json:",omitempty"`
 
+	// Service marks the long-lived exec span of a started service instance
+	// (running exactly while the service is up; cause-links to the API spans
+	// that installed the Service value).
+	Service bool `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -329,7 +316,10 @@ type SpanSnapshot struct {
 
 	ResumeOutput string `json:",omitempty"`
 
-	CallDigest  string `json:",omitempty"`
+	CallDigest string `json:",omitempty"`
+	// CallPayload carries the legacy span-embedded call payload
+	// (dagger.io/dag.call) still written for older consumers; newer engines
+	// deliver calls over the log channel instead.
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
@@ -460,7 +450,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.GenerateSkippedAttr:
 		snapshot.GenerateSkipped = val.(bool)
 
-	case "dagger.io/service.name":
+	case telemetryattrs.ServiceAttr:
+		snapshot.Service = val.(bool)
+
+	case telemetryattrs.ServiceNameAttr:
 		snapshot.ServiceName = val.(string)
 
 	case telemetry.LLMRoleAttr:

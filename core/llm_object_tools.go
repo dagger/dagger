@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -30,6 +32,12 @@ const llmToolLogsMaxLines = 8
 // from the generated tool schema.
 const workspaceTypeName = "Workspace"
 
+// llmTypeName identifies an object-tool argument that MCP fills directly from
+// the conversation making the call. It is hidden only from the generated tool
+// schema; the module's GraphQL schema remains unchanged. A method returning LLM
+// is a continuation: the loop resumes from the returned conversation.
+const llmTypeName = "LLM"
+
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
 // enough to build the toolset (the object's type, via objType) and to dispatch a
 // tool call (the object itself, as the receiver). The object may be held lazily
@@ -47,7 +55,11 @@ type boundTool struct {
 	// objType is the bound object's GraphQL type, known without loading, so the
 	// toolset can be built from a lazy binding.
 	objType dagql.ObjectType
-	Except  []string
+	// definingSchema is the schema that defined objType when this binding was
+	// composed. It is authoritative for the lifetime of the binding: workspace
+	// edits only affect tools after explicit recomposition creates a new LLM.
+	definingSchema *ast.Schema
+	Except         []string
 }
 
 // typeName returns the bound object's type name without forcing a load.
@@ -61,16 +73,23 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
-// WithTools binds obj's methods as tools, carrying except. At most one binding
-// per object type is kept: binding an object whose type is already bound replaces
-// it in place. That is the state-update shape — a method returning the bound type
-// rebinds through here — so the binding list stays bounded and a recorded
-// withTools selector replays to the same state deterministically.
-func (m *MCP) WithTools(obj dagql.AnyObjectResult, except []string) *MCP {
+// WithTools binds obj's methods as tools, carrying the schema that defined the
+// receiver at composition time and except. At most one binding per object type
+// is kept: binding an object whose type is already bound replaces it in place.
+// That is the state-update shape — a method returning the bound type rebinds
+// through here — so the binding list stays bounded and a recorded withTools
+// selector replays to the same state deterministically.
+func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
 	id, _ := obj.ID()
-	binding := boundTool{object: obj, id: id, objType: obj.ObjectType(), Except: except}
+	binding := boundTool{
+		object:         obj,
+		id:             id,
+		objType:        obj.ObjectType(),
+		definingSchema: definingSchema,
+		Except:         except,
+	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			m.boundTools[i] = binding
@@ -85,12 +104,13 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, except []string) *MCP {
 // without loading it. Used when restoring a persisted session: the referenced
 // object is only loaded if and when a tool is actually invoked on it (see
 // MCP.boundToolObject), so restoring the conversation never re-runs the call
-// that produced the object. objType is the object's GraphQL type, resolved from
-// the ID's return type, so the toolset can still be built.
-func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *MCP {
+// that produced the object. objType and definingSchema describe the object's
+// GraphQL type without loading it. The defining schema stays authoritative even
+// if the bound Workspace later contains another definition of the same type.
+func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *MCP {
 	m = m.Clone()
 	typeName := objType.TypeName()
-	binding := boundTool{id: id, objType: objType, Except: except}
+	binding := boundTool{id: id, objType: objType, definingSchema: definingSchema, Except: except}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			m.boundTools[i] = binding
@@ -157,18 +177,24 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
 // same-type-return state transition. It mutates in place under the lock; step()
 // then persists the transition as a withTools selector on the LLM's ID.
-func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) {
+func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.continuation.Self() != nil {
+		// See errContinuationAdopted: the rebind would be dropped.
+		return errContinuationAdopted
+	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			id, _ := newObj.ID()
 			m.boundTools[i].object = newObj
 			m.boundTools[i].id = id
 			m.boundTools[i].objType = newObj.ObjectType()
-			return
+			m.stateChanged = true
+			return nil
 		}
 	}
+	return nil
 }
 
 // boundToolBinding is a flattened snapshot of a binding: the object's ID plus its
@@ -258,7 +284,7 @@ func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
 		}); err != nil {
 			return nil, fmt.Errorf("construct workspace module %q: %w", mod.Name(), err)
 		}
-		m = m.WithTools(obj, nil)
+		m = m.WithTools(obj, canonical.Schema(), nil)
 	}
 	return m, nil
 }
@@ -300,10 +326,9 @@ func (m *MCP) boundToolsets(srv *dagql.Server) ([]bindingToolset, error) {
 	if len(bindings) == 0 {
 		return nil, nil
 	}
-	schema := srv.Schema()
 	toolsets := make([]bindingToolset, 0, len(bindings))
 	for _, b := range bindings {
-		tools, err := m.toolsForBoundObject(srv, schema, b)
+		tools, err := m.toolsForBoundObject(srv, b)
 		if err != nil {
 			return nil, err
 		}
@@ -396,18 +421,23 @@ func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, erro
 
 // toolsForBoundObject generates the tools for a single bound object: one per
 // eligible field of its schema type.
-func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b boundTool) ([]LLMTool, error) {
+func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, error) {
 	typeName := b.typeName()
-	def := schema.Types[typeName]
-	if def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface) {
-		return nil, fmt.Errorf("bound object type %q is not an object in the workspace schema", typeName)
+	toolSchema := b.definingSchema
+	if toolSchema == nil {
+		return nil, fmt.Errorf("bound object type %q has no defining schema", typeName)
 	}
+	def := toolSchema.Types[typeName]
+	if def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface) {
+		return nil, fmt.Errorf("bound object type %q is not an object in its defining schema", typeName)
+	}
+	implicit := m.implicitArgs()
 	var tools []LLMTool
 	for _, field := range def.Fields {
-		if !objectToolEligible(field, b.Except) {
+		if !objectToolEligible(field, b.Except, implicit) {
 			continue
 		}
-		toolSchema, err := objectMethodSchema(schema, field)
+		methodSchema, err := objectMethodSchema(toolSchema, field, implicit)
 		if err != nil {
 			return nil, fmt.Errorf("build schema for %s.%s: %w", typeName, field.Name, err)
 		}
@@ -416,13 +446,21 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			Name:        field.Name,
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
-			Schema:      toolSchema,
-			// A method that returns the bound object's own type or a Workspace
-			// mutates shared state and must run sequentially. Changeset-returning
-			// methods run in parallel; CallBatch merges their results before applying
-			// them to the workspace.
-			ReadOnly:         retType != typeName && retType != "Changeset" && retType != "Workspace",
+			Schema:      methodSchema,
+			// A method that returns the bound object's own type, a Workspace, or
+			// an LLM mutates shared state and must run sequentially — an LLM
+			// return replaces the whole conversation, and at most one may be
+			// adopted per turn. Changeset-returning methods run in parallel;
+			// CallBatch merges their results before applying them to the
+			// workspace. LLM-returning methods run last, in their own batch
+			// (MCP.SplitContinuationCalls), on the state the rest of the turn
+			// produced.
+			ReadOnly: retType != typeName &&
+				retType != "Changeset" &&
+				retType != workspaceTypeName &&
+				retType != llmTypeName,
 			ReturnsChangeset: retType == "Changeset",
+			ReturnsLLM:       retType == llmTypeName,
 			Call:             m.callObjectMethod(srv, typeName, field),
 			Server:           typeName,
 		})
@@ -433,9 +471,11 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 // objectToolEligible reports whether a field becomes a tool: it must not be in
 // except, must not be an internal/reserved field, and every REQUIRED argument
 // must be expressible without an object handle — a required object-typed arg
-// (other than the auto-injected Workspace) disqualifies it, since the model has
-// no handle to pass.
-func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
+// (other than those implicit supplies) disqualifies it, since the model has no
+// handle to pass. Exception: a required arg of a LIFTABLE type (see
+// liftableTypes) does not disqualify — the model can supply an address string,
+// lifted into the object at dispatch time via the core Address API.
+func objectToolEligible(field *ast.FieldDefinition, except []string, implicit implicitToolArgs) bool {
 	if slices.Contains(except, field.Name) {
 		return false
 	}
@@ -455,13 +495,15 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		return false
 	}
 	for _, arg := range field.Arguments {
-		if isWorkspaceArg(arg) {
-			// Auto-injected from the bound Workspace; treated as optional.
+		if implicit.supplies(arg) {
+			// MCP supplies this argument; the model does not need an object handle.
 			continue
 		}
 		required := arg.Type.NonNull && arg.DefaultValue == nil
 		if required && isObjectArg(arg) {
-			return false
+			if _, ok := liftableObjectArg(arg); !ok {
+				return false
+			}
 		}
 	}
 	return true
@@ -473,27 +515,123 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 	return arg.Directives.ForName("expectedType") != nil
 }
 
-// isWorkspaceArg reports whether an argument is the auto-injected Workspace,
-// identified by @expectedType(name: "Workspace"). Such args are filled from the
-// bound Workspace and never shown to the model.
-func isWorkspaceArg(arg *ast.ArgumentDefinition) bool {
+// liftableType describes an object type admitted to address lifting: how a
+// plain address string supplied for an arg of the type resolves into the
+// object, and how to document the accepted syntaxes to the model.
+type liftableType struct {
+	// addressField is the Address field that loads the type:
+	// Query.address(value: <addr>).<addressField> — the same lifting the CLI
+	// performs for object-typed flags (internal/cmd/dagger/flags.go), see
+	// core/schema/address.go.
+	addressField string
+	// hint documents the accepted address syntaxes; the tool schema renders
+	// it as "(<Type> address: <hint>)" prefixed to the arg's own docstring,
+	// so each type carries its own syntax examples.
+	hint string
+}
+
+// liftableTypes is the allowlist of object types whose tool args accept a
+// plain address string. Admission is a CAPABILITY decision, not a convenience
+// one: a CLI flag is human-typed, but a tool arg is MODEL-typed, and several
+// Address decoders resolve strings into capabilities the model doesn't
+// otherwise hold — Address.secret mints secrets from env:// / file:// /
+// op:// URIs, Address.directory/.file/.socket fall back to HOST paths, and
+// the service/git decoders reach the host's network and local repos.
+// Container has no host fallback (image refs pull from registries, bare refs
+// resolve installed modules), so it is the only entry today. Admitting
+// another of the CLI's nine addressable types is a one-line change here plus
+// that type's own capability review — see hack/designs/sandboxes.md §4, "The
+// liftable set is a capability decision".
+var liftableTypes = map[string]liftableType{
+	"Container": {
+		addressField: "container",
+		hint:         `an image ref like "golang:1.26", an installed module function like "mymod:dev", or a Container ID from a prior tool result`,
+	},
+}
+
+// liftableObjectArg returns the @expectedType name of an object-typed
+// argument when that type is liftable — resolvable from an address string via
+// the core Address API AND admitted by the liftableTypes capability
+// allowlist. Only single-object args qualify: a list of IDs ([ID!]! with
+// @expectedType) is not lifted.
+func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
+	if arg.Type == nil || arg.Type.NamedType != "ID" {
+		// Lists of object IDs (arg.Type.Elem != nil) are not liftable.
+		return "", false
+	}
+	d := arg.Directives.ForName("expectedType")
+	if d == nil {
+		return "", false
+	}
+	name := d.Arguments.ForName("name")
+	if name == nil || name.Value == nil {
+		return "", false
+	}
+	if _, ok := liftableTypes[name.Value.Raw]; !ok {
+		return "", false
+	}
+	return name.Value.Raw, true
+}
+
+// implicitToolArgs decides which object-tool arguments MCP supplies itself,
+// hidden from the tool schema, rather than asking the model for them. This
+// classification affects only the generated MCP tool and never rewrites the
+// module's GraphQL schema.
+//
+// Workspace is always contextual: it is filled from the bound workspace. LLM is
+// filled from the conversation dispatching the call, which only exists while
+// an LLM drives the tools (LLM.step); a standalone server (dagger mcp) has
+// none. There an LLM argument is an ordinary object argument the caller cannot
+// satisfy: a required one disqualifies its method (objectToolEligible), and an
+// optional one is exposed by ID like any other object, so it can at least be
+// left unset.
+type implicitToolArgs struct {
+	// llm reports whether a conversation is available to fill LLM arguments.
+	llm bool
+}
+
+var (
+	// conversationToolArgs is the policy of tools driven by an LLM.
+	conversationToolArgs = implicitToolArgs{llm: true}
+	// standaloneToolArgs is the policy of tools served without a conversation.
+	standaloneToolArgs = implicitToolArgs{}
+)
+
+// supplies reports whether MCP fills arg itself under this policy.
+func (p implicitToolArgs) supplies(arg *ast.ArgumentDefinition) bool {
+	return isExpectedTypeArg(arg, workspaceTypeName) ||
+		(p.llm && isExpectedTypeArg(arg, llmTypeName))
+}
+
+// implicitArgs returns the policy this MCP serves tools under: standalone when
+// no conversation will ever drive it (see MCP.Standalone), else conversation.
+func (m *MCP) implicitArgs() implicitToolArgs {
+	if m == nil || m.standalone {
+		return standaloneToolArgs
+	}
+	return conversationToolArgs
+}
+
+func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 	d := arg.Directives.ForName("expectedType")
 	if d == nil {
 		return false
 	}
 	name := d.Arguments.ForName("name")
-	return name != nil && name.Value != nil && name.Value.Raw == workspaceTypeName
+	return name != nil && name.Value != nil && name.Value.Raw == typeName
 }
 
 // objectMethodSchema builds a tool's JSON-schema parameters from a field's
-// visible arguments — its scalars, enums, lists, and input objects — omitting the
-// auto-injected Workspace argument. Object args (when optional) render as ID
-// strings, annotated with their expected type.
-func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
+// visible arguments — its scalars, enums, lists, and input objects — omitting
+// the arguments MCP supplies itself (implicit). Object arguments render as ID
+// strings annotated with their expected type; liftable object arguments
+// (required or optional) render as address strings instead, with the type's
+// syntax hint.
+func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit implicitToolArgs) (map[string]any, error) {
 	properties := map[string]any{}
 	var required []string
 	for _, arg := range field.Arguments {
-		if isWorkspaceArg(arg) {
+		if implicit.supplies(arg) {
 			continue
 		}
 		argSchema, err := argTypeToJSONSchema(schema, arg.Type)
@@ -503,10 +641,17 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[str
 		desc := arg.Description
 		if d := arg.Directives.ForName("expectedType"); d != nil {
 			if name := d.Arguments.ForName("name"); name != nil && name.Value != nil {
+				// A liftable arg accepts an address string (per the type's
+				// hint — see liftableTypes) as well as an ID from a previous
+				// tool result; anything else only accepts an ID.
+				prefix := fmt.Sprintf("(%s ID)", name.Value.Raw)
+				if typeName, ok := liftableObjectArg(arg); ok {
+					prefix = fmt.Sprintf("(%s address: %s)", typeName, liftableTypes[typeName].hint)
+				}
 				if desc == "" {
-					desc = fmt.Sprintf("(%s ID)", name.Value.Raw)
+					desc = prefix
 				} else {
-					desc = fmt.Sprintf("(%s ID) %s", name.Value.Raw, desc)
+					desc = prefix + " " + desc
 				}
 			}
 		}
@@ -547,46 +692,57 @@ func argTypeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error
 			return nil, fmt.Errorf("elem type: %w", err)
 		}
 		jsonSchema["items"] = items
-		return jsonSchema, nil
-	}
-	switch t.NamedType {
-	case "Int":
-		jsonSchema["type"] = "integer"
-	case "Float":
-		jsonSchema["type"] = "number"
-	case "String", "ID":
-		jsonSchema["type"] = "string"
-	case "Boolean":
-		jsonSchema["type"] = "boolean"
-	default:
-		typeDef, found := schema.Types[t.NamedType]
-		if !found {
-			return nil, fmt.Errorf("unknown type: %q", t.NamedType)
-		}
-		switch typeDef.Kind {
-		case ast.InputObject:
-			jsonSchema["type"] = "object"
-			properties := map[string]any{}
-			for _, f := range typeDef.Fields {
-				fieldSpec, err := argTypeToJSONSchema(schema, f.Type)
-				if err != nil {
-					return nil, fmt.Errorf("field %q type: %w", f.Name, err)
-				}
-				properties[f.Name] = fieldSpec
-			}
-			jsonSchema["properties"] = properties
-		case ast.Enum:
+	} else {
+		switch t.NamedType {
+		case "Int":
+			jsonSchema["type"] = "integer"
+		case "Float":
+			jsonSchema["type"] = "number"
+		case "String", "ID":
 			jsonSchema["type"] = "string"
-			var enum []string
-			for _, val := range typeDef.EnumValues {
-				enum = append(enum, val.Name)
-			}
-			jsonSchema["enum"] = enum
-		case ast.Scalar:
-			jsonSchema["type"] = "string"
+		case "Boolean":
+			jsonSchema["type"] = "boolean"
 		default:
-			return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
+			typeDef, found := schema.Types[t.NamedType]
+			if !found {
+				return nil, fmt.Errorf("unknown type: %q", t.NamedType)
+			}
+			switch typeDef.Kind {
+			case ast.InputObject:
+				jsonSchema["type"] = "object"
+				properties := map[string]any{}
+				for _, f := range typeDef.Fields {
+					fieldSpec, err := argTypeToJSONSchema(schema, f.Type)
+					if err != nil {
+						return nil, fmt.Errorf("field %q type: %w", f.Name, err)
+					}
+					properties[f.Name] = fieldSpec
+				}
+				jsonSchema["properties"] = properties
+			case ast.Enum:
+				jsonSchema["type"] = "string"
+				var enum []string
+				for _, val := range typeDef.EnumValues {
+					enum = append(enum, val.Name)
+				}
+				jsonSchema["enum"] = enum
+			case ast.Scalar:
+				jsonSchema["type"] = "string"
+			default:
+				return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
+			}
 		}
+	}
+	// GraphQL nullability applies at every type boundary, including list
+	// elements. Keep the concrete schema intact so enums and nested objects still
+	// constrain non-null values, and add null as a separate valid alternative.
+	if !t.NonNull {
+		return map[string]any{
+			"anyOf": []any{
+				jsonSchema,
+				map[string]any{"type": "null"},
+			},
+		}, nil
 	}
 	return jsonSchema, nil
 }
@@ -597,7 +753,6 @@ func argTypeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error
 // threaded into ctx by MCP.Call so Workspace-typed args auto-inject, then routes
 // the result by type.
 func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.FieldDefinition) LLMToolFunc {
-	fieldName := field.Name
 	return func(ctx context.Context, rawArgs any) (any, error) {
 		args, ok := rawArgs.(map[string]any)
 		if !ok {
@@ -610,24 +765,35 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if !ok {
 			return nil, fmt.Errorf("no object of type %q is bound", typeName)
 		}
-		sel, err := buildObjectMethodSelector(ctx, srv, recv.ObjectType(), fieldName, args)
+		sel, err := m.buildObjectMethodSelector(ctx, srv, recv.ObjectType(), field, args)
 		if err != nil {
 			return nil, err
 		}
 		var val dagql.AnyResult
-		if err := srv.Select(ctx, recv, &val, sel); err != nil {
+		// The method call is the real user-facing work of the tool call, not
+		// engine bookkeeping: don't let Select mark it internal, so its spans
+		// (and the logs beneath them) surface in the UI and in toolLogs.
+		if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), recv, &val, sel); err != nil {
 			return nil, err
 		}
 		return m.routeObjectMethodResult(ctx, srv, typeName, val)
 	}
 }
 
-// buildObjectMethodSelector converts the model's tool arguments into a selector
-// for the method. It decodes each provided argument through the field's input
-// spec. A declared-optional Workspace argument is omitted and auto-injected
-// downstream; a required one is filled from the LLM's bound workspace, since
-// dagql rejects a missing non-null argument before that injection runs.
-func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, fieldName string, args map[string]any) (dagql.Selector, error) {
+// buildObjectMethodSelector converts the model's tool arguments into a complete
+// selector for the module method. Workspace retains its contextual handling;
+// MCP directly adds the current LLM and calling Agent for hidden arguments.
+// These are explicit selector arguments, not GraphQL defaults or dynamic inputs.
+// An object-typed argument of a liftable type (see liftableTypes) additionally
+// accepts an address string: when the value fails to decode as an ID, it is
+// lifted into the object via the core Address API
+// (Query.address(value: <addr>).<field>) and the resulting object's ID is used
+// instead — the same lifting the CLI performs for object flags
+// (internal/cmd/dagger/flags.go). ctx and srv are the session's, so addresses
+// resolve against the workspace client schema with all installed modules
+// visible.
+func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, astField *ast.FieldDefinition, args map[string]any) (dagql.Selector, error) {
+	fieldName := astField.Name
 	sel := dagql.Selector{View: srv.View, Field: fieldName}
 	field, ok := recvType.FieldSpec(fieldName, srv.View)
 	if !ok {
@@ -640,7 +806,13 @@ func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType 
 		}
 		val, ok := args[arg.Name]
 		if !ok {
-			if wsInput, ok := boundWorkspaceInput(ctx, srv, arg); ok {
+			implicit, found, err := m.implicitToolInput(astField, arg)
+			if err != nil {
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
+			}
+			if found {
+				sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: implicit})
+			} else if wsInput, ok := boundWorkspaceInput(ctx, srv, arg); ok {
 				sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: wsInput})
 			}
 			continue
@@ -648,7 +820,16 @@ func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType 
 		delete(provided, arg.Name)
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			// Not a valid ID: for a liftable object arg, fall back to
+			// interpreting the string as an address.
+			lifted, ok, liftErr := liftObjectArg(ctx, srv, astField, arg, val, err)
+			if liftErr != nil {
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, liftErr)
+			}
+			if !ok {
+				return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			}
+			input = lifted
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: input})
 	}
@@ -663,18 +844,118 @@ func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType 
 	return sel, nil
 }
 
+// implicitToolInput fills the runtime-local arguments supported by the MCP
+// object-tool adapter. These values are ordinary explicit selector arguments:
+// module function schemas and general DAGQL input resolution know nothing about
+// this convention. An argument the policy does not supply (see
+// implicitToolArgs) is reported not found, so it is left to the caller like any
+// other object argument.
+func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
+	astArg := astField.Arguments.ForName(spec.Name)
+	if astArg == nil {
+		return nil, false, nil
+	}
+
+	var obj dagql.IDable
+	switch {
+	case isExpectedTypeArg(astArg, llmTypeName):
+		if !m.implicitArgs().llm {
+			return nil, false, nil
+		}
+		llm := m.currentLLM()
+		if llm.Self() == nil {
+			return nil, true, errors.New("function requires the current conversation; invoke it as an LLM tool")
+		}
+		obj = llm
+	default:
+		return nil, false, nil
+	}
+
+	id, err := obj.ID()
+	if err != nil {
+		return nil, true, fmt.Errorf("get %s ID: %w", astArg.Directives.ForName("expectedType").Arguments.ForName("name").Value.Raw, err)
+	}
+	encoded, err := id.Encode()
+	if err != nil {
+		return nil, true, fmt.Errorf("encode ID: %w", err)
+	}
+	input, err := spec.Type.Decoder().DecodeInput(encoded)
+	if err != nil {
+		return nil, true, fmt.Errorf("decode ID: %w", err)
+	}
+	return input, true, nil
+}
+
+// liftObjectArg resolves an address string supplied for a liftable
+// object-typed argument into that object's ID. It selects
+// Query.address(value: <addr>).<addressField> on the session server, then
+// re-encodes the resulting object's ID through the argument's own decoder so
+// the input matches whatever ID type the field expects (including
+// optional-wrapped IDs). Returns ok=false — without an error — when the
+// argument is not a liftable object arg or the value is not a string, so
+// the caller surfaces the original ID decode error instead. idErr is that
+// original error, folded into the message when address resolution also fails.
+func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec, val any, idErr error) (dagql.Input, bool, error) {
+	astArg := astField.Arguments.ForName(spec.Name)
+	if astArg == nil {
+		return nil, false, nil
+	}
+	typeName, ok := liftableObjectArg(astArg)
+	if !ok {
+		return nil, false, nil
+	}
+	addr, ok := val.(string)
+	if !ok {
+		return nil, false, nil
+	}
+	var obj dagql.AnyObjectResult
+	// Address resolution is user-facing work of the tool call — possibly an
+	// image pull — not engine bookkeeping: run it non-internal (matching the
+	// method call's Select in callObjectMethod) so it renders in the trace as
+	// part of the tool call instead of hiding as internal spans.
+	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &obj,
+		dagql.Selector{
+			View:  srv.View,
+			Field: "address",
+			Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String(addr)}},
+		},
+		dagql.Selector{
+			View:  srv.View,
+			Field: liftableTypes[typeName].addressField,
+		},
+	); err != nil {
+		return nil, false, fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
+			addr, typeName, idErr, typeName, err)
+	}
+	objID, err := obj.ID()
+	if err != nil {
+		return nil, false, fmt.Errorf("get %s ID for address %q: %w", typeName, addr, err)
+	}
+	encoded, err := objID.Encode()
+	if err != nil {
+		return nil, false, fmt.Errorf("encode %s ID for address %q: %w", typeName, addr, err)
+	}
+	input, err := spec.Type.Decoder().DecodeInput(encoded)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode lifted %s ID for address %q: %w", typeName, addr, err)
+	}
+	return input, true, nil
+}
+
 // routeObjectMethodResult renders a method's result for the model, per the
 // return-type table in hack/designs/workspace-agents.md:
 //   - Changeset: overlay onto the workspace, return the patch summary.
 //   - Workspace: replace the current workspace, return the diff summary.
+//   - LLM: replace the conversation — the loop resumes from it (a continuation).
 //   - the bound object's own type: rebind it as the new state, return its print.
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
 //   - scalar/list/record: return the value.
 func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, val dagql.AnyResult) (any, error) {
-	// A Changeset overlays onto the workspace (and a Workspace replaces it),
-	// returning a patch summary. step() persists the resulting workspace via a
-	// withWorkspace selector.
+	// A Changeset overlays onto the workspace (a Workspace replaces it, an LLM
+	// replaces the whole conversation), returning a summary. step() persists the
+	// resulting workspace via a withWorkspace selector, or resumes from the
+	// returned conversation.
 	if handled, out, err := m.applyStateReturn(ctx, srv, val); handled {
 		if logs := m.toolLogs(ctx); logs != "" {
 			if out == "" {
@@ -691,7 +972,9 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 			// Same-type return: the result is the agent's new state. Rebind it
 			// (step() persists this as a withTools selector); the method's own print
 			// output is the response.
-			m.rebindBoundTool(typeName, obj)
+			if err := m.rebindBoundTool(typeName, obj); err != nil {
+				return nil, err
+			}
 			return m.logsOrDone(ctx), nil
 		}
 		// Any other object: force it so its side effects run, and surface whatever
@@ -721,7 +1004,9 @@ func (m *MCP) syncObject(ctx context.Context, srv *dagql.Server, obj dagql.AnyOb
 		return nil
 	}
 	var synced dagql.AnyResult
-	return srv.Select(ctx, obj, &synced, dagql.Selector{View: srv.View, Field: "sync"})
+	// Non-internal for the same reason as the tool's method call itself: the
+	// sync runs the object's side effects whose print output we surface.
+	return srv.Select(dagql.WithNonInternalTelemetry(ctx), obj, &synced, dagql.Selector{View: srv.View, Field: "sync"})
 }
 
 // logsOrDone returns whatever the just-executed method printed, or "(done)" when
@@ -733,17 +1018,220 @@ func (m *MCP) logsOrDone(ctx context.Context) string {
 	return "(done)"
 }
 
-// toolLogs captures the print output emitted beneath the current tool-call span
-// (created by MCP.Call). Empty when nothing was printed.
+// toolLogs captures the output emitted beneath the current tool-call span
+// (created by MCP.Call). Empty when nothing was captured.
+//
+// A tool call that ran nested work is rendered as TWO sections (see
+// spanResult): the tool's own printed output, verbatim, and the pretty
+// report of what ran beneath it. A tool call that ran no nested work has no
+// tree worth drawing, so it falls back to the flat captured-log text -- which
+// is also what spanResult falls back to when the subtree renders to nothing
+// (dagui filters internal/passthrough/encapsulated spans, so a report can
+// legitimately come out empty).
 func (m *MCP) toolLogs(ctx context.Context) string {
 	spanID := trace.SpanContextFromContext(ctx).SpanID()
 	if !spanID.IsValid() {
 		return ""
 	}
-	logs, err := m.captureLogs(ctx, spanID.String())
-	if err != nil || len(logs) == 0 {
+	if !toolSpanHasDescendants(ctx, spanID.String()) {
+		// Nothing ran beneath the call: there is no tree to draw, only
+		// whatever the tool printed itself.
+		return m.toolFlatLogs(ctx, spanID.String())
+	}
+	return m.spanResult(ctx, spanID.String(), toolCallReportOpts())
+}
+
+// Section heading for a combined result. It matches the report's own agent
+// vocabulary -- "== CHECKS ==", "== TESTS ==", "== SERVICES ==" and friends,
+// see idtui's reportHeadingLine -- so the tool's own output reads as one more
+// section of the same document rather than as a new kind of wrapper.
+//
+// The report body itself carries no heading: its sections speak for
+// themselves, and a "TRACE REPORT" banner over them was pure redundancy (the
+// tool that asks for one is literally called ReadTrace).
+const spanResultOutputHeading = "== OUTPUT =="
+
+// spanResult renders what happened beneath spanID for an LLM reader.
+//
+// It carries BOTH halves, because either alone loses something:
+//
+//   - OUTPUT: the lines captureLogLines classified as `direct` -- what the
+//     tool (or test, or check) printed itself -- verbatim and unabridged. A
+//     deliberate report is the point of the call, and letting a rendered
+//     summary stand in for it is exactly the regression the provenance-based
+//     abridging already fixed once for the flat path.
+//   - the report: the structure of the nested work, with its logs clamped
+//     per row, plus the CHECKS/TESTS roll-ups. It carries no heading of its
+//     own -- its sections are already labelled.
+//
+// OUTPUT comes first for two reasons: it is the answer, while the report is
+// the supporting evidence; and guardTraceReport drops the MIDDLE of an
+// over-budget result, so the head is the one place a section is guaranteed to
+// survive in full. The byte guard is applied to the COMBINED text -- the
+// budget is what reaches the reader, not what one half of it renders to.
+//
+// There is no duplication between the two: the report is told to suppress the
+// inline logs of exactly the spans OUTPUT was built from (HideLogSpans).
+// Suppressing rather than de-duplicating after the fact keeps the report's
+// own clamping honest -- a hidden row's nested children are still clamped and
+// still rendered.
+//
+// With no report to show -- nothing nested, a render failure, or a subtree
+// that renders to nothing -- the result is the flat capture, byte for byte as
+// before: no headings, no separators, no empty sections.
+func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpts) string {
+	// Exclude service exec span logs: long-lived services stream noise into
+	// the subtree via cause links, drowning out deliberate prints. ReadLogs
+	// remains the discovery path for service logs.
+	captured, err := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	if err != nil {
+		slog.Warn("failed to capture tool logs", "span", spanID, "error", err)
+	}
+
+	report := m.traceReport(ctx, spanID, captured.directSpans, opts)
+	if report == "" {
+		return flatLogs(spanID, captured.lines)
+	}
+	return combineSpanResult(spanID, directLogs(captured.lines), report)
+}
+
+// combineSpanResult assembles the sections, bounds the COMBINED text, and
+// closes with the ReadLogs breadcrumb. own may be empty -- a target that
+// printed nothing gets no OUTPUT section, not an empty one. The report is
+// appended unlabelled: its own sections (CHECKS, TESTS, SERVICES, ...) are
+// already headed, and the span tree needs no banner.
+func combineSpanResult(spanID, own, report string) string {
+	report = strings.TrimLeft(report, "\n")
+	if strings.TrimSpace(report) == "" {
 		return ""
 	}
-	logs = limitLines(spanID.String(), logs, llmToolLogsMaxLines, llmLogsMaxLineLen)
+	var sections []string
+	if own != "" {
+		sections = append(sections, spanResultOutputHeading+"\n"+own)
+	}
+	sections = append(sections, report)
+	// The report clamps nested log tails (and the byte guard may drop its
+	// middle), so tell the reader where the unabridged logs live.
+	return guardTraceReport(strings.Join(sections, "\n\n")) + "\n" +
+		fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+}
+
+// toolCallReportOpts are the render options for the report embedded in a tool
+// call's own result.
+func toolCallReportOpts() traceReportOpts {
+	return traceReportOpts{
+		// The tool call's own span is a roll-up/boundary span and every module
+		// function beneath it may be too; without forcing rows open, the work
+		// a tool did would render as a bare status line. See expandedSpans:
+		// this unwrap is tuned for a tool-call scope and stops at the first
+		// real work span.
+		ExpandWrappers: true,
+		// Same reason captureLogLines excludes them: a long-lived service's
+		// exec span joins the subtree via cause links and streams noise that
+		// drowns out deliberate output, and the LLM's own message spans are
+		// conversation rather than work. ReadLogs remains the discovery path.
+		HideNoise: true,
+		// The report is about this tool call, not about the agent that made
+		// it: drop the whole-trace CONVERSATION/SERVICES sections, which would
+		// otherwise render the caller's own transcript back at it.
+		Scoped: true,
+		// Nested work is abridged to a tail, exactly as in the flat path; the
+		// OUTPUT section carries the tool's own lines unabridged.
+		NestedLogLines: llmToolLogsMaxLines,
+		// The reader is an LLM, which has tools rather than a shell: suggest
+		// the ReadTrace builtin for the failed checks instead of `dagger
+		// check "<name>"` commands it cannot run.
+		SuggestReadTrace: true,
+		// A tool result is about the RESULT, not about the machinery: keep
+		// what the call surfaced (CHECKS, TESTS, SERVICES, conversation) and
+		// the tool's own OUTPUT, and drop the span tree. An agent that wants
+		// the tree asks for it with ReadTrace, which keeps rendering it.
+		HideSpanTree: true,
+	}
+}
+
+// traceReport renders spanID's subtree as the pretty report, with the spans
+// whose output the caller prints itself suppressed. It returns "" when there
+// is no report to show and the flat capture should be used instead.
+func (m *MCP) traceReport(ctx context.Context, spanID string, hideLogSpans map[string]bool, opts traceReportOpts) string {
+	opts.HideLogSpans = hideLogSpans
+	report, err := renderTraceReport(ctx, spanID, opts)
+	if err != nil {
+		slog.Warn("failed to render trace report", "span", spanID, "error", err)
+		return ""
+	}
+	report = strings.TrimRight(report, "\n")
+	if strings.TrimSpace(report) == "" {
+		return ""
+	}
+	return report
+}
+
+// directLogs joins the lines the captured span printed itself, verbatim save
+// for the per-line byte clamp every LLM-facing path applies. Empty when the
+// span printed nothing -- so no empty OUTPUT section is ever emitted.
+func directLogs(lines []capturedLine) string {
+	var out []string
+	for _, line := range lines {
+		if line.direct {
+			out = append(out, line.text)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	for i, line := range out {
+		if len(line) > llmLogsMaxLineLen {
+			out[i] = line[:llmLogsMaxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-llmLogsMaxLineLen)
+		}
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+// toolSpanHasDescendants reports whether anything ran beneath the tool-call
+// span. It is a pure in-memory index lookup on the client's telemetry store --
+// no queries, no subtree walk -- so it is cheap enough to gate every tool
+// result on.
+func toolSpanHasDescendants(ctx context.Context, spanID string) bool {
+	root, err := CurrentQuery(ctx)
+	if err != nil {
+		return false
+	}
+	mainMeta, err := root.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return false
+	}
+	// NB: this flushes the session's clients, so spans that just ended are
+	// visible in the index.
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	if err != nil {
+		return false
+	}
+	defer q.Close()
+	return q.HasDescendants(spanID)
+}
+
+// toolFlatLogs is the flat capture: the print output emitted beneath the
+// tool-call span, joined into lines. Empty when nothing was printed.
+func (m *MCP) toolFlatLogs(ctx context.Context, spanID string) string {
+	// Exclude service exec span logs: long-lived services stream noise into
+	// the tool-call subtree via cause links, drowning out deliberate prints.
+	// ReadLogs remains the discovery path for service logs.
+	captured, err := m.captureLogLines(ctx, spanID, true, false)
+	if err != nil {
+		return ""
+	}
+	return flatLogs(spanID, captured.lines)
+}
+
+// flatLogs is the pre-report tool-result shape, unchanged: whatever the tool
+// printed itself survives in full — a sub-agent's report or a tool's summary
+// is the point of the call. Only logs from nested work beneath it are
+// abridged to a tail.
+func flatLogs(spanID string, lines []capturedLine) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	logs := limitIndirectLines(spanID, lines, llmToolLogsMaxLines, llmLogsMaxLineLen)
 	return strings.TrimRight(strings.Join(logs, "\n"), "\n")
 }

@@ -1249,6 +1249,65 @@ func interfaceFieldsPresent(iface *Interface, objectType ObjectType, view call.V
 	return true
 }
 
+// ObjectTypeForID resolves the object type named by id without evaluating the
+// object itself. When the current schema does not carry the type, a recipe's
+// module provenance is loaded and used to rebuild the dependency-aware schema
+// that defined it.
+func (s *Server) ObjectTypeForID(ctx context.Context, id *call.ID) (ObjectType, bool, error) {
+	objType, _, ok, err := s.ObjectTypeAndServerForID(ctx, id)
+	return objType, ok, err
+}
+
+// ObjectTypeAndServerForID resolves the object type named by id and the server
+// whose schema defines it, without evaluating the object itself. The defining
+// server matters to callers that must retain the type's schema after switching
+// to another schema which may not contain the type.
+func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (ObjectType, *Server, bool, error) {
+	if id == nil || id.Type() == nil {
+		return nil, nil, false, nil
+	}
+	typeName := id.Type().NamedType()
+	if objType, ok := s.ObjectType(typeName); ok {
+		return objType, s, true, nil
+	}
+	if id.IsHandle() || id.Module() == nil || id.Module().ID() == nil || s.resultServerForCall == nil {
+		return nil, nil, false, nil
+	}
+
+	moduleResult, err := s.LoadType(ctx, id.Module().ID())
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
+	}
+	if moduleResult == nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is null", typeName)
+	}
+	shared := moduleResult.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is not attached", typeName)
+	}
+	resultCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(id.Type().ToAST()),
+		Field: id.Field(),
+		View:  id.View(),
+		Module: &ResultCallModule{
+			ResultRef: &ResultCallRef{ResultID: uint64(shared.id), shared: shared},
+			Name:      id.Module().Name(),
+			Ref:       id.Module().Ref(),
+			Pin:       id.Module().Pin(),
+		},
+	}
+	resolved, err := s.resultServerForCall(ctx, resultCall)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
+	}
+	if resolved == nil {
+		return nil, nil, false, nil
+	}
+	objType, ok := resolved.ObjectType(typeName)
+	return objType, resolved, ok, nil
+}
+
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
 	ctx = srvToContext(ctx, s)
@@ -1365,8 +1424,6 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 		cache:     cache,
 		sessionID: clientMetadata.SessionID,
 		loads:     make(map[string]*recipeLoadFuture),
-
-		notReplayableMemo: make(map[string]bool),
 	}
 	return state.load(id)
 }
@@ -1385,9 +1442,6 @@ type recipeLoadState struct {
 
 	mu    sync.Mutex
 	loads map[string]*recipeLoadFuture
-
-	notReplayableMu   sync.Mutex
-	notReplayableMemo map[string]bool
 }
 
 func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
@@ -1417,125 +1471,12 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 	return future.res, future.err
 }
 
-// notReplayable reports whether this recorded call must be re-executed rather
-// than resolved from the cache, because its own field is marked
-// [FieldSpec.NotReplayable] or because some recorded call it depends on is.
-//
-// The taint has to propagate upward, not just apply to the marked node: the
-// digest lookup in loadRecipeVertex happens BEFORE the call's inputs are
-// loaded, so a hit short-circuits the whole subtree beneath it. Without
-// propagation, an ancestor whose digest is still in the cache would be served
-// wholesale and the marked call underneath it would never be reached.
-//
-// Structural only — nothing is evaluated, and results are memoized per load.
-//
-// Concurrency: the provisional-false entry planted below is only observable
-// while the DFS that planted it is still running. That is safe because the
-// root vertex computes its full transitive closure here — synchronously,
-// before loadRecipeVertex fans out any concurrent input loads — so by the
-// time another goroutine consults the memo, every entry it can reach is
-// finalized. A vertex that starts a fresh traversal only does so for IDs
-// already finalized by the root's pass.
-func (state *recipeLoadState) notReplayable(id *call.ID) bool {
-	if id == nil || id.IsHandle() {
-		return false
-	}
-	key := id.Digest().String()
-	state.notReplayableMu.Lock()
-	if cached, ok := state.notReplayableMemo[key]; ok {
-		state.notReplayableMu.Unlock()
-		return cached
-	}
-	// Provisional false guards against cycles in a malformed recipe.
-	state.notReplayableMemo[key] = false
-	state.notReplayableMu.Unlock()
-
-	tainted := state.fieldNotReplayable(id)
-	if !tainted {
-		for _, input := range state.directRecipeInputIDs(id, state.lazyRefArgNames(id)) {
-			if state.notReplayable(input) {
-				tainted = true
-				break
-			}
-		}
-	}
-
-	state.notReplayableMu.Lock()
-	state.notReplayableMemo[key] = tainted
-	state.notReplayableMu.Unlock()
-	return tainted
-}
-
-// fieldNotReplayable resolves the recorded call's own field spec from the
-// schema, the same way lazyRefArgNames does, without evaluating anything.
-// Best-effort: a field that can't be resolved (e.g. a module type not
-// currently installed) is treated as replayable, preserving prior behavior.
-func (state *recipeLoadState) fieldNotReplayable(id *call.ID) bool {
-	parentType := "Query"
-	if receiver := id.Receiver(); receiver != nil {
-		if t := receiver.Type(); t != nil {
-			parentType = t.NamedType()
-		} else {
-			return false
-		}
-	}
-	if parentType == "" {
-		return false
-	}
-	objType, ok := state.srv.ObjectType(parentType)
-	if !ok {
-		return false
-	}
-	fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
-	if !ok {
-		return false
-	}
-	if fieldSpec.NotReplayable == "" {
-		return false
-	}
-	// Marked, but only actually unsafe when this recorded call came from a
-	// different session. Replaying a host read or a client-bound value inside
-	// the session that produced it is fine: the client is still alive and its
-	// view of the host has not been swapped out from under the recipe. It is
-	// crossing the session boundary that turns the recorded digest into a
-	// stable key for a value that no longer means anything here.
-	//
-	// Scoping on the recorded session stamp keeps ordinary same-session recipe
-	// loads — container chains built from a host directory, and every other ID
-	// threaded through the API — on their normal cache path.
-	recorded, ok := recordedSessionStamp(id)
-	if !ok {
-		// No stamp to compare: stay conservative and re-execute.
-		return true
-	}
-	return recorded != state.sessionID
-}
-
-// recordedSessionStamp returns the session ID baked into the recorded call by
-// [PerSessionInput], if the field declares one.
-func recordedSessionStamp(id *call.ID) (string, bool) {
-	for _, in := range id.ImplicitInputs() {
-		if in == nil || in.Name() != PerSessionInput.Name {
-			continue
-		}
-		lit, ok := in.Value().(*call.LiteralString)
-		if !ok {
-			continue
-		}
-		return lit.Value(), true
-	}
-	return "", false
-}
-
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := state.ctx
-	replayable := !state.notReplayable(id)
-	if replayable {
-		if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
-			return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
-		} else if ok {
-			return hit, nil
-		}
+	if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
+	} else if ok {
+		return hit, nil
 	}
 
 	if nth := int(id.Nth()); nth != 0 {
@@ -1599,12 +1540,10 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
 	req := &CallRequest{ResultCall: frame}
-	if replayable {
-		if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
-			return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
-		} else if ok {
-			return hit, nil
-		}
+	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
+		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
+	} else if ok {
+		return hit, nil
 	}
 	return baseObj.Select(callCtx, state.srv, sel)
 }
@@ -1827,6 +1766,8 @@ func (state *recipeLoadState) loadedResultCallLiteralFromRecipeLiteral(lit call.
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
 	case *call.LiteralString:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralBytes:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBytes, BytesValue: v.Value()}, nil
 	case *call.LiteralEnum:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
 	case *call.LiteralDigestedString:

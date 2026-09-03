@@ -1,0 +1,53 @@
+---
+title: "Workspace setup"
+slug: /getting-started/workspace-setup
+description: "Add a Dagger workspace to your project"
+---
+
+# Workspace setup
+
+You've seen Dagger work on [hello-dagger](./quickstart.mdx). Now set it up on your own project.
+
+## Install modules
+
+The quickest path is the same one the quickstart uses. `dagger setup` scans your project and recommends suitable modules:
+
+```shell
+dagger setup
+```
+
+Prefer to pick them yourself? Search for modules matching the tools, frameworks, and languages you use, and install them directly:
+
+```shell
+dagger search eslint
+dagger install github.com/dagger/eslint
+```
+
+The first install creates `dagger.toml` at the workspace root. To create it in the current directory instead, for a workspace nested inside a larger repository, pass `--here`:
+
+```shell
+dagger install --here github.com/dagger/eslint
+```
+
+Install a module, run `dagger check`, repeat. You don't have to install everything at once:
+
+```shell
+dagger install github.com/dagger/vitest
+dagger check
+```
+
+## Configure modules
+
+Many modules expose settings, such as a base image or a package manager. List the settings for your installed modules:
+
+```shell
+dagger settings
+```
+
+Set one with `module`, `key`, and `value`:
+
+```shell
+dagger settings eslint packageManager yarn
+```
+
+Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.

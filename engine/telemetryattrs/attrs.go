@@ -31,6 +31,25 @@ const (
 	// provider-reported figure. (int64)
 	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
 
+	// ServiceAttr marks the long-lived exec span of a started service. It is
+	// the authoritative "a service instance ran here" marker: the span exists
+	// iff the service actually started, is running exactly while the service
+	// is up, and its subtree carries the service's stdout/stderr. The span
+	// cause-links to the API spans that installed the Service value (e.g.
+	// Container.asService), so consumers can discover services cheaply deep
+	// within a trace, name one by its origin, and treat its logs as belonging
+	// beneath those install spans (which both dagui's tree and clientdb's
+	// SelectLogsBeneathSpan descendant walk do). (bool)
+	ServiceAttr = "dagger.io/service"
+
+	// ServiceNameAttr carries a human-readable name for a service span, for
+	// display alongside ServiceAttr (the engine stamps the service's network
+	// hostname). Also used standalone by `dagger up`'s per-service display
+	// spans (core/modtree.go). Defined here because the canonical constant
+	// would live in the external github.com/dagger/otel-go package, which we
+	// cannot modify. (string)
+	ServiceNameAttr = "dagger.io/service.name"
+
 	// Streaming progress over OTel logs.
 	//
 	// A log record carrying ProgressItemAttr is progress data, not log text:
@@ -55,6 +74,21 @@ const (
 	// "bytes", for human-readable display. (string)
 	ProgressUnitAttr = "dagger.io/progress.unit"
 )
+
+// Call payloads over OTel logs.
+//
+// A client rebuilds a dagql call ID by walking the chain a call references
+// and looking up a payload for EVERY frame it reaches (dagui's
+// extractIntoDAG). New engines therefore publish a call's root and complete
+// transitive closure as log records when they emit that call's span, minus
+// frames already sent to the same delivery domain.
+//
+// CallPayloadContentType is the dagger.io/content.type value identifying such
+// a record: its body is one deterministic protobuf encoding of callpbv1.Call.
+// The payload omits Call.Digest; consumers compute the canonical digest from
+// the body instead. Like every content type, it describes the body — records
+// carry it under the ordinary core instrumentation scope.
+const CallPayloadContentType = "application/vnd.dagger.call+proto"
 
 // wcprof × OTel vocabulary.
 //

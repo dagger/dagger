@@ -913,6 +913,25 @@ func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Cont
 	require.Equal(t, "staged", string(got))
 }
 
+// TestWorkspaceExportStaysOnCurrentClient locks in the Workspace.export
+// contract from dagger/dagger#14007: a module handed the caller's workspace
+// exports into its own sandbox, never onto the caller's host.
+func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	moduleDir := filepath.Join(workdir, "sandbox")
+	copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-export-sandbox")
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
+	require.NoError(t, err, string(out))
+	require.Equal(t, "exported", strings.TrimSpace(string(out)),
+		"a module's export succeeds against its own sandboxed environment")
+
+	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist,
+		"a module must not write to its caller's workspace through Workspace.export")
+}
+
 // TestHostWorkspaceGitLog covers workspace.git.head.log against a host
 // checkout: the workspace's git ref is an ordinary GitRef, so it lists commits
 // like any other.
@@ -1263,7 +1282,7 @@ func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx 
 	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, got.Node.WithModule.Changes.AddedPaths)
 	require.Contains(t, got.Node.WithModule.Config.Contents, `source = "github.com/dagger/dagger/modules/wolfi@v0.20.2"`)
 	require.Contains(t, got.Node.WithModule.Lock.Contents, `[["version","2"]]`)
-	require.Contains(t, got.Node.WithModule.Lock.Contents, `"git.ref"`)
+	require.Contains(t, got.Node.WithModule.Lock.Contents, `"git-sha"`)
 }
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceDetectsExistingConfigAndLock(ctx context.Context, t *testctx.T) {

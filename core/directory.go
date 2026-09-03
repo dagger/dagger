@@ -1805,9 +1805,15 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	args = append(args, "-")
 	apply := exec.CommandContext(ctx, "git", args...)
 	apply.Dir = dir
+	// wholeFileApplyErrors reads git's messages, so pin their language.
+	apply.Env = append(os.Environ(), "LC_ALL=C")
 	apply.Stdin = patch
 	apply.Stdout = stdio.Stdout
 	apply.Stderr = stdio.Stderr
+	var stderr strings.Builder
+	if leaveMarkers {
+		apply.Stderr = io.MultiWriter(stdio.Stderr, &stderr)
+	}
 	runErr := apply.Run()
 	if runErr != nil && ctx.Err() != nil {
 		return ctx.Err()
@@ -1828,12 +1834,26 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 			conflicted = append(conflicted, rej)
 		}
 	}
-	if len(conflicted) == 0 {
-		// No rejects written: a non-zero exit is a hard failure (bad patch,
-		// not a content conflict).
-		if runErr != nil {
+	if runErr != nil {
+		// --reject reports a hunk it could not place and a file it could not
+		// patch at all with the same exit status, but only the former leaves
+		// a .rej behind. The latter — creating a file that already exists,
+		// editing one that is gone, a binary diff without full index lines —
+		// is skipped outright, leaving nothing in the tree to show that the
+		// change was dropped. The markers below cannot express that, so it
+		// stays a failure rather than passing for a conflict whenever some
+		// other hunk happened to be rejected as well.
+		if failed := wholeFileApplyErrors(stderr.String()); len(failed) > 0 {
+			return fmt.Errorf("git apply: %d file(s) could not be patched at all, which conflict markers cannot express:\n%s",
+				len(failed), strings.Join(failed, "\n"))
+		}
+		if len(conflicted) == 0 {
+			// No rejects written: a hard failure (bad patch, not a content
+			// conflict).
 			return fmt.Errorf("git apply: %w", runErr)
 		}
+	}
+	if len(conflicted) == 0 {
 		return nil
 	}
 	sort.Strings(conflicted)
@@ -1851,6 +1871,39 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	fmt.Fprintf(stdio.Stderr, "WARNING: %d file(s) no longer match the patch; conflict markers were left in: %s\n",
 		len(conflictedTargets), strings.Join(conflictedTargets, ", "))
 	return nil
+}
+
+// wholeFileApplyErrors picks out of git apply --reject's stderr the errors
+// that are not rejected hunks. A hunk that no longer matches is reported as
+// "patch failed", preceded by "while searching for:" and the context it looked
+// for, and lands in a .rej file; any other error line means git skipped a
+// whole file: it already exists, it is gone, a binary diff has no full index
+// lines. Only the "error:" lines are looked at, minus the context block, whose
+// lines are file content and may say anything.
+func wholeFileApplyErrors(stderr string) []string {
+	var failed []string
+	inContext := false
+	for line := range strings.SplitSeq(stderr, "\n") {
+		msg, ok := strings.CutPrefix(line, "error: ")
+		if inContext {
+			// The context block ends with the verdict on its hunk.
+			if ok && strings.HasPrefix(msg, "patch failed: ") {
+				inContext = false
+			}
+			continue
+		}
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(msg, "while searching for:"):
+			inContext = true
+		case strings.HasPrefix(msg, "patch failed: "):
+		default:
+			failed = append(failed, msg)
+		}
+	}
+	return failed
 }
 
 // findRejectFiles returns the set of *.rej paths under dir, relative to dir.

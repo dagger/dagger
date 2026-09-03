@@ -1,6 +1,5 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
-import Link from "@docusaurus/Link";
 import { useLocation } from "@docusaurus/router";
 import type { TOCItem } from "@docusaurus/mdx-loader";
 import { useDoc } from "@docusaurus/plugin-content-docs/client";
@@ -13,11 +12,11 @@ import DocItemPaginator from "@theme/DocItem/Paginator";
 import DocItemTOCMobile from "@theme/DocItem/TOC/Mobile";
 import DocVersionBadge from "@theme/DocVersionBadge";
 import DocVersionBanner from "@theme/DocVersionBanner";
-import NavbarColorModeToggle from "@theme/Navbar/ColorModeToggle";
 import TOC from "@theme/TOC";
 import type { Props } from "@theme/DocItem/Layout";
 import {
   orderedApiFields,
+  typeDocPrefixes,
   typeSlug,
   useApiModel,
 } from "@site/src/components/api/data";
@@ -53,7 +52,9 @@ function useApiReferenceTOC(
     );
     const path = normalizePath(pathname);
     const currentType = Object.values(model.types).find((type) =>
-      path.endsWith(`/extending/types/${typeSlug(type.name)}`)
+      typeDocPrefixes.some((prefix) =>
+        path.endsWith(`/${prefix}/${typeSlug(type.name)}`)
+      )
     );
     if (!currentType) {
       return { toc: filteredToc, minHeadingLevel, maxHeadingLevel };
@@ -133,21 +134,11 @@ function DocRightSidebar({
   docTOC: DocTOC;
 }): JSX.Element {
   return (
+    // The page-actions row that used to sit here held a second "Try Dagger
+    // Cloud" link — a duplicate of the navbar's, landing within a few hundred
+    // pixels of it — and the colour-mode toggle, which renders nothing now
+    // that the theme follows the OS. Both are gone; the rail is just the TOC.
     <aside className={styles.rightSidebar}>
-      <div className={styles.rightSidebarControls} aria-label="Page actions">
-        <Link
-          className={clsx(
-            "dagger-cloud-button docs-right-sidebar-cloud-button",
-            styles.cloudButton
-          )}
-          to="https://dagger.io/cloud"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Try Dagger Cloud
-        </Link>
-        <NavbarColorModeToggle className={styles.colorModeToggle} />
-      </div>
       {showToc && (
         <TOC
           toc={docTOC.toc}

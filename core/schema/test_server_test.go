@@ -86,6 +86,10 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, error) {
 	return s.dag, nil
 }
@@ -169,6 +173,6 @@ func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) 
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 
-func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {
+func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
 	return nil
 }

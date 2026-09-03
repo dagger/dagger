@@ -4,7 +4,8 @@ package core
 // the CLI over stdio. Under the object-tools scheme
 // (hack/designs/workspace-agents.md) the CLI binds each workspace module's
 // main object via LLM.withTools, so the module's eligible methods are served
-// directly as MCP tools alongside the builtins (ReadLogs, skills).
+// directly as MCP tools alongside the builtins (ReadLogs, ListServices,
+// skills).
 
 import (
 	"context"
@@ -35,6 +36,13 @@ func (MCPSuite) TestModuleWithoutPrivilegedExposesModuleMethods(ctx context.Cont
 	require.NotContains(t, tools, "container")
 
 	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
+
+	// There is no conversation behind a standalone server, so an LLM argument
+	// is unsatisfiable: a method that requires one is not offered, and an
+	// optional one is left unset rather than failing the call.
+	require.NotContains(t, tools, "compact")
+	require.Contains(t, tools, "annotate")
+	require.Equal(t, "no conversation", callToolText(ctx, t, cli, "annotate", map[string]any{}))
 }
 
 func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, t *testctx.T) {
@@ -54,6 +62,7 @@ func (MCPSuite) TestWithoutModuleAndWithPrivilegedServesBuiltins(ctx context.Con
 	// object-tools scheme.)
 	tools := listToolNames(ctx, t, cli)
 	require.Contains(t, tools, "ReadLogs")
+	require.Contains(t, tools, "ListServices")
 	require.NotContains(t, tools, "container")
 }
 

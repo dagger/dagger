@@ -1,6 +1,7 @@
 package call
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -302,7 +303,67 @@ func TestDigestedStringDigestDistinguishesIdentity(t *testing.T) {
 	}
 }
 
+func TestBytesRoundTripUsesRawBytesForIdentity(t *testing.T) {
+	const canary = "BINARY-CANARY-raw-recipe-only"
+	contents := append([]byte{0x00, 0xff, 0xfe}, []byte(canary)...)
+	typ := &ast.Type{NamedType: "File", NonNull: true}
+	newID := func(value []byte) *ID {
+		return New().Append(
+			typ,
+			"blob",
+			WithArgs(NewArgument("contents", NewLiteralBytes(value), false)),
+		)
+	}
+
+	orig := newID(contents)
+	same := newID(bytes.Clone(contents))
+	different := newID(append(bytes.Clone(contents), 0x00))
+	if orig.Digest() != same.Digest() {
+		t.Fatalf("equal raw bytes produced different digests: %s vs %s", orig.Digest(), same.Digest())
+	}
+	if orig.Digest() == different.Digest() {
+		t.Fatalf("different raw bytes produced the same digest: %s", orig.Digest())
+	}
+
+	wantLabel := DisplayBytes(contents)
+	for name, display := range map[string]string{
+		"ID display":      orig.Display(),
+		"literal display": orig.Arg("contents").Value().Display(),
+		"literal AST":     orig.Arg("contents").Value().ToAST().String(),
+	} {
+		if strings.Contains(display, canary) {
+			t.Fatalf("%s exposed bytes: %q", name, display)
+		}
+		if !strings.Contains(display, wantLabel) {
+			t.Errorf("%s = %q, want opaque label %q", name, display, wantLabel)
+		}
+	}
+
+	encoded, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	decoded := new(ID)
+	if err := decoded.Decode(encoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if decoded.Digest() != orig.Digest() {
+		t.Fatalf("digest changed after round-trip: got %s, want %s", decoded.Digest(), orig.Digest())
+	}
+	lit, ok := decoded.Arg("contents").Value().(*LiteralBytes)
+	if !ok {
+		t.Fatalf("decoded contents literal has type %T", decoded.Arg("contents").Value())
+	}
+	if !bytes.Equal(lit.Value(), contents) {
+		t.Fatalf("decoded bytes = %x, want %x", lit.Value(), contents)
+	}
+	if got := decoded.Call().GetArgs()[0].GetValue().GetBytes(); !bytes.Equal(got, contents) {
+		t.Fatalf("raw protobuf bytes = %x, want %x", got, contents)
+	}
+}
+
 func TestDigestedStringRoundTrip(t *testing.T) {
+	const canary = "CHECKPOINT-CANARY-raw-recipe-only"
 	typ := &ast.Type{
 		NamedType: "String",
 		NonNull:   true,
@@ -311,8 +372,23 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	orig := New().Append(
 		typ,
 		"withExec",
-		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"nested":true}`, execMDDigest), false)),
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(canary, execMDDigest), false)),
 	)
+
+	for name, display := range map[string]string{
+		"ID display":      orig.Display(),
+		"literal display": orig.Arg("execMD").Value().Display(),
+		"literal AST":     orig.Arg("execMD").Value().ToAST().String(),
+	} {
+		if strings.Contains(display, canary) {
+			t.Fatalf("%s exposed digested-string value: %q", name, display)
+		}
+		for _, want := range []string{"digested-string", execMDDigest.String(), "size=33B"} {
+			if !strings.Contains(display, want) {
+				t.Errorf("%s = %q, missing %q", name, display, want)
+			}
+		}
+	}
 
 	enc, err := orig.Encode()
 	if err != nil {
@@ -336,7 +412,10 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	if lit.Digest() != execMDDigest {
 		t.Fatalf("digested-string digest mismatch after round-trip: got %s, want %s", lit.Digest(), execMDDigest)
 	}
-	if lit.Value() != `{"nested":true}` {
+	if lit.Value() != canary {
 		t.Fatalf("digested-string value mismatch after round-trip: got %q", lit.Value())
+	}
+	if got := decoded.Call().GetArgs()[0].GetValue().GetDigestedString().GetValue(); got != canary {
+		t.Fatalf("raw recipe lost digested-string value: got %q", got)
 	}
 }

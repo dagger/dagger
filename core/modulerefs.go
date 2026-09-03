@@ -9,6 +9,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/gitref"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
@@ -177,7 +178,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 	repoSelector = withCommitArg(repoSelector)
 
-	refSelector := dagql.Selector{Field: "head"}
+	refSelector := moduleGitDefaultRefSelector(ctx, p)
 	switch {
 	case modTag != "":
 		refSelector = withCommitArg(dagql.Selector{
@@ -200,7 +201,18 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(pinCommitRef)},
 			},
 		}
+	case pinIsSHA:
+		// A module config pin is authoritative over the consuming workspace's
+		// git-sha lock entries. Pass it through ref's internal commit argument so
+		// ref resolution cannot replay a stale HEAD lock entry.
+		refSelector = withCommitArg(dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String("HEAD")},
+			},
+		})
 	}
+
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef, repoSelector, refSelector)
 	if err != nil {
@@ -208,6 +220,24 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	return gitRef, nil
+}
+
+func moduleGitDefaultRefSelector(
+	ctx context.Context,
+	p *ParsedGitRefString,
+) dagql.Selector {
+	if !Supports(ctx, workspace.LatestReleaseVersion) {
+		return dagql.Selector{Field: "head"}
+	}
+
+	selector := dagql.Selector{Field: "latest"}
+	if p.RepoRootSubdir != "/" {
+		selector.Args = append(selector.Args, dagql.NamedInput{
+			Name:  "tagPrefix",
+			Value: dagql.String(strings.Trim(p.RepoRootSubdir, "/")),
+		})
+	}
+	return selector
 }
 
 // Match a version string in a list of versions with optional subPath

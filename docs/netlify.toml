@@ -1,3 +1,28 @@
+## HOW THIS FILE IS ORGANISED
+##
+## Redirects are global: the file has no notion of docs versions, and Netlify
+## applies the FIRST matching rule, so order is the only thing that governs
+## behaviour. Two invariants:
+##
+##   1. Specific rules before wildcards; the /* fallback stays last.
+##   2. Unforced rules are shadowed by real files. A rule for a path the site
+##      still serves is inert until that path stops existing -- which is what
+##      lets a restructure be written before it ships.
+##
+## New rules go in an append-only "migration" block named for the namespace
+## upgrade that caused them (see "migration 0.21 -> 1.0" below). Each block is
+## written once and never edited afterwards: when a later restructure moves a
+## target again, add a new block and let the browser chain the hops, rather
+## than rewriting history. Watch for two things when appending -- a rename that
+## reverts an earlier one creates a redirect loop, and a wildcard inside a
+## migration block will swallow paths later blocks want.
+##
+## The pre-1.0 sections below are still flattened, each rule pointing straight at
+## what was then the current layout (some targets are now stale as a result).
+## Reorganising them into migration blocks is a follow-up: group by the release
+## whose namespace changed, keep each group internally ordered as it is today,
+## and move every wildcard out to the wildcard section at the end.
+
 [build]
   command = "yarn run docusaurus build"
 
@@ -366,16 +391,6 @@
   status = 301
 
 [[redirects]]
-  from = "/install"
-  to = "/getting-started/installation"
-  status = 301
-
-[[redirects]]
-  from = "/quickstart"
-  to = "/getting-started/quickstarts/basics"
-  status = 301
-
-[[redirects]]
   from = "/quickstart/agent"
   to = "/getting-started/quickstarts/agent"
   status = 301
@@ -472,7 +487,7 @@
 
 [[redirects]]
   from = "/quickstart/*"
-  to = "/getting-started/quickstarts/basics"
+  to = "/getting-started/quickstart"
   status = 301
 
 [[redirects]]
@@ -517,7 +532,7 @@
 
 [[redirects]]
   from = "/reference/979596/cli"
-  to = "/reference/cli"
+  to = "/cli/reference"
   status = 301
 
 [[redirects]]
@@ -1318,11 +1333,6 @@
   to = "/configuration/cloud"
   status = 301
 
-[[redirects]]
-  from = "/cli/*"
-  to = "/reference/cli"
-  status = 301
-
 ## end: wildcard redirects ##
 
 [[redirects]]
@@ -1334,6 +1344,185 @@
   from = "/reference/container-runtimes/openshift"
   to = "/reference/deployment/openshift"
   status = 301
+
+## start: migration 0.21 -> 1.0 ##
+##
+## Rules for the 1.0 docs restructure. Written once, in the terms of the change
+## they describe -- do NOT rewrite them when a later restructure moves the
+## target again; append a new migration block instead and let the hops chain.
+##
+## Most rules here are dormant: their source path is still served by the 1.0
+## beta snapshot at /, and an unforced rule is shadowed by a real file. They
+## start applying on their own once the default version stops serving that path.
+## That is why none of them are forced -- force = true would hijack a live page.
+##
+## The commented-out rules at the end are parked: their targets need validating
+## against the 1.0 build first (same reason as the disabled block below). They
+## can be uncommented as-is; shadowing keeps them inert until they are needed.
+##
+
+# The landing page moved into the Getting Started section. Not forced: while the
+# 1.0 beta snapshot still serves a page at /, the file shadows this rule; it
+# starts applying once the default version has no page there.
+[[redirects]]
+  from = "/"
+  to = "/getting-started/introduction"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started"
+  to = "/getting-started/introduction"
+  status = 301
+
+# The unreleased docs at /next have no page at their root either.
+[[redirects]]
+  from = "/next"
+  to = "/next/getting-started/introduction"
+  status = 301
+
+# The quickstart and workspace setup pages moved under /getting-started.
+[[redirects]]
+  from = "/quickstart"
+  to = "/getting-started/quickstart"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/workspace-setup"
+  to = "/getting-started/workspace-setup"
+  status = 301
+
+# The workspace migration guide moved into the Configuration section. The CLI
+# prints this URL (core/modulesource.go, engine/server/session_workspaces.go),
+# so released binaries keep depending on it.
+[[redirects]]
+  from = "/reference/upgrade-to-workspaces"
+  to = "/config/migrate-dagger-json"
+  status = 301
+
+# The workspace config schema page moved into the Configuration section.
+[[redirects]]
+  from = "/reference/configuration/workspace"
+  to = "/config/reference/dagger-toml"
+  status = 301
+
+# Environments and module wiring moved out of the CLI section.
+[[redirects]]
+  from = "/cli/environments"
+  to = "/config/environments"
+  status = 301
+
+[[redirects]]
+  from = "/cli/module-wiring"
+  to = "/config/module-wiring"
+  status = 301
+
+# The installation page moved into the Getting Started section.
+[[redirects]]
+  from = "/getting-started/installation"
+  to = "/getting-started/install"
+  status = 301
+
+[[redirects]]
+  from = "/install"
+  to = "/getting-started/install"
+  status = 301
+
+[[redirects]]
+  from = "/cli/install"
+  to = "/getting-started/install"
+  status = 301
+
+[[redirects]]
+  from = "/cli/installation"
+  to = "/getting-started/install"
+  status = 301
+
+# /using-dagger was renamed to /cli.
+[[redirects]]
+  from = "/using-dagger/*"
+  to = "/cli/:splat"
+  status = 301
+
+# /extending/types moved to /api/reference.
+[[redirects]]
+  from = "/extending/types/*"
+  to = "/api/reference/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/extending/types"
+  to = "/api/reference"
+  status = 301
+
+# /extending/sdks moved to /sdks; the rest of /extending was cut.
+[[redirects]]
+  from = "/extending/sdks/*"
+  to = "/sdks/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/extending"
+  to = "/sdks"
+  status = 301
+
+# /reference/cli moved to /cli/reference. Both rules were DELETED by the
+# "1.0 -> reference section" migration below, which moved the CLI reference
+# back to /reference/cli. A real page serves that path again, so the rules
+# were dead, and keeping them would have pointed the path at its own source.
+
+# The trigger guides were cut. Set up Cloud Checks is the surviving page on
+# running checks after a push.
+[[redirects]]
+  from = "/adopting/triggers/*"
+  to = "/getting-started/post-push"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/triggers"
+  to = "/getting-started/post-push"
+  status = 301
+
+# The scaling guides were cut with no equivalent page.
+[[redirects]]
+  from = "/adopting/scaling/*"
+  to = "/getting-started/introduction"
+  status = 301
+
+[[redirects]]
+  from = "/adopting/scaling"
+  to = "/getting-started/introduction"
+  status = 301
+
+# TODO: the rest of /reference was removed and those pages have no new home
+# yet. The disabled rules further down still point at /reference/*; retarget
+# them once the pages land somewhere.
+
+# Catch-all for retired /cli/... pages. MOVED to the end of the
+# "1.0 -> reference section" block below. That migration empties /cli, so this
+# wildcard had to fall below the specific /cli/... rules that migration adds --
+# Netlify takes the first match, and a wildcard whose namespace is vacated
+# otherwise matches its own target and loops.
+
+## end: migration 0.21 -> 1.0 ##
+
+## start: Getting Started page renames ##
+
+[[redirects]]
+  from = "/getting-started/workspace-setup"
+  to = "/getting-started/quickstart"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/post-push"
+  to = "/cloud-checks"
+  status = 301
+
+[[redirects]]
+  from = "/getting-started/pre-push"
+  to = "/cli/checking"
+  status = 301
+
+## end: Getting Started page renames ##
 
 ## start: disabled 1.0 redirects ##
 ##
@@ -2163,6 +2352,118 @@
 #
 ## end: disabled 1.0 redirects ##
 
+## start: migration 1.0 -> reference section ##
+##
+## Rules for the restructure that introduced the top-level Reference section,
+## renamed the CLI section to Using Dagger, and moved the config schema pages.
+## Written once -- append a new block rather than editing these.
+##
+## Namespace ownership across the two migrations:
+##
+##   /cli/*          0.21 owns, 1.0 owns, this migration vacates -> /using/*
+##   /reference/cli  0.21 owns, 1.0 vacates, this migration re-occupies
+##   /api/*          1.0 owns, this migration vacates -> /reference/api/*
+##   /modules/*      1.0 owns, this migration vacates -> /reference/modules/*
+##   /sdks/*         1.0 owns, this migration vacates -> /reference/sdks/*
+##
+## Two rules in the 0.21 -> 1.0 block above were changed for this migration,
+## both noted in place: the /reference/cli pair was deleted, and the /cli/*
+## catch-all moved to the end of this block.
+
+# The CLI section became Using Dagger. Its command reference moved to the new
+# Reference section; specific rule first so the /cli/* catch-all cannot take it.
+[[redirects]]
+  from = "/cli/reference"
+  to = "/reference/cli"
+  status = 301
+
+[[redirects]]
+  from = "/cli/checking"
+  to = "/using/checking"
+  status = 301
+
+[[redirects]]
+  from = "/cli/generating"
+  to = "/using/generating"
+  status = 301
+
+[[redirects]]
+  from = "/cli/services"
+  to = "/using/services"
+  status = 301
+
+[[redirects]]
+  from = "/cli/calling-functions"
+  to = "/using/calling-functions"
+  status = 301
+
+# The API section collapsed into Reference. It had two children: the type
+# reference and Clients. Clients moved out to /reference/client-libraries, so
+# the intermediate /api/reference level was dropped.
+[[redirects]]
+  from = "/api/clients"
+  to = "/reference/client-libraries"
+  status = 301
+
+[[redirects]]
+  from = "/api/reference"
+  to = "/reference/api"
+  status = 301
+
+[[redirects]]
+  from = "/api/reference/*"
+  to = "/reference/api/:splat"
+  status = 301
+
+# The API hub page was merged into the type overview.
+[[redirects]]
+  from = "/api"
+  to = "/reference/api"
+  status = 301
+
+# Modules and SDKs moved under Reference unchanged.
+[[redirects]]
+  from = "/modules"
+  to = "/reference/modules"
+  status = 301
+
+[[redirects]]
+  from = "/modules/*"
+  to = "/reference/modules/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/sdks"
+  to = "/reference/sdks"
+  status = 301
+
+[[redirects]]
+  from = "/sdks/*"
+  to = "/reference/sdks/:splat"
+  status = 301
+
+# The config schema pages became Reference / Configuration files. The rest of
+# /config stays where it is; only the label changed.
+[[redirects]]
+  from = "/config/reference"
+  to = "/reference/config-files"
+  status = 301
+
+[[redirects]]
+  from = "/config/reference/*"
+  to = "/reference/config-files/:splat"
+  status = 301
+
+# Catch-all for retired /cli/... pages, moved down from the 0.21 -> 1.0 block
+# because this migration vacates /cli. Retargeted from /cli/reference, which no
+# longer exists, to where that page now lives. Keep last in this block.
+[[redirects]]
+  from = "/cli/*"
+  to = "/reference/cli"
+  status = 301
+
+## end: migration 1.0 -> reference section ##
+
 ## start: 1.0 fallback (keep last) ##
 ##
 ## The site default at / is the 1.0 beta, which dropped many 0.21-era pages.
@@ -2170,20 +2471,20 @@
 ## 0.21 stable docs, so old links keep resolving instead of 404ing.
 ##
 ## To retarget (e.g. when 0.21 is retired, or a newer stable snapshot exists),
-## change /0.21.4/ in BOTH rules below. To drop the fallback entirely, delete
+## change /0.21/ in BOTH rules below. To drop the fallback entirely, delete
 ## this block -- old 0.21 URLs then 404.
 ##
-## The first rule is a loop guard: a /0.21.4/* path that itself 404s must not
-## fall through to the catch-all and get another /0.21.4/ prefix.
+## The first rule is a loop guard: a /0.21/* path that itself 404s must not
+## fall through to the catch-all and get another /0.21/ prefix.
 
 [[redirects]]
-  from = "/0.21.4/*"
+  from = "/0.21/*"
   to = "/404.html"
   status = 404
 
 [[redirects]]
   from = "/*"
-  to = "/0.21.4/:splat"
+  to = "/0.21/:splat"
   status = 301
 ## end: 1.0 fallback ##
 

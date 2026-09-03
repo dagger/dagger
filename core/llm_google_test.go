@@ -10,6 +10,25 @@ import (
 	"google.golang.org/genai"
 )
 
+func TestGenaiNullableSchema(t *testing.T) {
+	schema, err := bbiSchemaToGenaiSchema(map[string]any{
+		"anyOf": []any{
+			map[string]any{"type": "string", "enum": []string{"FAST", "SLOW"}},
+			map[string]any{"type": "null"},
+		},
+		"description": "An optional mode.",
+		"default":     nil,
+	})
+	require.NoError(t, err)
+	require.Len(t, schema.AnyOf, 2)
+	assert.Equal(t, genai.TypeString, schema.AnyOf[0].Type)
+	assert.Equal(t, []string{"FAST", "SLOW"}, schema.AnyOf[0].Enum)
+	assert.Equal(t, genai.TypeNULL, schema.AnyOf[1].Type)
+	require.NotNil(t, schema.Nullable)
+	assert.True(t, *schema.Nullable)
+	assert.Equal(t, "An optional mode.", schema.Description)
+}
+
 func TestDecodeThoughtSignature(t *testing.T) {
 	raw := []byte("some-opaque-signature")
 	encoded := base64.StdEncoding.EncodeToString(raw)

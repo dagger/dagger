@@ -94,6 +94,9 @@ type Address implements Node {
 
   """Load a volume from the address."""
   volume: Volume!
+
+  """Load a workspace from a module reference."""
+  workspace: Workspace!
 }
 
 type Agent implements Node {
@@ -137,6 +140,9 @@ input BuildArg {
   """The build argument value."""
   value: String!
 }
+
+"""Arbitrary binary data, represented as a base64-encoded string."""
+scalar Bytes
 
 """Sharing mode of the cache volume."""
 enum CacheSharingMode {
@@ -620,7 +626,10 @@ type Container implements Exportable & Node & Syncer {
   """
   from(
     """
-    Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+
+    An address without a tag or digest selects the greatest stable release tag,
+    falling back to the literal "latest" tag when no eligible release exists.
     """
     address: String!
 
@@ -2690,6 +2699,9 @@ type File implements Exportable & Node & Syncer {
     expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
   ): EnvFile!
 
+  """Interpret this file as a Git bundle by lazily parsing its header."""
+  asGitBundle: GitBundle!
+
   """Parse the file contents as JSON."""
   asJSON: JSONValue!
 
@@ -3162,6 +3174,47 @@ type GeneratorGroup implements Node {
   run: GeneratorGroup!
 }
 
+"""
+A Git bundle: a self-describing container of refs and the objects needed to
+reconstruct them, optionally rooted at prerequisite commits.
+"""
+type GitBundle implements Node {
+  """Return the bundle bytes as a File."""
+  asFile: File!
+
+  """A unique identifier for this GitBundle."""
+  id: ID!
+
+  """Object format capability: sha1 or sha256."""
+  objectFormat: String!
+
+  """Commits that must already exist wherever this bundle is applied."""
+  prerequisiteSHAs: [String!]!
+
+  """Refs advertised by the bundle and the object IDs they resolve to."""
+  refs: [GitBundleRef!]!
+
+  """
+  Perform full structural verification of the bundle and error if it is malformed.
+  """
+  validate: GitBundle!
+
+  """Bundle format version (2 or 3)."""
+  version: Int!
+}
+
+"""A ref advertised by a Git bundle."""
+type GitBundleRef implements Node {
+  """A unique identifier for this GitBundleRef."""
+  id: ID!
+
+  """The advertised ref name."""
+  name: String!
+
+  """The object ID the advertised ref resolves to."""
+  sha: String!
+}
+
 """An immutable git commit."""
 type GitCommit implements Node {
   """The latest semver release tag reachable from this commit."""
@@ -3315,6 +3368,19 @@ type GitRepository implements Node {
     patterns: [String!]
   ): [String!]!
 
+  """
+  Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+  """
+  bundle(
+    """Refs to advertise in the bundle. At least one named ref is required."""
+    refs: [String!]!
+
+    """
+    A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+    """
+    base: ID @expectedType(name: "GitRef")
+  ): GitBundle!
+
   """Returns details of a commit."""
   commit(
     """
@@ -3329,8 +3395,13 @@ type GitRepository implements Node {
   """A unique identifier for this GitRepository."""
   id: ID!
 
-  """Returns details for the latest semver tag."""
-  latestVersion: GitRef!
+  """
+  Return the latest stable release tag, falling back to HEAD when no release exists.
+
+  Release selection accepts an optional "v" prefix, incomplete versions, and
+  zero-padded numeric components. This operation is pinned.
+  """
+  latest: GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -3357,6 +3428,19 @@ type GitRepository implements Node {
 
   """The URL of the git repository."""
   url: String
+
+  """
+  Import a Git bundle after fetching and verifying all of its prerequisites.
+  """
+  withBundle(
+    """The Git bundle to import."""
+    bundle: ID! @expectedType(name: "GitBundle")
+
+    """
+    An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+    """
+    prerequisiteRef: String = ""
+  ): GitRepository!
 }
 
 """An internal persistent HTTP state."""
@@ -4639,6 +4723,22 @@ type Query implements Node {
   """
   address(value: String!): Address!
 
+  """Creates a file from arbitrary binary contents."""
+  blob(
+    """
+    Name of the new file. Example: "archive.tar"
+    """
+    name: String!
+
+    """
+    Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+    """
+    contents: Bytes!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
+  ): File!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -5260,6 +5360,34 @@ type Terminal implements Node & Syncer {
   sync: ID! @expectedType(name: "Terminal")
 }
 
+type TerminalGroup implements Node {
+  """A unique identifier for this TerminalGroup."""
+  id: ID!
+
+  """Return the selected terminal targets and their details"""
+  list: [TerminalTarget!]!
+
+  """Open the selected terminal target"""
+  run: TerminalGroup!
+}
+
+type TerminalTarget implements Node {
+  """The description of the terminal target"""
+  description: String!
+
+  """A unique identifier for this TerminalTarget."""
+  id: ID!
+
+  """Return the fully qualified name of the terminal target"""
+  name: String!
+
+  """The module in which the terminal target is defined"""
+  originalModule: Module!
+
+  """The path of the terminal target within its module"""
+  path: [String!]!
+}
+
 """A definition of a parameter or return type in a Module."""
 type TypeDef implements Node {
   """
@@ -5680,7 +5808,13 @@ type Workspace implements Node {
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
 
-  """Write this workspace's pending changes to its local Git workspace."""
+  """
+  Write this workspace's pending changes to its local Git workspace on the current client's host.
+
+  Like Directory.export, the write is a side effect on the client that makes the
+  call — never on the client that created the workspace. Inside a module, this
+  cannot reach the caller's host.
+  """
   export: Void!
 
   """
@@ -5871,6 +6005,12 @@ type Workspace implements Node {
     include: [String!]
   ): UpGroup!
 
+  """Return all terminal targets from modules loaded in the workspace."""
+  terminals(
+    """Only include terminal targets matching the specified patterns"""
+    include: [String!]
+  ): TerminalGroup!
+
   """
   Return this workspace with a changeset applied, without mutating the source.
   """
@@ -5909,6 +6049,20 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with a directory merged into the given path, without mutating the source.
+
+  Anything already at the path stays, and files the source carries win, as with
+  Directory.withDirectory. Use withNewDirectory to replace the path instead.
+  """
+  withDirectory(
+    """Path to merge into. Relative paths resolve from the workspace cwd."""
+    path: String!
+
+    """Directory to merge there."""
+    source: ID! @expectedType(name: "Directory")
   ): Workspace!
 
   """
@@ -6027,15 +6181,17 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with a directory added, without mutating the source.
+  Return this workspace with the given path replaced by a directory, without mutating the source.
+
+  The source becomes the entire contents of the path: anything already there
+  that the source does not carry is removed. Use withDirectory to keep it
+  instead.
   """
   withNewDirectory(
-    """
-    Path of the added directory. Relative paths resolve from the workspace cwd.
-    """
+    """Path to replace. Relative paths resolve from the workspace cwd."""
     path: String!
 
-    """Directory to add."""
+    """Directory to write there."""
     source: ID! @expectedType(name: "Directory")
   ): Workspace!
 

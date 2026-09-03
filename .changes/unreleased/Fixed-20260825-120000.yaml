@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  `dagger setup` now records a legacy module's toolchains as dependencies in
+  the migrated `dagger-module.toml`, in addition to installing them into
+  `dagger.toml`. In 0.21 a module's toolchains were also loaded into its own
+  API, so module code that called a toolchain (e.g. `dag.Go()`) kept
+  compiling; migration preserves that by adding the dependency install.
+time: 2026-08-25T12:00:00Z
+custom:
+  Author: kpenfound
+  PR: 13974

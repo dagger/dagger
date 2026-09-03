@@ -1,0 +1,82 @@
+---
+title: "Set up Cloud Checks"
+slug: /cloud-checks
+description: "Run workspace Checks automatically after Git events"
+---
+
+# Set up Cloud Checks
+
+In this guide, you will connect your GitHub repository to Dagger Cloud, and run your Checks automatically after each push.
+
+Complete the [Quickstart](./quickstart.mdx) before you start.
+
+A Git event, such as a push or pull request, starts Cloud Checks. They run your Checks on Cloud Engines. You do not need a CI workflow file.
+
+Your project must be a GitHub repository, and its Git `origin` remote must point to that repository.
+
+## Sign in to Dagger Cloud
+
+Sign in or create an account:
+
+```shell
+dagger cloud login
+```
+
+Complete the authentication in the browser. Create or select a Dagger Cloud organization when requested.
+
+## Connect the repository
+
+Connect the GitHub account or organization that owns the repository:
+
+```shell
+dagger cloud integration create github --open
+```
+
+In the browser, select that account or organization, then grant Dagger access to the repository.
+
+## Enable Cloud Checks
+
+From your project root:
+
+```shell
+dagger cloud check on
+```
+
+Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled.
+
+## Trigger Cloud Checks
+
+Commit the files that the Quickstart created, then push them:
+
+```shell
+git add dagger.toml
+git commit -m "Set up Dagger"
+git push -u origin HEAD
+```
+
+If `dagger generate` changed other files, stage those too. Run `git status --short` to list them.
+
+## Watch the Checks pass
+
+The push started your Checks. Watch them run:
+
+```shell
+dagger activity
+```
+
+Find the row for `Set up Dagger`. It can take a moment to appear. Run the command again until its `CHECKS` column is green.
+
+If a Check turns red, run `dagger check` locally. Fix the failure. Then commit and push the fix.
+
+Green means that every Check passed.
+
+## What you accomplished
+
+Your project now checks itself. Every push and every pull request runs your Checks automatically, on Dagger's Cloud Engines.
+
+You did not write a CI workflow file. You do not maintain a build server. The Checks that run on each push are the same Checks that `dagger check` runs on your machine, so the two cannot drift apart.
+
+## Next steps
+
+- [Run selected Checks](../using/checking.mdx)
+- [Manage Cloud Checks from the CLI](../reference/cli/index.mdx#dagger-cloud-check)

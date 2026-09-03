@@ -1045,12 +1045,9 @@ func handleChangesetResponseWithApply(
 		var confirm bool
 		form := idtui.NewForm(
 			huh.NewGroup(
-				huh.NewConfirm().
+				idtui.NewExplicitConfirm("Apply", "Discard", &confirm).
 					Title("Apply changes?").
-					Description(description).
-					Affirmative("Apply").
-					Negative("Discard").
-					Value(&confirm),
+					Description(description),
 			),
 		)
 		if err := Frontend.HandleForm(ctx, form); err != nil {

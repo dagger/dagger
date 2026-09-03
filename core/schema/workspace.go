@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/mod/semver"
@@ -29,8 +30,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
-		WithInput(dagql.PerCallInput, dagql.PerSessionInput).
-		NotReplayable("Resolves the calling client's workspace; the result carries that client's ID, which only resolves inside its own session.").
+		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
@@ -142,10 +142,19 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a directory added, without mutating the source.").
+			Doc("Return this workspace with the given path replaced by a directory, without mutating the source.",
+				"The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.").
 			Args(
-				dagql.Arg("path").Doc("Path of the added directory. Relative paths resolve from the workspace cwd."),
-				dagql.Arg("source").Doc("Directory to add."),
+				dagql.Arg("path").Doc("Path to replace. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to write there."),
+			),
+		dagql.NodeFunc("withDirectory", s.withDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a directory merged into the given path, without mutating the source.",
+				"Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.").
+			Args(
+				dagql.Arg("path").Doc("Path to merge into. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to merge there."),
 			),
 		dagql.NodeFunc("withoutFile", s.withoutFile).
 			View(AfterVersion("v1.0.0-0")).
@@ -325,8 +334,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the local Git workspace").
-			Doc("Write this workspace's pending changes to its local Git workspace."),
+			DoNotCache("Writes pending workspace changes to the calling client's host").
+			Doc("Write this workspace's pending changes to its local Git workspace on the current client's host.",
+				"Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host."),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -394,6 +404,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all services from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
+			),
+		dagql.NodeFunc("terminals", s.terminals).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return all terminal targets from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include terminal targets matching the specified patterns"),
 			),
 		dagql.NodeFunc("agents", s.agents).
 			View(AfterVersion("v1.0.0-0")).
@@ -748,7 +764,41 @@ func (s *workspaceSchema) workspaceReadPathExists(
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
 // Remote: navigates the pre-fetched rootfs.
+//
+// A host-backed workspace's root carries the checkout's dangling .git pointer
+// file (worktree/submodule); the engine never interprets it -- git-ness is
+// provided canonically via materializeWorkspaceGit -- so it is dropped from the
+// root snapshot here, covering every route resolveRootfsInner takes to a root
+// read (host, overlay, references, mount) without disturbing their logic. Only
+// the workspace root carries the pointer, and DropRootGitPointerFile is a no-op
+// unless a `.git` *file* is actually present, so a plain .git directory and
+// value-backed workspaces are untouched.
 func (s *workspaceSchema) resolveRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
+	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	isRoot := resolvedPath == "." || resolvedPath == "/" || resolvedPath == ""
+	if ws.HostPath() != "" && isRoot && inst.Self() != nil {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = core.DropRootGitPointerFile(ctx, srv, inst)
+		if err != nil {
+			return inst, err
+		}
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) resolveRootfsInner(
 	ctx context.Context,
 	ws *core.Workspace,
 	resolvedPath string,
@@ -1129,7 +1179,7 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withNewFile",
@@ -1502,7 +1552,7 @@ func mergeGlobMatches(base, winning []string, claimed func(string) bool) []strin
 	return merged
 }
 
-type workspaceWithNewDirectoryArgs struct {
+type workspaceWriteDirectoryArgs struct {
 	Path   string
 	Source core.DirectoryID
 }
@@ -1510,7 +1560,7 @@ type workspaceWithNewDirectoryArgs struct {
 func (s *workspaceSchema) withNewDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceWithNewDirectoryArgs,
+	args workspaceWriteDirectoryArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
 	if err != nil {
@@ -1527,7 +1577,49 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		// Clearing first is what lets both overlay branches share this edit:
+		// an edit that ignores whatever the base holds at the path reads the
+		// same on a full read root as on a host overlay's delta root.
+		cleared, err := clearedForWrite(ctx, srv, base, resolvedPath)
+		if err != nil {
+			return cleared, err
+		}
+		var updated dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, cleared, &updated, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(resolvedPath)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
+			},
+		})
+		return updated, err
+	}, nil)
+}
+
+func (s *workspaceSchema) withDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWriteDirectoryArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := args.Source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	// The edit layers onto what the path already holds, so the base has to
+	// carry it — see overlayEdit's readsExisting.
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withDirectory",
@@ -1538,6 +1630,28 @@ func (s *workspaceSchema) withNewDirectory(
 		})
 		return updated, err
 	}, nil)
+}
+
+// clearedForWrite returns base holding nothing at path, ready for a write that
+// replaces what was there. Clearing the workspace root starts from an empty
+// directory instead: Directory.withoutDirectory removes the path itself, which
+// at the root is the tree rather than its contents.
+func clearedForWrite(
+	ctx context.Context,
+	srv *dagql.Server,
+	base dagql.ObjectResult[*core.Directory],
+	resolvedPath string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var cleared dagql.ObjectResult[*core.Directory]
+	if resolvedPath == "." {
+		err := srv.Select(ctx, srv.Root(), &cleared, dagql.Selector{Field: "directory"})
+		return cleared, err
+	}
+	err := srv.Select(ctx, base, &cleared, dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+	})
+	return cleared, err
 }
 
 type workspaceWithoutFileArgs struct {
@@ -1561,7 +1675,7 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutFile",
@@ -1594,7 +1708,7 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutDirectory",
@@ -1669,7 +1783,7 @@ func (s *workspaceSchema) applyChangeset(
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
-	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withChanges",
@@ -2057,14 +2171,13 @@ func (s *workspaceSchema) export(
 		return core.Void{}, nil
 	}
 
-	exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
+	// Deliberately no withWorkspaceClientContext here: export is a side
+	// effect on the calling client, like Directory.export — never on the
+	// client that created the workspace (dagger/dagger#14007).
+	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
 	}
-	if err := changes.Self().Export(exportCtx, hostPath); err != nil {
-		return core.Void{}, err
-	}
-	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
+	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
 		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
 	// The export just changed the workspace's on-disk content, so host reads
@@ -2072,9 +2185,12 @@ func (s *workspaceSchema) export(
 	// they are cached per client for the client's whole lifetime
 	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
 	// land in a fresh per-client cache namespace and re-read the live host.
-	// Best-effort, like the invalidation above: a bookkeeping failure must not
-	// fail an export that already succeeded.
-	if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
+	// Like the invalidation above, this only matters when the caller owns the
+	// workspace: a non-owner's export never touched the owner's host, and this
+	// workspace's reads resolve under the owner's epoch, so the bump is a
+	// harmless no-op. Best-effort: a bookkeeping failure must not fail an
+	// export that already succeeded.
+	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
 		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
 	return core.Void{}, nil
@@ -2101,8 +2217,8 @@ func (s *workspaceSchema) reloaded(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	// Bump under the workspace's owning client, the same context export bumps
-	// in and the one withWorkspaceHostReadContext reads the epoch from — a
+	// Bump under the workspace's owning client, the context
+	// withWorkspaceHostReadContext reads the epoch from — a
 	// bump under the caller's own client would be a silent no-op whenever the
 	// caller is not the owner (e.g. a module handed the workspace). A value
 	// workspace has no owning client and no host reads to invalidate, so the
@@ -2161,7 +2277,7 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 	ws.SetRootfs(dagql.ObjectResult[*core.Directory]{})
 	// Value/git/rootless workspaces diff full in-engine trees (no TouchedPaths);
 	// the sparse delta-native path is host-only (see overlayEdit).
-	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, changesResult))
+	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, changesResult))
 	if mutate != nil {
 		mutate(ws)
 	}
@@ -2175,6 +2291,14 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 // empty base, stored as the overlay changeset's After side, which never
 // references the host tree. `touched` are the workspace-relative paths this
 // edit affects.
+//
+// `readsExisting` names the touched paths whose current content the edit builds
+// on, rather than overwriting outright. Those two bases hold different things
+// at a path — the full read root has the workspace's content, the delta root
+// only what earlier edits wrote — so an edit that reads the base means two
+// different things across workspace kinds unless the delta root is first seeded
+// with what the workspace holds there (dagger/dagger#13955). Leave it empty
+// whenever the edit's result at `touched` is independent of what was there.
 //
 // Host-backed overlays store no full read root at all: Directory.withChanges
 // must materialize its base, so a host-tree root would force the whole
@@ -2191,6 +2315,7 @@ func (s *workspaceSchema) overlayEdit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	touched []string,
+	readsExisting []string,
 	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
 	mutate func(*core.Workspace),
 ) (dagql.ObjectResult[*core.Workspace], error) {
@@ -2217,9 +2342,25 @@ func (s *workspaceSchema) overlayEdit(
 	// Host-backed: apply the edit to the accumulated empty-based delta root, so
 	// neither the overlay build nor computing changes/export ever references the
 	// full host tree.
+	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched)
+	seededAll := unionPaths(ws.OverlaySeededPaths(), readsExisting)
+	// Resolved before the edit so the seed below comes out of the very base the
+	// changeset is diffed against: one host read on both sides means seeded
+	// content can never read as a change.
+	sparseBase, err := s.sparseHostBase(ctx, ws, touchedAll)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
 	deltaBase, ok := ws.OverlayDeltaRoot()
 	if !ok {
 		if err := srv.Select(ctx, srv.Root(), &deltaBase, dagql.Selector{Field: "directory"}); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+	if len(seededAll) > 0 {
+		deltaBase, err = s.seedDeltaRoot(ctx, srv, ws, deltaBase, sparseBase, seededAll)
+		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
@@ -2228,11 +2369,6 @@ func (s *workspaceSchema) overlayEdit(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	touchedAll := unionPaths(ws.OverlayTouchedPaths(), touched)
-	sparseBase, err := s.sparseHostBase(ctx, ws, touchedAll)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	sparseBaseID, err := sparseBase.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -2247,11 +2383,86 @@ func (s *workspaceSchema) overlayEdit(
 
 	newWS := ws.Clone()
 	newWS.SetRootfs(dagql.ObjectResult[*core.Directory]{})
-	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, changesResult))
+	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, seededAll, changesResult))
 	if mutate != nil {
 		mutate(newWS)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, newWS)
+}
+
+// seedDeltaRoot layers the workspace's current content at the given paths onto
+// the delta root, for edits that build on what a path already holds. The delta
+// root carries only what overlay edits wrote, so such an edit would otherwise
+// find the path empty and — once the delta root is diffed against the sparse
+// host base, which does carry the host's content there — read as having
+// replaced it.
+//
+// The seed comes out of `base`, the very sparse host base the resulting
+// changeset is diffed against, with the overlay's own changeset applied so that
+// earlier edits still win and earlier removals stay removed. Taking it from
+// there rather than from a host read of its own is what keeps seeded content
+// from ever reading as a change: both sides of the diff see one host snapshot,
+// and because every later edit re-seeds these paths from its own base, content
+// the caller never wrote is never pinned to a stale one. Layering onto the
+// delta root rather than replacing it keeps edits outside these paths intact.
+//
+// Sizing the sparse base to the paths the source writes, instead of seeding,
+// would also stop the removals — but a path the host does not have yet matches
+// nothing, so its parent directories are absent from the base and the changeset
+// reports directories the workspace already has as added.
+func (s *workspaceSchema) seedDeltaRoot(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	delta dagql.ObjectResult[*core.Directory],
+	base dagql.ObjectResult[*core.Directory],
+	paths []string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	existing := base
+	if changes, ok := ws.OverlayChanges(); ok {
+		changesID, err := changes.ID()
+		if err != nil {
+			return delta, err
+		}
+		if err := srv.Select(ctx, base, &existing, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return delta, fmt.Errorf("seed overlay delta root: %w", err)
+		}
+	}
+	existingID, err := existing.ID()
+	if err != nil {
+		return delta, err
+	}
+	// The base spans every touched path, not just the seeded ones; trim to the
+	// seeded paths so the rest of the delta root stays the caller's own writes.
+	var scoped dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &scoped,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](existingID)},
+			{Name: "include", Value: sparseIncludePatterns(paths)},
+		}},
+	); err != nil {
+		return delta, fmt.Errorf("seed overlay delta root: %w", err)
+	}
+	scopedID, err := scoped.ID()
+	if err != nil {
+		return delta, err
+	}
+	var seeded dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, delta, &seeded, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](scopedID)},
+		},
+	}); err != nil {
+		return delta, fmt.Errorf("seed overlay delta root: %w", err)
+	}
+	return seeded, nil
 }
 
 // unionPaths returns the ordered union of two path slices, preserving first-seen
@@ -2292,11 +2503,7 @@ func (s *workspaceSchema) sparseHostBase(
 		return empty, nil
 	}
 
-	includes := make(dagql.ArrayInput[dagql.String], 0, len(touched)*2)
-	for _, p := range touched {
-		p = strings.TrimSuffix(p, "/")
-		includes = append(includes, dagql.String(p), dagql.String(p+"/**"))
-	}
+	includes := sparseIncludePatterns(touched)
 
 	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
@@ -2317,6 +2524,17 @@ func (s *workspaceSchema) sparseHostBase(
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("sparse host base: %w", err)
 	}
 	return out, nil
+}
+
+// sparseIncludePatterns turns workspace-relative paths into include patterns
+// covering each path and everything under it.
+func sparseIncludePatterns(paths []string) dagql.ArrayInput[dagql.String] {
+	includes := make(dagql.ArrayInput[dagql.String], 0, len(paths)*2)
+	for _, p := range paths {
+		p = strings.TrimSuffix(p, "/")
+		includes = append(includes, dagql.String(p), dagql.String(p+"/**"))
+	}
+	return includes
 }
 
 // changesetTouchedPaths returns the workspace-relative paths a changeset affects
@@ -2395,8 +2613,9 @@ func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *c
 		return fmt.Errorf("workspace git metadata: %w", err)
 	}
 	// Git worktree and submodule checkouts have a .git *file* pointing at
-	// metadata outside the workspace; that pointer is followed and flattened
-	// when the repository is resolved (see flattenWorkspaceGitPointer), so a
+	// metadata outside the workspace; that layout is never interpreted by the
+	// engine -- the repository is reconstructed canonically from the client's
+	// own git pack when it is resolved (see materializeWorkspaceGit) -- so a
 	// regular .git file is acceptable here.
 	if st.FileType != core.FileTypeRegular && !st.IsDir() {
 		return fmt.Errorf("workspace git metadata .git has type %s, expected directory or pointer file", st.FileType)
@@ -2419,18 +2638,47 @@ func (s *workspaceSchema) workspaceGitRepository(
 		return inst, err
 	}
 
-	dir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
+	var (
+		dir  dagql.ObjectResult[*core.Directory]
+		err  error
+		fast bool
+	)
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		dir, fast, err = s.materializeWorkspaceGitUncommitted(ctx, ws)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git uncommitted: %w", err)
+		}
 	}
+	if !fast {
+		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
 
-	// Git worktree and submodule checkouts have a .git *pointer file* at their
-	// root, whose target lives outside the workspace boundary. Follow the
-	// pointer against the host and flatten the real git dir into a standalone
-	// .git directory so the LocalGitRepository sees a plain repository.
-	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
+		// Git worktree and submodule checkouts have a .git *pointer file* at
+		// their root, whose target lives outside the workspace boundary.
+		// Replace whatever .git the synced tree carries with a canonical
+		// reconstruction of the checkout's repository (packed by the client's
+		// own git), so the LocalGitRepository sees a plain repository.
+		dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
+	} else if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+		changesID, err := changes.ID()
+		if err != nil {
+			return inst, err
+		}
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
+		}
 	}
 
 	backend := &core.LocalGitRepository{
@@ -2448,13 +2696,107 @@ func (s *workspaceSchema) workspaceGitRepository(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-// flattenWorkspaceGitPointer resolves a .git pointer file (worktree/submodule
-// checkout) at the workspace root into a standalone .git directory, following
-// the pointer against the workspace's host. A plain .git directory is returned
-// unchanged. A workspace with no host (in-memory rootfs) has nowhere to follow
-// the pointer to, so a pointer file there stays unresolved and downstream git
-// operations report the plain failure.
-func (s *workspaceSchema) flattenWorkspaceGitPointer(
+// materializeWorkspaceGitUncommitted builds a host-backed workspace repository
+// without resolving its whole root directory. It checks out the canonical pack
+// for HEAD, asks the client for only the uncommitted changes (the git-visible
+// working-tree delta, including untracked files), and applies that delta
+// directly to an engine snapshot. The bool is false when the client predates
+// the delta RPC (or the checkout has no canonical HEAD), in which case callers
+// retain the full-directory compatibility path.
+func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
+	ctx context.Context,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Directory], bool, error) {
+	var inst dagql.ObjectResult[*core.Directory]
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, false, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, false, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var scratch dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return inst, false, err
+	}
+	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "epoch:"+epoch)
+	if err != nil {
+		return inst, false, err
+	}
+	if _, err := canonical.Self().Stat(clientCtx, canonical, srv, ".git", true); err != nil {
+		// MaterializeHostGitCheckout leaves scratch unchanged for clients that
+		// do not implement checkout packing.
+		return inst, false, nil //nolint:nilerr // fall back to the full-directory path
+	}
+
+	var repoResult dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(clientCtx, canonical, &repoResult, dagql.Selector{Field: "asGit"}); err != nil {
+		return inst, false, err
+	}
+	var head dagql.Result[*core.GitRef]
+	if err := srv.Select(clientCtx, repoResult, &head, dagql.Selector{Field: "head"}); err != nil {
+		// An unborn checkout has no HEAD tree. The old directory route retains
+		// its existing behavior for this uncommon state.
+		return inst, false, nil //nolint:nilerr // fall back to the full-directory path
+	}
+	if head.Self() == nil || head.Self().Ref == nil || head.Self().Ref.SHA == "" {
+		return inst, false, nil
+	}
+	headID, err := head.ID()
+	if err != nil {
+		return inst, false, err
+	}
+	headObject, err := dagql.NewID[*core.GitRef](headID).Load(clientCtx, srv)
+	if err != nil {
+		return inst, false, err
+	}
+
+	var clean dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(clientCtx, headObject, &clean, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "includeTags", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
+		return inst, false, err
+	}
+
+	if err := srv.Select(clientCtx, clean, &inst, dagql.Selector{
+		Field: "__withGitUncommitted",
+		Args: []dagql.NamedInput{
+			{Name: "checkoutPath", Value: dagql.NewString(ws.HostPath())},
+			{Name: "expectedHeadSHA", Value: dagql.NewString(head.Self().Ref.SHA)},
+		},
+	}); errors.Is(err, engineutil.ErrGitUncommittedUnsupported) {
+		return dagql.ObjectResult[*core.Directory]{}, false, nil
+	} else if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, false, err
+	}
+	return inst, true, nil
+}
+
+// materializeWorkspaceGit replaces a host-backed workspace's synced .git with
+// a canonical reconstruction of the checkout's repository. The client's own
+// git packs the repository (HEAD plus all branches and tags) and the engine
+// rebuilds a standalone .git from that pack. The engine never interprets the
+// host checkout's raw git layout -- worktree/submodule pointer files,
+// commondirs, separate git dirs are all the client git's business -- so the
+// result is identical for a given ref state regardless of how the checkout is
+// laid out on the host.
+//
+// A workspace with no host (in-memory rootfs) keeps its embedded .git: there
+// is no client checkout to pack. A checkout that is not a git repository is
+// returned unchanged so downstream git operations surface the plain "not a git
+// repository" failure, matching pre-worktree behavior.
+func (s *workspaceSchema) materializeWorkspaceGit(
 	ctx context.Context,
 	ws *core.Workspace,
 	dir dagql.ObjectResult[*core.Directory],
@@ -2462,49 +2804,33 @@ func (s *workspaceSchema) flattenWorkspaceGitPointer(
 	if ws.HostPath() == "" {
 		return dir, nil
 	}
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return dir, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dir, err
 	}
-	flattened, err := core.FlattenGitPointer(ctx, srv, dir, ws.HostPath(),
-		func(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*core.Directory], error) {
-			return s.loadWorkspaceHostDir(ctx, dag, ws, hostPath)
-		})
+	// Pin the reconstruction to the session's cached view of the checkout by
+	// keying it on the workspace read epoch rather than the checkout's live
+	// ref state: a checkout that advances mid-session must NOT be silently
+	// re-read, or a staged-commit export could fast-forward over the user's
+	// own commit instead of detecting that the local branch moved. The epoch
+	// bumps on export/reload, exactly when the pinned view should be refreshed
+	// -- the same scoping Workspace.file/.directory host reads use.
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return dir, err
+	}
+	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "epoch:"+epoch)
 	if errors.Is(err, core.ErrNoGitContext) {
-		// No .git at all: leave the original directory so downstream
-		// callers surface the plain "not a git repository" failure, matching
+		// No .git at all: leave the original directory so downstream callers
+		// surface the plain "not a git repository" failure, matching
 		// pre-worktree behavior.
 		return dir, nil
 	}
-	return flattened, err
-}
-
-// loadWorkspaceHostDir loads an absolute host path as a Directory, routed
-// through the workspace's owning client session. Unlike workspace reads this
-// is not bounded to the workspace root: gitfile targets legitimately live
-// outside it (e.g. the main checkout's .git). FlattenGitPointer validates what
-// it loads.
-func (s *workspaceSchema) loadWorkspaceHostDir(
-	ctx context.Context,
-	dag *dagql.Server,
-	ws *core.Workspace,
-	hostPath string,
-) (inst dagql.ObjectResult[*core.Directory], err error) {
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-	err = dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(hostPath)},
-				{Name: "noCache", Value: dagql.Boolean(true)},
-			},
-		},
-	)
-	return inst, err
+	return out, err
 }
 
 func (s *workspaceSchema) workspaceGitHead(
@@ -3320,6 +3646,34 @@ func (s *workspaceSchema) services(
 	return &core.UpGroup{Ups: allUps, BoundWorkspace: parentResult}, nil
 }
 
+func (s *workspaceSchema) terminals(
+	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.TerminalGroup, error) {
+	if isSyntheticWorkspace(parentResult.Self()) {
+		return &core.TerminalGroup{}, nil
+	}
+
+	allTerminals, err := collectWorkspaceModuleTargets(
+		ctx,
+		s,
+		parentResult,
+		args.Include,
+		"terminal targets",
+		"terminal target",
+		terminalTargetsFromModule,
+		func(terminal *core.TerminalTarget) *core.ModTreeNode { return terminal.Node },
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.TerminalGroup{Terminals: allTerminals, BoundWorkspace: parentResult}, nil
+}
+
 func (s *workspaceSchema) agents(
 	ctx context.Context,
 	parentResult dagql.ObjectResult[*core.Workspace],
@@ -3327,19 +3681,34 @@ func (s *workspaceSchema) agents(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.AgentGroup, error) {
-	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parentResult.Self()) {
 		return &core.AgentGroup{}, nil
 	}
 
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	allAgents, err := collectWorkspaceModuleTargets(
+		ctx,
+		s,
+		parentResult,
+		args.Include,
+		"agents",
+		"agent",
+		agentTargetsFromModule,
+		func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	// agent composition is strict: a module that can't load is a failure.
+	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+}
+
+// workspaceTargetModules returns the workspace's primary modules as they
+// should be seen when composing targets (agents, terminals) from them.
+func (s *workspaceSchema) workspaceTargetModules(
+	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	include []string,
+) ([]dagql.ObjectResult[*core.Module], error) {
 	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
 		return nil, err
 	}
@@ -3348,28 +3717,85 @@ func (s *workspaceSchema) agents(
 		return nil, err
 	}
 
-	var allAgents []*core.Agent
+	// The served modules above are the workspace as it was on disk when the
+	// session started. Re-resolve whatever the workspace's pending overlay
+	// touches, so an agent recomposing itself (install/reload) sees its own
+	// staged edits to module source and to dagger.toml.
+	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+	return mergeOverlayModules(mods, overlayMods), nil
+}
+
+// collectWorkspaceModuleTargets composes one kind of target (agents, terminal
+// targets) from every primary module in the workspace, as seen through its
+// pending overlay, keeping only those matching the include patterns.
+func collectWorkspaceModuleTargets[T any](
+	ctx context.Context,
+	s *workspaceSchema,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	includeArg dagql.Optional[dagql.ArrayInput[dagql.String]],
+	groupLabel string,
+	targetLabel string,
+	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
+	node func(T) *core.ModTreeNode,
+) ([]T, error) {
+	include := workspaceIncludePatterns(includeArg)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parentResult.Self())
+	if err != nil {
+		return nil, err
+	}
+
+	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+
+	var all []T
 	for _, mod := range mods {
-		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		root, targets, err := collect(ctx, mod)
 		if err != nil {
-			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
+			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
-		reparentWorkspaceTreeRoot(agentGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(root, mod.Self().Name())
 		filtered, err := filterNodesByInclude(
 			ctx,
-			agentGroup.Agents,
+			targets,
 			include,
-			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
-			func(agent *core.Agent) string { return agent.Name() },
-			"agent",
+			node,
+			func(target T) string { return node(target).PathString() },
+			targetLabel,
 		)
 		if err != nil {
 			return nil, err
 		}
-		allAgents = append(allAgents, filtered...)
+		all = append(all, filtered...)
 	}
+	return all, nil
+}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+func terminalTargetsFromModule(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+) (*core.ModTreeNode, []*core.TerminalTarget, error) {
+	group, err := core.NewTerminalGroup(ctx, mod, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return group.Node, group.Terminals, nil
+}
+
+func agentTargetsFromModule(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+) (*core.ModTreeNode, []*core.Agent, error) {
+	group, err := core.NewAgentGroup(ctx, mod, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return group.Node, group.Agents, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

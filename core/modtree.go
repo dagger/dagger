@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/querybuilder"
 
@@ -311,9 +312,10 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 }
 
 // ServiceNameAttr is the telemetry attribute key for the service name.
-// Defined locally because the canonical constant lives in the external
-// github.com/dagger/otel-go package which we cannot modify.
-const ServiceNameAttr = "dagger.io/service.name"
+// Canonically defined in engine/telemetryattrs (see the note there about the
+// external github.com/dagger/otel-go package); aliased here for the existing
+// callers.
+const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
 // RunUp starts the service and returns a result that must be cleaned up.
 // It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
@@ -822,6 +824,11 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
 		return n.IsGenerator
 	}, include, exclude)
+}
+
+// RollupTerminals walks the tree and returns non-null Container and Directory values.
+func (node *ModTreeNode) RollupTerminals(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, supportsTerminal, include, exclude)
 }
 
 // Walk the tree and return all up (service) nodes, with include and exclude filters applied.

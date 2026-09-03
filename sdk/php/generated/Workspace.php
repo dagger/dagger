@@ -148,7 +148,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Write this workspace's pending changes to its local Git workspace.
+     * Write this workspace's pending changes to its local Git workspace on the current client's host.
+     *
+     * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
      */
     public function export(): void
     {
@@ -393,6 +395,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return all terminal targets from modules loaded in the workspace.
+     */
+    public function terminals(?array $include = null): TerminalGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminals');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\TerminalGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a changeset applied, without mutating the source.
      */
     public function withChanges(Changeset $changes): Workspace
@@ -431,6 +445,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a directory merged into the given path, without mutating the source.
+     *
+     * Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+     */
+    public function withDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -547,7 +574,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with a directory added, without mutating the source.
+     * Return this workspace with the given path replaced by a directory, without mutating the source.
+     *
+     * The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
      */
     public function withNewDirectory(string $path, Directory $source): Workspace
     {

@@ -12,38 +12,49 @@ type MessageNode struct {
 	Children []*MessageNode
 }
 
-// SurfacedConversation returns the trace's LLM conversation as a tree,
-// independent of the `reveal` mechanism -- the message analog of
-// DB.SurfacedChecks.
+// SurfacedConversation returns the whole trace's LLM conversation as a tree.
+// It is SurfacedConversationForSpan relative to the trace root.
+func (db *DB) SurfacedConversation() []*MessageNode {
+	return db.SurfacedConversationForSpan(nil)
+}
+
+// SurfacedConversationForSpan returns the LLM conversation beneath root as a
+// tree, independent of the `reveal` mechanism -- the message analog of
+// DB.SurfacedChecksForSpan. A nil root means the trace root.
 //
 // Internal messages (the system prompt) are skipped, matching the live tree.
 //
-// A span with an LLMRole is surfaced only if its ancestor chain reaches the
-// trace root with no Boundary or Encapsulate span in between. That drops LLM
-// runs a test intentionally drives as a fixture (wrapped in a boundary), the
-// same containment the reveal bubbling applies. A chain that is severed before
-// reaching the root (an unreceived placeholder, or a reparenting seam the
-// incremental fetch never loaded) can't be proven boundary-free, so it's
-// treated as contained too -- exactly as for checks.
+// A span with an LLMRole is surfaced only if its ancestor chain reaches root
+// with no Boundary or Encapsulate span in between. That drops LLM runs a test
+// intentionally drives as a fixture (wrapped in a boundary), the same
+// containment the reveal bubbling applies, and -- since the walk stops AT root
+// -- it also drops the transcript of the run that merely *contains* root when
+// the caller is zoomed into a subtree. A chain that is severed before reaching
+// root (an unreceived placeholder, or a reparenting seam the incremental fetch
+// never loaded) can't be proven boundary-free, so it's treated as contained
+// too -- exactly as for checks.
 //
 // Unlike checks there is no dedup: each message span is its own node, nested
 // under the nearest surfaced ancestor message (so a sub-agent's turns roll up
 // beneath the tool call that spawned them). Roots and children are ordered by
 // start time, because a conversation is a sequence, not a failed-first set.
 //
-// The result is cached per DB mutation, like SurfacedChecks; callers must treat
-// the returned nodes as read-only.
-func (db *DB) SurfacedConversation() []*MessageNode {
-	if db.surfacedConversationInit && db.surfacedConversationAt == db.mutations {
+// The result is cached per DB mutation and per root, like SurfacedChecks;
+// callers must treat the returned nodes as read-only.
+func (db *DB) SurfacedConversationForSpan(root *Span) []*MessageNode {
+	r := db.surfaceRoot(root)
+	key := surfaceRootID(r)
+	if db.surfacedConversationInit && db.surfacedConversationAt == db.mutations && db.surfacedConversationRoot == key {
 		return db.surfacedConversation
 	}
-	db.surfacedConversation = db.buildSurfacedConversation()
+	db.surfacedConversation = db.buildSurfacedConversation(r)
 	db.surfacedConversationAt = db.mutations
+	db.surfacedConversationRoot = key
 	db.surfacedConversationInit = true
 	return db.surfacedConversation
 }
 
-func (db *DB) buildSurfacedConversation() []*MessageNode {
+func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 	type info struct {
 		span     *Span
 		parentID SpanID
@@ -53,35 +64,29 @@ func (db *DB) buildSurfacedConversation() []*MessageNode {
 		if span.LLMRole == "" || span.Internal {
 			continue
 		}
+		if span == root {
+			// The root is the FRAME of the question ("what was said beneath
+			// this span"), not content within it. A scoped tool result zooms
+			// to the tool-call display span, which is itself a message span --
+			// surfacing it would render the tool call's own row in place of
+			// the subtree the report is about.
+			continue
+		}
 
-		contained := false
-		anchoredToMessage := false
+		anchoredToMessageBoundary := false
 		var parentID SpanID
-		reachedRoot := span == db.RootSpan
-		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			if p.Boundary || p.Encapsulate {
-				// Tool-call messages are boundaries so nested work remains anchored
-				// beneath the call, but the call itself remains in the conversation.
-				if p.LLMRole != "" {
-					parentID = p.ID
-					anchoredToMessage = true
-					break
-				}
-				contained = true
-				break
+		mayRollUp := spanMayRollUp(span, root, func(parent *Span) {
+			if parent == root {
+				return
 			}
-			if !parentID.IsValid() && p.LLMRole != "" {
-				parentID = p.ID
+			if !parentID.IsValid() && parent.LLMRole != "" {
+				parentID = parent.ID
 			}
-			if p == db.RootSpan {
-				reachedRoot = true
-				break
+			if (parent.Boundary || parent.Encapsulate) && parent.LLMRole != "" {
+				anchoredToMessageBoundary = true
 			}
-		}
-		if !contained && !anchoredToMessage && db.RootSpan != nil && !reachedRoot {
-			contained = true
-		}
-		if contained {
+		})
+		if !mayRollUp && !anchoredToMessageBoundary {
 			continue
 		}
 		byID[span.ID] = &info{span: span, parentID: parentID}
@@ -118,16 +123,15 @@ func (db *DB) buildSurfacedConversation() []*MessageNode {
 	return roots
 }
 
-// HasConversation reports whether the trace contains any LLM message spans, so
-// the live view can promote the conversation to the top level (mirrors
-// HasChecks).
+// HasConversation reports whether the surfaced conversation is non-empty.
 func (db *DB) HasConversation() bool {
-	for _, span := range db.Spans.Order {
-		if span.LLMRole != "" {
-			return true
-		}
-	}
-	return false
+	return db.HasConversationForSpan(nil)
+}
+
+// HasConversationForSpan reports whether the root-relative surfaced
+// conversation is non-empty, including message-boundary anchoring.
+func (db *DB) HasConversationForSpan(root *Span) bool {
+	return len(db.SurfacedConversationForSpan(root)) > 0
 }
 
 // PromoteConversationTo wires the surfaced conversation into host.RevealedSpans

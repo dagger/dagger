@@ -7,6 +7,9 @@ option go_package = "git";
 service Git {
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
+  rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
+  rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
+  rpc PackUncommitted(PackUncommittedRequest) returns (stream PackUncommittedResponse);
 }
 
 message GitCredentialRequest {
@@ -47,6 +50,95 @@ message GitConfigEntry {
   string value = 2;
 }
 
+// CheckoutStateRequest asks the client for a digest identifying the current
+// git state of a local checkout: HEAD, the symbolic HEAD, and all branch and
+// tag refs. The engine uses it as a cache key so a checkout is only re-packed
+// (PackCheckout) when its refs actually move.
+message CheckoutStateRequest {
+  string checkout_path = 1;
+}
+
+message CheckoutStateResponse {
+  oneof result {
+    string state_digest = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+// PackCheckoutRequest asks the client to pack a local checkout's repository
+// with its own git (a bundle of HEAD plus all branches and tags). Host git
+// natively understands every checkout layout - worktrees, submodules,
+// separate git dirs, alternates, partial clones - so the engine never has to
+// interpret raw .git state; it reconstructs a canonical repository from the
+// returned pack.
+message PackCheckoutRequest {
+  string checkout_path = 1;
+  // expected_state_digest, when set, requires the packed checkout to match a
+  // preceding CheckoutState response. A mismatch asks the engine to retry
+  // under the checkout's new cache key.
+  string expected_state_digest = 2;
+}
+
+// PackCheckoutResponse streams one metadata message first, then the bundle
+// bytes in chunks.
+message PackCheckoutResponse {
+  oneof msg {
+    PackCheckoutMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PackCheckoutMetadata {
+  // head_sha is the commit HEAD resolves to. Empty for a repository with no
+  // commits yet (unborn HEAD), in which case no bundle chunks follow.
+  string head_sha = 1;
+  // head_ref is the symbolic ref HEAD points at (e.g. "refs/heads/main"),
+  // empty when HEAD is detached.
+  string head_ref = 2;
+  // object_format is the repository's object hash algorithm ("sha1" or
+  // "sha256"), so the engine reconstructs with the same format.
+  string object_format = 3;
+  // error reports a failure instead of a pack: NOT_A_REPO when the checkout
+  // has no .git entry at its root, NOT_FOUND when git is not installed.
+  ErrorInfo error = 4;
+  // state_digest identifies the exact checkout state represented by the
+  // bundle. The client verifies that it remains stable while packing.
+  string state_digest = 5;
+}
+
+// PackUncommittedRequest asks the client for the git-visible working-tree delta
+// relative to HEAD. The payload is a binary git patch containing tracked,
+// staged, and ordinary untracked nonignored files. Ignored files and contents
+// inside untracked nested repositories are deliberately omitted, matching
+// `git clean -fd` and GitRepository.uncommitted semantics.
+message PackUncommittedRequest {
+  string checkout_path = 1;
+  // expected_head_sha pins the patch to the canonical checkout already packed
+  // by the engine. A moved checkout reports HEAD_MISMATCH instead of producing
+  // a delta against a different commit.
+  string expected_head_sha = 2;
+}
+
+// PackUncommittedResponse streams one metadata message first, then binary patch
+// bytes in chunks.
+message PackUncommittedResponse {
+  oneof msg {
+    PackUncommittedMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PackUncommittedMetadata {
+  // head_sha anchors the patch and must match the canonical checkout to which
+  // the engine applies it.
+  string head_sha = 1;
+  // nested_repositories are untracked repository roots omitted from the patch.
+  // The engine recreates lightweight repository markers at these boundaries so
+  // later workspace overlays beneath them remain invisible to the outer repo.
+  repeated string nested_repositories = 2;
+  ErrorInfo error = 3;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -55,8 +147,12 @@ message ErrorInfo {
     TIMEOUT = 3;
     CREDENTIAL_RETRIEVAL_FAILED = 4;
     CONFIG_RETRIEVAL_FAILED = 5;
-}
+    HEAD_MISMATCH = 6;
+    NOT_A_REPO = 7;
+    PACK_FAILED = 8;
+    UNCOMMITTED_UNSUPPORTED = 9;
+    CHECKOUT_STATE_MISMATCH = 10;
+  }
   ErrorType type = 1;
   string message = 2;
 }
-

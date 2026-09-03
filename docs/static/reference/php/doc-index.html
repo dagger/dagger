@@ -238,11 +238,15 @@
 <abbr title="Dagger\EnvFile">EnvFile</abbr>::asFile</a>() &mdash; <em>Method in class <a href="Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></em></dt>
                     <dd><p>Return as a file</p></dd><dt><a href="Dagger/File.html#method_asEnvFile">
 <abbr title="Dagger\File">File</abbr>::asEnvFile</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
-                    <dd><p>Parse as an env file</p></dd><dt><a href="Dagger/File.html#method_asJSON">
+                    <dd><p>Parse as an env file</p></dd><dt><a href="Dagger/File.html#method_asGitBundle">
+<abbr title="Dagger\File">File</abbr>::asGitBundle</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
+                    <dd><p>Interpret this file as a Git bundle by lazily parsing its header.</p></dd><dt><a href="Dagger/File.html#method_asJSON">
 <abbr title="Dagger\File">File</abbr>::asJSON</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
                     <dd><p>Parse the file contents as JSON.</p></dd><dt><a href="Dagger/Function_.html#method_args">
 <abbr title="Dagger\Function_">Function_</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/GitCommit.html#method_ancestorReleaseTag">
+                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/GitBundle.html#method_asFile">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::asFile</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Return the bundle bytes as a File.</p></dd><dt><a href="Dagger/GitCommit.html#method_ancestorReleaseTag">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::ancestorReleaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>The latest semver release tag reachable from this commit.</p></dd><dt><a href="Dagger/GitCommit.html#method_authorEmail">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::authorEmail</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
@@ -292,13 +296,18 @@
         <dl id="indexB"><dt><a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/BindingId.html"><abbr title="Dagger\BindingId">BindingId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/BuildArg.html"><abbr title="Dagger\BuildArg">BuildArg</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>Key value object that represents a build argument.</p></dd><dt><a href="Dagger/Changeset.html#method_before">
+                    <dd><p>Key value object that represents a build argument.</p></dd><dt><a href="Dagger/Bytes.html"><abbr title="Dagger\Bytes">Bytes</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Arbitrary binary data, represented as a base64-encoded string.</p></dd><dt><a href="Dagger/Changeset.html#method_before">
 <abbr title="Dagger\Changeset">Changeset</abbr>::before</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
-                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
+                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/Client.html#method_blob">
+<abbr title="Dagger\Client">Client</abbr>::blob</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Creates a file from arbitrary binary contents.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branch</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a branch.</p></dd><dt><a href="Dagger/GitRepository.html#method_branches">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branches</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>branches that match any of the given glob patterns.</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
+                    <dd><p>branches that match any of the given glob patterns.</p></dd><dt><a href="Dagger/GitRepository.html#method_bundle">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::bundle</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Pack the given refs and the objects needed to reconstruct them into a Git bundle.</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::blueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The blueprint referenced by the module source.</p></dd>        </dl><h2 id="letterC">C</h2>
         <dl id="indexC"><dt><a href="Dagger/Address.html#method_container">
@@ -573,7 +582,9 @@
 <abbr title="Dagger\SDKConfig">SDKConfig</abbr>::debug</a>() &mdash; <em>Method in class <a href="Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a></em></dt>
                     <dd><p>Whether to start the SDK runtime in debug mode with an interactive terminal.</p></dd><dt><a href="Dagger/ScalarTypeDef.html#method_description">
 <abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></em></dt>
-                    <dd><p>A doc string for the scalar, if any.</p></dd><dt><a href="Dagger/Up.html#method_description">
+                    <dd><p>A doc string for the scalar, if any.</p></dd><dt><a href="Dagger/TerminalTarget.html#method_description">
+<abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
+                    <dd><p>The description of the terminal target</p></dd><dt><a href="Dagger/Up.html#method_description">
 <abbr title="Dagger\Up">Up</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>The description of the service</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -677,7 +688,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::envList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List named environments defined in the workspace configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_export">
 <abbr title="Dagger\Workspace">Workspace</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Write this workspace's pending changes to its local Git workspace.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
+                    <dd><p>Write this workspace's pending changes to its local Git workspace on the current client's host.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::entrypoint</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
                     <dd><p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p></dd>        </dl><h2 id="letterF">F</h2>
         <dl id="indexF"><dt><a href="Dagger/Address.html#method_file">
@@ -772,7 +783,9 @@
                     <dd></dd><dt><a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/GeneratorGroupId.html"><abbr title="Dagger\GeneratorGroupId">GeneratorGroupId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GeneratorId.html"><abbr title="Dagger\GeneratorId">GeneratorId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.</p></dd><dt><a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A ref advertised by a Git bundle.</p></dd><dt><a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git ref (tag, branch, or commit).</p></dd><dt><a href="Dagger/GitRefId.html"><abbr title="Dagger\GitRefId">GitRefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -931,7 +944,11 @@
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GeneratorGroup.</p></dd><dt><a href="Dagger/GeneratorGroup.html#method_isEmpty">
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::isEmpty</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
-                    <dd><p>Whether the generated changeset from the last run is empty or not</p></dd><dt><a href="Dagger/GitCommit.html#method_id">
+                    <dd><p>Whether the generated changeset from the last run is empty or not</p></dd><dt><a href="Dagger/GitBundle.html#method_id">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this GitBundle.</p></dd><dt><a href="Dagger/GitBundleRef.html#method_id">
+<abbr title="Dagger\GitBundleRef">GitBundleRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this GitBundleRef.</p></dd><dt><a href="Dagger/GitCommit.html#method_id">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
 <abbr title="Dagger\GitRef">GitRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
@@ -1022,7 +1039,11 @@
 <abbr title="Dagger\SyncerClient">SyncerClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/SyncerClient.html"><abbr title="Dagger\SyncerClient">SyncerClient</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Terminal.html#method_id">
 <abbr title="Dagger\Terminal">Terminal</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Terminal.</p></dd><dt><a href="Dagger/TypeDef.html#method_id">
+                    <dd><p>A unique identifier for this Terminal.</p></dd><dt><a href="Dagger/TerminalGroup.html#method_id">
+<abbr title="Dagger\TerminalGroup">TerminalGroup</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/TerminalGroup.html"><abbr title="Dagger\TerminalGroup">TerminalGroup</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this TerminalGroup.</p></dd><dt><a href="Dagger/TerminalTarget.html#method_id">
+<abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this TerminalTarget.</p></dd><dt><a href="Dagger/TypeDef.html#method_id">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this TypeDef.</p></dd><dt><a href="Dagger/Up.html#method_id">
 <abbr title="Dagger\Up">Up</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
@@ -1093,9 +1114,9 @@
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::loadFailures</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
                     <dd><p>Load failures tolerated while collecting the generators.</p></dd><dt><a href="Dagger/GitRef.html#method_log">
 <abbr title="Dagger\GitRef">GitRef</abbr>::log</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
-                    <dd><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></dd><dt><a href="Dagger/GitRepository.html#method_latestVersion">
-<abbr title="Dagger\GitRepository">GitRepository</abbr>::latestVersion</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details for the latest semver tag.</p></dd><dt><a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></dd><dt><a href="Dagger/GitRepository.html#method_latest">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::latest</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Return the latest stable release tag, falling back to HEAD when no release exists.</p></dd><dt><a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.</p></dd><dt><a href="Dagger/LLM.html#method_lastReply">
 <abbr title="Dagger\LLM">LLM</abbr>::lastReply</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>The text of the model's most recent reply.</p></dd><dt><a href="Dagger/LLM.html#method_loop">
@@ -1117,7 +1138,9 @@
 <abbr title="Dagger\SearchResult">SearchResult</abbr>::lineNumber</a>() &mdash; <em>Method in class <a href="Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a></em></dt>
                     <dd><p>The first line that matched.</p></dd><dt><a href="Dagger/SourceMap.html#method_line">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::line</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
-                    <dd><p>The line number within the filename.</p></dd><dt><a href="Dagger/UpGroup.html#method_list">
+                    <dd><p>The line number within the filename.</p></dd><dt><a href="Dagger/TerminalGroup.html#method_list">
+<abbr title="Dagger\TerminalGroup">TerminalGroup</abbr>::list</a>() &mdash; <em>Method in class <a href="Dagger/TerminalGroup.html"><abbr title="Dagger\TerminalGroup">TerminalGroup</abbr></a></em></dt>
+                    <dd><p>Return the selected terminal targets and their details</p></dd><dt><a href="Dagger/UpGroup.html#method_list">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::list</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
                     <dd><p>Return a list of individual services and their details</p></dd>        </dl><h2 id="letterM">M</h2>
         <dl id="indexM"><dt><a href="Dagger/Changeset.html#method_modifiedPaths">
@@ -1231,7 +1254,9 @@
 <abbr title="Dagger\Function_">Function_</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>The name of the function.</p></dd><dt><a href="Dagger/Generator.html#method_name">
 <abbr title="Dagger\Generator">Generator</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>Return the fully qualified name of the generator</p></dd><dt><a href="Dagger/GitRef.html#method_name">
+                    <dd><p>Return the fully qualified name of the generator</p></dd><dt><a href="Dagger/GitBundleRef.html#method_name">
+<abbr title="Dagger\GitBundleRef">GitBundleRef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a></em></dt>
+                    <dd><p>The advertised ref name.</p></dd><dt><a href="Dagger/GitRef.html#method_name">
 <abbr title="Dagger\GitRef">GitRef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved name of this ref.</p></dd><dt><a href="Dagger/InputTypeDef.html#method_name">
 <abbr title="Dagger\InputTypeDef">InputTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></em></dt>
@@ -1259,7 +1284,9 @@
 <abbr title="Dagger\Secret">Secret</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></em></dt>
                     <dd><p>The name of this secret.</p></dd><dt><a href="Dagger/Stat.html#method_name">
 <abbr title="Dagger\Stat">Stat</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a></em></dt>
-                    <dd><p>file name</p></dd><dt><a href="Dagger/TypeDef.html#method_name">
+                    <dd><p>file name</p></dd><dt><a href="Dagger/TerminalTarget.html#method_name">
+<abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
+                    <dd><p>Return the fully qualified name of the terminal target</p></dd><dt><a href="Dagger/TypeDef.html#method_name">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>The canonical non-optional name of the type.</p></dd><dt><a href="Dagger/Up.html#method_name">
 <abbr title="Dagger\Up">Up</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
@@ -1280,7 +1307,9 @@
 <abbr title="Dagger\Env">Env</abbr>::outputs</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Returns all declared output bindings for the environment</p></dd><dt><a href="Dagger/Generator.html#method_originalModule">
 <abbr title="Dagger\Generator">Generator</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>The original module in which the generator has been defined</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
+                    <dd><p>The original module in which the generator has been defined</p></dd><dt><a href="Dagger/GitBundle.html#method_objectFormat">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::objectFormat</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Object format capability: sha1 or sha256.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::outputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd><p>Tokens received from the model, including text and tool calls.</p></dd><dt><a href="Dagger/Module.html#method_objects">
 <abbr title="Dagger\Module">Module</abbr>::objects</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1288,7 +1317,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::originalSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The original subpath used when instantiating this module source, relative to the context directory.</p></dd><dt><a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a custom object defined in a Module.</p></dd><dt><a href="Dagger/ObjectTypeDefId.html"><abbr title="Dagger\ObjectTypeDefId">ObjectTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TypeDef.html#method_optional">
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TerminalTarget.html#method_originalModule">
+<abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
+                    <dd><p>The module in which the terminal target is defined</p></dd><dt><a href="Dagger/TypeDef.html#method_optional">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::optional</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Whether this type can be set to null. Defaults to false.</p></dd><dt><a href="Dagger/Up.html#method_originalModule">
 <abbr title="Dagger\Up">Up</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
@@ -1321,7 +1352,9 @@
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parentName</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
                     <dd><p>The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.</p></dd><dt><a href="Dagger/Generator.html#method_path">
 <abbr title="Dagger\Generator">Generator</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>The path of the generator within its module</p></dd><dt><a href="Dagger/GitCommit.html#method_parentShas">
+                    <dd><p>The path of the generator within its module</p></dd><dt><a href="Dagger/GitBundle.html#method_prerequisiteSHAs">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::prerequisiteSHAs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Commits that must already exist wherever this bundle is applied.</p></dd><dt><a href="Dagger/GitCommit.html#method_parentShas">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::parentShas</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
 <abbr title="Dagger\LLM">LLM</abbr>::portableID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -1346,7 +1379,9 @@
 <abbr title="Dagger\Service">Service</abbr>::ports</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
                     <dd><p>Retrieves the list of ports provided by the service.</p></dd><dt><a href="Dagger/Stat.html#method_permissions">
 <abbr title="Dagger\Stat">Stat</abbr>::permissions</a>() &mdash; <em>Method in class <a href="Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a></em></dt>
-                    <dd><p>permission bits</p></dd><dt><a href="Dagger/Up.html#method_path">
+                    <dd><p>permission bits</p></dd><dt><a href="Dagger/TerminalTarget.html#method_path">
+<abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
+                    <dd><p>The path of the terminal target within its module</p></dd><dt><a href="Dagger/Up.html#method_path">
 <abbr title="Dagger\Up">Up</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>The path of the service within its module</p></dd>        </dl><h2 id="letterQ">Q</h2>
         <dl id="indexQ"><dt><a href="Dagger/Client/AbstractClient.html#method_queryLeaf">
@@ -1391,7 +1426,9 @@
 <abbr title="Dagger\Generator">Generator</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
                     <dd><p>Execute the generator</p></dd><dt><a href="Dagger/GeneratorGroup.html#method_run">
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected generators</p></dd><dt><a href="Dagger/GitCommit.html#method_releaseTag">
+                    <dd><p>Execute all selected generators</p></dd><dt><a href="Dagger/GitBundle.html#method_refs">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::refs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Refs advertised by the bundle and the object IDs they resolve to.</p></dd><dt><a href="Dagger/GitCommit.html#method_releaseTag">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::releaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
@@ -1411,7 +1448,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::repoRootPath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The import path corresponding to the root of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/RemoteGitMirror.html"><abbr title="Dagger\RemoteGitMirror">RemoteGitMirror</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>An internal persistent bare git mirror.</p></dd><dt><a href="Dagger/RemoteGitMirrorId.html"><abbr title="Dagger\RemoteGitMirrorId">RemoteGitMirrorId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Up.html#method_run">
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TerminalGroup.html#method_run">
+<abbr title="Dagger\TerminalGroup">TerminalGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/TerminalGroup.html"><abbr title="Dagger\TerminalGroup">TerminalGroup</abbr></a></em></dt>
+                    <dd><p>Open the selected terminal target</p></dd><dt><a href="Dagger/Up.html#method_run">
 <abbr title="Dagger\Up">Up</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>Execute the service function</p></dd><dt><a href="Dagger/UpGroup.html#method_run">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
@@ -1482,7 +1521,9 @@
 <abbr title="Dagger\Function_">Function_</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>The location of this function declaration.</p></dd><dt><a href="Dagger/Function_.html#method_sourceModuleName">
 <abbr title="Dagger\Function_">Function_</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>If this function is provided by a module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/GitCommit.html#method_sha">
+                    <dd><p>If this function is provided by a module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/GitBundleRef.html#method_sha">
+<abbr title="Dagger\GitBundleRef">GitBundleRef</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a></em></dt>
+                    <dd><p>The object ID the advertised ref resolves to.</p></dd><dt><a href="Dagger/GitCommit.html#method_sha">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>The full commit SHA.</p></dd><dt><a href="Dagger/GitCommit.html#method_shortSha">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::shortSha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
@@ -1640,10 +1681,14 @@
                     <dd><p>The matched text.</p></dd><dt><a href="Dagger/Service.html#method_terminal">
 <abbr title="Dagger\Service">Service</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>An interactive terminal that clients can connect to.</p></dd><dt><a href="Dagger/TerminalId.html"><abbr title="Dagger\TerminalId">TerminalId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An interactive terminal that clients can connect to.</p></dd><dt><a href="Dagger/TerminalGroup.html"><abbr title="Dagger\TerminalGroup">TerminalGroup</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/TerminalId.html"><abbr title="Dagger\TerminalId">TerminalId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a parameter or return type in a Module.</p></dd><dt><a href="Dagger/TypeDefId.html"><abbr title="Dagger\TypeDefId">TypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd>        </dl><h2 id="letterU">U</h2>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Workspace.html#method_terminals">
+<abbr title="Dagger\Workspace">Workspace</abbr>::terminals</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return all terminal targets from modules loaded in the workspace.</p></dd>        </dl><h2 id="letterU">U</h2>
         <dl id="indexU"><dt><a href="Dagger/Container.html#method_up">
 <abbr title="Dagger\Container">Container</abbr>::up</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.</p></dd><dt><a href="Dagger/Container.html#method_user">
@@ -1697,7 +1742,11 @@
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::vcsGeneratedPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
                     <dd><p>List of paths to mark generated in version control (i.e. .gitattributes).</p></dd><dt><a href="Dagger/GeneratedCode.html#method_vcsIgnoredPaths">
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::vcsIgnoredPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
-                    <dd><p>List of paths to ignore in version control (i.e. .gitignore).</p></dd><dt><a href="Dagger/Label.html#method_value">
+                    <dd><p>List of paths to ignore in version control (i.e. .gitignore).</p></dd><dt><a href="Dagger/GitBundle.html#method_validate">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::validate</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Perform full structural verification of the bundle and error if it is malformed.</p></dd><dt><a href="Dagger/GitBundle.html#method_version">
+<abbr title="Dagger\GitBundle">GitBundle</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
+                    <dd><p>Bundle format version (2 or 3).</p></dd><dt><a href="Dagger/Label.html#method_value">
 <abbr title="Dagger\Label">Label</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
                     <dd><p>The label value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_version">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1705,7 +1754,9 @@
                     <dd><p>A filesystem volume that can be mounted into containers.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_value">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
                     <dd><p>The configured value after applying the selected workspace environment, or empty when unset.</p></dd>        </dl><h2 id="letterW">W</h2>
-        <dl id="indexW"><dt><a href="Dagger/Changeset.html#method_withChangeset">
+        <dl id="indexW"><dt><a href="Dagger/Address.html#method_workspace">
+<abbr title="Dagger\Address">Address</abbr>::workspace</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
+                    <dd><p>Load a workspace from a module reference.</p></dd><dt><a href="Dagger/Changeset.html#method_withChangeset">
 <abbr title="Dagger\Changeset">Changeset</abbr>::withChangeset</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Add changes to an existing changeset</p></dd><dt><a href="Dagger/Changeset.html#method_withChangesets">
 <abbr title="Dagger\Changeset">Changeset</abbr>::withChangesets</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
@@ -2065,7 +2116,9 @@
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::withVCSGeneratedPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
                     <dd><p>Set the list of paths to mark generated in version control.</p></dd><dt><a href="Dagger/GeneratedCode.html#method_withVCSIgnoredPaths">
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::withVCSIgnoredPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
-                    <dd><p>Set the list of paths to ignore in version control.</p></dd><dt><a href="Dagger/JsonValue.html#method_withContents">
+                    <dd><p>Set the list of paths to ignore in version control.</p></dd><dt><a href="Dagger/GitRepository.html#method_withBundle">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::withBundle</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Import a Git bundle after fetching and verifying all of its prerequisites.</p></dd><dt><a href="Dagger/JsonValue.html#method_withContents">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withContents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Return a new json value, decoded from the given content</p></dd><dt><a href="Dagger/JsonValue.html#method_withField">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withField</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
@@ -2178,7 +2231,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigValue">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigValue</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitClient">
+                    <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withDirectory">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a directory merged into the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitClient">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a generated API client initialized.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2190,7 +2245,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withMountedFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a file mounted read-only at the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a directory added, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
+                    <dd><p>Return this workspace with the given path replaced by a directory, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

@@ -12,6 +12,10 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
+class Bytes(Scalar):
+    """Arbitrary binary data, represented as a base64-encoded string."""
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
@@ -697,6 +701,12 @@ class Address(Type):
         _args: list[Arg] = []
         _ctx = self._select("volume", _args)
         return Volume(_ctx)
+
+    def workspace(self) -> "Workspace":
+        """Load a workspace from a module reference."""
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return Workspace(_ctx)
 
 
 @typecheck
@@ -1998,7 +2008,10 @@ class Container(Type):
         ----------
         address:
             Address of the container image to download, in standard OCI ref
-            format. Example:"registry.dagger.io/engine:latest"
+            format. Example: "registry.dagger.io/engine:latest".
+            An address without a tag or digest selects the greatest stable
+            release tag, falling back to the literal "latest" tag when no
+            eligible release exists.
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
@@ -6632,6 +6645,12 @@ class File(Type):
         _ctx = self._select("asEnvFile", _args)
         return EnvFile(_ctx)
 
+    def as_git_bundle(self) -> "GitBundle":
+        """Interpret this file as a Git bundle by lazily parsing its header."""
+        _args: list[Arg] = []
+        _ctx = self._select("asGitBundle", _args)
+        return GitBundle(_ctx)
+
     def as_json(self) -> "JSONValue":
         """Parse the file contents as JSON."""
         _args: list[Arg] = []
@@ -8096,6 +8115,206 @@ class GeneratorGroup(Type):
 
 
 @typecheck
+class GitBundle(Type):
+    """A Git bundle: a self-describing container of refs and the objects
+    needed to reconstruct them, optionally rooted at prerequisite
+    commits."""
+
+    def as_file(self) -> File:
+        """Return the bundle bytes as a File."""
+        _args: list[Arg] = []
+        _ctx = self._select("asFile", _args)
+        return File(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this GitBundle.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def object_format(self) -> str:
+        """Object format capability: sha1 or sha256.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("objectFormat", _args)
+        return await _ctx.execute(str)
+
+    async def prerequisite_sh_as(self) -> list[str]:
+        """Commits that must already exist wherever this bundle is applied.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("prerequisiteSHAs", _args)
+        return await _ctx.execute(list[str])
+
+    async def refs(self) -> list["GitBundleRef"]:
+        """Refs advertised by the bundle and the object IDs they resolve to."""
+        _args: list[Arg] = []
+        _ctx = self._select("refs", _args)
+        return await _ctx.execute_object_list(GitBundleRef)
+
+    def validate(self) -> Self:
+        """Perform full structural verification of the bundle and error if it is
+        malformed.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("validate", _args)
+        return GitBundle(_ctx)
+
+    async def version(self) -> int:
+        """Bundle format version (2 or 3).
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(int)
+
+    def with_(self, cb: Callable[["GitBundle"], "GitBundle"]) -> "GitBundle":
+        """Call the provided callable with current GitBundle.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class GitBundleRef(Type):
+    """A ref advertised by a Git bundle."""
+
+    async def id(self) -> str:
+        """A unique identifier for this GitBundleRef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The advertised ref name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def sha(self) -> str:
+        """The object ID the advertised ref resolves to.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class GitCommit(Type):
     """An immutable git commit."""
 
@@ -8737,6 +8956,31 @@ class GitRepository(Type):
         _ctx = self._select("branches", _args)
         return await _ctx.execute(list[str])
 
+    def bundle(
+        self,
+        refs: list[str],
+        *,
+        base: GitRef | None = None,
+    ) -> GitBundle:
+        """Pack the given refs and the objects needed to reconstruct them into a
+        Git bundle.
+
+        Parameters
+        ----------
+        refs:
+            Refs to advertise in the bundle. At least one named ref is
+            required.
+        base:
+            A Git ref whose reachable objects are omitted and recorded as a
+            prerequisite.
+        """
+        _args = [
+            Arg("refs", refs),
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("bundle", _args)
+        return GitBundle(_ctx)
+
     def commit(self, id: str) -> GitCommit:
         """Returns details of a commit.
 
@@ -8786,10 +9030,15 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest_version(self) -> GitRef:
-        """Returns details for the latest semver tag."""
+    def latest(self) -> GitRef:
+        """Return the latest stable release tag, falling back to HEAD when no
+        release exists.
+
+        Release selection accepts an optional "v" prefix, incomplete versions,
+        and zero-padded numeric components. This operation is pinned.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("latestVersion", _args)
+        _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:
@@ -8879,6 +9128,39 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
+
+    def with_bundle(
+        self,
+        bundle: GitBundle,
+        *,
+        prerequisite_ref: str | None = "",
+    ) -> Self:
+        """Import a Git bundle after fetching and verifying all of its
+        prerequisites.
+
+        Parameters
+        ----------
+        bundle:
+            The Git bundle to import.
+        prerequisite_ref:
+            An optional remote ref hint for fetching a prerequisite when the
+            remote does not allow fetches by object ID.
+        """
+        _args = [
+            Arg("bundle", bundle),
+            Arg("prerequisiteRef", prerequisite_ref, ""),
+        ]
+        _ctx = self._select("withBundle", _args)
+        return GitRepository(_ctx)
+
+    def with_(
+        self, cb: Callable[["GitRepository"], "GitRepository"]
+    ) -> "GitRepository":
+        """Call the provided callable with current GitRepository.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -12585,6 +12867,33 @@ class Query(Root):
         _ctx = self._select("address", _args)
         return Address(_ctx)
 
+    def blob(
+        self,
+        name: str,
+        contents: Bytes,
+        *,
+        permissions: int | None = 420,
+    ) -> File:
+        """Creates a file from arbitrary binary contents.
+
+        Parameters
+        ----------
+        name:
+            Name of the new file. Example: "archive.tar"
+        contents:
+            Binary contents of the new file, encoded as base64 at the GraphQL
+            boundary.
+        permissions:
+            Permissions of the new file. Example: 0600
+        """
+        _args = [
+            Arg("name", name),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("blob", _args)
+        return File(_ctx)
+
     def cache_volume(
         self,
         key: str,
@@ -14392,6 +14701,158 @@ class Terminal(Type):
 
 
 @typecheck
+class TerminalGroup(Type):
+    async def id(self) -> str:
+        """A unique identifier for this TerminalGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def list_(self) -> list["TerminalTarget"]:
+        """Return the selected terminal targets and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(TerminalTarget)
+
+    def run(self) -> Self:
+        """Open the selected terminal target"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return TerminalGroup(_ctx)
+
+    def with_(
+        self, cb: Callable[["TerminalGroup"], "TerminalGroup"]
+    ) -> "TerminalGroup":
+        """Call the provided callable with current TerminalGroup.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class TerminalTarget(Type):
+    async def description(self) -> str:
+        """The description of the terminal target
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this TerminalTarget.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the terminal target
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> Module:
+        """The module in which the terminal target is defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the terminal target within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -15209,7 +15670,12 @@ class Workspace(Type):
         return await _ctx.execute(list[str])
 
     async def export(self) -> Void:
-        """Write this workspace's pending changes to its local Git workspace.
+        """Write this workspace's pending changes to its local Git workspace on
+        the current client's host.
+
+        Like Directory.export, the write is a side effect on the client that
+        makes the call — never on the client that created the workspace.
+        Inside a module, this cannot reach the caller's host.
 
         Returns
         -------
@@ -15593,6 +16059,24 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    def terminals(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> TerminalGroup:
+        """Return all terminal targets from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include terminal targets matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("terminals", _args)
+        return TerminalGroup(_ctx)
+
     def with_changes(self, changes: Changeset) -> Self:
         """Return this workspace with a changeset applied, without mutating the
         source.
@@ -15663,6 +16147,28 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withConfigValue", _args)
+        return Workspace(_ctx)
+
+    def with_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory merged into the given path,
+        without mutating the source.
+
+        Anything already at the path stays, and files the source carries win,
+        as with Directory.withDirectory. Use withNewDirectory to replace the
+        path instead.
+
+        Parameters
+        ----------
+        path:
+            Path to merge into. Relative paths resolve from the workspace cwd.
+        source:
+            Directory to merge there.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withDirectory", _args)
         return Workspace(_ctx)
 
     def with_init_client(
@@ -15837,16 +16343,19 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:
-        """Return this workspace with a directory added, without mutating the
-        source.
+        """Return this workspace with the given path replaced by a directory,
+        without mutating the source.
+
+        The source becomes the entire contents of the path: anything already
+        there that the source does not carry is removed. Use withDirectory to
+        keep it instead.
 
         Parameters
         ----------
         path:
-            Path of the added directory. Relative paths resolve from the
-            workspace cwd.
+            Path to replace. Relative paths resolve from the workspace cwd.
         source:
-            Directory to add.
+            Directory to write there.
         """
         _args = [
             Arg("path", path),
@@ -16587,6 +17096,7 @@ __all__ = [
     "Agent",
     "AgentGroup",
     "BuildArg",
+    "Bytes",
     "CacheSharingMode",
     "CacheVolume",
     "Changeset",
@@ -16628,6 +17138,8 @@ __all__ = [
     "GeneratedCode",
     "Generator",
     "GeneratorGroup",
+    "GitBundle",
+    "GitBundleRef",
     "GitCommit",
     "GitRef",
     "GitRepository",
@@ -16677,6 +17189,8 @@ __all__ = [
     "Stat",
     "Syncer",
     "Terminal",
+    "TerminalGroup",
+    "TerminalTarget",
     "TypeDef",
     "TypeDefKind",
     "Up",

@@ -161,9 +161,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions   map[string]*daggerSession // session id -> session state
-	daggerSessionsMu sync.RWMutex
-	clientDBs        *clientdb.DBs
+	daggerSessions     map[string]*daggerSession // session id -> session state
+	releasedSessionIDs map[string]struct{}
+	daggerSessionsMu   sync.RWMutex
+	clientDBs          *clientdb.DBs
 
 	locker *locker.Locker
 
@@ -212,7 +213,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		daggerSessions: make(map[string]*daggerSession),
+		daggerSessions:     make(map[string]*daggerSession),
+		releasedSessionIDs: make(map[string]struct{}),
 
 		locker: locker.New(),
 	}
@@ -265,6 +267,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
+
+	// Sweep any worker state moved aside by a cache reset — this startup's or
+	// an interrupted sweep from a previous one — in the background.
+	srv.startLocalCacheTrashSweeper()
 
 	//
 	// clean up old hosts/resolv.conf file. ignore errors
@@ -662,8 +668,15 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 }
 
 func (srv *Server) removeLocalCacheStateOnDisk() error {
-	if err := os.RemoveAll(srv.workerRootDir); err != nil {
-		return fmt.Errorf("remove worker state: %w", err)
+	trashDir, err := moveLocalCacheStateToTrash(srv.workerRootDir)
+	if err != nil {
+		return fmt.Errorf("move worker state to trash: %w", err)
+	}
+	if trashDir != "" {
+		// The rename is O(1), so startup proceeds immediately; the trash dir
+		// is removed in the background once startup settles (see
+		// startLocalCacheTrashSweeper).
+		slog.Info("moved invalid worker state aside for background removal", "dir", trashDir)
 	}
 	if err := dagql.RemoveCachePersistenceStore(filepath.Join(srv.rootDir, "dagql-cache.db")); err != nil {
 		return fmt.Errorf("remove dagql persistence state: %w", err)
@@ -821,13 +834,20 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	for _, s := range daggerSessions {
 		s.lifecycleMu.Lock()
 		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
-		// only if the session actually initialized; an already-removed tombstone
-		// or a still-uninitialized session has nothing (more) to remove here.
-		if s.state.Load() == sessionStateInitialized {
+		// only if the session actually initialized. An already-removed tombstone
+		// belongs to the teardown or failed-initialization path that published it;
+		// that path also owns the matching retire-or-delete decision.
+		state := s.state.Load()
+		retire := state == sessionStateInitialized
+		if retire {
 			err = errors.Join(err, srv.removeDaggerSession(ctx, s))
 		}
 		s.lifecycleMu.Unlock()
-		srv.deleteSession(s)
+		if retire {
+			srv.retireSession(s)
+		} else if state == sessionStateUninitialized {
+			srv.deleteSession(s)
+		}
 	}
 
 	if srv.engineCache != nil && srv.localCacheGCEnabled {

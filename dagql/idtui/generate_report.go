@@ -42,5 +42,5 @@ func (fe *frontendPretty) generateReport(_ tuist.Context, r *renderer, zoomed bo
 		}
 	}
 	rows := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	return append([]string{reportHeadingLine(out, "SKIPPED MODULES")}, rows...)
+	return append([]string{reportHeadingLine(out, fe.agentStyle(), "SKIPPED MODULES")}, rows...)
 }

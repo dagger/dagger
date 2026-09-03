@@ -112,7 +112,7 @@ func (s *workspaceSchema) stageWorkspaceConfigAndLock(
 	if lockChanged {
 		touched = append(touched, filepath.ToSlash(lockPath))
 	}
-	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		updated, err := workspaceWithFile(ctx, dag, base, configPath, data)
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
@@ -365,7 +365,7 @@ func (s *workspaceSchema) withoutModule(
 	if removeManagedModuleDir {
 		touched = append(touched, managedDirPath)
 	}
-	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		updatedRoot, err := workspaceWithFile(ctx, dag, base, configPath, updatedConfig)
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
@@ -457,7 +457,7 @@ func (s *workspaceSchema) workspaceWithChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withChanges",
@@ -708,7 +708,11 @@ func (s *workspaceSchema) withUpdatedLock(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := core.UpdateWorkspaceLock(operationCtx, query, lock); err != nil {
+	// The update loop writes refreshed values itself. Keep the lock visible to
+	// credential discovery, but make nested resolver calls ignore stale pins
+	// and avoid writing entries of their own.
+	updateCtx := withWorkspaceLookupLockRefresh(operationCtx)
+	if err := core.UpdateWorkspaceLock(updateCtx, query, lock); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace lock: %w", err)
 	}
 

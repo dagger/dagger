@@ -125,8 +125,18 @@ function joinUrlPaths(...parts: string[]): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+// Every prefix that has hosted the API type pages, newest first. Each version
+// keeps the prefix it was cut with, so a link has to be resolved against the
+// active version rather than built from one constant. 0.21 used reference/api,
+// 1.0-beta used api/reference, and the current docs use reference/api again.
+export const typeDocPrefixes = [
+  "reference/api",
+  "api/reference",
+  "extending/types",
+];
+
 export function typePath(name: string): string {
-  return `/extending/types/${typeSlug(name)}`;
+  return `/${typeDocPrefixes[0]}/${typeSlug(name)}`;
 }
 
 export function typeHref(name: string, versionPath = "/"): string {
@@ -136,8 +146,11 @@ export function typeHref(name: string, versionPath = "/"): string {
 export function useTypeHref(): (name: string) => string {
   const activeVersion = useActiveVersion(undefined);
   return (name: string) => {
-    const docId = `extending/types/${typeSlug(name)}`;
-    const activeVersionDoc = activeVersion?.docs.find((doc) => doc.id === docId);
+    const slug = typeSlug(name);
+    const docIds = typeDocPrefixes.map((prefix) => `${prefix}/${slug}`);
+    const activeVersionDoc = activeVersion?.docs.find((doc) =>
+      docIds.includes(doc.id)
+    );
     return activeVersionDoc?.path ?? typeHref(name, activeVersion?.path ?? "/");
   };
 }

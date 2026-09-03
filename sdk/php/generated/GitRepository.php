@@ -48,6 +48,19 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+     */
+    public function bundle(array $refs, ?GitRef $base = null): GitBundle
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('bundle');
+        $innerQueryBuilder->setArgument('refs', $refs);
+        if (null !== $base) {
+        $innerQueryBuilder->setArgument('base', $base);
+        }
+        return new \Dagger\GitBundle($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a commit.
      */
     public function commit(string $id): GitCommit
@@ -76,11 +89,13 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns details for the latest semver tag.
+     * Return the latest stable release tag, falling back to HEAD when no release exists.
+     *
+     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
      */
-    public function latestVersion(): GitRef
+    public function latest(): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -132,5 +147,18 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
         return (string)$this->queryLeaf($leafQueryBuilder, 'url');
+    }
+
+    /**
+     * Import a Git bundle after fetching and verifying all of its prerequisites.
+     */
+    public function withBundle(GitBundle $bundle, ?string $prerequisiteRef = ''): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBundle');
+        $innerQueryBuilder->setArgument('bundle', $bundle);
+        if (null !== $prerequisiteRef) {
+        $innerQueryBuilder->setArgument('prerequisiteRef', $prerequisiteRef);
+        }
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

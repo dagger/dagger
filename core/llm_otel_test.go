@@ -1,6 +1,70 @@
 package core
 
-import "testing"
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	telemetry "github.com/dagger/otel-go"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+)
+
+// TestLLMTransportSpanInternal locks in that LLM HTTP spans are marked
+// internal: their stdio is the raw provider wire protocol (SSE event
+// streams), which otherwise leaks into enclosing tool-call log captures
+// (captureLogs skips subtrees beneath internal spans) and into the TUI.
+// Failed requests un-hide themselves, since then the bodies are the
+// diagnosis.
+func TestLLMTransportSpanInternal(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		status       int
+		body         string
+		wantInternal bool
+	}{
+		{name: "success stays hidden", status: 200, body: `{"ok":true}`, wantInternal: true},
+		{name: "error is revealed", status: 500, body: `{"error":{"message":"boom"}}`, wantInternal: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(
+				sdktrace.WithSampler(sdktrace.AlwaysSample()),
+				sdktrace.WithSpanProcessor(sr),
+			)
+			ctx, root := tp.Tracer("llm-otel-test").Start(context.Background(), "root")
+			defer root.End()
+
+			client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/messages",
+				strings.NewReader(`{"model":"test"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+
+			span := otelprofSpanByName(t, sr.Ended(), "LLM HTTP POST /v1/messages")
+			if got := otelprofAttrBool(span, telemetry.UIInternalAttr); got != tc.wantInternal {
+				t.Errorf("%s = %v, want %v", telemetry.UIInternalAttr, got, tc.wantInternal)
+			}
+		})
+	}
+}
 
 func TestIsStreamingResponse(t *testing.T) {
 	for _, tc := range []struct {

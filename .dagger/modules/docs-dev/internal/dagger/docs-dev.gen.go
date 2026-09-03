@@ -50,6 +50,48 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 	return response, q.Execute(ctx)
 }
 
+// DocsDevGenerateVersionOpts contains options for DocsDev.GenerateVersion
+type DocsDevGenerateVersionOpts struct {
+	// Exact destination docs version. Allows a branch or commit source and
+	// replaces an existing version; collapse options are ignored when set.
+	As string
+	// Collapse a trailing numeric prerelease identifier, e.g.
+	// 1.0.0-beta.10 to 1.0.0-beta.
+	//
+	// Default: true
+	CollapsePreReleases bool
+	// Collapse the patch component, e.g. 0.21.8 to 0.21.
+	//
+	// Default: true
+	CollapsePatch bool
+}
+
+// Generate a docs version from a Git ref. Numbered prereleases and patch
+// components are collapsed into rolling channels by default.
+func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset {
+	assertNotNil("source", source)
+	q := r.query.Select("generateVersion")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `as` optional argument
+		if !querybuilder.IsZeroValue(opts[i].As) {
+			q = q.Arg("as", opts[i].As)
+		}
+		// `collapsePreReleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CollapsePreReleases) {
+			q = q.Arg("collapsePreReleases", opts[i].CollapsePreReleases)
+		}
+		// `collapsePatch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CollapsePatch) {
+			q = q.Arg("collapsePatch", opts[i].CollapsePatch)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this DocsDev.
 func (r *DocsDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -157,6 +199,17 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset {
 	}
 }
 
+// Rename an existing docs version without changing its contents.
+func (r *DocsDev) RenameVersion(from string, to string) *Changeset {
+	q := r.query.Select("renameVersion")
+	q = q.Arg("from", from)
+	q = q.Arg("to", to)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Build the docs server
 func (r *DocsDev) Server() *Container {
 	q := r.query.Select("server")
@@ -171,21 +224,6 @@ func (r *DocsDev) Site() *Directory {
 	q := r.query.Select("site")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Freeze a released version's docs as a versioned snapshot. The docs are pulled
-// from the version's git tag -- not the in-development docs on the current
-// branch -- so the snapshot reflects what actually shipped. Runs docusaurus
-// docs:version and returns a Changeset that adds
-// versioned_docs/version-<version>/ (plus its sidebar) and prepends the version
-// to docs/versions.json, for review before applying.
-func (r *DocsDev) SnapshotRelease(version string) *Changeset {
-	q := r.query.Select("snapshotRelease")
-	q = q.Arg("version", version)
-
-	return &Changeset{
 		query: q,
 	}
 }

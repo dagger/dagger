@@ -236,7 +236,7 @@ func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, des
 }
 
 func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
-	return form.RunWithContext(ctx)
+	return form.WithTheme(huh.ThemeBase16()).RunWithContext(ctx)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
@@ -340,7 +340,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err != nil {
 		return err
 	}
-	for _, record := range logs {
+	for _, record := range renderableLogRecords(logs) {
 		// Check if this log is marked as verbose
 		isVerbose := false
 		record.WalkAttributes(func(kv log.KeyValue) bool {
@@ -483,6 +483,7 @@ func (fe *frontendPlain) renderFinalTests() bool {
 	}
 	tv := &TestView{
 		Profile:         fe.profile,
+		AgentStyle:      agentStyle(fe.Opts()),
 		Logs:            fe.testLogs,
 		SummaryLogLines: -1,
 	}

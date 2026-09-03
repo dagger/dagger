@@ -32,6 +32,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Interpret this file as a Git bundle by lazily parsing its header.
+  """
+  @spec as_git_bundle(t()) :: Dagger.GitBundle.t()
+  def as_git_bundle(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("asGitBundle")
+
+    %Dagger.GitBundle{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Parse the file contents as JSON.
   """
   @spec as_json(t()) :: Dagger.JSONValue.t()

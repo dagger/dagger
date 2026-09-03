@@ -23,12 +23,29 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
+}
+
+func TestLogRecordRowPreservesBytesBody(t *testing.T) {
+	payload := []byte{0, 1, 2, 0xff}
+	var record sdklog.Record
+	record.SetBody(otellog.BytesValue(payload))
+
+	row, err := logRecordRow(&record)
+	require.NoError(t, err)
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(row.Body, &body))
+	require.Equal(t, payload, body.GetBytesValue())
 }
 
 func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
@@ -378,6 +395,7 @@ func newTeardownTestServer(t *testing.T) *Server {
 	require.NoError(t, err)
 	return &Server{
 		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
 		engineCache:        cache,
 		wcprofSpanCount:    newWcprofSpanCounter(),
 		throttledSessionGC: func() {},
@@ -427,6 +445,13 @@ func sessionInRegistry(srv *Server, sessionID string) bool {
 	return ok
 }
 
+func sessionIDReleased(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.releasedSessionIDs[sessionID]
+	return ok
+}
+
 func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	t.Parallel()
 
@@ -461,6 +486,7 @@ func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return !sessionInRegistry(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	require.True(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 	case <-time.After(10 * time.Second):
@@ -500,11 +526,23 @@ func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("same-id getOrInitClient blocked on background teardown")
 	}
+	require.False(t, sessionIDReleased(srv, "s"), "session ID retired before teardown completed")
 
 	releaseTeardownDrain(sess)
 	require.Eventually(t, func() bool {
-		return !sessionInRegistry(srv, "s")
+		return !sessionInRegistry(srv, "s") && sessionIDReleased(srv, "s")
 	}, 10*time.Second, 10*time.Millisecond)
+
+	_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+		ClientMetadata: &engine.ClientMetadata{
+			SessionID:         "s",
+			ClientID:          "m",
+			ClientSecretToken: "token",
+		},
+	})
+	require.ErrorContains(t, err, "already used and released")
+	var retryable flightcontrol.RetryableError
+	require.False(t, errors.As(err, &retryable))
 }
 
 func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
@@ -526,11 +564,42 @@ func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
 
 	require.Equal(t, sessionStateInitialized, sess.state.Load())
 	require.True(t, sessionInRegistry(srv, "s"))
+	require.False(t, sessionIDReleased(srv, "s"))
 	select {
 	case <-sess.shutdownCh:
 		t.Fatal("reap tore down a session with a live main client")
 	default:
 	}
+}
+
+func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{
+		daggerSessions:     map[string]*daggerSession{},
+		releasedSessionIDs: map[string]struct{}{},
+	}
+	srv.daggerSessionsMu.Lock()
+	failed, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// This is the getOrInitClient failed-initialization cleanup: publish removed,
+	// release lifecycleMu, then delete without retiring the ID.
+	failed.state.Store(sessionStateRemoved)
+	failed.lifecycleMu.Unlock()
+	srv.deleteSession(failed)
+	require.False(t, sessionIDReleased(srv, "s"))
+
+	srv.daggerSessionsMu.Lock()
+	retry, created, err := srv.getOrCreateSessionLocked("s", "m")
+	srv.daggerSessionsMu.Unlock()
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotSame(t, failed, retry)
+	retry.lifecycleMu.Unlock()
+	srv.deleteSession(retry)
 }
 
 func TestConcurrentReapsSingleTeardown(t *testing.T) {
@@ -887,6 +956,66 @@ func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("request module loading did not finish")
 	}
+}
+
+func TestWithRequestTelemetrySuppression(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, nil)
+	ctx, suppressed := withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "false")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.False(t, suppressed)
+	require.False(t, dagql.IsSkipped(ctx))
+
+	req.Header.Set(engine.SuppressTelemetryHeader, "true")
+	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
+	require.True(t, suppressed)
+	require.True(t, dagql.IsSkipped(ctx), "the suppressed request's context must carry the dagql skip flag so core.AroundFunc emits nothing")
+}
+
+// TestCallPayloadDeliveryStore pins the claim scoping that keeps call-payload
+// telemetry per delivery target: a digest claimed by one client's emission
+// must NOT count as seen for a client outside that emission's delivery domain
+// (the AGENT_QA P0 — a nested `dagger agent` attaching to a long-running
+// session could never rebuild worker IDs, because the session-wide claim was
+// spent before its DB existed).
+func TestCallPayloadDeliveryStore(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+
+	// Client A (top-level, no parents) claims a digest: unseen the first
+	// time, seen for A afterwards.
+	storeA := &callPayloadDeliveryStore{session: sess, targets: []string{"clientA"}}
+	require.False(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	require.True(t, storeA.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// Client B attaches later: A's claim must not satisfy B's delivery
+	// domain — B's DB never received the payload.
+	storeB := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB"}}
+	require.False(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"a digest claimed by another client's emission must stay claimable for a late-attaching client")
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// A module client under B: its emissions deliver to itself AND B, so a
+	// claim from its context marks both — and it is only "seen" when every
+	// target already has it. B has the digest, the module client does not,
+	// so the first probe still publishes (marking both).
+	storeMod := &callPayloadDeliveryStore{session: sess, targets: []string{"clientB", "modClient"}}
+	require.False(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"),
+		"an emission must not be skipped while any target in its delivery domain still needs it")
+	require.True(t, storeMod.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+	// And now B's own store agrees the digest is spent for B.
+	require.True(t, storeB.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:abc"))
+
+	// StoreTelemetrySeenKey marks every target unconditionally.
+	storeC := &callPayloadDeliveryStore{session: sess, targets: []string{"clientC", "clientD"}}
+	storeC.StoreTelemetrySeenKey("dag.call.payload:xxh3:def")
+	require.True(t, storeC.LoadOrStoreTelemetrySeenKey("dag.call.payload:xxh3:def"))
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
@@ -2073,6 +2202,87 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 	require.False(t, dedupResolved[1].primaryEntrypoint)
 }
 
+// dagger/dagger#14013
+func TestDedupeResolvedModuleLoadsKeepsSameSourceUnderDifferentNames(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/rust"
+	const commit = "deadbeef"
+
+	loads := []moduleLoadRequest{
+		{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "msrv"}},
+		{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "rust"}},
+	}
+	resolved := []resolvedModuleLoad{
+		{primary: sessionTestModuleResultWithGitSource(t, "msrv", cloneRef, commit)},
+		{primary: sessionTestModuleResultWithGitSource(t, "rust", cloneRef, commit)},
+	}
+
+	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
+	require.Len(t, dedupLoads, 2)
+	require.Equal(t, "msrv", dedupLoads[0].mod.Name)
+	require.Equal(t, "rust", dedupLoads[1].mod.Name)
+	require.Len(t, dedupResolved, 2)
+}
+
+func TestResolvedModuleLoadIdentity(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/rust"
+	const commit = "deadbeef"
+
+	rust := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "rust", cloneRef, commit))
+	msrv := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "msrv", cloneRef, commit))
+	require.NotEqual(t, rust, msrv, "same source under different names must be distinct instances")
+
+	other := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "rust", "github.com/acme/other", commit))
+	require.NotEqual(t, rust, other)
+
+	// Spelling variants are one CLI command name, so one instance.
+	kebab := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "my-mod", cloneRef, commit))
+	camel := resolvedModuleLoadIdentity(sessionTestModuleResultWithGitSource(t, "myMod", cloneRef, commit))
+	require.Equal(t, kebab, camel)
+}
+
+func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
+	t.Parallel()
+
+	const cloneRef = "github.com/acme/app"
+	const commit = "deadbeef"
+
+	sameSourceTwice := func(canonicalDefaults, realDefaults map[string]any) ([]moduleLoadRequest, []resolvedModuleLoad) {
+		loads := []moduleLoadRequest{
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "canonical", Entrypoint: true, ConfigDefaults: canonicalDefaults}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "real", Entrypoint: true, ConfigDefaults: realDefaults}},
+		}
+		resolved := []resolvedModuleLoad{
+			{primary: sessionTestModuleResultWithGitSource(t, "canonical", cloneRef, commit), primaryEntrypoint: true},
+			{primary: sessionTestModuleResultWithGitSource(t, "real", cloneRef, commit), primaryEntrypoint: true},
+		}
+		return loads, resolved
+	}
+
+	t.Run("same settings under two names collapse to one nomination", func(t *testing.T) {
+		t.Parallel()
+
+		loads, resolved := sameSourceTwice(nil, nil)
+		require.NoError(t, arbitrateResolvedModuleLoads(loads, resolved))
+		require.True(t, resolved[0].primaryEntrypoint)
+		require.False(t, resolved[1].primaryEntrypoint)
+	})
+
+	t.Run("different settings under two names stay a conflict", func(t *testing.T) {
+		t.Parallel()
+
+		loads, resolved := sameSourceTwice(
+			map[string]any{"version": "1.98"},
+			map[string]any{"version": "1.97"},
+		)
+		err := arbitrateResolvedModuleLoads(loads, resolved)
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: canonical, real")
+	})
+}
+
 func TestArbitrateResolvedModuleLoads(t *testing.T) {
 	t.Parallel()
 
@@ -2155,10 +2365,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	t.Parallel()
 
 	legacy := workspace.NewLock()
-	require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
-		Value:  "sha256:deadbeef",
-		Policy: workspace.PolicyPin,
-	}))
+	require.NoError(t, legacy.SetLookup("", "oci-sha", []any{"alpine:latest"}, "sha256:deadbeef"))
 	legacyBytes, err := legacy.Marshal()
 	require.NoError(t, err)
 
@@ -2175,10 +2382,9 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	}, ws)
 	require.NoError(t, err)
 
-	got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
-	require.NoError(t, err)
+	got, ok := lock.GetLookup("", "oci-sha", []any{"alpine:latest"})
 	require.True(t, ok)
-	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)
+	require.Equal(t, "sha256:deadbeef", got)
 }
 
 type fakeWorkspaceLockStateReader struct {
@@ -2203,6 +2409,37 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	require.NoError(t, err)
 	res, err := dagql.NewObjectResultForCall(
 		&core.Module{NameField: name},
+		dag,
+		&dagql.ResultCall{SyntheticOp: "session-test-module-" + name},
+	)
+	require.NoError(t, err)
+	return res
+}
+
+func sessionTestModuleResultWithGitSource(t *testing.T, name, cloneRef, commit string) dagql.ObjectResult[*core.Module] {
+	t.Helper()
+
+	dag, err := dagql.NewServer(t.Context(), &core.Module{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+	src, err := dagql.NewObjectResultForCall(
+		&core.ModuleSource{
+			Kind: core.ModuleSourceKindGit,
+			Git: &core.GitModuleSource{
+				CloneRef: cloneRef,
+				Commit:   commit,
+			},
+			SourceRootSubpath: ".",
+		},
+		dag,
+		&dagql.ResultCall{SyntheticOp: "session-test-module-source-" + name},
+	)
+	require.NoError(t, err)
+	res, err := dagql.NewObjectResultForCall(
+		&core.Module{
+			NameField: name,
+			Source:    dagql.NonNull(src),
+		},
 		dag,
 		&dagql.ResultCall{SyntheticOp: "session-test-module-" + name},
 	)

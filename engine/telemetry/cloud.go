@@ -79,6 +79,9 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 		tracesURL := cloudEndpoint.JoinPath("v1", "traces")
 		logsURL := cloudEndpoint.JoinPath("v1", "logs")
 		metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
+		spanSequencer := newExportSequencer()
+		logSequencer := newExportSequencer()
+		metricSequencer := newExportSequencer()
 
 		headers := map[string]string{
 			"Authorization": authHeader,
@@ -89,7 +92,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 
 		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
 			otlptracehttp.WithEndpointURL(tracesURL.String()),
-			otlptracehttp.WithHeaders(headers))
+			otlptracehttp.WithHeaders(headers),
+			otlptracehttp.WithHTTPClient(spanSequencer.httpClient()))
 		if err != nil {
 			slog.Warn("failed to configure cloud tracing", "error", err)
 			return
@@ -97,7 +101,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 
 		configuredCloudLogsExporter, err = otlploghttp.New(ctx,
 			otlploghttp.WithEndpointURL(logsURL.String()),
-			otlploghttp.WithHeaders(headers))
+			otlploghttp.WithHeaders(headers),
+			otlploghttp.WithHTTPClient(logSequencer.httpClient()))
 		if err != nil {
 			slog.Warn("failed to configure cloud tracing", "error", err)
 			return
@@ -105,7 +110,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 
 		configuredCloudMetricsExporter, err = otlpmetrichttp.New(ctx,
 			otlpmetrichttp.WithEndpointURL(metricsURL.String()),
-			otlpmetrichttp.WithHeaders(headers))
+			otlpmetrichttp.WithHeaders(headers),
+			otlpmetrichttp.WithHTTPClient(metricSequencer.httpClient()))
 		if err != nil {
 			slog.Warn("failed to configure cloud metrics", "error", err)
 			return
@@ -122,7 +128,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 					newHeaders["Authorization"] = authHeader
 					return otlptracehttp.New(ctx,
 						otlptracehttp.WithEndpointURL(tracesURL.String()),
-						otlptracehttp.WithHeaders(newHeaders))
+						otlptracehttp.WithHeaders(newHeaders),
+						otlptracehttp.WithHTTPClient(spanSequencer.httpClient()))
 				},
 				token: token,
 				exp:   configuredCloudSpanExporter,
@@ -135,7 +142,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 					newHeaders["Authorization"] = authHeader
 					return otlploghttp.New(ctx,
 						otlploghttp.WithEndpointURL(logsURL.String()),
-						otlploghttp.WithHeaders(newHeaders))
+						otlploghttp.WithHeaders(newHeaders),
+						otlploghttp.WithHTTPClient(logSequencer.httpClient()))
 				},
 				token: token,
 				exp:   configuredCloudLogsExporter,
@@ -148,11 +156,25 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 					newHeaders["Authorization"] = authHeader
 					return otlpmetrichttp.New(ctx,
 						otlpmetrichttp.WithEndpointURL(metricsURL.String()),
-						otlpmetrichttp.WithHeaders(newHeaders))
+						otlpmetrichttp.WithHeaders(newHeaders),
+						otlpmetrichttp.WithHTTPClient(metricSequencer.httpClient()))
 				},
 				token: token,
 				exp:   configuredCloudMetricsExporter,
 			}
+		}
+
+		configuredCloudSpanExporter = &sequencedSpanExporter{
+			sequencer: spanSequencer,
+			exporter:  configuredCloudSpanExporter,
+		}
+		configuredCloudLogsExporter = &sequencedLogExporter{
+			sequencer: logSequencer,
+			exporter:  configuredCloudLogsExporter,
+		}
+		configuredCloudMetricsExporter = &sequencedMetricExporter{
+			sequencer: metricSequencer,
+			exporter:  configuredCloudMetricsExporter,
 		}
 
 		configuredCloudTelemetry = true

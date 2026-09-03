@@ -136,7 +136,7 @@ func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg
 	return nil, false, nil
 }
 
-func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
 	return nil
 }
 
@@ -146,6 +146,9 @@ func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.Cl
 func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error) { return nil, nil }
 func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { return nil, nil }
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
+func (ms *mockServer) CallPayloadSeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }

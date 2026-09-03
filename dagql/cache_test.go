@@ -4716,12 +4716,19 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 			default:
 			}
 
-			if _, err := buildArray(ownerCtx, ownerSessionID); err != nil {
+			producerSessionID := fmt.Sprintf("stress-array-producer-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-array-producer-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			if _, err := buildArray(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
 			time.Sleep(50 * time.Microsecond)
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				producerErrCh <- err
 				return
 			}
@@ -4805,6 +4812,7 @@ func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
 		err = errors.Join(err, producerErr)
 	default:
 	}
+	assert.NilError(t, c.ReleaseSession(ownerCtx, ownerSessionID))
 	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-array-seed-session"))
 	if msg := failure.Load(); msg != nil {
 		t.Fatalf("reproduced array hit call-frame race after %d attempts and %d hits: %s", attempts.Load(), hitCount.Load(), *msg)
@@ -5273,14 +5281,21 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 	go func() {
 		defer close(ownerDone)
 		<-start
-		for {
+		for iter := 0; ; iter++ {
 			select {
 			case <-stopOwner:
 				return
 			default:
 			}
 
-			res, err := buildArray(ownerCtx, ownerSessionID)
+			producerSessionID := fmt.Sprintf("stress-load-by-id-owner-session-%d", iter)
+			producerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-load-by-id-owner-client-%d", iter),
+				SessionID: producerSessionID,
+			})
+			producerCtx = ContextWithCache(producerCtx, c)
+			producerCtx = srvToContext(producerCtx, srv)
+			res, err := buildArray(producerCtx, producerSessionID)
 			if err != nil {
 				ownerErrCh <- err
 				return
@@ -5294,7 +5309,7 @@ func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T)
 
 			time.Sleep(50 * time.Microsecond)
 
-			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+			if err := c.ReleaseSession(producerCtx, producerSessionID); err != nil {
 				ownerErrCh <- err
 				return
 			}
@@ -5525,7 +5540,7 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 	assert.Equal(t, 1, base.Size())
 }
 
-func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
+func TestCacheLatePersistableJoinCommitsBeforeHandoffRelease(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		lateWaiters         int
@@ -5558,13 +5573,13 @@ func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
 				sessionID      = "late-persistable-session"
 				concurrencyKey = "late-persistable-concurrency"
 			)
-			key := cacheTestIntCall("late-persistable-repair")
+			key := cacheTestIntCall("late-persistable-commit")
 			callConcKeys := callConcurrencyKeys{
 				callKey:        cacheTestCallDigest(key).String(),
 				concurrencyKey: concurrencyKey,
 			}
 
-			publicationPassedPersistCheck := make(chan struct{})
+			publicationReachedAttachment := make(chan struct{})
 			allowPublicationToFinish := make(chan struct{})
 			leaderResCh := make(chan AnyResult, 1)
 			leaderErrCh := make(chan error, 1)
@@ -5577,7 +5592,7 @@ func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
 					return cacheTestDetachedResult(key, cacheTestLeaseCheckedInt{
 						Int: NewInt(42),
 						onAttach: func(context.Context) error {
-							close(publicationPassedPersistCheck)
+							close(publicationReachedAttachment)
 							<-allowPublicationToFinish
 							return nil
 						},
@@ -5588,19 +5603,18 @@ func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
 			}()
 
 			select {
-			case <-publicationPassedPersistCheck:
+			case <-publicationReachedAttachment:
 			case <-time.After(5 * time.Second):
-				t.Fatal("timed out waiting for publication to pass persistence check")
+				t.Fatal("timed out waiting for publication to reach dependency attachment")
 			}
 
 			// Simulate requests whose e-graph lookup missed before indexing but
-			// whose callsMu admission happens after publication read false. Keep
+			// whose callsMu admission happens while publication is attaching. Keep
 			// their waiter slots outstanding so the leader cannot release the
 			// publication handoff before the test selects the final waiter.
 			c.callsMu.Lock()
 			oc := c.ongoingCalls[callConcKeys]
 			assert.Assert(t, oc != nil)
-			assert.Assert(t, !oc.persistedDuringPublication)
 			oc.isPersistable.Store(true)
 			oc.waiters += tc.lateWaiters
 			expectedExpiry := time.Now().Unix() + 3600
@@ -5623,14 +5637,14 @@ func TestCacheLatePersistableJoinRepairsBeforeHandoffRelease(t *testing.T) {
 			assert.Equal(t, 42, unwrapValue(leaderRes))
 
 			c.callsMu.Lock()
-			assert.Assert(t, oc.needsPersistRepair)
+			assert.Assert(t, oc.needsPersistedEdge)
 			assert.Equal(t, tc.lateWaiters, oc.waiters)
 			_, ongoing := c.ongoingCalls[callConcKeys]
 			c.callsMu.Unlock()
 			assert.Assert(t, !ongoing)
 
 			if tc.canceledFinalWaiter {
-				// Leave only the handoff owner. If repair happened after the
+				// Leave only the handoff owner. If persistence happened after the
 				// decrement, this final cancellation would collect the result.
 				assert.NilError(t, c.ReleaseSession(ctx, sessionID))
 
@@ -5764,7 +5778,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 
 	initCallsAfter := 0
-	resC, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+	resC, err := c.GetOrInitCall(ctx, "persistable-hit-after-release", noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		initCallsAfter++
@@ -5774,7 +5788,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 0, initCallsAfter)
 	assert.Assert(t, resC.HitCache())
 	assert.Equal(t, 17, cacheTestUnwrapInt(t, resC))
-	cacheTestReleaseSession(t, c, ctx)
+	assert.NilError(t, c.ReleaseSession(ctx, "persistable-hit-after-release"))
 }
 
 func TestCacheMakeResultUnpruneableRetainsAcrossSessionClose(t *testing.T) {

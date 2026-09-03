@@ -158,6 +158,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Bytes",
+			"p": "Dagger/Bytes.html",
+			"d": "<p>Arbitrary binary data, represented as a base64-encoded string.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\CacheVolume",
 			"p": "Dagger/CacheVolume.html",
 			"d": "<p>A directory whose contents persist across runs.</p>",
@@ -948,6 +958,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitBundle",
+			"p": "Dagger/GitBundle.html",
+			"d": "<p>A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GitBundleRef",
+			"p": "Dagger/GitBundleRef.html",
+			"d": "<p>A ref advertised by a Git bundle.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitCommit",
 			"p": "Dagger/GitCommit.html",
 			"d": "<p>An immutable git commit.</p>",
@@ -1688,9 +1718,29 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\TerminalGroup",
+			"p": "Dagger/TerminalGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\TerminalId",
 			"p": "Dagger/TerminalId.html",
 			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\TerminalTarget",
+			"p": "Dagger/TerminalTarget.html",
+			"d": null,
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1997,6 +2047,12 @@
 			"n": "Dagger\\Address::volume",
 			"p": "Dagger/Address.html#method_volume",
 			"d": "<p>Load a volume from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::workspace",
+			"p": "Dagger/Address.html#method_workspace",
+			"d": "<p>Load a workspace from a module reference.</p>"
 		},
 		{
 			"t": "M",
@@ -2597,6 +2653,12 @@
 			"n": "Dagger\\Client::address",
 			"p": "Dagger/Client.html#method_address",
 			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::blob",
+			"p": "Dagger/Client.html#method_blob",
+			"d": "<p>Creates a file from arbitrary binary contents.</p>"
 		},
 		{
 			"t": "M",
@@ -4880,6 +4942,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::asGitBundle",
+			"p": "Dagger/File.html#method_asGitBundle",
+			"d": "<p>Interpret this file as a Git bundle by lazily parsing its header.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::asJSON",
 			"p": "Dagger/File.html#method_asJSON",
 			"d": "<p>Parse the file contents as JSON.</p>"
@@ -5312,6 +5380,66 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitBundle::asFile",
+			"p": "Dagger/GitBundle.html#method_asFile",
+			"d": "<p>Return the bundle bytes as a File.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::id",
+			"p": "Dagger/GitBundle.html#method_id",
+			"d": "<p>A unique identifier for this GitBundle.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::objectFormat",
+			"p": "Dagger/GitBundle.html#method_objectFormat",
+			"d": "<p>Object format capability: sha1 or sha256.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::prerequisiteSHAs",
+			"p": "Dagger/GitBundle.html#method_prerequisiteSHAs",
+			"d": "<p>Commits that must already exist wherever this bundle is applied.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::refs",
+			"p": "Dagger/GitBundle.html#method_refs",
+			"d": "<p>Refs advertised by the bundle and the object IDs they resolve to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::validate",
+			"p": "Dagger/GitBundle.html#method_validate",
+			"d": "<p>Perform full structural verification of the bundle and error if it is malformed.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundle::version",
+			"p": "Dagger/GitBundle.html#method_version",
+			"d": "<p>Bundle format version (2 or 3).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::id",
+			"p": "Dagger/GitBundleRef.html#method_id",
+			"d": "<p>A unique identifier for this GitBundleRef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::name",
+			"p": "Dagger/GitBundleRef.html#method_name",
+			"d": "<p>The advertised ref name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitBundleRef::sha",
+			"p": "Dagger/GitBundleRef.html#method_sha",
+			"d": "<p>The object ID the advertised ref resolves to.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitCommit::ancestorReleaseTag",
 			"p": "Dagger/GitCommit.html#method_ancestorReleaseTag",
 			"d": "<p>The latest semver release tag reachable from this commit.</p>"
@@ -5486,6 +5614,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::bundle",
+			"p": "Dagger/GitRepository.html#method_bundle",
+			"d": "<p>Pack the given refs and the objects needed to reconstruct them into a Git bundle.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::commit",
 			"p": "Dagger/GitRepository.html#method_commit",
 			"d": "<p>Returns details of a commit.</p>"
@@ -5504,9 +5638,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\GitRepository::latestVersion",
-			"p": "Dagger/GitRepository.html#method_latestVersion",
-			"d": "<p>Returns details for the latest semver tag.</p>"
+			"n": "Dagger\\GitRepository::latest",
+			"p": "Dagger/GitRepository.html#method_latest",
+			"d": "<p>Return the latest stable release tag, falling back to HEAD when no release exists.</p>"
 		},
 		{
 			"t": "M",
@@ -5537,6 +5671,12 @@
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::withBundle",
+			"p": "Dagger/GitRepository.html#method_withBundle",
+			"d": "<p>Import a Git bundle after fetching and verifying all of its prerequisites.</p>"
 		},
 		{
 			"t": "M",
@@ -7088,6 +7228,54 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\TerminalGroup::id",
+			"p": "Dagger/TerminalGroup.html#method_id",
+			"d": "<p>A unique identifier for this TerminalGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalGroup::list",
+			"p": "Dagger/TerminalGroup.html#method_list",
+			"d": "<p>Return the selected terminal targets and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalGroup::run",
+			"p": "Dagger/TerminalGroup.html#method_run",
+			"d": "<p>Open the selected terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::description",
+			"p": "Dagger/TerminalTarget.html#method_description",
+			"d": "<p>The description of the terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::id",
+			"p": "Dagger/TerminalTarget.html#method_id",
+			"d": "<p>A unique identifier for this TerminalTarget.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::name",
+			"p": "Dagger/TerminalTarget.html#method_name",
+			"d": "<p>Return the fully qualified name of the terminal target</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::originalModule",
+			"p": "Dagger/TerminalTarget.html#method_originalModule",
+			"d": "<p>The module in which the terminal target is defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TerminalTarget::path",
+			"p": "Dagger/TerminalTarget.html#method_path",
+			"d": "<p>The path of the terminal target within its module</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\TypeDef::asEnum",
 			"p": "Dagger/TypeDef.html#method_asEnum",
 			"d": "<p>If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.</p>"
@@ -7336,7 +7524,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::export",
 			"p": "Dagger/Workspace.html#method_export",
-			"d": "<p>Write this workspace's pending changes to its local Git workspace.</p>"
+			"d": "<p>Write this workspace's pending changes to its local Git workspace on the current client's host.</p>"
 		},
 		{
 			"t": "M",
@@ -7436,6 +7624,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::terminals",
+			"p": "Dagger/Workspace.html#method_terminals",
+			"d": "<p>Return all terminal targets from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withChanges",
 			"p": "Dagger/Workspace.html#method_withChanges",
 			"d": "<p>Return this workspace with a changeset applied, without mutating the source.</p>"
@@ -7451,6 +7645,12 @@
 			"n": "Dagger\\Workspace::withConfigValue",
 			"p": "Dagger/Workspace.html#method_withConfigValue",
 			"d": "<p>Return this workspace with a configuration value written.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withDirectory",
+			"p": "Dagger/Workspace.html#method_withDirectory",
+			"d": "<p>Return this workspace with a directory merged into the given path, without mutating the source.</p>"
 		},
 		{
 			"t": "M",
@@ -7486,7 +7686,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withNewDirectory",
 			"p": "Dagger/Workspace.html#method_withNewDirectory",
-			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
+			"d": "<p>Return this workspace with the given path replaced by a directory, without mutating the source.</p>"
 		},
 		{
 			"t": "M",

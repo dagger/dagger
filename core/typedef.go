@@ -687,12 +687,19 @@ func (arg *FunctionArg) isContextual() bool {
 // the call, since preselect rejects a missing non-null argument before that
 // hook runs.
 func (arg *FunctionArg) IsWorkspace() bool {
+	return arg.isCoreObjectType("Workspace")
+}
+
+func (arg *FunctionArg) isCoreObjectType(name string) bool {
 	typeDef := arg.TypeDef.Self()
-	return typeDef.Kind == TypeDefKindObject &&
-		typeDef.AsObject.Value.Self().Name == "Workspace" &&
+	if typeDef == nil || typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
+		return false
+	}
+	obj := typeDef.AsObject.Value.Self()
+	return obj != nil && obj.Name == name &&
 		// Functions can't currently accept types from other modules, but be
 		// explicit anyway.
-		typeDef.AsObject.Value.Self().SourceModuleName == ""
+		obj.SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {

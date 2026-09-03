@@ -208,7 +208,14 @@ type WorkspaceSourceOverlay struct {
 	// uploading the whole workspace. Value/git/rootless overlays leave this nil
 	// and diff full in-engine trees (nothing to upload).
 	TouchedPaths []string
-	Changes      dagql.ObjectResult[*Changeset]
+	// SeededPaths is the subset of TouchedPaths whose pre-existing workspace
+	// content the overlay folded into Changes.After, for edits that build on
+	// what a path already holds (see overlayEdit's readsExisting). Every later
+	// edit re-seeds them from the base it diffs against: content the caller
+	// never wrote, left pinned here, comes back reported as modified the moment
+	// they edit that file on disk.
+	SeededPaths []string
+	Changes     dagql.ObjectResult[*Changeset]
 }
 
 func (*WorkspaceSourceOverlay) workspaceSource() {}
@@ -241,16 +248,19 @@ func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) Wo
 func NewWorkspaceSourceOverlay(
 	base WorkspaceSource,
 	touchedPaths []string,
+	seededPaths []string,
 	changes dagql.ObjectResult[*Changeset],
 ) WorkspaceSource {
 	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
 		base = overlay.Base
 	}
-	// The caller accumulates TouchedPaths (union with the parent overlay's)
-	// before constructing, so they are already cumulative here.
+	// The caller accumulates TouchedPaths and SeededPaths (union with the
+	// parent overlay's) before constructing, so they are already cumulative
+	// here.
 	return &WorkspaceSourceOverlay{
 		Base:         base,
 		TouchedPaths: touchedPaths,
+		SeededPaths:  seededPaths,
 		Changes:      changes,
 	}
 }
@@ -370,6 +380,17 @@ func (ws *Workspace) OverlayTouchedPaths() []string {
 		return nil
 	}
 	return overlay.TouchedPaths
+}
+
+// OverlaySeededPaths returns the cumulative set of workspace-relative paths
+// whose pre-existing content the overlay folded into its changeset's after
+// side, which every later edit has to refresh from the base it diffs against.
+func (ws *Workspace) OverlaySeededPaths() []string {
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return nil
+	}
+	return overlay.SeededPaths
 }
 
 // OverlayPathTouched reports whether the overlay's edits affect the given
@@ -598,6 +619,7 @@ type persistedWorkspaceSource struct {
 	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
+	SeededPaths    []string                  `json:"seededPaths,omitempty"`
 	HostPath       string                    `json:"hostPath,omitempty"`
 	Base           *persistedWorkspaceSource `json:"base,omitempty"`
 }
@@ -649,6 +671,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 			payload.Base = base
 		}
 		payload.TouchedPaths = src.TouchedPaths
+		payload.SeededPaths = src.SeededPaths
 		if src.Changes.Self() != nil {
 			changesID, err := encodePersistedObjectRef(cache, src.Changes, "workspace overlay changes")
 			if err != nil {
@@ -712,7 +735,7 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, changes), nil
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.SeededPaths, changes), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}

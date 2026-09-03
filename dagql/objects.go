@@ -925,25 +925,14 @@ type FieldSpec struct {
 	NoTelemetry bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
-	// than performing meaningful work. Used to suppress install-span capture
-	// for synthetic accessors (e.g. auto-generated module object field
-	// accessors) so they don't claim ownership of values they merely return.
+	// than performing meaningful work. Their telemetry spans are internal, and
+	// they skip install-span capture so they don't claim ownership of values
+	// they merely return.
 	Trivial bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
 	// metadata while asking the UI to show its children in its place.
 	PassthroughTelemetry bool
-
-	// NotReplayable marks a field whose result is only meaningful to the
-	// session and client that produced it — a host read, or a value bound to a
-	// client ID. Such a result may still be cached and reused within its own
-	// session, but it must never be served to a *recorded* call being replayed
-	// from a saved ID: the recorded digest is a stable key for an unstable
-	// value, so replaying it would resurrect another session's snapshot or
-	// client binding. The recipe loader re-executes these calls instead, and
-	// taints every recorded call that depends on one. The string value is the
-	// reason.
-	NotReplayable string
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1377,6 +1366,9 @@ func (fields Fields[T]) Install(server *Server) {
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
+			// Reflected struct fields are pure getter accessors. Keep their spans
+			// available as internal trace detail without presenting them as work.
+			Trivial: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
@@ -1457,16 +1449,6 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
-	return field
-}
-
-// NotReplayable marks the field's result as unsafe to serve to a replayed
-// recorded call. See FieldSpec.NotReplayable.
-func (field Field[T]) NotReplayable(reason string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	field.Spec.NotReplayable = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 

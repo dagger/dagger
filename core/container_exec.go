@@ -2119,6 +2119,13 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer detach()
 
+		// Same in-process pattern as ProfArgs above: the FQDN a bound service
+		// actually registered under is only known once it is running, which is
+		// after every execMD digest is computed. execMD is the same pointer the
+		// executor reads, so recording it here reaches the hosts-file setup
+		// without perturbing a cache key.
+		recordBoundServiceFQDNs(execMD, container.Services, runningSvcs)
+
 		execCtx := ctx
 		var cancelExec context.CancelCauseFunc
 		var serviceErrCh <-chan error

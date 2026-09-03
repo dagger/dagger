@@ -50,6 +50,11 @@ export type BuildArg = {
 }
 
 /**
+ * Arbitrary binary data, represented as a base64-encoded string.
+ */
+export type Bytes = string & { __Bytes: never }
+
+/**
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
@@ -1848,11 +1853,25 @@ export type GitRepositoryBranchesOpts = {
   patterns?: string[]
 }
 
+export type GitRepositoryBundleOpts = {
+  /**
+   * A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+   */
+  base?: GitRef
+}
+
 export type GitRepositoryTagsOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
    */
   patterns?: string[]
+}
+
+export type GitRepositoryWithBundleOpts = {
+  /**
+   * An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+   */
+  prerequisiteRef?: string
 }
 
 export type HostDirectoryOpts = {
@@ -2481,6 +2500,13 @@ export type PortForward = {
    * Transport layer protocol to use for traffic.
    */
   protocol?: NetworkProtocol
+}
+
+export type ClientBlobOpts = {
+  /**
+   * Permissions of the new file. Example: 0600
+   */
+  permissions?: number
 }
 
 export type ClientCacheVolumeOpts = {
@@ -3253,6 +3279,13 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceTerminalsOpts = {
+  /**
+   * Only include terminal targets matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type WorkspaceWithConfigEnvOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -3522,6 +3555,14 @@ export class Address extends BaseClient {
   volume = (): Volume => {
     const ctx = this._ctx.select("volume")
     return new Volume(ctx)
+  }
+
+  /**
+   * Load a workspace from a module reference.
+   */
+  workspace = (): Workspace => {
+    const ctx = this._ctx.select("workspace")
+    return new Workspace(ctx)
   }
 }
 
@@ -4668,7 +4709,9 @@ export class Container extends BaseClient {
 
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
-   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+   *
+   * An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -8048,6 +8091,14 @@ export class File extends BaseClient {
   }
 
   /**
+   * Interpret this file as a Git bundle by lazily parsing its header.
+   */
+  asGitBundle = (): GitBundle => {
+    const ctx = this._ctx.select("asGitBundle")
+    return new GitBundle(ctx)
+  }
+
+  /**
    * Parse the file contents as JSON.
    */
   asJSON = (): JSONValue => {
@@ -9248,6 +9299,194 @@ export class GeneratorGroup extends BaseClient {
 }
 
 /**
+ * A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.
+ */
+export class GitBundle extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _objectFormat?: string = undefined
+  private readonly _version?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _objectFormat?: string,
+    _version?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._objectFormat = _objectFormat
+    this._version = _version
+  }
+
+  /**
+   * A unique identifier for this GitBundle.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the bundle bytes as a File.
+   */
+  asFile = (): File => {
+    const ctx = this._ctx.select("asFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Object format capability: sha1 or sha256.
+   */
+  objectFormat = async (): Promise<string> => {
+    if (this._objectFormat) {
+      return this._objectFormat
+    }
+
+    const ctx = this._ctx.select("objectFormat")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Commits that must already exist wherever this bundle is applied.
+   */
+  prerequisiteSHAs = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("prerequisiteSHAs")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Refs advertised by the bundle and the object IDs they resolve to.
+   */
+  refs = async (): Promise<GitBundleRef[]> => {
+    type refs = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("refs").select("id")
+
+    const response: Awaited<refs[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitBundleRef(ctx.copy().selectNode(r.id, "GitBundleRef")),
+    )
+  }
+
+  /**
+   * Perform full structural verification of the bundle and error if it is malformed.
+   */
+  validate = (): GitBundle => {
+    const ctx = this._ctx.select("validate")
+    return new GitBundle(ctx)
+  }
+
+  /**
+   * Bundle format version (2 or 3).
+   */
+  version = async (): Promise<number> => {
+    if (this._version) {
+      return this._version
+    }
+
+    const ctx = this._ctx.select("version")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Call the provided function with current GitBundle.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitBundle) => GitBundle) => {
+    return arg(this)
+  }
+}
+
+/**
+ * A ref advertised by a Git bundle.
+ */
+export class GitBundleRef extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+  private readonly _sha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string, _sha?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+    this._sha = _sha
+  }
+
+  /**
+   * A unique identifier for this GitBundleRef.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The advertised ref name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The object ID the advertised ref resolves to.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An immutable git commit.
  */
 export class GitCommit extends BaseClient {
@@ -9772,6 +10011,16 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+   * @param refs Refs to advertise in the bundle. At least one named ref is required.
+   * @param opts.base A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+   */
+  bundle = (refs: string[], opts?: GitRepositoryBundleOpts): GitBundle => {
+    const ctx = this._ctx.select("bundle", { refs, ...opts })
+    return new GitBundle(ctx)
+  }
+
+  /**
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
@@ -9789,10 +10038,12 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Returns details for the latest semver tag.
+   * Return the latest stable release tag, falling back to HEAD when no release exists.
+   *
+   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
    */
-  latestVersion = (): GitRef => {
-    const ctx = this._ctx.select("latestVersion")
+  latest = (): GitRef => {
+    const ctx = this._ctx.select("latest")
     return new GitRef(ctx)
   }
 
@@ -9847,6 +10098,28 @@ export class GitRepository extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Import a Git bundle after fetching and verifying all of its prerequisites.
+   * @param bundle The Git bundle to import.
+   * @param opts.prerequisiteRef An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+   */
+  withBundle = (
+    bundle: GitBundle,
+    opts?: GitRepositoryWithBundleOpts,
+  ): GitRepository => {
+    const ctx = this._ctx.select("withBundle", { bundle, ...opts })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRepository.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRepository) => GitRepository) => {
+    return arg(this)
   }
 }
 
@@ -13038,6 +13311,17 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Creates a file from arbitrary binary contents.
+   * @param name Name of the new file. Example: "archive.tar"
+   * @param contents Binary contents of the new file, encoded as base64 at the GraphQL boundary.
+   * @param opts.permissions Permissions of the new file. Example: 0600
+   */
+  blob = (name: string, contents: Bytes, opts?: ClientBlobOpts): File => {
+    const ctx = this._ctx.select("blob", { name, contents, ...opts })
+    return new File(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    * @param opts.source Identifier of the directory to use as the cache volume's root.
@@ -14500,6 +14784,149 @@ export class Terminal extends BaseClient {
   }
 }
 
+export class TerminalGroup extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this TerminalGroup.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the selected terminal targets and their details
+   */
+  list = async (): Promise<TerminalTarget[]> => {
+    type list = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new TerminalTarget(ctx.copy().selectNode(r.id, "TerminalTarget")),
+    )
+  }
+
+  /**
+   * Open the selected terminal target
+   */
+  run = (): TerminalGroup => {
+    const ctx = this._ctx.select("run")
+    return new TerminalGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current TerminalGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: TerminalGroup) => TerminalGroup) => {
+    return arg(this)
+  }
+}
+
+export class TerminalTarget extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this TerminalTarget.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the terminal target
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the terminal target
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module in which the terminal target is defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the terminal target within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
 /**
  * A definition of a parameter or return type in a Module.
  */
@@ -15185,7 +15612,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write this workspace's pending changes to its local Git workspace.
+   * Write this workspace's pending changes to its local Git workspace on the current client's host.
+   *
+   * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
    */
   export = async (): Promise<void> => {
     if (this._export) {
@@ -15413,6 +15842,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return all terminal targets from modules loaded in the workspace.
+   * @param opts.include Only include terminal targets matching the specified patterns
+   */
+  terminals = (opts?: WorkspaceTerminalsOpts): TerminalGroup => {
+    const ctx = this._ctx.select("terminals", { ...opts })
+    return new TerminalGroup(ctx)
+  }
+
+  /**
    * Return this workspace with a changeset applied, without mutating the source.
    * @param changes Changes to apply.
    */
@@ -15449,6 +15887,18 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithConfigValueOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withConfigValue", { key, value, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory merged into the given path, without mutating the source.
+   *
+   * Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+   * @param path Path to merge into. Relative paths resolve from the workspace cwd.
+   * @param source Directory to merge there.
+   */
+  withDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withDirectory", { path, source })
     return new Workspace(ctx)
   }
 
@@ -15538,9 +15988,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a directory added, without mutating the source.
-   * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
-   * @param source Directory to add.
+   * Return this workspace with the given path replaced by a directory, without mutating the source.
+   *
+   * The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
+   * @param path Path to replace. Relative paths resolve from the workspace cwd.
+   * @param source Directory to write there.
    */
   withNewDirectory = (path: string, source: Directory): Workspace => {
     const ctx = this._ctx.select("withNewDirectory", { path, source })
