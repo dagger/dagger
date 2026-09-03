@@ -94,19 +94,25 @@ func TestDebugFlags(t *testing.T) {
 }
 
 func TestMayCallEngineFlags(t *testing.T) {
+	oldCloud := useCloudEngine
+	oldEngine := engineFlag
 	oldProfile := profileFlag
 	oldShellOnError := shellOnError
 	oldShellCommandOnError := shellCommandOnError
 	t.Cleanup(func() {
+		useCloudEngine = oldCloud
+		engineFlag = oldEngine
 		profileFlag = oldProfile
 		shellOnError = oldShellOnError
 		shellCommandOnError = oldShellCommandOnError
 	})
+	useCloudEngine = false
+	engineFlag = ""
 
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
 	installMayCallEngineFlags(flags)
 
-	expected := []string{"interactive", "interactive-command", "profile", "shell-command-on-error", "shell-on-error"}
+	expected := []string{"cloud", "engine", "interactive", "interactive-command", "profile", "shell-command-on-error", "shell-on-error"}
 	var count int
 	flags.VisitAll(func(*pflag.Flag) { count++ })
 	require.Equal(t, len(expected), count)
@@ -116,6 +122,9 @@ func TestMayCallEngineFlags(t *testing.T) {
 		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
 	}
 	require.Equal(t, "i", flags.Lookup("shell-on-error").Shorthand)
+	require.True(t, flags.Lookup("cloud").Hidden)
+	require.Contains(t, flags.Lookup("cloud").Deprecated, "--engine=cloud")
+	require.False(t, flags.Lookup("engine").Hidden)
 	require.False(t, flags.Lookup("shell-on-error").Hidden)
 	require.True(t, flags.Lookup("interactive").Hidden)
 	require.Contains(t, flags.Lookup("interactive").Deprecated, "--shell-on-error")
@@ -123,6 +132,10 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.True(t, flags.Lookup("interactive-command").Hidden)
 	require.Contains(t, flags.Lookup("interactive-command").Deprecated, "--shell-command-on-error")
 	require.True(t, flags.Lookup("profile").Hidden)
+	require.NoError(t, flags.Set("cloud", "true"))
+	require.True(t, useCloudEngine)
+	require.NoError(t, flags.Set("engine", "tcp://engine.example.com:1234"))
+	require.Equal(t, "tcp://engine.example.com:1234", engineFlag)
 
 	// Every deprecated alias still drives the same variables.
 	for _, name := range []string{"interactive", "shell-on-error"} {
@@ -136,7 +149,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 		require.Equal(t, "/bin/bash", shellCommandOnError, name)
 	}
 
-	for _, name := range []string{"interactive", "interactive-command", "shell-command-on-error", "shell-on-error"} {
+	for _, name := range expected {
 		flag := flags.Lookup(name)
 		var visit func(*cobra.Command)
 		visit = func(cmd *cobra.Command) {

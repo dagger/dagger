@@ -62,6 +62,17 @@ declares `MayCallEngine OR MayRenderPipeline`. Engine commands request debug
 logs from the engine. Rendering commands expose internal trace details. No
 current command outside this capability union implements debug behavior.
 
+`--engine` selects the engine and requires `MayCallEngine`. The value `cloud`
+selects Dagger Cloud Engines. All other values use the existing runner-host URI
+syntax unchanged. The old `--cloud` flag is a hidden compatibility alias for
+`--engine=cloud`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` remains a deprecated
+fallback. The root command declares the capability locally because `dagger
+FILE` calls an engine, so `dagger --engine=cloud FILE` remains valid. Dynamic
+commands stop early global flag parsing at their first schema-owned token. For
+example, the first `--engine` in `dagger --engine=cloud api call deploy
+--engine production` selects the engine, while the second is an argument of
+`deploy`.
+
 `-i`, `--shell-on-error` asks the engine to open a shell in the failed
 container state when a non-internal container exec fails. It requires
 `MayCallEngine`; it does not require `MayRenderPipeline`. The old
@@ -134,8 +145,8 @@ column means that no change is proposed.
 
 | Change | Flag | Current | Capability or `dagger.toml` field |
 |---|---|---|---|
-| Move to configuration | `--cloud` | Hidden | `cloud.engines.enabled` |
 | Move to configuration | `--scale-out` | Hidden | `cloud.engines.scale-out` |
+| Scope by capability and rename | `--cloud` | Hidden | `--engine`; `MayCallEngine`; keep `--cloud` as a hidden deprecated alias |
 | Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
 | Scope by capability | `--env` | Visible | `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig` |
 | Scope by capability | `-q`, `--quiet` | Visible | `MayRenderPipeline` |
@@ -163,4 +174,6 @@ column means that no change is proposed.
 `MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
 capability scoping are implemented. All capability-scoped flag moves are
 implemented. The hide changes are also implemented. The configuration changes
-are planned.
+are planned. `--engine` and its hidden `--cloud` compatibility alias are scoped
+to `MayCallEngine`. Persisted engine selection remains part of the user
+configuration design.

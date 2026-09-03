@@ -19,6 +19,7 @@ dagger [options] [subcommand | file...]
   -c, --command string       Execute a dagger shell command
   -d, --debug                Enable engine and trace diagnostics
       --eager-runtime        load module runtime eagerly
+      --engine string        Use the specified engine (cloud or a runner host URI)
       --env string           Apply a named env overlay; writes target it, creating it if missing
   -m, --load-module string   Use a one-off module (local path or git ref)
       --model string         LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
@@ -116,6 +117,7 @@ dagger agent [options] [name...]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -184,6 +186,7 @@ dagger api call [options] [function]...
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -266,6 +269,7 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -294,6 +298,7 @@ dagger api client list
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -339,6 +344,7 @@ dagger api functions [options] [function]...
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -400,6 +406,7 @@ EOF
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -460,6 +467,7 @@ dagger api with-session python main.py
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -512,6 +520,7 @@ dagger check [options] [pattern...]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -1069,6 +1078,7 @@ dagger generate [options] [pattern...]
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -1119,6 +1129,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1141,6 +1152,7 @@ dagger installed
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1373,6 +1385,7 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1395,6 +1408,7 @@ dagger module deps list [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1423,6 +1437,7 @@ dagger module deps rm wolfi
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1457,6 +1472,7 @@ dagger module deps update wolfi@v0.20.2
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1503,6 +1519,7 @@ dagger module engine require v0.21.0
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1525,6 +1542,7 @@ dagger module engine require-current [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1547,6 +1565,7 @@ dagger module engine require-latest [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1569,6 +1588,7 @@ dagger module engine required [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1634,6 +1654,7 @@ dagger sdk install go && dagger module init go my-module
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1671,6 +1692,7 @@ dagger module sdk <subcommand> [args...] [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -1747,6 +1769,7 @@ dagger sdk install typescript && dagger module init typescript --help && dagger 
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1833,6 +1856,7 @@ dagger sdk uninstall [options] <name> [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1892,6 +1916,7 @@ dagger settings [module] [key] [value...]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1946,6 +1971,7 @@ dagger setup
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1983,6 +2009,7 @@ dagger terminal [options] [pattern]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -2028,6 +2055,7 @@ dagger uninstall hello
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2066,6 +2094,7 @@ dagger up [options] [pattern...]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
@@ -2105,6 +2134,7 @@ dagger update
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2166,6 +2196,7 @@ dagger workspace
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2216,6 +2247,7 @@ dagger workspace config [key] [value] [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2238,6 +2270,7 @@ dagger workspace config-file [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2259,6 +2292,7 @@ dagger workspace cwd [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2299,6 +2333,7 @@ dagger workspace remotes [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2320,6 +2355,7 @@ dagger workspace root [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
+      --engine string      Use the specified engine (cloud or a runner host URI)
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)

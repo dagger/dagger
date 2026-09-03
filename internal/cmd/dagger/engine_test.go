@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -182,4 +183,47 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	if cfg := engineTelemetryConfig(ctx); cfg.Detect {
 		t.Fatal("expected Detect to be disabled for an internal silent session")
 	}
+}
+
+func TestConfiguredRunnerHost(t *testing.T) {
+	oldEngine := engineFlag
+	oldCloud := useCloudEngine
+	oldRunnerHost := RunnerHost
+	t.Cleanup(func() {
+		engineFlag = oldEngine
+		useCloudEngine = oldCloud
+		RunnerHost = oldRunnerHost
+	})
+
+	RunnerHost = "image://registry.example.com/dagger-engine:latest"
+
+	t.Run("runner host fallback", func(t *testing.T) {
+		engineFlag = ""
+		useCloudEngine = false
+		require.Equal(t, RunnerHost, configuredRunnerHost())
+	})
+
+	t.Run("cloud compatibility alias", func(t *testing.T) {
+		engineFlag = ""
+		useCloudEngine = true
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+	})
+
+	t.Run("cloud engine", func(t *testing.T) {
+		engineFlag = "cloud"
+		useCloudEngine = false
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+	})
+
+	t.Run("runner host URI", func(t *testing.T) {
+		engineFlag = "tcp://engine.example.com:1234"
+		useCloudEngine = false
+		require.Equal(t, engineFlag, configuredRunnerHost())
+	})
+
+	t.Run("engine flag overrides cloud alias", func(t *testing.T) {
+		engineFlag = "tcp://engine.example.com:1234"
+		useCloudEngine = true
+		require.Equal(t, engineFlag, configuredRunnerHost())
+	})
 }

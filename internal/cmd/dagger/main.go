@@ -74,6 +74,7 @@ var (
 	noExit                    bool
 	xRelease                  string
 	autoApply                 bool
+	engineFlag                string
 	_, useCloudEngine         = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 	enableScaleOut            bool
 	profileFlag               bool
@@ -446,11 +447,6 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)
 
-	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
-	// all those functions will run in a remote cloud engine which gets created at execution time
-	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
-	flags.Lookup("cloud").Hidden = true
-
 	// this flag enables scale-out for a few commands, e.g. checks
 	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	flags.Lookup("scale-out").Hidden = true
@@ -467,6 +463,10 @@ const defaultShellCommandOnError = "/bin/sh"
 
 func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
+	engineFlags.StringVar(&engineFlag, "engine", "", "Use the specified engine (cloud or a runner host URI)")
+	engineFlags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "")
+	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
+	engineFlags.Lookup("cloud").Hidden = true
 	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails")
 	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
 	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
@@ -906,7 +906,7 @@ func Main() {
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
-	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, engine.CloudRunnerHostPrefix)
+	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env

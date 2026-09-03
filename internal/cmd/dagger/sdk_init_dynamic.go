@@ -439,6 +439,7 @@ func sdkInitGlobalFlagTakesValue(name string) bool {
 	switch name {
 	case "workdir",
 		"workspace",
+		"engine",
 		"env",
 		"progress",
 		"lock",

@@ -238,6 +238,11 @@ func TestShouldRegisterSDKInitCommands(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "global engine flag with a separate value",
+			args: []string{"--engine", "cloud", "module", "init", "go", "myapp"},
+			want: true,
+		},
+		{
 			name: "unrelated command",
 			args: []string{"sdk", "list"},
 			want: false,
@@ -303,4 +308,17 @@ func sdkInitArgNames(args []*modFunctionArg) []string {
 		names[i] = arg.Name
 	}
 	return names
+}
+
+func TestSDKInitInvocationSDKName(t *testing.T) {
+	name, ok := sdkInitInvocationSDKName([]string{"--engine", "cloud", "module", "init", "go", "myapp"})
+	require.True(t, ok)
+	require.Equal(t, "go", name)
+
+	name, ok = sdkInitInvocationSDKName([]string{"--engine=cloud", "api", "client", "init", "python", "./client", "."})
+	require.True(t, ok)
+	require.Equal(t, "python", name)
+
+	_, ok = sdkInitInvocationSDKName([]string{"sdk", "list"})
+	require.False(t, ok)
 }

@@ -155,10 +155,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		params.LogLevel = slog.LevelDebug
 	}
 
-	if useCloudEngine {
-		params.RunnerHost = engine.DefaultCloudRunnerHost
-	} else if params.RunnerHost == "" {
-		params.RunnerHost = RunnerHost
+	if engineFlag != "" || useCloudEngine || params.RunnerHost == "" {
+		params.RunnerHost = configuredRunnerHost()
 	}
 
 	if RunnerImageLoader != "" {
@@ -199,6 +197,16 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.CloudAuth = ca
 
 	return params, nil
+}
+
+func configuredRunnerHost() string {
+	if engineFlag == "cloud" || engineFlag == "" && useCloudEngine {
+		return engine.DefaultCloudRunnerHost
+	}
+	if engineFlag != "" {
+		return engineFlag
+	}
+	return RunnerHost
 }
 
 // withSetupSessions runs fn under a single Frontend (one live TUI) while letting
