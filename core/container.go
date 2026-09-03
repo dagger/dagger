@@ -3737,23 +3737,35 @@ func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, cache dagql.
 }
 
 func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithDirectoryLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerPathWriterGroups(ctr, []string{lazy.Path}, parts)
+}
+
+func (lazy *ContainerWithDirectoryLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateContainerPathWriterGroup(
+		ctx,
+		container,
+		&lazy.LazyState,
+		lazy.Parent,
+		group,
+		"Container.withDirectory",
+		[]string{lazy.Path},
+		func(mnt *ContainerMount) bool { return mnt.FileSource != nil },
+		func(ctx context.Context) error {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+				return err
+			}
+			_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
 			return err
-		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		if _, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner); err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+		},
+	)
 }
 
 func (lazy *ContainerWithDirectoryLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -3789,24 +3801,35 @@ func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, cac
 }
 
 func (lazy *ContainerWithFileLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withFile", func(ctx context.Context) error {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithFileLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerPathWriterGroups(ctr, []string{lazy.Path}, parts)
+}
+
+func (lazy *ContainerWithFileLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateContainerPathWriterGroup(
+		ctx,
+		container,
+		&lazy.LazyState,
+		lazy.Parent,
+		group,
+		"Container.withFile",
+		[]string{lazy.Path},
+		removableExactContainerMount,
+		func(ctx context.Context) error {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
+				return err
+			}
+			_, err = container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
 			return err
-		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-			return err
-		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		_, err = container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+		},
+	)
 }
 
 func (lazy *ContainerWithFileLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -4382,17 +4405,28 @@ func (lazy *ContainerWithoutMountLazy) EncodePersisted(ctx context.Context, cach
 }
 
 func (lazy *ContainerWithoutPathLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutPath", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutPathLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerPathWriterGroups(ctr, []string{lazy.Path}, parts)
+}
+
+func (lazy *ContainerWithoutPathLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateContainerPathWriterGroup(
+		ctx,
+		container,
+		&lazy.LazyState,
+		lazy.Parent,
+		group,
+		"Container.withoutPath",
+		[]string{lazy.Path},
+		removableExactContainerMount,
+		func(ctx context.Context) error {
+			_, err := container.WithoutPaths(ctx, lazy.Parent, lazy.Path)
 			return err
-		}
-		_, err := container.WithoutPaths(ctx, lazy.Parent, lazy.Path)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+		},
+	)
 }
 
 func (lazy *ContainerWithoutPathLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -4416,17 +4450,28 @@ func (lazy *ContainerWithoutPathLazy) EncodePersisted(ctx context.Context, cache
 }
 
 func (lazy *ContainerWithSymlinkLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withSymlink", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithSymlinkLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return containerPathWriterGroups(ctr, []string{lazy.LinkPath}, parts)
+}
+
+func (lazy *ContainerWithSymlinkLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateContainerPathWriterGroup(
+		ctx,
+		container,
+		&lazy.LazyState,
+		lazy.Parent,
+		group,
+		"Container.withSymlink",
+		[]string{lazy.LinkPath},
+		removableExactContainerMount,
+		func(ctx context.Context) error {
+			_, err := container.WithSymlink(ctx, lazy.Parent, lazy.Target, lazy.LinkPath)
 			return err
-		}
-		_, err := container.WithSymlink(ctx, lazy.Parent, lazy.Target, lazy.LinkPath)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
-	})
+		},
+	)
 }
 
 func (lazy *ContainerWithSymlinkLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {

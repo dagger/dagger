@@ -126,6 +126,10 @@ var (
 	_ LazyContainerParts = (*ContainerWithMountedDirectoryLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedFileLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedPathDockerfileCompatLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithDirectoryLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithFileLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutPathLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithSymlinkLazy)(nil)
 )
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
@@ -393,6 +397,134 @@ func containerMountWriterGroups(ctr *Container, target string, parts []dagql.Par
 		groups = append(groups, group)
 	}
 	return groups, nil
+}
+
+func containerSnapshotPartsForPaths(ctr *Container, paths []string) ([]dagql.PartKey, error) {
+	parts := make([]dagql.PartKey, 0, len(paths))
+	seen := make(map[dagql.PartKey]struct{}, len(paths))
+	for _, target := range paths {
+		mnt, _, err := locatePath(ctr, target)
+		if err != nil {
+			return nil, err
+		}
+		part := ContainerPartFS
+		if mnt != nil {
+			part = ContainerPartMount(mnt.Target)
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		parts = append(parts, part)
+	}
+	return parts, nil
+}
+
+// containerPathWriterGroups maps every snapshot part containing a target
+// path to one joint write group. Metadata is settled before this runs, so
+// exact mount removals have already changed the target resolution.
+func containerPathWriterGroups(ctr *Container, paths []string, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	resolveTargets := parts == nil
+	for _, part := range parts {
+		if part != ContainerPartMetadata && part != ContainerPartExecMeta {
+			resolveTargets = true
+			break
+		}
+	}
+	var writtenParts []dagql.PartKey
+	if resolveTargets {
+		var err error
+		writtenParts, err = containerSnapshotPartsForPaths(ctr, paths)
+		if err != nil {
+			return nil, err
+		}
+	}
+	written := make(map[dagql.PartKey]struct{}, len(writtenParts))
+	for _, part := range writtenParts {
+		written[part] = struct{}{}
+	}
+	if parts == nil {
+		groups := []dagql.LazyGroupKey{ContainerLazyGroupMetadata, ContainerLazyGroupWrite}
+		for _, part := range containerSnapshotParts(ctr) {
+			if _, ok := written[part]; ok {
+				continue
+			}
+			groups = append(groups, containerDelegationGroup(part))
+		}
+		return groups, nil
+	}
+	groups := make([]dagql.LazyGroupKey, 0, len(parts))
+	seen := make(map[dagql.LazyGroupKey]struct{}, len(parts))
+	for _, part := range parts {
+		group := containerDelegationGroup(part)
+		_, isWritten := written[part]
+		switch {
+		case part == ContainerPartMetadata:
+			group = ContainerLazyGroupMetadata
+		case isWritten:
+			group = ContainerLazyGroupWrite
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func removableExactContainerMount(mnt *ContainerMount) bool {
+	return mnt.CacheSource == nil && mnt.TmpfsSource == nil
+}
+
+func evaluateContainerPathWriterGroup(
+	ctx context.Context,
+	container *Container,
+	state *LazyState,
+	parent dagql.ObjectResult[*Container],
+	group dagql.LazyGroupKey,
+	opName string,
+	paths []string,
+	removeExactMount func(*ContainerMount) bool,
+	write func(context.Context) error,
+) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return state.EvaluateGroup(ctx, opName, group, func(ctx context.Context) error {
+			if err := materializeContainerMetadataFromParent(ctx, container, parent); err != nil {
+				return err
+			}
+			for _, target := range paths {
+				target = absPath(container.Config.WorkingDir, target)
+				mnt := container.mountAt(target)
+				if mnt == nil || !removeExactMount(mnt) {
+					continue
+				}
+				if _, err := container.WithoutMount(ctx, target); err != nil {
+					return err
+				}
+			}
+			container.ImageRef = ""
+			return nil
+		})
+	case ContainerLazyGroupWrite:
+		return state.EvaluateGroup(ctx, opName, group, func(ctx context.Context) error {
+			parts, err := containerSnapshotPartsForPaths(container, paths)
+			if err != nil {
+				return err
+			}
+			for _, part := range parts {
+				if err := delegateContainerPart(ctx, container, parent, part); err != nil {
+					return err
+				}
+			}
+			return write(ctx)
+		})
+	default:
+		return state.EvaluateGroup(ctx, opName, group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, parent, dagql.PartKey(group))
+		})
+	}
 }
 
 // materializeContainerMetadataFromParent evaluates only the parent's
