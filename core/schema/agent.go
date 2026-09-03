@@ -10,7 +10,7 @@ import (
 
 // agentSchema installs the Agent type: the async evaluation-loop entity of
 // hack/designs/async-agents.md. Agent instances are minted by LLM.spawn and
-// rehydrated by the pure LLM.agent(id:) lookup (core/schema/llm.go); this
+// rehydrated by the pure LLM.agent(handle:) lookup (core/schema/llm.go); this
 // file installs the type's lifecycle fields, all of which operate on the
 // session-scoped runtime registry (core.AgentRuntimes) rather than on the
 // value.
@@ -26,17 +26,17 @@ func (s agentSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Agent]{
 		dagql.Func("name", s.name).
-			Doc(`Display label and identity discriminator — not a session-wide address.`),
+			Doc(`Display label for the agent; carries no identity.`),
 
-		// The instance ID is already public: it rides every loop span as
+		// The runtime handle is already public: it rides every loop span as
 		// dagger.io/agent.id, which is how a client's roster keys its
 		// entries (design §9). Reading it off a handle is what lets that
 		// client tell whether a rostered agent is one it already drives —
 		// the correlation focus needs — and it grants nothing extra: you
 		// still need the handle to ask, so §3.3's capability model holds.
-		dagql.Func("instanceID", s.instanceID).
-			Doc(`The unique instance identity minted by the spawn that created this agent.`,
-				`It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.`),
+		dagql.Func("handle", s.handle).
+			Doc(`The opaque runtime handle minted by the spawn that created this agent.`,
+				`It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.`),
 
 		dagql.NodeFunc("state", s.state).
 			DoNotCache("Projects live runtime state.").
@@ -63,14 +63,14 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Every send enqueues a distinct message into live runtime state.").
 			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
 				`Never blocks, never drops; concurrent sends queue in order.`,
-				`The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.`,
+				`The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.`,
 				`Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.`).
 			Args(
 				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),
 				dagql.Arg("replyTo").Doc(`The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.`),
 			),
 
-		// message is deliberately cached (no DoNotCache): the message ID
+		// message is deliberately cached (no DoNotCache): the message handle
 		// argument pins the lookup to one immutable identity-only handle and
 		// permanent runtime records are never deleted. Mutable/pending delivery
 		// evidence is read by AgentMessage.delivery, not copied onto this value,
@@ -79,13 +79,13 @@ func (s agentSchema) Install(srv *dagql.Server) {
 		// Agent descends from Query.llm's PerSessionInput), so the cached handle
 		// can never leak across sessions. Caching is also what makes send's
 		// re-exec pinning cheap: re-loading a pinned ID replays
-		// …agent(id:…)!message(…) and lands on the same cached instance.
+		// …agent(handle:…)!message(…) and lands on the same cached instance.
 		dagql.NodeFunc("message", s.message).
-			Doc(`Look up a previously sent message by its message ID, returning its handle.`,
-				`This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).`,
-				`Fails if the agent has no runtime entry in this session, or no record of the given ID.`).
+			Doc(`Look up a previously sent message by its opaque handle.`,
+				`This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).`,
+				`Fails if the agent has no runtime entry in this session, or no record of the given handle.`).
 			Args(
-				dagql.Arg("id").Doc(`The message ID, as generated by the send that enqueued the message.`),
+				dagql.Arg("handle").Doc(`The opaque handle generated by the send that enqueued the message.`),
 			),
 
 		dagql.NodeFunc("interrupt", s.interrupt).
@@ -106,18 +106,10 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				`Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.`,
 				`No-op on a running or idle agent.`),
 
-		dagql.NodeFunc("waitFor", s.waitFor).
-			DoNotCache("Blocks on live runtime state.").
-			Doc(`Block until the agent reaches the given state, returning immediately if it is already there.`,
-				`A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.`).
-			Args(
-				dagql.Arg("state").Doc(`The lifecycle state to wait for.`),
-			),
-
-		dagql.NodeFunc("waitSettled", s.waitSettled).
+		dagql.NodeFunc("wait", s.wait).
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.`,
-				`The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.`),
+				`Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.`),
 
 		dagql.NodeFunc("notify", s.notify).
 			DoNotCache("Imperatively mutates runtime state.").
@@ -170,11 +162,11 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`The message's short ref within the receiving agent's runtime, e.g. "#3".`,
 				`This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.`),
 
-		dagql.Func("await", s.messageAwait).
+		dagql.Func("response", s.messageResponse).
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.`,
-				`Idempotent: cancel and re-await freely; concurrent waiters share the result.`,
-				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.`,
+				`Idempotent: cancel and request the response again freely; concurrent waiters share the result.`,
+				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.`,
 				`Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.`),
 	}.Install(srv)
 
@@ -186,8 +178,8 @@ func (s agentSchema) name(ctx context.Context, agent *core.Agent, _ struct{}) (s
 	return agent.Name, nil
 }
 
-func (s agentSchema) instanceID(ctx context.Context, agent *core.Agent, _ struct{}) (string, error) {
-	return agent.InstanceID, nil
+func (s agentSchema) handle(ctx context.Context, agent *core.Agent, _ struct{}) (string, error) {
+	return agent.Handle, nil
 }
 
 func agentRuntimes(ctx context.Context) (*core.AgentRuntimes, error) {
@@ -222,12 +214,11 @@ func (s agentSchema) state(ctx context.Context, parent dagql.ObjectResult[*core.
 	}
 	if !found {
 		// No runtime entry (reads never create one), which today means a
-		// handle built by the bare agent(id:) lookup rather than by a spawn
+		// handle built by the bare agent(handle:) lookup rather than by a spawn
 		// or a rehydrate — both of which create the entry they name. The
 		// projected state of that absence is IDLE: mailbox empty, no turn
-		// open. The entry is created lazily by pause/resume/interrupt/
-		// waitFor/stop, none of which can be a silent constructor the way
-		// send would be.
+		// open. Runtime verbs still reject the handle: only spawn and rehydrate
+		// may create the entry.
 		return core.AgentStateIdle, nil
 	}
 	return rt.State(), nil
@@ -293,12 +284,12 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	}
 	// send is DoNotCache — every send enqueues a distinct message — and
 	// DoNotCache results are detached in dagql: they have no addressable
-	// ID, which would break the cancel-and-re-await contract across
+	// ID, which would break cancel-and-request-again across
 	// requests. Pin the handle's identity by re-exec (design §9, the same
 	// trick step() uses to materialize state as selectors): a real Select
 	// through the message lookup field, on the agent receiver instance,
 	// yields an instance whose ID is the honest, replayable chain
-	// `…agent(id:…)!message(id:"…")` — addressable from any request in the
+	// `…agent(handle:…)!message(handle:"…")` — addressable from any request in the
 	// session. That pinned ID is the result: send is imperative, so like
 	// the other verbs it returns ID! rather than the object, forcing lazy
 	// clients to execute the (unrepeatable) enqueue exactly once and
@@ -313,8 +304,8 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 		Field: "message",
 		Args: []dagql.NamedInput{
 			{
-				Name:  "id",
-				Value: dagql.NewString(msg.MessageID),
+				Name:  "handle",
+				Value: dagql.NewString(msg.Handle),
 			},
 		},
 	}); err != nil {
@@ -328,13 +319,13 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 }
 
 func (s agentSchema) message(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
-	ID string
+	Handle string
 }) (*core.AgentMessage, error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return agents.LookupMessage(ctx, parent, args.ID)
+	return agents.LookupMessage(ctx, parent, args.Handle)
 }
 
 func (s agentSchema) interrupt(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
@@ -342,9 +333,7 @@ func (s agentSchema) interrupt(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return res, err
 	}
-	// Interrupting a never-started agent degenerates to pause, so create
-	// the entry lazily (without starting the loop), like pause does.
-	rt, err := agents.GetOrCreate(ctx, parent)
+	rt, err := agents.Require(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -359,9 +348,7 @@ func (s agentSchema) pause(ctx context.Context, parent dagql.ObjectResult[*core.
 	if err != nil {
 		return res, err
 	}
-	// Pausing a never-started agent creates its entry lazily, paused: a
-	// later start or send parks immediately, with mail queuing as QUEUED.
-	rt, err := agents.GetOrCreate(ctx, parent)
+	rt, err := agents.Require(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -376,9 +363,7 @@ func (s agentSchema) resume(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return res, err
 	}
-	// Lazy entry for symmetry with pause: resuming a never-started,
-	// never-paused agent is a documented no-op.
-	rt, err := agents.GetOrCreate(ctx, parent)
+	rt, err := agents.Require(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -404,41 +389,20 @@ func (s agentSchema) messageRef(ctx context.Context, msg *core.AgentMessage, _ s
 	return agents.MessageRef(ctx, msg)
 }
 
-func (s agentSchema) messageAwait(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
+func (s agentSchema) messageResponse(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
 		return "", err
 	}
-	return agents.AwaitMessage(ctx, msg)
+	return agents.MessageResponse(ctx, msg)
 }
 
-func (s agentSchema) waitFor(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
-	State core.AgentState `default:"IDLE"`
-}) (res dagql.Result[core.AgentID], _ error) {
+func (s agentSchema) wait(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
 		return res, err
 	}
-	// Create the entry lazily (without starting the loop) so waiting on a
-	// never-started agent blocks on future transitions instead of erroring.
-	rt, err := agents.GetOrCreate(ctx, parent)
-	if err != nil {
-		return res, err
-	}
-	if err := rt.WaitFor(ctx, args.State); err != nil {
-		return res, err
-	}
-	return agentSelfID(ctx, parent)
-}
-
-func (s agentSchema) waitSettled(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
-	agents, err := agentRuntimes(ctx)
-	if err != nil {
-		return res, err
-	}
-	// Lazy entry, like waitFor: a never-started agent projects IDLE, which
-	// is settled, so this returns immediately rather than erroring.
-	rt, err := agents.GetOrCreate(ctx, parent)
+	rt, err := agents.Require(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -477,10 +441,7 @@ func (s agentSchema) stop(ctx context.Context, parent dagql.ObjectResult[*core.A
 	if err != nil {
 		return res, err
 	}
-	// Stopping a never-started agent still creates its entry, transitioned
-	// straight to a dormant tombstone. Stop remains idempotent; send or resume
-	// may relaunch the entry later.
-	rt, err := agents.GetOrCreate(ctx, parent)
+	rt, err := agents.Require(ctx, parent)
 	if err != nil {
 		return res, err
 	}

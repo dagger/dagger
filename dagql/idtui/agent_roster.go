@@ -12,7 +12,7 @@ import (
 // AgentRosterEntry is one agent's line in the roster: its identity, its
 // display name, and the lifecycle state the engine last published for it.
 type AgentRosterEntry struct {
-	// ID is the agent's spawn-minted instance ID — the address a focus
+	// ID is the agent's spawn-minted runtime handle — the address a focus
 	// request names. It is never the display name, which carries no identity.
 	ID   string
 	Name string
