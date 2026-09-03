@@ -64,14 +64,8 @@ func (s GitAttachable) CheckoutState(ctx context.Context, req *CheckoutStateRequ
 		return newCheckoutStateErrorResponse(UNKNOWN, err.Error()), nil
 	}
 
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		state.headSHA,
-		state.headRef,
-		state.objectFormat,
-		state.refs,
-	}, "\x00")))
 	return &CheckoutStateResponse{
-		Result: &CheckoutStateResponse_StateDigest{StateDigest: hex.EncodeToString(sum[:])},
+		Result: &CheckoutStateResponse_StateDigest{StateDigest: state.digest()},
 	}, nil
 }
 
@@ -111,8 +105,19 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if err != nil {
 		return sendErr(PACK_FAILED, err.Error())
 	}
+	stateDigest := state.digest()
+	if expected := req.GetExpectedStateDigest(); expected != "" && expected != stateDigest {
+		return sendErr(CHECKOUT_STATE_MISMATCH, fmt.Sprintf("checkout state moved from %s to %s", expected, stateDigest))
+	}
 
 	if state.headSHA == "" {
+		latest, err := collectCheckoutState(ctx, checkout)
+		if err != nil {
+			return sendErr(PACK_FAILED, err.Error())
+		}
+		if latest.digest() != stateDigest {
+			return sendErr(CHECKOUT_STATE_MISMATCH, "checkout state changed while packing")
+		}
 		// Unborn HEAD: nothing to pack; the engine reconstructs an empty
 		// repository on the same branch.
 		return srv.Send(&PackCheckoutResponse{
@@ -120,6 +125,7 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 				Metadata: &PackCheckoutMetadata{
 					HeadRef:      state.headRef,
 					ObjectFormat: state.objectFormat,
+					StateDigest:  stateDigest,
 				},
 			},
 		})
@@ -135,6 +141,13 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if _, err := runHostGit(ctx, checkout, "bundle", "create", bundlePath, "--branches", "--tags", "HEAD"); err != nil {
 		return sendErr(PACK_FAILED, err.Error())
 	}
+	latest, err := collectCheckoutState(ctx, checkout)
+	if err != nil {
+		return sendErr(PACK_FAILED, err.Error())
+	}
+	if latest.digest() != stateDigest {
+		return sendErr(CHECKOUT_STATE_MISMATCH, "checkout state changed while packing")
+	}
 
 	if err := srv.Send(&PackCheckoutResponse{
 		Msg: &PackCheckoutResponse_Metadata{
@@ -142,6 +155,7 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 				HeadSha:      state.headSHA,
 				HeadRef:      state.headRef,
 				ObjectFormat: state.objectFormat,
+				StateDigest:  stateDigest,
 			},
 		},
 	}); err != nil {
@@ -180,6 +194,16 @@ type checkoutState struct {
 	headRef      string // symbolic HEAD, empty when detached
 	objectFormat string
 	refs         string // all branch and tag refs with their targets
+}
+
+func (state checkoutState) digest() string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		state.headSHA,
+		state.headRef,
+		state.objectFormat,
+		state.refs,
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
 }
 
 // collectCheckoutState gathers a checkout's git state with host git. HEAD not

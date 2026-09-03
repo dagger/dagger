@@ -70,37 +70,49 @@ func MaterializeHostGitCheckout(
 		return tree, fmt.Errorf("buildkit: %w", err)
 	}
 
-	state, err := bk.GitCheckoutState(ctx, hostPath)
-	switch {
-	case errors.Is(err, gitutil.ErrGitNoRepo):
-		return tree, ErrNoGitContext
-	case errors.Is(err, engineutil.ErrGitPackUnsupported):
-		return tree, nil
-	case err != nil:
-		return tree, fmt.Errorf("git checkout state for %q: %w", hostPath, err)
-	}
-
-	// The live ref-state digest keys the reconstruction unless the caller
-	// pinned it to a stable token of its own.
-	stateDigest := state
-	if cacheKey != "" {
-		stateDigest = cacheKey
-	}
-
+	const maxStateAttempts = 3
 	var gitDir dagql.ObjectResult[*Directory]
-	if err := dag.Select(ctx, dag.Root(), &gitDir,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "__gitDir",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(hostPath)},
-				{Name: "stateDigest", Value: dagql.String(stateDigest)},
+	for attempt := 0; attempt < maxStateAttempts; attempt++ {
+		state, err := bk.GitCheckoutState(ctx, hostPath)
+		switch {
+		case errors.Is(err, gitutil.ErrGitNoRepo):
+			return tree, ErrNoGitContext
+		case errors.Is(err, engineutil.ErrGitPackUnsupported):
+			return tree, nil
+		case err != nil:
+			return tree, fmt.Errorf("git checkout state for %q: %w", hostPath, err)
+		}
+
+		// The live ref-state digest keys the reconstruction unless the caller
+		// pinned it to a stable token of its own. Only a live digest is also an
+		// expected pack state; an epoch-pinned workspace accepts whichever
+		// stable state is first materialized in its cache slot.
+		stateDigest := state
+		validateState := true
+		if cacheKey != "" {
+			stateDigest = cacheKey
+			validateState = false
+		}
+
+		err = dag.Select(ctx, dag.Root(), &gitDir,
+			dagql.Selector{
+				Field: "host",
 			},
-		},
-	); err != nil {
-		return tree, fmt.Errorf("materialize git dir for %q: %w", hostPath, err)
+			dagql.Selector{
+				Field: "__gitDir",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(hostPath)},
+					{Name: "stateDigest", Value: dagql.String(stateDigest)},
+					{Name: "validateState", Value: dagql.Boolean(validateState)},
+				},
+			},
+		)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, engineutil.ErrGitCheckoutStateChanged) || attempt == maxStateAttempts-1 {
+			return tree, fmt.Errorf("materialize git dir for %q: %w", hostPath, err)
+		}
 	}
 	gitDirID, err := gitDir.ID()
 	if err != nil {

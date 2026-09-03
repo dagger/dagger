@@ -73,6 +73,10 @@ message CheckoutStateResponse {
 // returned pack.
 message PackCheckoutRequest {
   string checkout_path = 1;
+  // expected_state_digest, when set, requires the packed checkout to match a
+  // preceding CheckoutState response. A mismatch asks the engine to retry
+  // under the checkout's new cache key.
+  string expected_state_digest = 2;
 }
 
 // PackCheckoutResponse streams one metadata message first, then the bundle
@@ -97,6 +101,9 @@ message PackCheckoutMetadata {
   // error reports a failure instead of a pack: NOT_A_REPO when the checkout
   // has no .git entry at its root, NOT_FOUND when git is not installed.
   ErrorInfo error = 4;
+  // state_digest identifies the exact checkout state represented by the
+  // bundle. The client verifies that it remains stable while packing.
+  string state_digest = 5;
 }
 
 // PackUncommittedRequest asks the client for the git-visible working-tree delta
@@ -144,8 +151,8 @@ message ErrorInfo {
     NOT_A_REPO = 7;
     PACK_FAILED = 8;
     UNCOMMITTED_UNSUPPORTED = 9;
-}
+    CHECKOUT_STATE_MISMATCH = 10;
+  }
   ErrorType type = 1;
   string message = 2;
 }
-

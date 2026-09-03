@@ -817,8 +817,9 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 }
 
 type hostGitDirArgs struct {
-	Path        string
-	StateDigest string
+	Path          string
+	StateDigest   string
+	ValidateState bool
 }
 
 // gitDir reconstructs a canonical .git directory for the client checkout at
@@ -839,7 +840,11 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	// cache key, keying this reconstruction to the checkout's ref state so the
 	// result is reused until the checkout's refs move.
 
-	pack, err := bk.PackGitCheckout(ctx, args.Path)
+	expectedStateDigest := ""
+	if args.ValidateState {
+		expectedStateDigest = args.StateDigest
+	}
+	pack, err := bk.PackGitCheckout(ctx, args.Path, expectedStateDigest)
 	if err != nil {
 		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
 	}

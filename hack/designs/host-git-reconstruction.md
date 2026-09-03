@@ -56,11 +56,13 @@ handlers in `git_pack.go` and `git_uncommitted.go`):
   symbolic HEAD, object format, all branch+tag refs). A cheap probe whose
   result changes exactly when the refs move; it is the cache key that keeps
   packing off the hot path.
-- **`PackCheckout(checkout_path) → stream(metadata, chunks)`** — one
-  metadata message (`head_sha`, `head_ref`, `object_format`), then the bytes
-  of `git bundle create <tmp> --branches --tags HEAD` in 1MiB chunks. A
-  repository with no commits yet (unborn HEAD) returns metadata carrying
-  only the branch name, with no bundle.
+- **`PackCheckout(checkout_path, expected_state_digest) →
+  stream(metadata, chunks)`** — one metadata message (`head_sha`, `head_ref`,
+  `object_format`, `state_digest`), then the bytes of `git bundle create <tmp>
+  --branches --tags HEAD` in 1MiB chunks. The client rejects a stale expected
+  digest or refs that move during bundle creation, and the engine retries under
+  a fresh cache key. A repository with no commits yet (unborn HEAD) returns
+  metadata carrying only the branch name and state digest, with no bundle.
 - **`PackUncommitted(checkout_path, expected_head_sha) →
   stream(metadata, chunks)`** — the checkout's uncommitted changes
   (tracked modifications plus ordinary untracked files; ignored files and

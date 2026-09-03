@@ -265,6 +265,7 @@ func TestPackCheckoutPlainRepo(t *testing.T) {
 	meta := srv.metadata(t)
 	require.Equal(t, head, meta.GetHeadSha())
 	require.Equal(t, "refs/heads/main", meta.GetHeadRef())
+	require.Equal(t, checkoutDigest(t, repo), meta.GetStateDigest())
 	require.Positive(t, srv.chunkCount(), "expected bundle chunks")
 
 	bundlePath := srv.writeBundle(t)
@@ -278,6 +279,23 @@ func TestPackCheckoutPlainRepo(t *testing.T) {
 	cloneDir := filepath.Join(t.TempDir(), "clone")
 	gitCmd(t, home, "", "clone", bundlePath, cloneDir)
 	require.Equal(t, meta.GetHeadSha(), gitCmd(t, home, cloneDir, "rev-parse", "HEAD"))
+}
+
+func TestPackCheckoutRejectsUnexpectedState(t *testing.T) {
+	skipIfNoGit(t)
+
+	repo, home := initRepo(t, "main")
+	commitFile(t, repo, home, "a.txt", "one", "first")
+	expected := checkoutDigest(t, repo)
+	commitFile(t, repo, home, "b.txt", "two", "second")
+
+	srv := &fakePackCheckoutServer{ctx: context.Background()}
+	require.NoError(t, GitAttachable{}.PackCheckout(&PackCheckoutRequest{
+		CheckoutPath:        repo,
+		ExpectedStateDigest: expected,
+	}, srv))
+	require.Len(t, srv.responses, 1)
+	require.Equal(t, CHECKOUT_STATE_MISMATCH, srv.metadata(t).GetError().GetType())
 }
 
 func TestPackCheckoutWorktree(t *testing.T) {

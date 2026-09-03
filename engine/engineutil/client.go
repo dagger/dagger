@@ -503,6 +503,11 @@ const (
 // itself carries.
 var ErrGitPackUnsupported = errors.New("client cannot pack git checkouts")
 
+// ErrGitCheckoutStateChanged reports that a checkout moved while the engine
+// was selecting or receiving its pack. The caller should read its state again
+// and retry under the new cache key.
+var ErrGitCheckoutStateChanged = errors.New("git checkout state changed")
+
 // ErrGitUncommittedUnsupported reports that the client cannot provide a packed
 // working-tree delta. Callers may fall back to syncing the checkout directory.
 var ErrGitUncommittedUnsupported = errors.New("client cannot pack git worktrees")
@@ -558,13 +563,14 @@ type GitCheckoutPack struct {
 	HeadSHA      string
 	HeadRef      string
 	ObjectFormat string
+	StateDigest  string
 	Bundle       []byte
 }
 
 // PackGitCheckout asks the client to pack a local checkout's repository with
 // its own git. See GitCheckoutPack. A checkout that is not a git repository
 // reports gitutil.ErrGitNoRepo.
-func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*GitCheckoutPack, error) {
+func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStateDigest string) (*GitCheckoutPack, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -578,7 +584,8 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*Git
 	}
 
 	stream, err := git.NewGitClient(caller.Conn()).PackCheckout(ctx, &git.PackCheckoutRequest{
-		CheckoutPath: checkoutPath,
+		CheckoutPath:        checkoutPath,
+		ExpectedStateDigest: expectedStateDigest,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pack stream: %w", err)
@@ -604,6 +611,8 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*Git
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
 				case git.NOT_FOUND:
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitPackUnsupported)
+				case git.CHECKOUT_STATE_MISMATCH:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCheckoutStateChanged)
 				default:
 					return nil, errors.New(errInfo.Message)
 				}
@@ -612,6 +621,7 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*Git
 				HeadSHA:      msg.Metadata.HeadSha,
 				HeadRef:      msg.Metadata.HeadRef,
 				ObjectFormat: msg.Metadata.ObjectFormat,
+				StateDigest:  msg.Metadata.StateDigest,
 			}
 		case *git.PackCheckoutResponse_Chunk:
 			if pack == nil {
@@ -622,6 +632,12 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*Git
 	}
 	if pack == nil {
 		return nil, fmt.Errorf("missing pack metadata message")
+	}
+	if pack.StateDigest == "" {
+		return nil, fmt.Errorf("checkout pack is missing its state digest")
+	}
+	if expectedStateDigest != "" && pack.StateDigest != expectedStateDigest {
+		return nil, fmt.Errorf("checkout pack state %s does not match expected %s: %w", pack.StateDigest, expectedStateDigest, ErrGitCheckoutStateChanged)
 	}
 	if pack.HeadSHA != "" && len(pack.Bundle) == 0 {
 		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
