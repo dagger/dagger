@@ -105,9 +105,10 @@ func (wcprofLazyParentProcessor) Shutdown(context.Context) error   { return nil 
 func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil }
 
 // beginOTelLazyOp mints the OTel `lazy` op span for a deferred evaluation. It
-// MUST be called under lazyMu, before lazyEvalWaitCh is published, so a joiner
-// that observes the in-flight eval always has a valid wait target (the target is
-// minted before the waiter-observable primitive). It returns the context the callback runs under,
+// MUST be called under lazyMu, before the attempt pointer is published, so a
+// joiner that observes the in-flight eval always has that attempt's valid wait
+// target (the target is minted before the waiter-observable primitive). It
+// returns the context the callback runs under,
 // the lazy op span (whose SpanContext the caller stashes as the joiner wait
 // target and which the caller ends when the callback finishes), and isResume —
 // whether this is a producer-context re-point (so the caller applies the

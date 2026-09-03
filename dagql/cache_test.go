@@ -250,6 +250,14 @@ type cacheTestObject struct {
 	onRelease         func(context.Context) error
 	lazyEval          LazyEvalFunc
 	dependencyResults []AnyResult
+	snapshotLinks     []PersistedSnapshotRefLink
+}
+
+func (obj *cacheTestObject) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
+	if obj == nil {
+		return nil
+	}
+	return obj.snapshotLinks
 }
 
 type noopTypeResolver struct{}
