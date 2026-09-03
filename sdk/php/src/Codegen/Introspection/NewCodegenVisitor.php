@@ -28,7 +28,6 @@ class NewCodegenVisitor extends CodeWriter
     public function __construct(
         string $targetDirectory,
         private readonly bool $supportsNullableObjects = true,
-        private readonly bool $supportsIdHandles = true,
         private readonly array $interfaceNames = [],
     ) {
         parent::__construct($targetDirectory);
@@ -182,7 +181,7 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         $returnType = $field->type;
-        $isConvertID = $field->isConvertID($this->supportsIdHandles);
+        $isConvertID = $field->isConvertID();
 
         // Determine the PHP return type
         if ($isConvertID) {
@@ -304,7 +303,7 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         $returnType = $field->type;
-        $isConvertID = $field->isConvertID($this->supportsIdHandles);
+        $isConvertID = $field->isConvertID();
 
         if ($isConvertID) {
             [, $handleReturnType] = $this->resolveIdHandle($field, $parentType);
@@ -337,7 +336,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     private function resolveIdHandle(IntrospectionField $field, IntrospectionType $parentType): array
     {
-        $handleType = $field->idHandleType($this->supportsIdHandles);
+        $handleType = $field->idHandleType();
         $isInterface = $handleType === $parentType->name
             ? $parentType->kind === 'INTERFACE'
             : in_array($handleType, $this->interfaceNames, true);

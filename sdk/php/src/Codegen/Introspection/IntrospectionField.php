@@ -47,22 +47,19 @@ class IntrospectionField
      * Returns true if this field returns an ID handle: an ID the generated
      * method loads as an object instead of exposing (see idHandleType()).
      */
-    public function isConvertID(bool $supportsIdHandles = false): bool
+    public function isConvertID(): bool
     {
-        return $this->idHandleType($supportsIdHandles) !== null;
+        return $this->idHandleType() !== null;
     }
 
     /**
      * The GraphQL type an ID-returning field loads, or null when the ID is
      * returned as-is (including the id field itself).
      *
-     * The @expectedType directive names it. Fields returning their parent's
-     * own ID (sync-likes) have always been loaded as the parent, and once the
-     * schema supports ID handles every expected type is loaded, so LLM.spawn
-     * returns an Agent rather than its ID. Older views keep the parent-only
-     * rule so their generated signatures do not move.
+     * The @expectedType directive names it: sync-likes return their parent,
+     * and LLM.spawn returns an Agent rather than its ID.
      */
-    public function idHandleType(bool $supportsIdHandles = false): ?string
+    public function idHandleType(): ?string
     {
         if ($this->name === 'id') {
             return null;
@@ -74,13 +71,6 @@ class IntrospectionField
         if ($ref->kind !== 'SCALAR') {
             return null;
         }
-        $expectedType = $this->expectedType();
-        if ($expectedType === null) {
-            return null;
-        }
-        if ($expectedType === $this->parentTypeName || $supportsIdHandles) {
-            return $expectedType;
-        }
-        return null;
+        return $this->expectedType();
     }
 }

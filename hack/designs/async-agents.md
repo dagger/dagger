@@ -763,8 +763,7 @@ core/integration/agent_runtime_test.go), ratified here:
   side effect executes exactly once — eliminating the duplicate-send
   hazard of re-forcing a lazy `DoNotCache` chain. Typed SDKs do the same
   at codegen time: an `ID!` return with `@expectedType` is loaded as that
-  object (from schema `v1.0.0-beta.12`; older views keep the parent-only
-  rule), so `spawn` hands back an `Agent` and `send` an `AgentMessage`
+  object, so `spawn` hands back an `Agent` and `send` an `AgentMessage`
   rather than their IDs. Reads stay
   object-returning: `agent(id:)` and `message(id:)` (pure lookups), and
   `snapshot`. For `spawn` and `send` the returned ID is the pinned lookup
