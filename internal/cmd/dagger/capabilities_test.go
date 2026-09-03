@@ -61,6 +61,38 @@ func TestMayProduceOutputFlags(t *testing.T) {
 	require.Equal(t, []string{string(mayProduceOutput)}, flag.Annotations[flagCapabilitiesAnnotation])
 }
 
+func TestDebugFlags(t *testing.T) {
+	oldDebug := debugFlag
+	t.Cleanup(func() { debugFlag = oldDebug })
+
+	flags := pflag.NewFlagSet("debug", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+
+	flag := flags.Lookup("debug")
+	require.NotNil(t, flag)
+	require.Equal(t, "d", flag.Shorthand)
+	require.False(t, flag.Hidden)
+	require.Equal(t, []string{
+		string(mayCallEngine),
+		string(mayRenderPipeline),
+	}, flag.Annotations[flagAnyCapabilitiesAnnotation])
+
+	var visit func(*cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		expected := commandHasCapability(cmd, mayCallEngine) || commandHasCapability(cmd, mayRenderPipeline)
+		require.Equal(t, expected, FlagAvailableForCommand(cmd, flag), cmd.CommandPath())
+		for _, child := range cmd.Commands() {
+			visit(child)
+		}
+	}
+	visit(rootCmd)
+
+	require.True(t, FlagAvailableForCommand(settingsCmd, flag))
+	require.True(t, FlagAvailableForCommand(traceCmd, flag))
+	require.False(t, FlagAvailableForCommand(activityCmd, flag))
+	require.False(t, FlagAvailableForCommand(sdkInstalledCmd, flag))
+}
+
 func TestMayCallEngineFlags(t *testing.T) {
 	oldProfile := profileFlag
 	t.Cleanup(func() {

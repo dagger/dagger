@@ -428,7 +428,6 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
@@ -440,6 +439,9 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")
 	setFlagCapabilities(flags.Lookup("auto-apply"), mayProduceOutput)
+
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Enable engine and trace diagnostics")
+	setFlagAnyCapabilities(flags.Lookup("debug"), mayCallEngine, mayRenderPipeline)
 
 	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)

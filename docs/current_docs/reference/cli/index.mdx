@@ -17,7 +17,7 @@ dagger [options] [subcommand | file...]
 ```
       --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -c, --command string               Execute a dagger shell command
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --eager-runtime                load module runtime eagerly
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -76,7 +76,6 @@ dagger activity
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -123,7 +122,7 @@ dagger agent [options] [name...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -159,7 +158,6 @@ See https://docs.dagger.io/api for the full overview.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -199,7 +197,7 @@ dagger api call [options] [function]...
 
 ```
   -y, --auto-apply                   Automatically apply changes when an output is returned
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -233,7 +231,6 @@ module that generates it.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -289,7 +286,7 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
 
 ```
   -y, --auto-apply                   Automatically apply changes when an output is returned
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -320,7 +317,7 @@ dagger api client list
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -368,7 +365,7 @@ dagger api functions [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -432,7 +429,7 @@ EOF
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -495,7 +492,7 @@ dagger api with-session python main.py
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -550,7 +547,7 @@ dagger check [options] [pattern...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -576,7 +573,6 @@ Manage Dagger Cloud
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -613,7 +609,6 @@ dagger cloud billing
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -644,7 +639,6 @@ dagger cloud billing manage [org]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -668,7 +662,6 @@ dagger cloud billing plans
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -692,7 +685,6 @@ dagger cloud check
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -726,7 +718,6 @@ dagger cloud check list [version]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -750,7 +741,6 @@ dagger cloud check off [name]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -774,7 +764,6 @@ dagger cloud check on [name]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -798,7 +787,6 @@ dagger cloud check status [name]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -828,7 +816,6 @@ dagger cloud integration
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -866,7 +853,6 @@ dagger cloud integration create github
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -890,7 +876,6 @@ dagger cloud integration list [type]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -914,7 +899,6 @@ dagger cloud integration rm <id>
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -944,7 +928,6 @@ dagger cloud login [options] [org]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -967,7 +950,6 @@ dagger cloud logout
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1014,7 +996,6 @@ dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1043,7 +1024,6 @@ dagger cloud org [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1069,7 +1049,6 @@ dagger cloud org info [org] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -1093,7 +1072,6 @@ dagger cloud org list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -1117,7 +1095,6 @@ dagger cloud org use <org> [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
@@ -1170,7 +1147,6 @@ dagger cloud rerun [--check NAME ...] [--failed | --all]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1215,7 +1191,7 @@ dagger generate [options] [pattern...]
 
 ```
   -y, --auto-apply                   Automatically apply changes when an output is returned
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1268,7 +1244,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1293,7 +1269,7 @@ dagger installed
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1318,7 +1294,6 @@ Manage LLM provider configuration, API keys, and default models.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1359,7 +1334,6 @@ dagger llm add-key <provider>
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1382,7 +1356,6 @@ dagger llm config
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1405,7 +1378,6 @@ dagger llm remove-key <provider>
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1428,7 +1400,6 @@ dagger llm reset
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1451,7 +1422,6 @@ dagger llm set-default <provider> [model]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1474,7 +1444,6 @@ dagger llm setup
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1497,7 +1466,6 @@ dagger llm show-config
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1522,7 +1490,6 @@ Operates on the dagger-module.toml reachable from the current directory.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1545,7 +1512,6 @@ Manage this module's dependencies
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1578,7 +1544,7 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1603,7 +1569,7 @@ dagger module deps list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1634,7 +1600,7 @@ dagger module deps rm wolfi
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1671,7 +1637,7 @@ dagger module deps update wolfi@v0.20.2
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1692,7 +1658,6 @@ Manage this module's required engine version
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1725,7 +1690,7 @@ dagger module engine require v0.21.0
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1750,7 +1715,7 @@ dagger module engine require-current [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1775,7 +1740,7 @@ dagger module engine require-latest [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1800,7 +1765,7 @@ dagger module engine required [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1868,7 +1833,7 @@ dagger sdk install go && dagger module init go my-module
 
 ```
   -y, --auto-apply                   Automatically apply changes when an output is returned
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1908,7 +1873,7 @@ dagger module sdk <subcommand> [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1939,7 +1904,6 @@ Use an installed SDK with `dagger module init` or `dagger api client init`.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -1992,7 +1956,7 @@ dagger sdk install typescript && dagger module init typescript --help && dagger 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2021,7 +1985,6 @@ dagger sdk installed [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2052,7 +2015,6 @@ dagger sdk search [query] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2091,7 +2053,7 @@ dagger sdk uninstall [options] <name> [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2127,7 +2089,6 @@ dagger search wolfi
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2158,7 +2119,7 @@ dagger settings [module] [key] [value...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2215,7 +2176,7 @@ dagger setup
 
 ```
   -y, --auto-apply                   Automatically apply changes when an output is returned
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2255,7 +2216,7 @@ dagger terminal [options] [pattern]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2303,7 +2264,7 @@ dagger uninstall hello
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2344,7 +2305,7 @@ dagger up [options] [pattern...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2386,7 +2347,7 @@ dagger update
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2418,7 +2379,6 @@ dagger version
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2455,7 +2415,7 @@ dagger workspace
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2508,7 +2468,7 @@ dagger workspace config [key] [value] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2533,7 +2493,7 @@ dagger workspace config-file [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2557,7 +2517,7 @@ dagger workspace cwd [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2581,7 +2541,6 @@ dagger workspace remote [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2605,7 +2564,7 @@ dagger workspace remotes [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands
@@ -2629,7 +2588,7 @@ dagger workspace root [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug                        Show debug logs and full verbosity
+  -d, --debug                        Enable engine and trace diagnostics
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --org string                   Dagger Cloud org name for Cloud-scoped commands

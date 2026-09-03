@@ -57,6 +57,11 @@ a trace, `--verbose` prints a final trace even if the command does not declare
 `MayRenderPipeline`. It does not enable the live TUI or make `--no-exit`,
 `--web`, or `--interactive` applicable.
 
+`--debug` enables engine and trace diagnostics. It is available when a command
+declares `MayCallEngine OR MayRenderPipeline`. Engine commands request debug
+logs from the engine. Rendering commands expose internal trace details. No
+current command outside this capability union implements debug behavior.
+
 ### Workspace environment selection
 
 `--env` selects an `env.<name>` overlay in `dagger.toml`. For a read, the
@@ -148,4 +153,6 @@ column means that no change is proposed.
 
 `MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
 `MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
-capability scoping are implemented. The other changes are planned.
+capability scoping are implemented. All capability-scoped flag moves are
+implemented except `--interactive` and `--interactive-command`. The
+configuration and hide changes are planned.
