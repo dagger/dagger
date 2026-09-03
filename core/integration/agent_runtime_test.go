@@ -1580,6 +1580,24 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 	return byName
 }
 
+// awaitAgentState blocks until the trace shows the named agent in the given
+// lifecycle state. State records ride their own exports, so the roster can be
+// complete while an agent's latest transition is still in flight.
+func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			for _, agent := range db.Agents() {
+				if agent.Name == name {
+					assert.Equal(ct, state, agent.State, "agent %q state", name)
+					return
+				}
+			}
+			assert.Fail(ct, "agent not in trace", "agent %q", name)
+		})
+	}, 60*time.Second, 100*time.Millisecond)
+}
+
 // capture returns the OTLP export requests the session forwarded, in arrival
 // order — the raw material a fake Cloud serves back.
 func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, []*collogspb.ExportLogsServiceRequest) {
