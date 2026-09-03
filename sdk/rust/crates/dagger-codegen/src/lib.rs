@@ -551,21 +551,6 @@ mod tests {
     }
 
     #[test]
-    fn id_handles_keep_raw_ids_before_cutover() {
-        let code = generate_from_json_at_version(id_handle_schema(), "v1.0.0-beta.11");
-        assert!(
-            code.contains("fn spawn") && !code.contains("Result<Agent, DaggerError>"),
-            "spawn should return Id before the cutover:\n{}",
-            code.lines()
-                .filter(|l| l.contains("spawn"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        assert!(!code.contains("Result<SyncerClient, DaggerError>"));
-        assert!(!code.contains("inline_fragment(\"Agent\")"));
-    }
-
-    #[test]
     fn convert_id_sync_returns_parent() {
         let code = generate_from_json(expected_type_schema());
         // sync() should return Result<Container, DaggerError>, not Result<Id, DaggerError>

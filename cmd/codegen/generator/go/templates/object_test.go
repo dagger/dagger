@@ -347,13 +347,3 @@ func TestObjectIDHandlesLoadTheirExpectedType(t *testing.T) {
 		query: selectNode(q.Root(), id, "Syncer"),
 	}, nil`)
 }
-
-func TestObjectIDHandlesKeepRawIDsBeforeCutover(t *testing.T) {
-	got := renderIDHandleObject(t, "v1.0.0-beta.11")
-
-	require.Contains(t, got, "func (r *LLM) Sync(ctx context.Context) (*LLM, error) {")
-	require.Contains(t, got, "func (r *LLM) Spawn(ctx context.Context) (ID, error) {")
-	require.Contains(t, got, "func (r *LLM) Syncer(ctx context.Context) (ID, error) {")
-	require.NotContains(t, got, "&Agent{")
-	require.NotContains(t, got, "&SyncerClient{")
-}

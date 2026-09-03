@@ -8,27 +8,6 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-func TestSupportsIDHandles(t *testing.T) {
-	for _, test := range []struct {
-		version string
-		want    bool
-	}{
-		{"", true},
-		{"development", true},
-		{"v0.21.0-dev", false},
-		{"v1.0.0-beta.11", false},
-		{"v1.0.0-beta.11-dev", false},
-		{"v1.0.0-beta.12", true},
-		{"v1.0.0-beta.12-dev", true},
-		{"v1.0.0-rc.1", true},
-		{"v1.0.0", true},
-	} {
-		t.Run(test.version, func(t *testing.T) {
-			require.Equal(t, test.want, SupportsIDHandles(test.version))
-		})
-	}
-}
-
 func TestIDHandleType(t *testing.T) {
 	idRef := &introspection.TypeRef{
 		Kind:   introspection.TypeKindNonNull,
@@ -58,25 +37,22 @@ func TestIDHandleType(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		version string
-		field   string
-		want    string
+		field string
+		want  string
 	}{
 		// the id field is never a handle
-		{"v1.0.0", "id", ""},
-		// the parent's own ID (sync-likes) has always been loaded
-		{"v1.0.0-beta.11", "sync", "LLM"},
-		{"v1.0.0", "sync", "LLM"},
-		// another type's ID is loaded from the cutover on
-		{"v1.0.0-beta.11", "spawn", ""},
-		{"v1.0.0", "spawn", "Agent"},
+		{"id", ""},
+		// the parent's own ID (sync-likes) loads the parent
+		{"sync", "LLM"},
+		// another type's ID loads that type
+		{"spawn", "Agent"},
 		// a bare ID is never a handle
-		{"v1.0.0", "opaque", ""},
+		{"opaque", ""},
 		// legacy FooID scalars only ever named the parent
-		{"v0.21.0", "legacy", "LLM"},
+		{"legacy", "LLM"},
 	} {
-		t.Run(test.version+"/"+test.field, func(t *testing.T) {
-			funcs := NewCommonFunctions(test.version, nil)
+		t.Run(test.field, func(t *testing.T) {
+			funcs := NewCommonFunctions("v1.0.0", nil)
 			require.Equal(t, test.want, funcs.IDHandleType(*fields[test.field]))
 			require.Equal(t, test.want != "", funcs.ConvertID(*fields[test.field]))
 		})

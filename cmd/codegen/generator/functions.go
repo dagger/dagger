@@ -12,12 +12,6 @@ import (
 
 const nullableObjectSDKCutoverVersion = "v1.0.0-beta.10"
 
-// idHandleSDKCutoverVersion is the first schema version whose SDKs load
-// every ID-returning field that carries an @expectedType directive as the
-// object it names. Older views only convert fields returning their parent's
-// own ID (the sync-like shape) and hand back the raw ID otherwise.
-const idHandleSDKCutoverVersion = "v1.0.0-beta.12"
-
 var betaVersion = regexp.MustCompile(`^(v\d+\.\d+\.\d+-beta\.\d+)`)
 
 const (
@@ -199,12 +193,10 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 // in the SDK, or "" when the field hands back the ID as-is (including the
 // id field itself).
 //
-// The @expectedType directive names the object. Fields returning their
-// parent's own ID (sync-likes) have always been loaded as the parent, and
-// from idHandleSDKCutoverVersion on every expected type is loaded, so a
-// field like LLM.spawn returns an Agent rather than an Agent's ID. Older
-// views keep the parent-only rule so their generated signatures do not
-// move, and fall back to the legacy FooID scalar suffix convention.
+// The @expectedType directive names the object: sync-likes return their
+// parent, and a field like LLM.spawn returns an Agent rather than an
+// Agent's ID. Without the directive, the legacy FooID scalar suffix
+// convention names the parent.
 func (c *CommonFunctions) IDHandleType(f introspection.Field) string {
 	if f.Name == "id" {
 		return ""
@@ -217,10 +209,7 @@ func (c *CommonFunctions) IDHandleType(f introspection.Field) string {
 		return ""
 	}
 	if expectedType := f.Directives.ExpectedType(); expectedType != "" {
-		if expectedType == f.ParentObject.Name || SupportsIDHandles(c.schemaVersion) {
-			return expectedType
-		}
-		return ""
+		return expectedType
 	}
 	// Legacy fallback: check FooID suffix pattern.
 	if ref.Name == f.ParentObject.Name+"ID" {
@@ -286,24 +275,11 @@ func (c *CommonFunctions) CheckVersionCompatibility(minVersion string) bool {
 }
 
 func SupportsNullableObjects(schemaVersion string) bool {
-	return schemaVersionAtLeast(schemaVersion, nullableObjectSDKCutoverVersion)
-}
-
-// SupportsIDHandles reports whether SDKs generated for schemaVersion load
-// every @expectedType-annotated ID return as its object (see IDHandleType).
-func SupportsIDHandles(schemaVersion string) bool {
-	return schemaVersionAtLeast(schemaVersion, idHandleSDKCutoverVersion)
-}
-
-// schemaVersionAtLeast compares a schema version against a feature cutover.
-// Unknown or non-semver versions (development builds) get every feature;
-// a beta prerelease is compared by its beta number, ignoring any dev suffix.
-func schemaVersionAtLeast(schemaVersion, cutover string) bool {
 	if schemaVersion == "" || !semver.IsValid(schemaVersion) {
 		return true
 	}
 	if version := betaVersion.FindString(schemaVersion); version != "" {
 		schemaVersion = version
 	}
-	return semver.Compare(schemaVersion, cutover) >= 0
+	return semver.Compare(schemaVersion, nullableObjectSDKCutoverVersion) >= 0
 }

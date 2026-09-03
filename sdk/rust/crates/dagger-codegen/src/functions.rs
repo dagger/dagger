@@ -30,7 +30,6 @@ pub type DynFormatTypeFuncs = Arc<dyn FormatTypeFuncs + Send + Sync>;
 pub struct CommonFunctions {
     format_type_funcs: DynFormatTypeFuncs,
     supports_nullable_objects: bool,
-    supports_id_handles: bool,
     interface_names: HashSet<String>,
 }
 
@@ -43,7 +42,6 @@ impl CommonFunctions {
         Self {
             format_type_funcs: funcs,
             supports_nullable_objects: supports_nullable_objects(schema_version),
-            supports_id_handles: supports_id_handles(schema_version),
             interface_names,
         }
     }
@@ -79,11 +77,8 @@ impl CommonFunctions {
     /// The GraphQL type an ID-returning field loads in the SDK, or `None`
     /// when the ID is returned as-is (including the `id` field itself).
     ///
-    /// The `@expectedType` directive names the object. Fields returning
-    /// their parent's own ID (sync-likes) have always been loaded as the
-    /// parent, and from the ID handle cutover on every expected type is
-    /// loaded, so `LLM.spawn` returns an `Agent` rather than its ID. Older
-    /// views keep the parent-only rule so their signatures don't move.
+    /// The `@expectedType` directive names the object: sync-likes return
+    /// their parent, and `LLM.spawn` returns an `Agent` rather than its ID.
     pub fn id_handle_type(&self, field: &FullTypeFields) -> Option<String> {
         // Never convert the `id` field itself.
         if field.name.as_deref() == Some("id") {
@@ -94,17 +89,7 @@ impl CommonFunctions {
         if !type_ref.is_scalar() || !type_ref.is_id() {
             return None;
         }
-        let expected = field.directives.expected_type()?;
-        let parent_name = field
-            .parent_type
-            .as_ref()
-            .and_then(|p| p.name.as_deref())
-            .unwrap_or_default();
-        if expected == parent_name || self.supports_id_handles {
-            Some(expected)
-        } else {
-            None
-        }
+        field.directives.expected_type()
     }
 
     fn format_type(&self, t: &TypeRef, input: bool, immutable: bool) -> String {
@@ -186,29 +171,18 @@ impl CommonFunctions {
 }
 
 fn supports_nullable_objects(schema_version: Option<&str>) -> bool {
-    schema_version_at_least(schema_version, [1, 0, 0], ("beta", 10))
-}
-
-/// Whether every `@expectedType` ID return is loaded as its object.
-fn supports_id_handles(schema_version: Option<&str>) -> bool {
-    schema_version_at_least(schema_version, [1, 0, 0], ("beta", 12))
-}
-
-/// Compare a schema version against a feature's beta cutover. Unknown or
-/// non-semver versions (development builds) get every feature; a beta
-/// prerelease is compared by its beta number, ignoring any dev suffix.
-fn schema_version_at_least(
-    schema_version: Option<&str>,
-    cutover_core: [u64; 3],
-    cutover_prerelease: (&str, u64),
-) -> bool {
     let Some(version) = schema_version.filter(|version| !version.is_empty()) else {
         return true;
     };
     let version = version.trim_start_matches('v');
-    let (core, prerelease) = match version.split_once('-') {
-        Some((core, prerelease)) => (core, Some(prerelease)),
-        None => (version, None),
+    let Some((core, prerelease)) = version.split_once('-') else {
+        return version
+            .split('.')
+            .take(3)
+            .map(|part| part.parse::<u64>())
+            .collect::<Result<Vec<_>, _>>()
+            .map(|core| core.as_slice() >= &[1, 0, 0])
+            .unwrap_or(true);
     };
     let Ok(core) = core
         .split('.')
@@ -218,21 +192,15 @@ fn schema_version_at_least(
     else {
         return true;
     };
-    if core.as_slice() != cutover_core {
-        return core.as_slice() > &cutover_core;
+    if core.as_slice() != [1, 0, 0] {
+        return core.as_slice() > &[1, 0, 0];
     }
-    // A release of the cutover's core version has every feature.
-    let Some(prerelease) = prerelease else {
-        return true;
-    };
-    let (cutover_tag, cutover_number) = cutover_prerelease;
     prerelease
-        .strip_prefix(cutover_tag)
-        .and_then(|rest| rest.strip_prefix('.'))
+        .strip_prefix("beta.")
         .and_then(|number| number.split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|number| number.parse::<u64>().ok())
-        .map(|number| number >= cutover_number)
-        .unwrap_or(prerelease > cutover_tag)
+        .map(|number| number >= 10)
+        .unwrap_or(prerelease > "beta")
 }
 
 #[cfg(test)]

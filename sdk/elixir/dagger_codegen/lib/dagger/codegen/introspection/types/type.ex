@@ -8,8 +8,7 @@ defmodule Dagger.Codegen.Introspection.Types.Type do
     :kind,
     :name,
     :possible_types,
-    supports_nullable_objects: true,
-    supports_id_handles: true
+    supports_nullable_objects: true
   ]
 
   def from_map(
