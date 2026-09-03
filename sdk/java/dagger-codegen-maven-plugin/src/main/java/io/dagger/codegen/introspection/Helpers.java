@@ -80,27 +80,36 @@ public class Helpers {
   }
 
   /**
-   * Returns true if the field returns an ID that should be converted into an object (i.e.
-   * sync()-like fields). With unified IDs, checks @expectedType matches the parent object name.
+   * Returns true if the field returns an ID handle to an object: a unified ID carrying an
+   * expectedType directive (sync(), spawn(), ...) or a legacy FooID scalar. The generated method
+   * loads that object from the returned ID rather than exposing the ID itself.
    */
   static boolean isIdToConvert(Field field) {
+    return idHandleType(field) != null;
+  }
+
+  /**
+   * Returns the name of the object type an ID-handle field resolves to, or null when the field does
+   * not return an ID handle (see {@link #isIdToConvert}).
+   */
+  static String idHandleType(Field field) {
     if ("id".equals(field.getName())) {
-      return false;
+      return null;
     }
     if (!field.getTypeRef().isScalar()) {
-      return false;
+      return null;
     }
-    // Unified ID: check @expectedType
-    String expectedType = field.getExpectedType();
-    if ("ID".equals(field.getTypeRef().getTypeName()) && expectedType != null) {
-      return expectedType.equals(field.getParentObject().getName());
+    String typeName = field.getTypeRef().getTypeName();
+    // Unified ID: the expectedType directive names the object
+    if ("ID".equals(typeName)) {
+      String expectedType = field.getExpectedType();
+      return expectedType == null || expectedType.isEmpty() ? null : expectedType;
     }
     // Legacy: FooID scalar
-    String typeName = field.getTypeRef().getTypeName();
     if (typeName != null && typeName.endsWith("ID") && typeName.length() > 2) {
-      return field.getParentObject().getName().equals(typeName.substring(0, typeName.length() - 2));
+      return typeName.substring(0, typeName.length() - 2);
     }
-    return false;
+    return null;
   }
 
   static List<Field> getArrayField(Field field, Schema schema) {
