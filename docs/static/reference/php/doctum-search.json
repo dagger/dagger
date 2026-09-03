@@ -1248,6 +1248,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\LLMMessageOrigin",
+			"p": "Dagger/LLMMessageOrigin.html",
+			"d": "<p>The recorded provenance of a message that arrived through an agent mailbox.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\LLMMessageOriginInput",
+			"p": "Dagger/LLMMessageOriginInput.html",
+			"d": "<p>The provenance of a message delivered through an agent mailbox.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\LLMSkill",
 			"p": "Dagger/LLMSkill.html",
 			"d": "<p>A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.</p>",
@@ -2086,6 +2106,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Agent::error",
+			"p": "Dagger/Agent.html#method_error",
+			"d": "<p>Why the loop failed, for a FAILED agent; empty otherwise.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Agent::id",
 			"p": "Dagger/Agent.html#method_id",
 			"d": "<p>A unique identifier for this Agent.</p>"
@@ -2113,6 +2139,12 @@
 			"n": "Dagger\\Agent::name",
 			"p": "Dagger/Agent.html#method_name",
 			"d": "<p>Display label and identity discriminator \u2014 not a session-wide address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::notify",
+			"p": "Dagger/Agent.html#method_notify",
+			"d": "<p>Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber \u2014 steering its open turn, or waking it if idle, like any other message.</p>"
 		},
 		{
 			"t": "M",
@@ -2176,6 +2208,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Agent::waitSettled",
+			"p": "Dagger/Agent.html#method_waitSettled",
+			"d": "<p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\AgentGroup::compose",
 			"p": "Dagger/AgentGroup.html#method_compose",
 			"d": "<p>Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.</p>"
@@ -2196,7 +2234,7 @@
 			"t": "M",
 			"n": "Dagger\\AgentMessage::await",
 			"p": "Dagger/AgentMessage.html#method_await",
-			"d": "<p>Block until the turn that consumed this message ends, and return that turn's reply.</p>"
+			"d": "<p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p>"
 		},
 		{
 			"t": "M",
@@ -2209,6 +2247,12 @@
 			"n": "Dagger\\AgentMessage::id",
 			"p": "Dagger/AgentMessage.html#method_id",
 			"d": "<p>A unique identifier for this AgentMessage.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMessage::ref",
+			"p": "Dagger/AgentMessage.html#method_ref",
+			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;.</p>"
 		},
 		{
 			"t": "M",
@@ -6358,6 +6402,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLMMessage::origin",
+			"p": "Dagger/LLMMessage.html#method_origin",
+			"d": "<p>Who put this message on the record, when it arrived through an agent mailbox.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLMMessage::role",
 			"p": "Dagger/LLMMessage.html#method_role",
 			"d": "<p>The role that produced this message.</p>"
@@ -6367,6 +6417,48 @@
 			"n": "Dagger\\LLMMessage::tokenUsage",
 			"p": "Dagger/LLMMessage.html#method_tokenUsage",
 			"d": "<p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::agentId",
+			"p": "Dagger/LLMMessageOrigin.html#method_agentId",
+			"d": "<p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::agentName",
+			"p": "Dagger/LLMMessageOrigin.html#method_agentName",
+			"d": "<p>The display name of the agent behind agentId.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::id",
+			"p": "Dagger/LLMMessageOrigin.html#method_id",
+			"d": "<p>A unique identifier for this LLMMessageOrigin.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::kind",
+			"p": "Dagger/LLMMessageOrigin.html#method_kind",
+			"d": "<p>Who put this message on the record.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::ref",
+			"p": "Dagger/LLMMessageOrigin.html#method_ref",
+			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOrigin::replyTo",
+			"p": "Dagger/LLMMessageOrigin.html#method_replyTo",
+			"d": "<p>The ref of the message this one answers, in the sender's own runtime, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessageOriginInput::__construct",
+			"p": "Dagger/LLMMessageOriginInput.html#method___construct",
+			"d": null
 		},
 		{
 			"t": "M",

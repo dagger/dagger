@@ -186,6 +186,24 @@ type LLMContentBlockInput struct {
 	ToolName string `json:"toolName,omitempty"`
 }
 
+// The provenance of a message delivered through an agent mailbox.
+type LLMMessageOriginInput struct {
+	// The sending or observed agent's instance ID.
+	AgentID string `json:"agentId,omitempty"`
+
+	// The display name of the agent behind agentId.
+	AgentName string `json:"agentName,omitempty"`
+
+	// Who put this message on the record.
+	Kind LLMMessageOriginKind `json:"kind"`
+
+	// The message's short ref within the receiving agent's runtime, e.g. "#3".
+	Ref string `json:"ref,omitempty"`
+
+	// The ref of the message this one answers, if any.
+	ReplyTo string `json:"replyTo,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -434,25 +452,43 @@ func (r *Address) AsNode() Node {
 type Agent struct {
 	query *querybuilder.Selection
 
-	id         *ID
-	instanceID *string
-	interrupt  *ID
-	name       *string
-	pause      *ID
-	rehydrate  *ID
-	reseed     *ID
-	resume     *ID
-	send       *ID
-	start      *ID
-	state      *AgentState
-	stop       *ID
-	waitFor    *ID
+	error       *string
+	id          *ID
+	instanceID  *string
+	interrupt   *ID
+	name        *string
+	notify      *ID
+	pause       *ID
+	rehydrate   *ID
+	reseed      *ID
+	resume      *ID
+	send        *ID
+	start       *ID
+	state       *AgentState
+	stop        *ID
+	waitFor     *ID
+	waitSettled *ID
 }
 
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 	return &Agent{
 		query: q,
 	}
+}
+
+// Why the loop failed, for a FAILED agent; empty otherwise.
+//
+// The snapshot holds the completed prefix — send or resume retries from it.
+func (r *Agent) Error(ctx context.Context) (string, error) {
+	if r.error != nil {
+		return *r.error, nil
+	}
+	q := r.query.Select("error")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Agent.
@@ -554,6 +590,41 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AgentNotifyOpts contains options for Agent.Notify
+type AgentNotifyOpts struct {
+	// The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+	//
+	// Default: [IDLE,FAILED]
+	On []AgentState
+}
+
+// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+//
+// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+//
+// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+//
+// Idempotent per subscriber; re-subscribing replaces the state set.
+func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNotifyOpts) (*Agent, error) {
+	assertNotNil("subscriber", subscriber)
+	q := r.query.Select("notify")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `on` optional argument
+		if !querybuilder.IsZeroValue(opts[i].On) {
+			q = q.Arg("on", opts[i].On)
+		}
+	}
+	q = q.Arg("subscriber", subscriber)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
 // Stop draining the mailbox once the in-flight step completes.
 //
 // Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
@@ -650,6 +721,12 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	}, nil
 }
 
+// AgentSendOpts contains options for Agent.Send
+type AgentSendOpts struct {
+	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+	ReplyTo string
+}
+
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
 //
 // Never blocks, never drops; concurrent sends queue in order.
@@ -657,8 +734,14 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 // The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
-func (r *Agent) Send(ctx context.Context, message string) (*AgentMessage, error) {
+func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts) (*AgentMessage, error) {
 	q := r.query.Select("send")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `replyTo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReplyTo) {
+			q = q.Arg("replyTo", opts[i].ReplyTo)
+		}
+	}
 	q = q.Arg("message", message)
 
 	var id ID
@@ -767,6 +850,21 @@ func (r *Agent) WaitFor(ctx context.Context, opts ...AgentWaitForOpts) (*Agent, 
 	}, nil
 }
 
+// Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+//
+// The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+func (r *Agent) WaitSettled(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("waitSettled")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
 // AsNode returns this Agent as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Agent) AsNode() Node {
@@ -782,6 +880,7 @@ type AgentMessage struct {
 	await    *string
 	delivery *AgentMessageDelivery
 	id       *ID
+	ref      *string
 }
 
 func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
@@ -790,11 +889,13 @@ func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage
 	}
 }
 
-// Block until the turn that consumed this message ends, and return that turn's reply.
+// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
 //
 // Idempotent: cancel and re-await freely; concurrent waiters share the result.
 //
 // Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+//
+// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
 func (r *AgentMessage) Await(ctx context.Context) (string, error) {
 	if r.await != nil {
 		return *r.await, nil
@@ -860,6 +961,21 @@ func (r *AgentMessage) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3".
+//
+// This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // AsNode returns this AgentMessage as a Node.
@@ -11393,9 +11509,21 @@ func (r *LLM) WithModel(model string, opts ...LLMWithModelOpts) *LLM {
 	}
 }
 
+// LLMWithPromptOpts contains options for LLM.WithPrompt
+type LLMWithPromptOpts struct {
+	// The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+	Origin LLMMessageOriginInput
+}
+
 // Queue a user prompt, to be sent to the model on the next step or loop.
-func (r *LLM) WithPrompt(prompt string) *LLM {
+func (r *LLM) WithPrompt(prompt string, opts ...LLMWithPromptOpts) *LLM {
 	q := r.query.Select("withPrompt")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `origin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Origin) {
+			q = q.Arg("origin", opts[i].Origin)
+		}
+	}
 	q = q.Arg("prompt", prompt)
 
 	return &LLM{
@@ -11843,6 +11971,25 @@ func (r *LLMMessage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Who put this message on the record, when it arrived through an agent mailbox.
+//
+// Null for the user's own prompts and for everything the model or tools produced.
+func (r *LLMMessage) Origin(ctx context.Context) (*LLMMessageOrigin, error) {
+	q := r.query.Select("origin")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &LLMMessageOrigin{
+		query: selectNode(q.Root(), *objectID, "LLMMessageOrigin"),
+	}, nil
+}
+
 // The role that produced this message.
 func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
 	if r.role != nil {
@@ -11868,6 +12015,137 @@ func (r *LLMMessage) TokenUsage() *LLMTokenUsage {
 // AsNode returns this LLMMessage as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *LLMMessage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// The recorded provenance of a message that arrived through an agent mailbox.
+type LLMMessageOrigin struct {
+	query *querybuilder.Selection
+
+	agentId   *string
+	agentName *string
+	id        *ID
+	kind      *LLMMessageOriginKind
+	ref       *string
+	replyTo   *string
+}
+
+func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessageOrigin {
+	return &LLMMessageOrigin{
+		query: q,
+	}
+}
+
+// The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+func (r *LLMMessageOrigin) AgentID(ctx context.Context) (string, error) {
+	if r.agentId != nil {
+		return *r.agentId, nil
+	}
+	q := r.query.Select("agentId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The display name of the agent behind agentId.
+func (r *LLMMessageOrigin) AgentName(ctx context.Context) (string, error) {
+	if r.agentName != nil {
+		return *r.agentName, nil
+	}
+	q := r.query.Select("agentName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMMessageOrigin.
+func (r *LLMMessageOrigin) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessageOrigin) XXX_GraphQLType() string {
+	return "LLMMessageOrigin"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessageOrigin) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessageOrigin) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessageOrigin) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Who put this message on the record.
+func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMMessageOriginKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The ref of the message this one answers, in the sender's own runtime, if any.
+func (r *LLMMessageOrigin) ReplyTo(ctx context.Context) (string, error) {
+	if r.replyTo != nil {
+		return *r.replyTo, nil
+	}
+	q := r.query.Select("replyTo")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMMessageOrigin as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessageOrigin) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -20020,6 +20298,70 @@ const (
 
 	// A tool/function result.
 	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// Who put a message on the conversation record.
+type LLMMessageOriginKind string
+
+func (LLMMessageOriginKind) IsEnum() {}
+
+func (v LLMMessageOriginKind) Name() string {
+	switch v {
+	case LLMMessageOriginKindUser:
+		return "USER"
+	case LLMMessageOriginKindAgent:
+		return "AGENT"
+	case LLMMessageOriginKindEvent:
+		return "EVENT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageOriginKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageOriginKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageOriginKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AGENT":
+		*v = LLMMessageOriginKindAgent
+	case "EVENT":
+		*v = LLMMessageOriginKindEvent
+	case "USER":
+		*v = LLMMessageOriginKindUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The user: a prompt submitted by a client rather than sent by an agent.
+	LLMMessageOriginKindUser LLMMessageOriginKind = "USER"
+
+	// Another agent: the message was sent from within that agent's turn.
+	LLMMessageOriginKindAgent LLMMessageOriginKind = "AGENT"
+
+	// The engine, reporting a subscribed agent's lifecycle transition.
+	LLMMessageOriginKindEvent LLMMessageOriginKind = "EVENT"
 )
 
 // The role that generated a message.

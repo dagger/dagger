@@ -16,11 +16,13 @@ defmodule Dagger.AgentMessage do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Block until the turn that consumed this message ends, and return that turn's reply.
+  Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
 
   Idempotent: cancel and re-await freely; concurrent waiters share the result.
 
   Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+
+  Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
   """
   @spec await(t()) :: {:ok, String.t()} | {:error, term()}
   def await(%__MODULE__{} = agent_message) do
@@ -53,6 +55,19 @@ defmodule Dagger.AgentMessage do
   def id(%__MODULE__{} = agent_message) do
     query_builder =
       agent_message.query_builder |> QB.select("id")
+
+    Client.execute(agent_message.client, query_builder)
+  end
+
+  @doc """
+  The message's short ref within the receiving agent's runtime, e.g. "#3".
+
+  This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+  """
+  @spec ref(t()) :: {:ok, String.t()} | {:error, term()}
+  def ref(%__MODULE__{} = agent_message) do
+    query_builder =
+      agent_message.query_builder |> QB.select("ref")
 
     Client.execute(agent_message.client, query_builder)
   end

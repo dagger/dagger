@@ -118,6 +118,14 @@ pub struct LlmContentBlockInput {
     pub tool_name: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct LlmMessageOriginInput {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub kind: LlmMessageOriginKind,
+    pub r#ref: String,
+    pub reply_to: String,
+}
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -544,6 +552,12 @@ pub struct Agent {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct AgentNotifyOpts {
+    /// The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+    #[builder(setter(into, strip_option), default)]
+    pub on: Option<Vec<AgentState>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct AgentRehydrateOpts<'a> {
     /// The loop error to restore, for state FAILED. Refused with any other state.
     #[builder(setter(into, strip_option), default)]
@@ -552,6 +566,12 @@ pub struct AgentRehydrateOpts<'a> {
     /// RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
     #[builder(setter(into, strip_option), default)]
     pub state: Option<AgentState>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AgentSendOpts<'a> {
+    /// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+    #[builder(setter(into, strip_option), default)]
+    pub reply_to: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct AgentStopOpts {
@@ -589,6 +609,12 @@ impl Loadable for Agent {
     }
 }
 impl Agent {
+    /// Why the loop failed, for a FAILED agent; empty otherwise.
+    /// The snapshot holds the completed prefix — send or resume retries from it.
+    pub async fn error(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("error");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Agent.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
@@ -636,6 +662,71 @@ impl Agent {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+    /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+    /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// Idempotent per subscriber; re-subscribing replaces the state set.
+    ///
+    /// # Arguments
+    ///
+    /// * `subscriber` - The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn notify(&self, subscriber: impl IntoID<Id>) -> Result<Agent, DaggerError> {
+        let mut query = self.selection.select("notify");
+        query = query.arg_lazy(
+            "subscriber",
+            Box::new(move || {
+                let subscriber = subscriber.clone();
+                Box::pin(async move { subscriber.into_id().await.unwrap().quote() })
+            }),
+        );
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+    /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+    /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// Idempotent per subscriber; re-subscribing replaces the state set.
+    ///
+    /// # Arguments
+    ///
+    /// * `subscriber` - The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn notify_opts(
+        &self,
+        subscriber: impl IntoID<Id>,
+        opts: AgentNotifyOpts,
+    ) -> Result<Agent, DaggerError> {
+        let mut query = self.selection.select("notify");
+        query = query.arg_lazy(
+            "subscriber",
+            Box::new(move || {
+                let subscriber = subscriber.clone();
+                Box::pin(async move { subscriber.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on) = opts.on {
+            query = query.arg("on", on);
+        }
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
     }
     /// Stop draining the mailbox once the in-flight step completes.
     /// Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
@@ -756,9 +847,40 @@ impl Agent {
     /// # Arguments
     ///
     /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn send(&self, message: impl Into<String>) -> Result<AgentMessage, DaggerError> {
         let mut query = self.selection.select("send");
         query = query.arg("message", message.into());
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(AgentMessage {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("AgentMessage"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+    /// Never blocks, never drops; concurrent sends queue in order.
+    /// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
+    /// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn send_opts<'a>(
+        &self,
+        message: impl Into<String>,
+        opts: AgentSendOpts<'a>,
+    ) -> Result<AgentMessage, DaggerError> {
+        let mut query = self.selection.select("send");
+        query = query.arg("message", message.into());
+        if let Some(reply_to) = opts.reply_to {
+            query = query.arg("replyTo", reply_to);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(AgentMessage {
             proc: self.proc.clone(),
@@ -882,6 +1004,21 @@ impl Agent {
             graphql_client: self.graphql_client.clone(),
         })
     }
+    /// Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+    /// The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+    pub async fn wait_settled(&self) -> Result<Agent, DaggerError> {
+        let query = self.selection.select("waitSettled");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
 }
 impl Node for Agent {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
@@ -920,9 +1057,10 @@ impl Loadable for AgentMessage {
     }
 }
 impl AgentMessage {
-    /// Block until the turn that consumed this message ends, and return that turn's reply.
+    /// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
     /// Idempotent: cancel and re-await freely; concurrent waiters share the result.
     /// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+    /// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
     pub async fn r#await(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("await");
         query.execute(self.graphql_client.clone()).await
@@ -936,6 +1074,12 @@ impl AgentMessage {
     /// A unique identifier for this AgentMessage.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The message's short ref within the receiving agent's runtime, e.g. "#3".
+    /// This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -10849,6 +10993,12 @@ pub struct LlmWithModelOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithPromptOpts {
+    /// The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+    #[builder(setter(into, strip_option), default)]
+    pub origin: Option<LlmMessageOriginInput>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithResponseOpts {
     /// Cached input tokens read
     #[builder(setter(into, strip_option), default)]
@@ -11215,9 +11365,28 @@ impl Llm {
     /// # Arguments
     ///
     /// * `prompt` - The prompt to send
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withPrompt");
         query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Queue a user prompt, to be sent to the model on the next step or loop.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The prompt to send
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_prompt_opts(&self, prompt: impl Into<String>, opts: LlmWithPromptOpts) -> Llm {
+        let mut query = self.selection.select("withPrompt");
+        query = query.arg("prompt", prompt.into());
+        if let Some(origin) = opts.origin {
+            query = query.arg("origin", origin);
+        }
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -11636,6 +11805,22 @@ impl LlmMessage {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Who put this message on the record, when it arrived through an agent mailbox.
+    /// Null for the user's own prompts and for everything the model or tools produced.
+    pub async fn origin(&self) -> Result<Option<LlmMessageOrigin>, DaggerError> {
+        let query = self.selection.select("origin");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| LlmMessageOrigin {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("LLMMessageOrigin"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// The role that produced this message.
     pub async fn role(&self) -> Result<LlmMessageRole, DaggerError> {
         let query = self.selection.select("role");
@@ -11652,6 +11837,74 @@ impl LlmMessage {
     }
 }
 impl Node for LlmMessage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmMessageOrigin {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmMessageOrigin {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmMessageOrigin {
+    fn graphql_type() -> &'static str {
+        "LLMMessageOrigin"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmMessageOrigin {
+    /// The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+    pub async fn agent_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("agentId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The display name of the agent behind agentId.
+    pub async fn agent_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("agentName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this LLMMessageOrigin.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Who put this message on the record.
+    pub async fn kind(&self) -> Result<LlmMessageOriginKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The ref of the message this one answers, in the sender's own runtime, if any.
+    pub async fn reply_to(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("replyTo");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmMessageOrigin {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -18207,6 +18460,15 @@ pub enum LlmContentBlockKind {
     ToolCall,
     #[serde(rename = "TOOL_RESULT")]
     ToolResult,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmMessageOriginKind {
+    #[serde(rename = "AGENT")]
+    Agent,
+    #[serde(rename = "EVENT")]
+    Event,
+    #[serde(rename = "USER")]
+    User,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum LlmMessageRole {

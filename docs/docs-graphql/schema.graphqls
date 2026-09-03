@@ -105,6 +105,13 @@ session. The conversation itself remains observable at any time as an immutable
 LLM value.
 """
 type Agent implements Node {
+  """
+  Why the loop failed, for a FAILED agent; empty otherwise.
+
+  The snapshot holds the completed prefix — send or resume retries from it.
+  """
+  error: String!
+
   """A unique identifier for this Agent."""
   id: ID!
 
@@ -147,6 +154,34 @@ type Agent implements Node {
   Display label and identity discriminator — not a session-wide address.
   """
   name: String!
+
+  """
+  Subscribe another agent to this agent's lifecycle: each transition into one of
+  the given states enqueues an event message to the subscriber — steering its
+  open turn, or waking it if idle, like any other message.
+
+  This is how a supervisor hears every completion and failure without polling or
+  blocking: subscribe at spawn time, keep working, and events arrive as
+  attributed messages.
+
+  Events never relaunch a stopped subscriber, and an already-reached state fires
+  immediately at subscribe time, so a fast agent settling before the
+  subscription lands is not missed.
+
+  Idempotent per subscriber; re-subscribing replaces the state set.
+  """
+  notify(
+    """
+    The agent to deliver event messages to. You must hold its handle:
+    subscriptions are capability-based like everything else.
+    """
+    subscriber: ID! @expectedType(name: "Agent")
+
+    """
+    The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+    """
+    on: [AgentState!] = [IDLE,FAILED]
+  ): ID! @expectedType(name: "Agent")
 
   """
   Stop draining the mailbox once the in-flight step completes.
@@ -251,6 +286,14 @@ type Agent implements Node {
     The message text, appended to the agent's history as a prompt when a turn consumes it.
     """
     message: String!
+
+    """
+    The ref of a message in the SENDER's own mailbox this send answers (e.g.
+    "#3", from its attribution header). The recipient sees the two paired, and
+    awaiters of the replied-to message resolve with this reply immediately
+    instead of at the sender's turn end.
+    """
+    replyTo: String = ""
   ): ID! @expectedType(name: "AgentMessage")
 
   """
@@ -297,18 +340,32 @@ type Agent implements Node {
     """The lifecycle state to wait for."""
     state: AgentState = IDLE
   ): ID! @expectedType(name: "Agent")
+
+  """
+  Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+
+  The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose
+  loop fails, while a settled wait cannot hang on an outcome.
+  """
+  waitSettled: ID! @expectedType(name: "Agent")
 }
 
 """A message delivered to an agent's mailbox."""
 type AgentMessage implements Node {
   """
-  Block until the turn that consumed this message ends, and return that turn's reply.
+  Block until this message is answered, and return the answer: an explicit reply
+  (a send whose replyTo names this message), or the final reply of the turn that
+  consumed it, whichever comes first.
 
   Idempotent: cancel and re-await freely; concurrent waiters share the result.
 
   Fails if the agent stops before the message resolves. On a failed agent it
   projects the failure — but the message stays pending, so after a resume
   consumes it, a re-await returns the real reply.
+
+  Refused when called from inside an agent turn whose wait would deadlock: turns
+  should not block on other agents — send without awaiting, and the reply
+  arrives as a message.
   """
   await: String!
 
@@ -324,6 +381,14 @@ type AgentMessage implements Node {
 
   """A unique identifier for this AgentMessage."""
   id: ID!
+
+  """
+  The message's short ref within the receiving agent's runtime, e.g. "#3".
+
+  This is the deterministic token the recipient's attribution header shows and a
+  reply's replyTo names — quote it when telling the recipient what to answer.
+  """
+  ref: String!
 }
 
 """How a message landed in an agent's evaluation."""
@@ -4170,6 +4235,13 @@ type LLM implements Node & Syncer {
   withPrompt(
     """The prompt to send"""
     prompt: String!
+
+    """
+    The message's recorded provenance, when it arrived through an agent mailbox
+    rather than from the user. Rendered to the model as an attribution header at
+    request-build time.
+    """
+    origin: LLMMessageOriginInput
   ): LLM!
 
   """Queue a file's contents as a user prompt, like withPrompt."""
@@ -4371,6 +4443,13 @@ type LLMMessage implements Node {
   """A unique identifier for this LLMMessage."""
   id: ID!
 
+  """
+  Who put this message on the record, when it arrived through an agent mailbox.
+
+  Null for the user's own prompts and for everything the model or tools produced.
+  """
+  origin: LLMMessageOrigin
+
   """The role that produced this message."""
   role: LLMMessageRole!
 
@@ -4378,6 +4457,69 @@ type LLMMessage implements Node {
   Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
   """
   tokenUsage: LLMTokenUsage!
+}
+
+"""
+The recorded provenance of a message that arrived through an agent mailbox.
+"""
+type LLMMessageOrigin implements Node {
+  """
+  The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+  """
+  agentId: String!
+
+  """The display name of the agent behind agentId."""
+  agentName: String!
+
+  """A unique identifier for this LLMMessageOrigin."""
+  id: ID!
+
+  """Who put this message on the record."""
+  kind: LLMMessageOriginKind!
+
+  """
+  The message's short ref within the receiving agent's runtime, e.g. "#3": the
+  deterministic token replies name (send's replyTo). Distinct from the
+  AgentMessage handle's opaque message ID.
+  """
+  ref: String!
+
+  """
+  The ref of the message this one answers, in the sender's own runtime, if any.
+  """
+  replyTo: String!
+}
+
+"""The provenance of a message delivered through an agent mailbox."""
+input LLMMessageOriginInput {
+  """Who put this message on the record."""
+  kind: LLMMessageOriginKind!
+
+  """The sending or observed agent's instance ID."""
+  agentId: String = ""
+
+  """The display name of the agent behind agentId."""
+  agentName: String = ""
+
+  """
+  The message's short ref within the receiving agent's runtime, e.g. "#3".
+  """
+  ref: String = ""
+
+  """The ref of the message this one answers, if any."""
+  replyTo: String = ""
+}
+
+"""Who put a message on the conversation record."""
+enum LLMMessageOriginKind {
+  """The user: a prompt submitted by a client rather than sent by an agent."""
+  USER
+
+  """Another agent: the message was sent from within that agent's turn."""
+  AGENT
+
+  """The engine, reporting a subscribed agent's lifecycle transition."""
+  EVENT
 }
 
 """The role that generated a message."""

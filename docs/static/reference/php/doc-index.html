@@ -114,7 +114,7 @@
                     <dd></dd><dt><a href="Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A message delivered to an agent's mailbox.</p></dd><dt><a href="Dagger/AgentMessage.html#method_await">
 <abbr title="Dagger\AgentMessage">AgentMessage</abbr>::await</a>() &mdash; <em>Method in class <a href="Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a></em></dt>
-                    <dd><p>Block until the turn that consumed this message ends, and return that turn's reply.</p></dd><dt><a href="Dagger/AgentMiddleware.html"><abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p></dd><dt><a href="Dagger/AgentMiddleware.html"><abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/AgentMiddlewareGroup.html"><abbr title="Dagger\AgentMiddlewareGroup">AgentMiddlewareGroup</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_asAddress">
 <abbr title="Dagger\Binding">Binding</abbr>::asAddress</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -277,7 +277,11 @@
 <abbr title="Dagger\LLM">LLM</abbr>::agent</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Rehydrate a spawned agent's handle from its instance ID.</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_arguments">
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::arguments</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
-                    <dd><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
+                    <dd><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_agentId">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::agentId</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_agentName">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::agentName</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>The display name of the agent behind agentId.</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p></dd><dt><a href="Dagger/ModuleSource.html#method_asString">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -604,7 +608,9 @@
                     <dd><p>Generic summary of this step's purpose and impact.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_description">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
                     <dd><p>The constructor argument description.</p></dd>        </dl><h2 id="letterE">E</h2>
-        <dl id="indexE"><dt><a href="Dagger/Changeset.html#method_export">
+        <dl id="indexE"><dt><a href="Dagger/Agent.html#method_error">
+<abbr title="Dagger\Agent">Agent</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>Why the loop failed, for a FAILED agent; empty otherwise.</p></dd><dt><a href="Dagger/Changeset.html#method_export">
 <abbr title="Dagger\Changeset">Changeset</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Applies the diff represented by this changeset to a path on the host.</p></dd><dt><a href="Dagger/Check.html#method_error">
 <abbr title="Dagger\Check">Check</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
@@ -1000,7 +1006,9 @@
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLMContentBlock.</p></dd><dt><a href="Dagger/LLMMessage.html#method_id">
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this LLMMessage.</p></dd><dt><a href="Dagger/LLMSkill.html#method_id">
+                    <dd><p>A unique identifier for this LLMMessage.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_id">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this LLMMessageOrigin.</p></dd><dt><a href="Dagger/LLMSkill.html#method_id">
 <abbr title="Dagger\LLMSkill">LLMSkill</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLMSkill.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_id">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
@@ -1101,7 +1109,9 @@
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>Type of change.</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_kind">
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
-                    <dd><p>The kind of content block, which determines the other populated fields.</p></dd><dt><a href="Dagger/ModuleSource.html#method_kind">
+                    <dd><p>The kind of content block, which determines the other populated fields.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_kind">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>Who put this message on the record.</p></dd><dt><a href="Dagger/ModuleSource.html#method_kind">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The kind of module source (currently local, git or dir).</p></dd><dt><a href="Dagger/TypeDef.html#method_kind">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
@@ -1148,7 +1158,9 @@
                     <dd><p>A single piece of content within an LLM message.</p></dd><dt><a href="Dagger/LLMContentBlockInput.html"><abbr title="Dagger\LLMContentBlockInput">LLMContentBlockInput</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A content block within an LLM message.</p></dd><dt><a href="Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A single message in an LLM conversation.</p></dd><dt><a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A single message in an LLM conversation.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The recorded provenance of a message that arrived through an agent mailbox.</p></dd><dt><a href="Dagger/LLMMessageOriginInput.html"><abbr title="Dagger\LLMMessageOriginInput">LLMMessageOriginInput</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The provenance of a message delivered through an agent mailbox.</p></dd><dt><a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.</p></dd><dt><a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A count of tokens consumed by LLM API calls.</p></dd><dt><a href="Dagger/LLMTokenUsageId.html"><abbr title="Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1237,7 +1249,9 @@
                     <dd><p>Modules authored with this SDK.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Agent.html#method_name">
 <abbr title="Dagger\Agent">Agent</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Display label and identity discriminator — not a session-wide address.</p></dd><dt><a href="Dagger/AgentMiddleware.html#method_name">
+                    <dd><p>Display label and identity discriminator — not a session-wide address.</p></dd><dt><a href="Dagger/Agent.html#method_notify">
+<abbr title="Dagger\Agent">Agent</abbr>::notify</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.</p></dd><dt><a href="Dagger/AgentMiddleware.html#method_name">
 <abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/AgentMiddleware.html"><abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr></a></em></dt>
                     <dd><p>Return the fully qualified name of the agent</p></dd><dt><a href="Dagger/Binding.html#method_name">
 <abbr title="Dagger\Binding">Binding</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -1336,7 +1350,9 @@
 <abbr title="Dagger\Generator">Generator</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
                     <dd><p>The original module in which the generator has been defined</p></dd><dt><a href="Dagger/GitBundle.html#method_objectFormat">
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::objectFormat</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
-                    <dd><p>Object format capability: sha1 or sha256.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
+                    <dd><p>Object format capability: sha1 or sha256.</p></dd><dt><a href="Dagger/LLMMessage.html#method_origin">
+<abbr title="Dagger\LLMMessage">LLMMessage</abbr>::origin</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
+                    <dd><p>Who put this message on the record, when it arrived through an agent mailbox.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::outputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd><p>Tokens received from the model, including text and tool calls.</p></dd><dt><a href="Dagger/Module.html#method_objects">
 <abbr title="Dagger\Module">Module</abbr>::objects</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1426,7 +1442,9 @@
 <abbr title="Dagger\Agent">Agent</abbr>::reseed</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
                     <dd><p>Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.</p></dd><dt><a href="Dagger/Agent.html#method_resume">
 <abbr title="Dagger\Agent">Agent</abbr>::resume</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></dd><dt><a href="Dagger/Attribute/ReturnsListOfType.html"><abbr title="Dagger\Attribute\ReturnsListOfType">ReturnsListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
+                    <dd><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></dd><dt><a href="Dagger/AgentMessage.html#method_ref">
+<abbr title="Dagger\AgentMessage">AgentMessage</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a></em></dt>
+                    <dd><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;.</p></dd><dt><a href="Dagger/Attribute/ReturnsListOfType.html"><abbr title="Dagger\Attribute\ReturnsListOfType">ReturnsListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Changeset.html#method_removedPaths">
 <abbr title="Dagger\Changeset">Changeset</abbr>::removedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.</p></dd><dt><a href="Dagger/ChangesetDiffStatEntry.html#method_removedLines">
@@ -1477,7 +1495,11 @@
 <abbr title="Dagger\LLM">LLM</abbr>::replay</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></dd><dt><a href="Dagger/LLMMessage.html#method_role">
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::role</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
-                    <dd><p>The role that produced this message.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
+                    <dd><p>The role that produced this message.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_ref">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_replyTo">
+<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::replyTo</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
+                    <dd><p>The ref of the message this one answers, in the sender's own runtime, if any.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
 <abbr title="Dagger\Module">Module</abbr>::runtime</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.</p></dd><dt><a href="Dagger/ModuleSource.html#method_repoRootPath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::repoRootPath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1805,7 +1827,9 @@
 <abbr title="Dagger\Address">Address</abbr>::workspace</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>Load a workspace from a module reference.</p></dd><dt><a href="Dagger/Agent.html#method_waitFor">
 <abbr title="Dagger\Agent">Agent</abbr>::waitFor</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></dd><dt><a href="Dagger/Changeset.html#method_withChangeset">
+                    <dd><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></dd><dt><a href="Dagger/Agent.html#method_waitSettled">
+<abbr title="Dagger\Agent">Agent</abbr>::waitSettled</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></dd><dt><a href="Dagger/Changeset.html#method_withChangeset">
 <abbr title="Dagger\Changeset">Changeset</abbr>::withChangeset</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Add changes to an existing changeset</p></dd><dt><a href="Dagger/Changeset.html#method_withChangesets">
 <abbr title="Dagger\Changeset">Changeset</abbr>::withChangesets</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
@@ -2355,6 +2379,8 @@
 <abbr title="Dagger\Client\AbstractScalar">AbstractScalar</abbr>::__toString</a>() &mdash; <em>Method in class <a href="Dagger/Client/AbstractScalar.html"><abbr title="Dagger\Client\AbstractScalar">AbstractScalar</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/LLMContentBlockInput.html#method___construct">
 <abbr title="Dagger\LLMContentBlockInput">LLMContentBlockInput</abbr>::__construct</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlockInput.html"><abbr title="Dagger\LLMContentBlockInput">LLMContentBlockInput</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/LLMMessageOriginInput.html#method___construct">
+<abbr title="Dagger\LLMMessageOriginInput">LLMMessageOriginInput</abbr>::__construct</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOriginInput.html"><abbr title="Dagger\LLMMessageOriginInput">LLMMessageOriginInput</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/PipelineLabel.html#method___construct">
 <abbr title="Dagger\PipelineLabel">PipelineLabel</abbr>::__construct</a>() &mdash; <em>Method in class <a href="Dagger/PipelineLabel.html"><abbr title="Dagger\PipelineLabel">PipelineLabel</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/PortForward.html#method___construct">

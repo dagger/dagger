@@ -30,6 +30,13 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
+export type AgentNotifyOpts = {
+  /**
+   * The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+   */
+  on?: AgentState[]
+}
+
 export type AgentRehydrateOpts = {
   /**
    * The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
@@ -42,6 +49,13 @@ export type AgentRehydrateOpts = {
    * The loop error to restore, for state FAILED. Refused with any other state.
    */
   error?: string
+}
+
+export type AgentSendOpts = {
+  /**
+   * The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+   */
+  replyTo?: string
 }
 
 export type AgentStopOpts = {
@@ -2245,6 +2259,13 @@ export type LLMWithModelOpts = {
   provider?: string
 }
 
+export type LLMWithPromptOpts = {
+  /**
+   * The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+   */
+  origin?: LLMMessageOriginInput
+}
+
 export type LLMWithResponseOpts = {
   /**
    * Uncached input tokens sent
@@ -2380,6 +2401,90 @@ export function LLMContentBlockKindNameToValue(
       return LLMContentBlockKind.ToolResult
     default:
       return name as LLMContentBlockKind
+  }
+}
+export type LLMMessageOriginInput = {
+  /**
+   * The sending or observed agent's instance ID.
+   */
+  agentId?: string
+
+  /**
+   * The display name of the agent behind agentId.
+   */
+  agentName?: string
+
+  /**
+   * Who put this message on the record.
+   */
+  kind: LLMMessageOriginKind
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3".
+   */
+  ref?: string
+
+  /**
+   * The ref of the message this one answers, if any.
+   */
+  replyTo?: string
+}
+
+/**
+ * Who put a message on the conversation record.
+ */
+export enum LLMMessageOriginKind {
+  /**
+   * Another agent: the message was sent from within that agent's turn.
+   */
+  Agent = "AGENT",
+
+  /**
+   * The engine, reporting a subscribed agent's lifecycle transition.
+   */
+  Event = "EVENT",
+
+  /**
+   * The user: a prompt submitted by a client rather than sent by an agent.
+   */
+  User = "USER",
+}
+
+/**
+ * Utility function to convert a LLMMessageOriginKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function LLMMessageOriginKindValueToName(
+  value: LLMMessageOriginKind,
+): string {
+  switch (value) {
+    case LLMMessageOriginKind.Agent:
+      return "AGENT"
+    case LLMMessageOriginKind.Event:
+      return "EVENT"
+    case LLMMessageOriginKind.User:
+      return "USER"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a LLMMessageOriginKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function LLMMessageOriginKindNameToValue(
+  name: string,
+): LLMMessageOriginKind {
+  switch (name) {
+    case "AGENT":
+      return LLMMessageOriginKind.Agent
+    case "EVENT":
+      return LLMMessageOriginKind.Event
+    case "USER":
+      return LLMMessageOriginKind.User
+    default:
+      return name as LLMMessageOriginKind
   }
 }
 /**
@@ -3748,9 +3853,11 @@ export class Address extends BaseClient {
  */
 export class Agent extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _error?: string = undefined
   private readonly _instanceID?: string = undefined
   private readonly _interrupt?: ID = undefined
   private readonly _name?: string = undefined
+  private readonly _notify?: ID = undefined
   private readonly _pause?: ID = undefined
   private readonly _rehydrate?: ID = undefined
   private readonly _reseed?: ID = undefined
@@ -3760,6 +3867,7 @@ export class Agent extends BaseClient {
   private readonly _state?: AgentState = undefined
   private readonly _stop?: ID = undefined
   private readonly _waitFor?: ID = undefined
+  private readonly _waitSettled?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3767,9 +3875,11 @@ export class Agent extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _error?: string,
     _instanceID?: string,
     _interrupt?: ID,
     _name?: string,
+    _notify?: ID,
     _pause?: ID,
     _rehydrate?: ID,
     _reseed?: ID,
@@ -3779,13 +3889,16 @@ export class Agent extends BaseClient {
     _state?: AgentState,
     _stop?: ID,
     _waitFor?: ID,
+    _waitSettled?: ID,
   ) {
     super(ctx)
 
     this._id = _id
+    this._error = _error
     this._instanceID = _instanceID
     this._interrupt = _interrupt
     this._name = _name
+    this._notify = _notify
     this._pause = _pause
     this._rehydrate = _rehydrate
     this._reseed = _reseed
@@ -3795,6 +3908,7 @@ export class Agent extends BaseClient {
     this._state = _state
     this._stop = _stop
     this._waitFor = _waitFor
+    this._waitSettled = _waitSettled
   }
 
   /**
@@ -3808,6 +3922,23 @@ export class Agent extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Why the loop failed, for a FAILED agent; empty otherwise.
+   *
+   * The snapshot holds the completed prefix — send or resume retries from it.
+   */
+  error = async (): Promise<string> => {
+    if (this._error) {
+      return this._error
+    }
+
+    const ctx = this._ctx.select("error")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -3870,6 +4001,28 @@ export class Agent extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+   *
+   * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+   *
+   * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+   *
+   * Idempotent per subscriber; re-subscribing replaces the state set.
+   * @param subscriber The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
+   * @param opts.on The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+   */
+  notify = async (
+    subscriber: Agent,
+    opts?: AgentNotifyOpts,
+  ): Promise<Agent> => {
+    const ctx = this._ctx.select("notify", { subscriber, ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
   }
 
   /**
@@ -3954,9 +4107,13 @@ export class Agent extends BaseClient {
    *
    * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
    * @param message The message text, appended to the agent's history as a prompt when a turn consumes it.
+   * @param opts.replyTo The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
    */
-  send = async (message: string): Promise<AgentMessage> => {
-    const ctx = this._ctx.select("send", { message })
+  send = async (
+    message: string,
+    opts?: AgentSendOpts,
+  ): Promise<AgentMessage> => {
+    const ctx = this._ctx.select("send", { message, ...opts })
 
     const response: Awaited<ID> = await ctx.execute()
 
@@ -4034,6 +4191,19 @@ export class Agent extends BaseClient {
 
     return new Agent(ctx.copy().selectNode(response, "Agent"))
   }
+
+  /**
+   * Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+   *
+   * The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+   */
+  waitSettled = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("waitSettled")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
 }
 
 /**
@@ -4043,6 +4213,7 @@ export class AgentMessage extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _await?: string = undefined
   private readonly _delivery?: AgentMessageDelivery = undefined
+  private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4052,12 +4223,14 @@ export class AgentMessage extends BaseClient {
     _id?: ID,
     _await?: string,
     _delivery?: AgentMessageDelivery,
+    _ref?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._await = _await
     this._delivery = _delivery
+    this._ref = _ref
   }
 
   /**
@@ -4076,11 +4249,13 @@ export class AgentMessage extends BaseClient {
   }
 
   /**
-   * Block until the turn that consumed this message ends, and return that turn's reply.
+   * Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
    *
    * Idempotent: cancel and re-await freely; concurrent waiters share the result.
    *
    * Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+   *
+   * Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
    */
   await_ = async (): Promise<string> => {
     if (this._await) {
@@ -4109,6 +4284,23 @@ export class AgentMessage extends BaseClient {
     const response: Awaited<AgentMessageDelivery> = await ctx.execute()
 
     return AgentMessageDeliveryNameToValue(response)
+  }
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3".
+   *
+   * This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -11726,9 +11918,10 @@ export class LLM extends BaseClient {
   /**
    * Queue a user prompt, to be sent to the model on the next step or loop.
    * @param prompt The prompt to send
+   * @param opts.origin The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
    */
-  withPrompt = (prompt: string): LLM => {
-    const ctx = this._ctx.select("withPrompt", { prompt })
+  withPrompt = (prompt: string, opts?: LLMWithPromptOpts): LLM => {
+    const ctx = this._ctx.select("withPrompt", { prompt, ...opts })
     return new LLM(ctx)
   }
 
@@ -12076,6 +12269,24 @@ export class LLMMessage extends BaseClient {
   }
 
   /**
+   * Who put this message on the record, when it arrived through an agent mailbox.
+   *
+   * Null for the user's own prompts and for everything the model or tools produced.
+   */
+  origin = async (): Promise<LLMMessageOrigin | null> => {
+    const ctx = this._ctx.select("origin").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new LLMMessageOrigin(
+      ctx.copy().selectNode(response, "LLMMessageOrigin"),
+    )
+  }
+
+  /**
    * The role that produced this message.
    */
   role = async (): Promise<LLMMessageRole> => {
@@ -12096,6 +12307,130 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * The recorded provenance of a message that arrived through an agent mailbox.
+ */
+export class LLMMessageOrigin extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _agentId?: string = undefined
+  private readonly _agentName?: string = undefined
+  private readonly _kind?: LLMMessageOriginKind = undefined
+  private readonly _ref?: string = undefined
+  private readonly _replyTo?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _agentId?: string,
+    _agentName?: string,
+    _kind?: LLMMessageOriginKind,
+    _ref?: string,
+    _replyTo?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._agentId = _agentId
+    this._agentName = _agentName
+    this._kind = _kind
+    this._ref = _ref
+    this._replyTo = _replyTo
+  }
+
+  /**
+   * A unique identifier for this LLMMessageOrigin.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+   */
+  agentId = async (): Promise<string> => {
+    if (this._agentId) {
+      return this._agentId
+    }
+
+    const ctx = this._ctx.select("agentId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The display name of the agent behind agentId.
+   */
+  agentName = async (): Promise<string> => {
+    if (this._agentName) {
+      return this._agentName
+    }
+
+    const ctx = this._ctx.select("agentName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Who put this message on the record.
+   */
+  kind = async (): Promise<LLMMessageOriginKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<LLMMessageOriginKind> = await ctx.execute()
+
+    return LLMMessageOriginKindNameToValue(response)
+  }
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The ref of the message this one answers, in the sender's own runtime, if any.
+   */
+  replyTo = async (): Promise<string> => {
+    if (this._replyTo) {
+      return this._replyTo
+    }
+
+    const ctx = this._ctx.select("replyTo")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

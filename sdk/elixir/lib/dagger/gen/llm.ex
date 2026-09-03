@@ -362,10 +362,14 @@ defmodule Dagger.LLM do
   @doc """
   Queue a user prompt, to be sent to the model on the next step or loop.
   """
-  @spec with_prompt(t(), String.t()) :: Dagger.LLM.t()
-  def with_prompt(%__MODULE__{} = llm, prompt) do
+  @spec with_prompt(t(), String.t(), [{:origin, Dagger.LLMMessageOriginInput.t() | nil}]) ::
+          Dagger.LLM.t()
+  def with_prompt(%__MODULE__{} = llm, prompt, optional_args \\ []) do
     query_builder =
-      llm.query_builder |> QB.select("withPrompt") |> QB.put_arg("prompt", prompt)
+      llm.query_builder
+      |> QB.select("withPrompt")
+      |> QB.put_arg("prompt", prompt)
+      |> QB.maybe_put_arg("origin", optional_args[:origin])
 
     %Dagger.LLM{
       query_builder: query_builder,
