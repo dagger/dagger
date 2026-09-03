@@ -61,9 +61,10 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 		return newGitCredentialErrorResponse(NOT_FOUND, "Git is not installed or not in PATH"), nil
 	}
 
-	// Ensure no parallel execution of the git CLI happens
-	gitMutex.Lock()
-	defer gitMutex.Unlock()
+	// Serialize the short-lived host config and credential helpers, which may
+	// share user-level helper state.
+	gitHelperMutex.Lock()
+	defer gitHelperMutex.Unlock()
 
 	// Prepare the git credential fill command
 	cmd := exec.CommandContext(ctx, "git", "credential", "fill")

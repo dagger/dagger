@@ -72,6 +72,10 @@ handlers in `git_pack.go` and `git_uncommitted.go`):
   the pinned HEAD. The engine applies the same bounded file-spooling transport.
   §6 covers the fast path built on it.
 
+Checkout state and pack preparation use context-aware locks keyed by checkout
+path. Locks are released before completed bundle or patch files are streamed,
+and credential/config requests retain separate short-lived synchronization.
+
 Because the *client's* git resolves everything, every layout works natively:
 worktrees, submodules, `--separate-git-dir`, sha256 repos, alternates and
 partial clones (missing objects are materialized client-side, where the

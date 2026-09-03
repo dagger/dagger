@@ -56,8 +56,11 @@ func (s GitAttachable) CheckoutState(ctx context.Context, req *CheckoutStateRequ
 		return newCheckoutStateErrorResponse(NOT_A_REPO, "no .git entry at checkout root"), nil
 	}
 
-	gitMutex.Lock()
-	defer gitMutex.Unlock()
+	unlock, err := gitCheckoutLocks.lock(ctx, req.GetCheckoutPath())
+	if err != nil {
+		return newCheckoutStateErrorResponse(TIMEOUT, err.Error()), nil
+	}
+	defer unlock()
 
 	state, err := collectCheckoutState(ctx, req.GetCheckoutPath())
 	if err != nil {
@@ -98,8 +101,16 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 		return sendErr(NOT_A_REPO, "no .git entry at checkout root")
 	}
 
-	gitMutex.Lock()
-	defer gitMutex.Unlock()
+	unlock, err := gitCheckoutLocks.lock(ctx, checkout)
+	if err != nil {
+		return sendErr(TIMEOUT, err.Error())
+	}
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 
 	state, err := collectCheckoutState(ctx, checkout)
 	if err != nil {
@@ -118,6 +129,8 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 		if latest.digest() != stateDigest {
 			return sendErr(CHECKOUT_STATE_MISMATCH, "checkout state changed while packing")
 		}
+		unlock()
+		locked = false
 		// Unborn HEAD: nothing to pack; the engine reconstructs an empty
 		// repository on the same branch.
 		return srv.Send(&PackCheckoutResponse{
@@ -141,6 +154,13 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if _, err := runHostGit(ctx, checkout, "bundle", "create", bundlePath, "--branches", "--tags", "HEAD"); err != nil {
 		return sendErr(PACK_FAILED, err.Error())
 	}
+	bundleInfo, err := os.Stat(bundlePath)
+	if err != nil {
+		return sendErr(PACK_FAILED, fmt.Sprintf("stat checkout bundle: %v", err))
+	}
+	if bundleInfo.Size() > MaxGitPackBytes {
+		return sendErr(PACK_FAILED, fmt.Sprintf("checkout bundle size %d exceeds limit %d", bundleInfo.Size(), MaxGitPackBytes))
+	}
 	latest, err := collectCheckoutState(ctx, checkout)
 	if err != nil {
 		return sendErr(PACK_FAILED, err.Error())
@@ -148,6 +168,8 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if latest.digest() != stateDigest {
 		return sendErr(CHECKOUT_STATE_MISMATCH, "checkout state changed while packing")
 	}
+	unlock()
+	locked = false
 
 	if err := srv.Send(&PackCheckoutResponse{
 		Msg: &PackCheckoutResponse_Metadata{

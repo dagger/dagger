@@ -495,11 +495,6 @@ const (
 	checkoutStateMethod   = "/dagger.git.Git/CheckoutState"
 	packCheckoutMethod    = "/dagger.git.Git/PackCheckout"
 	packUncommittedMethod = "/dagger.git.Git/PackUncommitted"
-
-	// maxGitPackBytes bounds each aggregate checkout bundle or uncommitted
-	// patch received from a client. These internal transports must accommodate
-	// large source repositories, but may not consume unbounded engine disk.
-	maxGitPackBytes int64 = 4 << 30
 )
 
 // ErrGitPackUnsupported reports that the client cannot pack a checkout with
@@ -652,7 +647,7 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 				return nil, fmt.Errorf("received bundle data before pack metadata")
 			}
 			if spool == nil {
-				spool, err = newGitPackSpool("dagger-checkout-pack-*", maxGitPackBytes)
+				spool, err = newGitPackSpool("dagger-checkout-pack-*", git.MaxGitPackBytes)
 				if err != nil {
 					return nil, fmt.Errorf("create checkout pack spool: %w", err)
 				}
@@ -769,7 +764,7 @@ func (c *Client) PackGitUncommitted(ctx context.Context, checkoutPath, expectedH
 				return nil, fmt.Errorf("received uncommitted patch before metadata")
 			}
 			if spool == nil {
-				spool, err = newGitPackSpool("dagger-uncommitted-pack-*", maxGitPackBytes)
+				spool, err = newGitPackSpool("dagger-uncommitted-pack-*", git.MaxGitPackBytes)
 				if err != nil {
 					return nil, fmt.Errorf("create uncommitted pack spool: %w", err)
 				}

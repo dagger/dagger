@@ -46,8 +46,16 @@ func (s GitAttachable) PackUncommitted(req *PackUncommittedRequest, srv Git_Pack
 		return sendErr(NOT_A_REPO, "no .git entry at checkout root")
 	}
 
-	gitMutex.Lock()
-	defer gitMutex.Unlock()
+	unlock, err := gitCheckoutLocks.lock(ctx, checkout)
+	if err != nil {
+		return sendErr(TIMEOUT, err.Error())
+	}
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 
 	state, err := collectCheckoutState(ctx, checkout)
 	if err != nil {
@@ -156,17 +164,29 @@ func (s GitAttachable) PackUncommitted(req *PackUncommittedRequest, srv Git_Pack
 		}
 	}
 
+	patchPath := filepath.Join(tmpDir, "uncommitted.patch")
+	patch, err := os.Create(patchPath)
+	if err != nil {
+		return fmt.Errorf("create uncommitted patch: %w", err)
+	}
 	cmd := hostGitCommand(ctx, checkout, env,
 		"diff", "--cached", "--binary", "--full-index", "--no-renames", "--no-ext-diff", expectedHead, "--")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("open uncommitted patch stream: %w", err)
-	}
+	cmd.Stdout = &limitedGitPackWriter{w: patch, remaining: MaxGitPackBytes}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return sendErr(PACK_FAILED, fmt.Sprintf("start uncommitted patch: %v", err))
+	if err := cmd.Run(); err != nil {
+		_ = patch.Close()
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			return sendErr(PACK_FAILED, fmt.Sprintf("git diff uncommitted: %v", err))
+		}
+		return sendErr(PACK_FAILED, fmt.Sprintf("git diff uncommitted: %v: %s", err, detail))
 	}
+	if err := patch.Close(); err != nil {
+		return fmt.Errorf("close uncommitted patch: %w", err)
+	}
+	unlock()
+	locked = false
 
 	if err := srv.Send(&PackUncommittedResponse{
 		Msg: &PackUncommittedResponse_Metadata{
@@ -176,40 +196,49 @@ func (s GitAttachable) PackUncommitted(req *PackUncommittedRequest, srv Git_Pack
 			},
 		},
 	}); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
 		return fmt.Errorf("send uncommitted metadata: %w", err)
 	}
 
+	patch, err = os.Open(patchPath)
+	if err != nil {
+		return fmt.Errorf("open uncommitted patch: %w", err)
+	}
+	defer patch.Close()
 	buf := make([]byte, packCheckoutChunkSize)
 	for {
-		n, readErr := stdout.Read(buf)
+		n, readErr := patch.Read(buf)
 		if n > 0 {
 			if err := srv.Send(&PackUncommittedResponse{
 				Msg: &PackUncommittedResponse_Chunk{Chunk: buf[:n]},
 			}); err != nil {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
 				return fmt.Errorf("send uncommitted patch chunk: %w", err)
 			}
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
 				return fmt.Errorf("read uncommitted patch: %w", readErr)
 			}
 			break
 		}
 	}
-	if err := cmd.Wait(); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			return fmt.Errorf("git diff uncommitted: %w", err)
-		}
-		return fmt.Errorf("git diff uncommitted: %w: %s", err, detail)
-	}
 	return nil
+}
+
+type limitedGitPackWriter struct {
+	w         io.Writer
+	remaining int64
+}
+
+func (w *limitedGitPackWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > w.remaining {
+		return 0, fmt.Errorf("git pack exceeds limit %d", MaxGitPackBytes)
+	}
+	n, err := w.w.Write(p)
+	w.remaining -= int64(n)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
 }
 
 func splitNullPaths(out []byte) []string {

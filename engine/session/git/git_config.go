@@ -47,9 +47,10 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 		return newGitConfigErrorResponse(NOT_FOUND, "git is not installed or not in PATH"), nil
 	}
 
-	// Ensure no parallel execution of the git CLI happens
-	gitMutex.Lock()
-	defer gitMutex.Unlock()
+	// Serialize the short-lived host config and credential helpers, which may
+	// share user-level helper state.
+	gitHelperMutex.Lock()
+	defer gitHelperMutex.Unlock()
 
 	cmd := exec.CommandContext(ctx, "git", "config", "-l", "-z")
 	var stdout, stderr bytes.Buffer

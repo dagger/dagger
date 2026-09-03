@@ -11,7 +11,69 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-var gitMutex sync.Mutex
+// gitHelperMutex retains the existing serialization for the short-lived
+// credential-helper and config commands. Checkout packing has its own keyed,
+// context-aware synchronization and must never block these requests.
+var gitHelperMutex sync.Mutex
+
+var gitCheckoutLocks contextKeyedLocker
+
+// MaxGitPackBytes bounds an aggregate checkout bundle or uncommitted patch on
+// both sides of the session transport.
+const MaxGitPackBytes int64 = 4 << 30
+
+type contextKeyedLocker struct {
+	mu      sync.Mutex
+	entries map[string]*contextKeyedLock
+}
+
+type contextKeyedLock struct {
+	token chan struct{}
+	refs  int
+}
+
+func (locks *contextKeyedLocker) lock(ctx context.Context, key string) (func(), error) {
+	locks.mu.Lock()
+	if locks.entries == nil {
+		locks.entries = map[string]*contextKeyedLock{}
+	}
+	entry := locks.entries[key]
+	if entry == nil {
+		entry = &contextKeyedLock{token: make(chan struct{}, 1)}
+		entry.token <- struct{}{}
+		locks.entries[key] = entry
+	}
+	entry.refs++
+	locks.mu.Unlock()
+
+	releaseRef := func() {
+		locks.mu.Lock()
+		defer locks.mu.Unlock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(locks.entries, key)
+		}
+	}
+
+	select {
+	case <-ctx.Done():
+		releaseRef()
+		return nil, context.Cause(ctx)
+	case <-entry.token:
+		if err := context.Cause(ctx); err != nil {
+			entry.token <- struct{}{}
+			releaseRef()
+			return nil, err
+		}
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				entry.token <- struct{}{}
+				releaseRef()
+			})
+		}, nil
+	}
+}
 
 type GitAttachable struct {
 	rootCtx context.Context
