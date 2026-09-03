@@ -300,8 +300,11 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// the whole session would restore as tombstones or none of it would.
 	require.Equal(t, "STOPPED", tests.mustVerb(ctx, t, "stop"))
 
-	// The source session's trace, as its own client saw it.
+	// The source session's trace, as its own client saw it. The dismissal's
+	// STOPPED record rides its own export, so wait for it: a capture taken
+	// before it lands plans the worker back into its pre-stop state.
 	rostered := sink.awaitAgents(t, 3)
+	sink.awaitAgentState(t, "tests", "STOPPED")
 	require.Contains(t, rostered, "chief")
 	sourceTraceID := rostered["chief"].Span().TraceID.String()
 	traces, logs := sink.capture()
