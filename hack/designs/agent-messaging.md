@@ -40,7 +40,7 @@ tracked it (or didn't).
   (core/agent.go:1998) waits for exactly one state, and a FAILED loop never
   reaches it. Documented as a WARNING on the tool and in the chief prompt —
   i.e. worked around by prompting, owned by nobody.
-- **P6 — `ask` holds the callee hostage.** `AgentMessage.await` resolves with
+- **P6 — `ask` holds the callee hostage.** `AgentMessage.response` resolves with
   the final reply of the consuming TURN (core/agent.go:705), so answering an
   `askChief` requires the chief to END ITS TURN, and the answer is the same
   text addressed to the user — two conversations conflated in one reply.
@@ -63,7 +63,7 @@ consumption, resolution — of which a blocked agent performs only the first.
 The three deadlock shapes, precisely:
 
 - **`ask` ↔ `askChief`** (mutual await). Chief's turn is inside
-  `worker.send(m).await`; worker's turn is inside `chief.send(q).await`. Each
+  `worker.send(m).response`; worker's turn is inside `chief.send(q).response`. Each
   await resolves at the other's turn END; each turn is blocked in the very
   tool call that prevents its end. Both messages are duly enqueued, hinted
   STEERED, and never consumed.
@@ -104,9 +104,9 @@ Corollaries:
 
 - Replies are messages, not blocked returns (§4.2).
 - Lifecycle changes are messages, not polled or awaited states (§4.3).
-- The blocking verbs (`AgentMessage.await`, `Agent.waitFor`) remain — for
+- The blocking verbs (`AgentMessage.response`, `Agent.wait`) remain — for
   callers that are NOT agent turns: the CLI prompt (submit = send + resume +
-  await), module code driving agents imperatively, tests. A human caller can
+  response), module code driving agents imperatively, tests. A human caller can
   Ctrl-C; a turn cannot.
 - The engine enforces the rule where it can and detects violations where it
   cannot (§4.5), instead of documenting deadlocks in prompts.
@@ -126,7 +126,7 @@ carries the calling agent's handle in context (`AgentFromContext`,
 core/agent_context.go). So sender identity needs no new argument for the
 common case: `Send` resolves an origin at enqueue —
 
-- **agent**: `AgentFromContext` present → instance ID + display name of the
+- **agent**: `AgentFromContext` present → runtime handle + display name of the
   sending agent;
 - **user**: no agent in context → the sending client (main client vs. a
   nested/attached one, from client metadata);
@@ -165,7 +165,7 @@ the entire core mechanism; the rest is convention carried by provenance:
   carries its message ID.
 - An answer is a normal send with `replyTo` set; the recipient's rendered
   form pairs it with the question ("reply from chief to #m7f3").
-- `AgentMessage.await` on a message that HAS received a reply resolves with
+- `AgentMessage.response` on a message that HAS received a reply resolves with
   that reply rather than waiting for turn end — so external (non-agent)
   callers get ask semantics that no longer conflate the answer with the
   callee's turn-ending reply. (Turn-end resolution remains the fallback for
@@ -226,10 +226,12 @@ simply doesn't subscribe.
 ### 4.4 Settled waits for the callers that may block (P5)
 
 For non-agent callers the blocking verbs stay — but `collect`'s hang is a
-missing verb, not a policy error. `Agent.waitSettled: ID!` blocks until the
+missing verb, not a policy error. `Agent.wait: ID!` blocks until the
 projection reaches ANY settled state (IDLE, FAILED, STOPPED) and returns the
-agent for inspection. `waitFor(state:)` remains for the exact-state cases
-(tests, mostly). staff's `collect` moves onto `waitSettled` and reports a
+agent for inspection. The exact-state `waitFor(state:)` API is removed: it is
+too easy to wait forever when the agent settles in another outcome. Tests and
+CLI interrupt plumbing poll state internally where exact synchronization is
+actually required. staff's `collect` moves onto `wait` and reports a
 FAILED worker's error as an answer instead of hanging on a state that will
 never come (§7).
 
@@ -238,7 +240,7 @@ never come (§7).
 The rule in §3 removes blocking from the shipped tools, but nothing stops the
 next module author from building a blocking channel again. The engine gets
 the guard async-agents item 2 reserved space for, at the two blocking
-primitives (`AwaitMessage`, `WaitFor`/`waitSettled`):
+primitives (`AwaitMessage`, `WaitFor`/`wait`):
 
 - If `AgentFromContext` yields a caller, register a waits-for edge
   caller → target in a session-scoped table for the duration of the wait.
@@ -286,13 +288,13 @@ type Agent {
   supervisors — never hangs on a failed loop. Refused (with the cycle) when
   called from inside an agent turn whose wait would deadlock.
   """
-  waitSettled: ID! @expectedType(name: "Agent")
+  wait: ID! @expectedType(name: "Agent")
 }
 
 """Recorded origin of a consumed message; also rendered to the model."""
 type AgentMessageOrigin {
   kind: AgentMessageOriginKind!  # USER | AGENT | EVENT
-  agentId: String                # sending agent's instance ID, when AGENT
+  agentId: String                # sending agent's runtime handle, when AGENT
   agentName: String
   messageId: String!
   replyTo: String
@@ -301,7 +303,7 @@ type AgentMessageOrigin {
 
 `LLM.messages` entries expose their origin; the telemetry vocabulary
 (engine/telemetryattrs) gains the matching attributes on message records.
-Everything else — `await`, `waitFor`, delivery evidence, the state
+Everything else — response waiting, delivery evidence, the state
 projection — is unchanged.
 
 ## 6. What lands where
@@ -313,7 +315,7 @@ The split the dogfooding question asked for directly:
 | Origin resolution + recording, model-facing attribution | core | the one enqueue path and the honest chain both live there |
 | `replyTo` correlation, await-resolves-on-reply | core | message records are runtime state |
 | Subscriptions + event enqueue | core | only the runtime sees projected transitions |
-| `waitSettled` | core | missing verb on the runtime |
+| `wait` | core | missing verb on the runtime |
 | Waits-for edges + cycle refusal | core | only the engine sees the whole graph; prompts provably don't work |
 | Origin in `LLM.messages` + telemetry attrs | core | clients need it without bespoke plumbing |
 | Rendering: attribution styles, event one-liners | TUI | presentation of recorded facts |
@@ -329,13 +331,13 @@ one — the reliable tell for the split being right.
 
 - **`ask`: deleted.** The verb is the trap (P1, P6); `sendTo` with an
   expect-reply rendering replaces it. Anything that truly wants blocking ask
-  semantics from OUTSIDE an agent still has `send(...).await` + §4.2.
+  semantics from OUTSIDE an agent still has `send(...).response` + §4.2.
 - **`sendTo(name, message, replyTo?)`**: unchanged mechanics, plus reply
   correlation. Resume-first behavior stays.
 - **`askChief(question)`**: sends with expect-reply, returns immediately:
   "question #m7f3 delivered; the answer will arrive as a message — keep
   working, or end your turn to wait for it."
-- **`collect(name)`**: `waitSettled`, then: IDLE → final reply; FAILED → the
+- **`collect(name)`**: `wait`, then: IDLE → final reply; FAILED → the
   error plus the retry/dismiss options; STOPPED → says so. The WARNING
   paragraph dies.
 - **`spawn`**: after `worker.send(task)`, `worker.notify(subscriber: chief,
@@ -356,7 +358,7 @@ Each step lands alone and pays for itself:
    P2/P3 with zero behavioral risk. Test: origin recorded on the chain,
    visible in messages, attribution in the provider request; existing
    replay recordings unaffected (origin renders only for non-user origins).
-2. **`waitSettled`** (§4.4) + staff `collect` onto it. Kills P5. Test: FAILED
+2. **`wait`** (§4.4) + staff `collect` onto it. Kills P5. Test: FAILED
    worker → collect returns the error promptly.
 3. **Cycle refusal** (§4.5). Turns silent deadlock into loud error. Tests:
    mutual-await cycle refused with named path; self-await refused; acyclic
@@ -400,8 +402,8 @@ system prompt. The seed was never wrong.)*
 - **Combinators for code.** `awaitAny`/`awaitAll` for non-model orchestrator
   code (a module function supervising N agents imperatively). Demoted by
   §4.3; revisit on demand, per async-agents §7's original instinct.
-- **Naming.** `notify` vs `watch` (receiver-shaped); `waitSettled` vs
-  `settle`. Bikeshed at implementation. *(Settled: `notify`, `waitSettled`;
+- **Naming.** `notify` vs `watch` (receiver-shaped); `wait` vs
+  `settle`. Bikeshed at implementation. *(Settled: `notify`, `wait`;
   §10.)*
 
 ## 10. Implementation status
@@ -425,7 +427,7 @@ What landed, by step:
    `FunctionCall.callerAgent` from its own `CallerAgent` resolution, so the
    identity propagates through arbitrarily nested module calls with no
    forgeable "from" argument anywhere.
-2. **`waitSettled`** (§4.4) — plus `Agent.error`, which the design did not
+2. **`wait`** (§4.4) — plus `Agent.error`, which the design did not
    name but §7's collect semantics required: a settled wait that reports
    FAILED is useless if nothing exposes WHY, and the loop error was
    previously telemetry-only.
@@ -433,7 +435,7 @@ What landed, by step:
    not the design's three: `messageDelivery` blocks on turn progress too (a
    STEERED hint confirms only at the target's next step boundary — §2's
    wedge is precisely a delivery wait that never confirms), so it registers
-   like `awaitMessage`, `waitFor`, and `waitSettled`. Self-waits refused
+   like `awaitMessage`, `waitFor`, and `wait`. Self-waits refused
    unconditionally; cycle refusals name the full path; non-agent callers
    register nothing.
 4. **`replyTo`** (§4.2) — resolution in the SENDER's runtime, accepting
@@ -449,7 +451,7 @@ What landed, by step:
    agents watching each other must not order lock acquisition).
 
 Plus §7's staff rebuild verbatim (`ask` deleted, `askChief` non-blocking,
-`collect` on `waitSettled` + `error`, spawn subscribes the chief, both
+`collect` on `wait` + `error`, spawn subscribes the chief, both
 DEADLOCK WARNING blocks deleted), with one addition the tests forced and the
 module deserved anyway: `spawn(model:)`, a per-worker model knob.
 
@@ -489,7 +491,7 @@ module deserved anyway: `spawn(model:)`, a per-worker model knob.
   staff's sendTo is resume-first, send-second — relaunched the loop with the
   mailbox still empty, and the relaunch window projected a transient IDLE,
   firing an idle event that carried the PREVIOUS turn's final reply; the
-  same lie let `waitSettled` return the stale reply and `Reseed` slip into
+  same lie let `wait` return the stale reply and `Reseed` slip into
   a window the loop was about to commit through (drain's pop-to-commit gap
   had the same shape). Fixed as one class, three facts: the relaunch
   restores the suspended-turn fact when the snapshot holds a pending step;
@@ -511,7 +513,7 @@ module deserved anyway: `spawn(model:)`, a per-worker model knob.
 chain-omission rules, waits-for guard incl. named cycle paths, reply
 resolution, event delivery incl. the stopped-subscriber drop). Integration:
 core/integration/agent_notify_test.go (wake-on-event with EVENT origins;
-waitSettled returning on FAILED with `error`), and the staff E2E
+wait returning on FAILED with `error`), and the staff E2E
 TestStaff/TestAskAndReply — the full choreography with zero blocking edges:
 attributed task, non-blocking askChief, question steering with attribution,
 idle events carrying final replies, mid-turn sendTo(replyTo:) waking the
@@ -545,7 +547,7 @@ and TestAgentRestore suites pass unchanged.
   codex envs) while this landed: it uses Agent fields only a from-source
   engine serves, and a module that fails to compile takes its whole env's
   module set down with it. *Since RESTORED, once deployed engines served
-  `notify`/`waitSettled`/`send(replyTo:)`/`error`/`ref` — verified by
+  `notify`/`wait`/`send(replyTo:)`/`error`/`ref` — verified by
   reloading the env against a live session, which loads staff or fails
   without side effects.*
 - Everything in §9 (ledger, auto-reply fallback, event truncation,

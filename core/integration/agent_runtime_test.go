@@ -3,7 +3,7 @@ package core
 // These tests cover the async Agent API (hack/designs/async-agents.md): the
 // evaluation loop as an addressable, long-lived entity within the session.
 // They exercise the lifecycle verbs (start/pause/resume/interrupt/stop), the
-// mailbox (send/await, delivery evidence, queueing behind a pause), failure
+// mailbox (send/response, delivery evidence, queueing behind a pause), failure
 // and retry semantics, and runtime dedupe by agent value digest.
 //
 // Like llm_test.go, every conversation is canned: recordings are constructed
@@ -15,17 +15,17 @@ package core
 // that the tool is in flight (no sleeps as synchronization).
 //
 // One deliberate infrastructure note: agents are spawned instances —
-// LLM.spawn is DoNotCache and mints a unique instance ID per call, pinning
-// it by re-exec through the pure LLM.agent(id:) lookup (design §9), so the
-// returned ID is an honest, replayable chain `…llm!agent(id:"…")` denoting
+// LLM.spawn is DoNotCache and mints a unique runtime handle per call, pinning
+// it by re-exec through the pure LLM.agent(handle:) lookup (design §9), so the
+// returned ID is an honest, replayable chain `…llm!agent(handle:"…")` denoting
 // exactly one instance. The helpers here spawn once and re-address the
 // handle via node(id:) for every subsequent query; two spawns of an
 // identical composition are two distinct agents (TestSpawnInstances).
 // Agent.send follows the same pattern one level down: it pins each
-// enqueued message through Agent.message(id:) — the chain
-// `…agent(id:…)!message(id:"…")` — which is what makes the
-// cancel-and-re-await contract hold across requests (TestMessageIdentity).
-// Like every imperative verb (start, pause, resume, interrupt, waitFor,
+// enqueued message through Agent.message(handle:) — the chain
+// `…agent(handle:…)!message(handle:"…")` — which is what makes the
+// cancel-and-request-again contract holds across requests (TestMessageIdentity).
+// Like every imperative verb (start, pause, resume, interrupt, wait,
 // stop), spawn and send are ID-returning, sync-style: lazy clients force
 // the side effect at the call site, and re-hydrating the returned ID
 // replays the lookup, not the spawn/send.
@@ -79,13 +79,13 @@ var emptyReplayModel = "replay/" + base64.StdEncoding.EncodeToString([]byte("[]"
 // agentHandle drives one spawned agent instance through raw GraphQL queries.
 // Raw queries are used (rather than the typed SDK) because the interesting
 // assertions select several fields off a single loaded node in one query —
-// e.g. { delivery await }, or the two aliased awaits of the idempotency
+// e.g. { delivery response }, or the two aliased awaits of the idempotency
 // test. The handle holds the pinned agent ID a spawn returned; every query
 // re-addresses the same instance via node(id:), which replays the pure
-// …llm!agent(id:…) lookup — never the spawn.
+// …llm!agent(handle:…) lookup — never the spawn.
 type agentHandle struct {
 	c *dagger.Client
-	// agentID is the pinned instance ID returned by spawn.
+	// agentID is the pinned runtime handle returned by spawn.
 	agentID string
 }
 
@@ -106,7 +106,7 @@ type spawnOpts struct {
 }
 
 // trySpawnAgent evaluates llm[.withWorkspace][.withTools…].spawn(name:) once
-// and returns the pinned instance ID. Error-returning so tests can spawn
+// and returns the pinned runtime handle. Error-returning so tests can spawn
 // from helper goroutines; most call spawnAgent.
 func trySpawnAgent(ctx context.Context, c *dagger.Client, opts spawnOpts) (string, error) {
 	vars := map[string]any{
@@ -199,7 +199,7 @@ func (h *agentHandle) mustRun(ctx context.Context, t *testctx.T, selection strin
 }
 
 // msgRun loads a pinned message handle by its ID — node(id:) replays the
-// …agent(id:…)!message(id:…) chain — and runs the given selection on it,
+// …agent(handle:…)!message(handle:…) chain — and runs the given selection on it,
 // returning the JSON subtree rooted at the node.
 func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection string) (gjson.Result, error) {
 	t.Helper()
@@ -228,7 +228,7 @@ func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection
 
 // sendID enqueues a message and returns the pinned message ID. send is
 // ID-returning (sync-style): the enqueue happens here, exactly once, and the
-// returned ID replays the message(id:) lookup — not the send — when loaded.
+// returned ID replays the message(handle:) lookup — not the send — when loaded.
 func (h *agentHandle) sendID(ctx context.Context, t *testctx.T, message string) (string, error) {
 	t.Helper()
 	out, err := h.run(ctx, t, fmt.Sprintf(`send(message: %q)`, message))
@@ -246,11 +246,11 @@ func (h *agentHandle) sendAndWait(ctx context.Context, t *testctx.T, message str
 	if err != nil {
 		return "", "", err
 	}
-	out, err := h.msgRun(ctx, t, msgID, `delivery await`)
+	out, err := h.msgRun(ctx, t, msgID, `delivery response`)
 	if err != nil {
 		return "", "", err
 	}
-	return out.Get("delivery").String(), out.Get("await").String(), nil
+	return out.Get("delivery").String(), out.Get("response").String(), nil
 }
 
 // sendNoWait enqueues a message and waits only for conclusive delivery, not
@@ -306,14 +306,27 @@ func (h *agentHandle) mustVerb(ctx context.Context, t *testctx.T, verb string) s
 	return state
 }
 
-// waitFor blocks until the agent reaches the given state, returning the
-// state read just after (or the caller's cancellation error).
+// waitFor is test-only exact-state polling. The public API deliberately only
+// exposes the safe settled wait; tests sometimes need to synchronize on an
+// intermediate state such as PAUSED.
 func (h *agentHandle) waitFor(ctx context.Context, t *testctx.T, state string) (string, error) {
 	t.Helper()
-	if _, err := h.run(ctx, t, fmt.Sprintf(`waitFor(state: %s)`, state)); err != nil {
-		return "", err
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		got, err := h.stateErr(ctx, t)
+		if err != nil {
+			return "", err
+		}
+		if got == state {
+			return got, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", context.Cause(ctx)
+		case <-ticker.C:
+		}
 	}
-	return h.stateErr(ctx, t)
 }
 
 // snapshot returns the last committed conversation's transcript and last
@@ -348,21 +361,21 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 }
 
 // rehydrateAgent runs the restore chain of design §3.2 verbatim —
-// loadLLMFromID(<snapshot>) { agent(id:, name:) { rehydrate(...) } } — and
+// loadLLMFromID(<snapshot>) { agent(handle:, name:) { rehydrate(...) } } — and
 // returns a handle on the restored instance. Error-returning, because half
 // the point of rehydrate is which calls it refuses.
-func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, instanceID, name, state, errText string) (*agentHandle, error) {
+func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
 			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
 				node(id: $llm) { ... on LLM {
-					agent(id: $id, name: $name) { rehydrate(state: $state, error: $error) }
+					agent(handle: $id, name: $name) { rehydrate(state: $state, error: $error) }
 				} }
 			}`,
 			Variables: map[string]any{
 				"llm":   llmID,
-				"id":    instanceID,
+				"id":    handle,
 				"name":  name,
 				"state": state,
 				"error": errText,
@@ -402,18 +415,18 @@ func (h *agentHandle) reseedAgent(ctx context.Context, t *testctx.T, llmID strin
 }
 
 // unmintedAgent builds a handle on an instance no spawn ever minted: the pure
-// agent(id:, name:) lookup, which touches no runtime state. This is the shape
+// agent(handle:, name:) lookup, which touches no runtime state. This is the shape
 // a client holds after rebuilding a handle from a trace whose agents it has
 // NOT re-hydrated — the case §4.2 exists to make loud.
-func unmintedAgent(ctx context.Context, t *testctx.T, c *dagger.Client, instanceID, name string) *agentHandle {
+func unmintedAgent(ctx context.Context, t *testctx.T, c *dagger.Client, handle, name string) *agentHandle {
 	t.Helper()
 	res := map[string]any{}
 	require.NoError(t, c.Do(ctx,
 		&dagger.Request{
 			Query: `query($model: String!, $id: String!, $name: String!) {
-				llm(model: $model) { agent(id: $id, name: $name) { id } }
+				llm(model: $model) { agent(handle: $id, name: $name) { id } }
 			}`,
-			Variables: map[string]any{"model": emptyReplayModel, "id": instanceID, "name": name},
+			Variables: map[string]any{"model": emptyReplayModel, "id": handle, "name": name},
 		},
 		&dagger.Response{Data: &res},
 	))
@@ -542,7 +555,7 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 }
 
 // TestSendAwait covers the mailbox happy path: send opens a turn (STARTED),
-// await returns that turn's reply, the consumed message appears in the
+// response returns that turn's reply, the consumed message appears in the
 // snapshot's history (influence ⇔ append), and two sequential turns against
 // one agent correlate their replies correctly.
 func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
@@ -575,7 +588,7 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 
 	// The consumed message was appended to the agent's history — a message
 	// that influenced the agent appears in its transcript (influence ⇔
-	// append) — and the snapshot's lastReply matches what await returned.
+	// append) — and the snapshot's lastReply matches what response returned.
 	transcript, lastReply := h.snapshot(ctx, t)
 	require.Contains(t, transcript, firstPrompt)
 	require.Contains(t, transcript, firstReply)
@@ -612,25 +625,25 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	// Two spawns of the exact same composition: same model, same tool
 	// binding, same display name. Under the old identity model these
 	// resolved to one runtime entry by content digest; spawn mints a
-	// unique instance ID into each pinned chain, so they are two agents.
+	// unique runtime handle into each pinned chain, so they are two agents.
 	opts := spawnOpts{model: model, name: "twin", toolIDs: []dagger.ID{ctrID}}
 	first := spawnAgent(ctx, t, c, opts)
 	second := spawnAgent(ctx, t, c, opts)
 	require.NotEqual(t, first.agentID, second.agentID,
 		"two spawns of an identical composition must mint distinct instances")
 
-	// Same display name — a label, not an identity. The instance ID is the
+	// Same display name — a label, not an identity. The runtime handle is the
 	// identity, and reading it off the handle is how a client correlates an
 	// agent it drives with the entry the trace publishes for it (the loop
 	// span's dagger.io/agent.id is this same value).
-	firstIdentity := first.mustRun(ctx, t, `name instanceID`)
-	secondIdentity := second.mustRun(ctx, t, `name instanceID`)
+	firstIdentity := first.mustRun(ctx, t, `name handle`)
+	secondIdentity := second.mustRun(ctx, t, `name handle`)
 	require.Equal(t, "twin", firstIdentity.Get("name").String())
 	require.Equal(t, "twin", secondIdentity.Get("name").String())
-	require.NotEmpty(t, firstIdentity.Get("instanceID").String())
+	require.NotEmpty(t, firstIdentity.Get("handle").String())
 	require.NotEqual(t,
-		firstIdentity.Get("instanceID").String(),
-		secondIdentity.Get("instanceID").String(),
+		firstIdentity.Get("handle").String(),
+		secondIdentity.Get("handle").String(),
 		"twins share a label but never an instance identity")
 
 	// Open a turn on the first instance only. The second's runtime is
@@ -651,7 +664,7 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 
 	// Now open the second instance's own turn: both dwell in the (shared,
 	// deduped) exec concurrently — two RUNNING agents under one display
-	// name — and each await resolves against its own runtime.
+	// name — and each response resolves against its own runtime.
 	var secondDelivery, secondReply string
 	eg.Go(func() error {
 		var err error
@@ -706,9 +719,9 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 	first := spawnAgent(ctx, t, c, opts)
 	firstMsgID, err := first.sendID(ctx, t, prompt)
 	require.NoError(t, err)
-	out, err := first.msgRun(ctx, t, firstMsgID, `await`)
+	out, err := first.msgRun(ctx, t, firstMsgID, `response`)
 	require.NoError(t, err)
-	require.Equal(t, reply, out.Get("await").String())
+	require.Equal(t, reply, out.Get("response").String())
 	require.Equal(t, "STOPPED", first.mustVerb(ctx, t, "stop"))
 
 	// Second incarnation of the identical composition: a fresh instance
@@ -728,9 +741,9 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 	require.Contains(t, transcript, prompt)
 	require.Equal(t, reply, lastReply)
 	// The predecessor's old message remains addressable after stop.
-	out, err = first.msgRun(ctx, t, firstMsgID, `await`)
+	out, err = first.msgRun(ctx, t, firstMsgID, `response`)
 	require.NoError(t, err)
-	require.Equal(t, reply, out.Get("await").String())
+	require.Equal(t, reply, out.Get("response").String())
 
 	// A send through the stopped handle reopens the SAME entry and continues
 	// from its preserved history. The replay provider only knows this second
@@ -863,9 +876,9 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "PAUSED", h.state(ctx, t))
 
 		h.mustVerb(ctx, t, "resume")
-		out, err = h.msgRun(ctx, t, msgID, `await`)
+		out, err = h.msgRun(ctx, t, msgID, `response`)
 		require.NoError(t, err)
-		require.Equal(t, queuedReply, out.Get("await").String())
+		require.Equal(t, queuedReply, out.Get("response").String())
 		transcript, lastReply := h.snapshot(ctx, t)
 		require.Contains(t, transcript, newPrompt)
 		require.Contains(t, transcript, queuedPrompt)
@@ -984,7 +997,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "PAUSED", state)
 		require.NoError(t, h.reseedAgent(ctx, t, string(convo)))
 
-		// The old await is settled rather than left hanging, and the active
+		// The old response is settled rather than left hanging, and the active
 		// snapshot contains neither its prompt nor any later tool history.
 		err = eg.Wait()
 		require.ErrorContains(t, err, "rewound")
@@ -1001,9 +1014,9 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "QUEUED", out.Get("delivery").String())
 		_, err = h.verb(ctx, t, "resume")
 		require.NoError(t, err)
-		out, err = h.msgRun(ctx, t, editedID, `await`)
+		out, err = h.msgRun(ctx, t, editedID, `response`)
 		require.NoError(t, err)
-		require.Equal(t, editedReply, out.Get("await").String())
+		require.Equal(t, editedReply, out.Get("response").String())
 		state, err = h.waitFor(ctx, t, "IDLE")
 		require.NoError(t, err)
 		require.Equal(t, "IDLE", state)
@@ -1122,7 +1135,7 @@ func (AgentRuntimeSuite) TestFailedAndRetry(ctx context.Context, t *testctx.T) {
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "failer"})
 
-	// The turn consumes the message and fails; await surfaces the turn's
+	// The turn consumes the message and fails; response surfaces the turn's
 	// failure.
 	_, _, err := h.sendAndWait(ctx, t, "a prompt the recording does not contain")
 	require.ErrorContains(t, err, "failed during the turn that consumed this message")
@@ -1168,7 +1181,7 @@ func (AgentRuntimeSuite) TestFailedAndRetry(ctx context.Context, t *testctx.T) {
 
 // TestSteering covers mid-turn message absorption: a send landing while the
 // turn dwells in a (slow) tool call is absorbed into that turn — STEERED
-// delivery — and both the opening and the steering message await the same
+// delivery — and both the opening and the steering message response the same
 // turn's final reply.
 func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -1187,7 +1200,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}})
 
-	// Open the turn; the await blocks until the whole (steered) turn ends.
+	// Open the turn; the response blocks until the whole (steered) turn ends.
 	var goDelivery, goReply string
 	eg := errgroup.Group{}
 	eg.Go(func() error {
@@ -1202,13 +1215,13 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "RUNNING", h.state(ctx, t))
 
 	// The steer lands mid-step: absorbed into the in-flight turn, and its
-	// await resolves to that same turn's final reply.
+	// response resolves to that same turn's final reply.
 	steerDelivery, steerReply, err := h.sendAndWait(ctx, t, steerPrompt)
 	require.NoError(t, err)
 	require.Equal(t, "STEERED", steerDelivery)
 	require.Equal(t, slowToolReply, steerReply)
 
-	// The opening message's await resolved to the same reply.
+	// The opening message's response resolved to the same reply.
 	require.NoError(t, eg.Wait())
 	require.Equal(t, "STARTED", goDelivery)
 	require.Equal(t, slowToolReply, goReply)
@@ -1267,7 +1280,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 
 	// The recorded prefix is protocol-valid: the assistant's tool call and its
 	// errored result are both present. The queued follow-up was unconsumed, so
-	// Ctrl-C drops it and resolves both delivery and await with the same
+	// Ctrl-C drops it and resolves both delivery and response with the same
 	// conclusive interrupt evidence; it is never reported as STEERED.
 	transcript, _ := h.snapshot(ctx, t)
 	require.Contains(t, transcript, slowToolPrompt)
@@ -1276,7 +1289,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	require.NotContains(t, transcript, steerPrompt)
 	_, err = h.msgRun(ctx, t, queuedID, `delivery`)
 	require.ErrorContains(t, err, "interrupted before consuming this message")
-	_, err = h.msgRun(ctx, t, queuedID, `await`)
+	_, err = h.msgRun(ctx, t, queuedID, `response`)
 	require.ErrorContains(t, err, "interrupted before consuming this message")
 
 	// Resume submits the recorded cancellation result to the model and reaches
@@ -1417,16 +1430,16 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 		"the module tool's exec kept heartbeating after the interrupt: cancellation never reached it")
 }
 
-// TestAwaitIdempotency covers shared awaiting: two concurrent awaits on the
-// same AgentMessage both get the reply. The two aliased await selections —
+// TestResponseIdempotency covers shared response reads: two concurrent reads on the
+// same AgentMessage both get the reply. The two aliased response selections —
 // on the message handle loaded from send's pinned ID — resolve concurrently
 // within one query (dagql resolves sibling selections in parallel) while the
 // turn dwells in the slow tool, so both are genuinely blocked on the same
 // unresolved record before it resolves once for both.
-func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T) {
+func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := c.CacheVolume("agent-await-" + identity.NewID())
+	vol := c.CacheVolume("agent-response-" + identity.NewID())
 	ctrID, err := slowToolContainer(c, vol, 3).ID(ctx)
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
@@ -1435,7 +1448,7 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 
 	msgID, err := h.sendID(ctx, t, slowToolPrompt)
 	require.NoError(t, err)
-	out, err := h.msgRun(ctx, t, msgID, `delivery first: await second: await`)
+	out, err := h.msgRun(ctx, t, msgID, `delivery first: response second: response`)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", out.Get("delivery").String())
 	require.Equal(t, slowToolReply, out.Get("first").String())
@@ -1444,11 +1457,11 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 
 // TestMessageIdentity covers re-exec pinning of message handles (design §9):
 // send returns the ID of the pinned handle — the honest chain
-// …agent(id:…)!message(id:…) — and that ID re-addresses the SAME message record
-// from a later request. That is the cancel-and-re-await contract: an await
+// …agent(handle:…)!message(handle:…) — and that ID re-addresses the SAME message record
+// from a later request. That is the cancel-and-request-again contract: a response
 // canceled mid-turn loses nothing — a fresh request re-loads the handle via
-// node(id:) and awaits the reply. Also locks in the lookup's clean failure
-// modes: unknown message IDs, and agents with no runtime entry.
+// node(id:) and requests the response. Also locks in the lookup's clean failure
+// modes: unknown message handles, and agents with no runtime entry.
 func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1471,12 +1484,12 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", out.Get("delivery").String())
 
-	// awaitByID re-addresses the pinned handle in a fresh request —
-	// node(id:) replays the …agent(id:…)!message(id:…) chain — and awaits it.
-	awaitByID := func(ctx context.Context) (delivery, reply string, _ error) {
+	// responseByID re-addresses the pinned handle in a fresh request —
+	// node(id:) replays the …agent(handle:…)!message(handle:…) chain.
+	responseByID := func(ctx context.Context) (delivery, reply string, _ error) {
 		res := map[string]any{}
 		err := c.Do(ctx, &dagger.Request{
-			Query:     `query($id: ID!) { node(id: $id) { ... on AgentMessage { delivery await } } }`,
+			Query:     `query($id: ID!) { node(id: $id) { ... on AgentMessage { delivery response } } }`,
 			Variables: map[string]any{"id": msgID},
 		}, &dagger.Response{Data: &res})
 		if err != nil {
@@ -1487,46 +1500,46 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 			return "", "", err
 		}
 		node := gjson.Get(string(raw), "node")
-		return node.Get("delivery").String(), node.Get("await").String(), nil
+		return node.Get("delivery").String(), node.Get("response").String(), nil
 	}
 
-	// Cancel-and-re-await, first half: an await issued while the turn
+	// Cancellation, first half: a response request issued while the turn
 	// provably dwells in the slow tool call, then canceled while blocked.
-	// The await fails with the cancellation, whatever the exact
+	// The response fails with the cancellation, whatever the exact
 	// interleaving of issue and cancel.
-	awaitCtx, cancelAwait := context.WithCancel(ctx)
-	defer cancelAwait()
-	awaitErr := make(chan error, 1)
+	responseCtx, cancelResponse := context.WithCancel(ctx)
+	defer cancelResponse()
+	responseErr := make(chan error, 1)
 	go func() {
-		_, _, err := awaitByID(awaitCtx)
-		awaitErr <- err
+		_, _, err := responseByID(responseCtx)
+		responseErr <- err
 	}()
 	waitForSlowTool(ctx, t, c, vol)
 	require.Equal(t, "RUNNING", h.state(ctx, t))
-	cancelAwait()
-	require.ErrorContains(t, <-awaitErr, "context canceled")
+	cancelResponse()
+	require.ErrorContains(t, <-responseErr, "context canceled")
 
-	// Second half: a fresh request re-awaits the same handle and gets the
-	// turn's reply — the canceled await lost nothing. The turn is still
-	// mid-tool when this await is issued (the tool dwells for seconds past
-	// the marker), so the await genuinely blocks before resolving; the
+	// Second half: a fresh request asks the same handle again and gets the
+	// turn's reply — the canceled response lost nothing. The turn is still
+	// mid-tool when this response is issued (the tool dwells for seconds past
+	// the marker), so the response genuinely blocks before resolving; the
 	// delivery evidence rides the record, unchanged.
-	delivery, reply, err := awaitByID(ctx)
+	delivery, reply, err := responseByID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
 	require.Equal(t, slowToolReply, reply)
 
-	// Unknown message ID on an agent WITH a runtime entry: clear error.
-	_, err = h.run(ctx, t, `message(id: "bogus") { delivery }`)
+	// Unknown message handle on an agent with a runtime entry: clear error.
+	_, err = h.run(ctx, t, `message(handle: "bogus") { delivery }`)
 	require.ErrorContains(t, err, "no record of message")
 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
 	// pure lookup and never creates one. The handle for such an instance is
-	// the bare agent(id:, name:) lookup, since spawn now creates the entry
+	// the bare agent(handle:, name:) lookup, since spawn now creates the entry
 	// it mints (see TestSendRequiresRuntime for why a miss must never be a
 	// constructor).
 	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
-	_, err = ghost.run(ctx, t, `message(id: "bogus") { delivery }`)
+	_, err = ghost.run(ctx, t, `message(handle: "bogus") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
 }
 
@@ -1626,7 +1639,7 @@ func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.
 		}
 		require.NotNil(t, match, "no span carries the advertised call digest")
 		require.Equal(t, "agent", match.Call().Field,
-			"the digest must name the pinned agent(id:, name:) lookup")
+			"the digest must name the pinned agent(handle:, name:) lookup")
 
 		var err error
 		callID, err = match.CallID()
@@ -1649,7 +1662,7 @@ func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.
 // carrying that call digest, rebuilds the ID from the call payloads it has
 // ingested (Span.CallID walks receiver digests through the DB), encodes it,
 // and loads it. The digest names spawn's internal Select of the pure
-// agent(id:, name:) lookup — a span the UI hides as internal, but which
+// agent(handle:, name:) lookup — a span the UI hides as internal, but which
 // carries its call payload like any other, which is what makes this work.
 //
 // The identity assertions are deliberately ones a freshly derived agent
@@ -1697,11 +1710,11 @@ func (AgentRuntimeSuite) TestRosterAddressing(ctx context.Context, t *testctx.T)
 	// for, and the whole receiver chain behind it reconstructs — the part
 	// that breaks if any ancestor's span never reached the client.
 	rebuilt, rebuiltID := sink.rebuild(t, c, node)
-	// The rebuilt chain is the honest one spawn pinned, instance ID and
+	// The rebuilt chain is the honest one spawn pinned, runtime handle and
 	// all. (It is not byte-identical to what spawn returned: that is the
 	// compact handle form of the same value, this is the recipe form.)
 	require.Contains(t, rebuiltID.Display(),
-		fmt.Sprintf(`agent(id: %q, name: %q)`, node.ID, "rostered"))
+		fmt.Sprintf(`agent(handle: %q, name: %q)`, node.ID, "rostered"))
 
 	// (4) The reconstructed handle addresses the SAME runtime, not a fresh
 	// inert one derived from the same composition.
@@ -1710,7 +1723,7 @@ func (AgentRuntimeSuite) TestRosterAddressing(ctx context.Context, t *testctx.T)
 	// correlation a client needs to tell a rostered agent apart from one it
 	// already drives.
 	require.Equal(t, node.ID,
-		rebuilt.mustRun(ctx, t, `instanceID`).Get("instanceID").String())
+		rebuilt.mustRun(ctx, t, `handle`).Get("handle").String())
 	require.Equal(t, "FAILED", rebuilt.state(ctx, t))
 	transcript, _ := rebuilt.snapshot(ctx, t)
 	require.Contains(t, transcript, marker)
@@ -1739,7 +1752,7 @@ const hirerWorkerPrompt = "You are a worker hired by the hirer module."
 // payloads that arrived on spans it ingested (dagql/dagui/extract.go:8-43),
 // and the chain here mixes all three kinds: calls the client made, calls the
 // MODULE made from its nested session (the system prompt hire composes in,
-// and the agent(id:, name:) lookup spawn re-execs), and a module provenance
+// and the agent(handle:, name:) lookup spawn re-execs), and a module provenance
 // frame — pulled in by binding a module object as the seed's toolset, the
 // shape a chief's own conversation has. A missing frame does not error at
 // spawn time: the roster entry silently degrades to read-only, i.e. the user
@@ -1823,7 +1836,7 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 	// hanging off the client's tool binding.
 	rebuilt, rebuiltID := sink.rebuild(t, c, node)
 	display := rebuiltID.Display()
-	require.Contains(t, display, fmt.Sprintf(`agent(id: %q, name: %q)`, node.ID, "hired"))
+	require.Contains(t, display, fmt.Sprintf(`agent(handle: %q, name: %q)`, node.ID, "hired"))
 	require.Contains(t, display, hirerWorkerPrompt,
 		"the frame the module built must be in the rebuilt chain")
 	mods := rebuiltID.Modules()
@@ -1861,7 +1874,7 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 // withPrompt Select, then Step) executes against a released client. On the
 // live session a send five minutes after the spawning call ended enqueued
 // fine (delivery evidence computed) but the loop never drained: the
-// message's await hung forever.
+// message's response hung forever.
 //
 // The ingredients here are layered to match that scenario as closely as a
 // canned-replay test can, and each was verified to really occur:
@@ -1873,14 +1886,14 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 //   - hire awaits the opening turn INSIDE the module call, so turn 1
 //     completes while the spawning client is alive, exactly as observed
 //     live — then stores the worker handle in module state and returns;
-//   - the second exchange is module-mediated (ask = resume + send + await,
+//   - the second exchange is module-mediated (ask = resume + send + response,
 //     resolving the worker from module state), issued from a fresh
 //     function-call client of its own — the staff ask shape.
 //
 // STATUS: this does NOT currently reproduce the hang — the loop drains and
 // steps correctly on the released spawner's retained context, for a direct
 // client send and for the module-mediated ask alike, so the test passes and
-// stands as the regression probe for this window (a hang fails it by await
+// stands as the regression probe for this window (a hang fails it by response
 // timeout instead of wedging CI). Live-only ingredients still unaccounted
 // for: a real provider model (credential/env round-trips through the loop's
 // client at step time, where replay needs none), the spawning call being
@@ -1973,7 +1986,7 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	require.Equal(t, firstReply, lastReply)
 
 	// The second exchange, issued the way the live scenario issues it:
-	// through the module — ask (resume + send + await) runs inside a fresh
+	// through the module — ask (resume + send + response) runs inside a fresh
 	// function-call client of its own, resolving the worker handle from the
 	// module's own state, while the LOOP still runs on the released spawner
 	// call's context. Bounded: a hang here is the bug, reported as a
@@ -2160,7 +2173,7 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 //     overlay: this case failed exactly like the bare one.
 //
 // What broke was never the walk. Every frame resolves, the ID rebuilds, and
-// the handle reads back its own name and instance ID — those are literals in
+// the handle reads back its own name and runtime handle — those are literals in
 // the recipe. But a telemetry-rebuilt ID is the RECIPE form (design §9), so
 // USING it re-executes the chain; a fresh currentWorkspace meant a fresh seed,
 // a different agent value, and — while AgentRuntimes keyed on the agent
@@ -2239,7 +2252,7 @@ func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, 
 			// the seed is not what breaks the reconstruction.
 			rebuilt, rebuiltID := sink.rebuild(t, c, node)
 			require.Contains(t, rebuiltID.Display(),
-				fmt.Sprintf(`agent(id: %q, name: %q)`, node.ID, "rostered"))
+				fmt.Sprintf(`agent(handle: %q, name: %q)`, node.ID, "rostered"))
 
 			// Read off the chain's own literals. They are asserted before
 			// the runtime reads so a failure below cannot be mistaken for a
@@ -2247,14 +2260,14 @@ func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, 
 			require.Equal(t, "rostered",
 				rebuilt.mustRun(ctx, t, `name`).Get("name").String())
 			require.Equal(t, node.ID,
-				rebuilt.mustRun(ctx, t, `instanceID`).Get("instanceID").String())
+				rebuilt.mustRun(ctx, t, `handle`).Get("handle").String())
 
 			// Everything past here comes from the runtime registry rather
 			// than the recipe, which is what addressing has to reach. It is
 			// the half the value-digest key could not deliver for a
 			// currentWorkspace-seeded agent: the rebuilt handle re-executes
 			// the chain, so only an identity that rides it as a literal —
-			// the instance ID — still names the live entry.
+			// the runtime handle — still names the live entry.
 			require.Equal(t, "FAILED", rebuilt.state(ctx, t))
 			transcript, _ := rebuilt.snapshot(ctx, t)
 			require.Contains(t, transcript, marker)
@@ -2371,16 +2384,16 @@ func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t 
 
 	restored := "restored history " + identity.NewID()
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
-	instanceID := identity.NewID()
+	handle := identity.NewID()
 
-	h, err := rehydrateAgent(ctx, c, snapshot, instanceID, "restored", "IDLE", "")
+	h, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)
 
 	// The entry exists, holds the adopted conversation, and its loop was
 	// never started: a restored agent spends no tokens until it is prompted.
 	require.Equal(t, "IDLE", h.state(ctx, t))
-	require.Equal(t, instanceID,
-		h.mustRun(ctx, t, `instanceID`).Get("instanceID").String())
+	require.Equal(t, handle,
+		h.mustRun(ctx, t, `handle`).Get("handle").String())
 	transcript, _ := h.snapshot(ctx, t)
 	require.Contains(t, transcript, restored,
 		"a re-hydrated agent must hold the conversation it adopted, not a fresh seed")
@@ -2389,7 +2402,7 @@ func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t 
 	// time a second restore arrives the instance may already have stepped,
 	// and the late call would discard whatever it built. This is also the
 	// guard that makes an out-of-order restore loud (§5.3's ordering).
-	_, err = rehydrateAgent(ctx, c, snapshot, instanceID, "restored", "IDLE", "")
+	_, err = rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
 	require.ErrorContains(t, err, "already has a runtime entry")
 
 	// Prompting continues that conversation. The empty recording fails the
@@ -2440,7 +2453,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 		// mail queued behind the tombstone projects it.
 		msgID, err := h.sendID(ctx, t, "queued behind the restored failure")
 		require.NoError(t, err)
-		_, err = h.msgRun(ctx, t, msgID, `await`)
+		_, err = h.msgRun(ctx, t, msgID, `response`)
 		require.ErrorContains(t, err, loopErr)
 	})
 
@@ -2477,27 +2490,83 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 	})
 }
 
-// TestSendRequiresRuntime covers §4.2: a registry miss must be an error, not a
-// constructor. Send routed through GetOrCreate, so sending to an instance this
-// session has no entry for BOOTED a second loop from the handle's own seed —
-// the amnesiac twin of async-agents §10.2, which answered with no history
-// while the real agent kept running elsewhere.
+// TestRuntimeVerbsRequireRuntime covers §4.2: a registry miss must be an
+// error, not a constructor. A verb routed through GetOrCreate can silently
+// manufacture a second runtime from a reconstructed handle's seed — the
+// amnesiac twin of async-agents §10.2.
 //
 // Restore makes that failure routine rather than exotic: importing a trace
 // puts every agent of the old session on the roster, including any this
 // session failed to restore, and focusing one and typing at it must say so.
-func (AgentRuntimeSuite) TestSendRequiresRuntime(ctx context.Context, t *testctx.T) {
+func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	snapshot, err := c.LLM().ID(ctx)
+	require.NoError(t, err)
 
-	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "ghost")
+	tests := map[string]func(context.Context, *testctx.T, *agentHandle) error{
+		"start": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `start`)
+			return err
+		},
+		"send": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.sendNoWait(ctx, t, "typed at an agent that was never restored")
+			return err
+		},
+		"interrupt": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `interrupt`)
+			return err
+		},
+		"pause": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `pause`)
+			return err
+		},
+		"resume": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `resume`)
+			return err
+		},
+		"wait": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `wait`)
+			return err
+		},
+		"stop": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `stop`)
+			return err
+		},
+		"replace conversation": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			return ghost.reseedAgent(ctx, t, string(snapshot))
+		},
+		"message lookup": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			_, err := ghost.run(ctx, t, `message(handle: "unknown") { delivery }`)
+			return err
+		},
+		"notify target": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			subscriber := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "subscriber"})
+			_, err := ghost.run(ctx, t, fmt.Sprintf(`notify(subscriber: %q)`, subscriber.agentID))
+			return err
+		},
+		"notify subscriber": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
+			target := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "target"})
+			_, err := target.run(ctx, t, fmt.Sprintf(`notify(subscriber: %q)`, ghost.agentID))
+			return err
+		},
+	}
 
-	// Reads still project IDLE-from-absence — a never-started agent and an
-	// unrestored one are legitimately indistinguishable to a read.
-	require.Equal(t, "IDLE", ghost.state(ctx, t))
+	for name, run := range tests {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			ghost := unmintedAgent(ctx, t, c, identity.NewID(), "ghost-"+name)
 
-	// The write is where it has to be loud.
-	_, err := ghost.sendNoWait(ctx, t, "typed at an agent that was never restored")
-	require.ErrorContains(t, err, "has no runtime in this session")
+			// Read projections remain useful for reconstructed trace handles.
+			require.Equal(t, "IDLE", ghost.state(ctx, t))
+
+			err := run(ctx, t, ghost)
+			require.ErrorContains(t, err, "no runtime")
+
+			// The failed verb did not leave a ghost entry behind: the explicit
+			// restore constructor can still adopt this handle.
+			_, err = ghost.run(ctx, t, `rehydrate`)
+			require.NoError(t, err)
+		})
+	}
 }
 
 // TestRehydratePublishesIdentity covers §4.5: telemetry is the directory
@@ -2520,15 +2589,15 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 
 	restored := "restored history " + identity.NewID()
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
-	instanceID := identity.NewID()
+	handle := identity.NewID()
 
-	_, err := rehydrateAgent(ctx, c, snapshot, instanceID, "restored", "IDLE", "")
+	_, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)
 
 	// The restored agent is on the roster without ever having been started:
 	// identity from the span it published, state and anchor from its records.
 	node := sink.awaitAgent(t, "IDLE")
-	require.Equal(t, instanceID, node.ID)
+	require.Equal(t, handle, node.ID)
 	require.Equal(t, "restored", node.Name)
 	require.NotEmpty(t, node.SnapshotDigest,
 		"a restored agent must publish its own anchor, or the new trace cannot be resumed either")
@@ -2536,7 +2605,7 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 	// And it is addressable from the trace alone, like any spawned agent.
 	rebuilt, rebuiltID := sink.rebuild(t, c, node)
 	require.Contains(t, rebuiltID.Display(),
-		fmt.Sprintf(`agent(id: %q, name: %q)`, instanceID, "restored"))
+		fmt.Sprintf(`agent(handle: %q, name: %q)`, handle, "restored"))
 	transcript, _ := rebuilt.snapshot(ctx, t)
 	require.Contains(t, transcript, restored)
 }

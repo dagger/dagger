@@ -350,7 +350,7 @@ func TestImportedRootRendersPassthrough(t *testing.T) {
 }
 
 // TestImportMergesTheAgentsLoopSpans is what importing into the LIVE DB buys
-// (§5.1, §4.5): a re-hydrated agent keeps its instance ID, so its old life and
+// (§5.1, §4.5): a re-hydrated agent keeps its runtime handle, so its old life and
 // its new one fold into one roster entry rather than two agents with one name.
 func TestImportMergesTheAgentsLoopSpans(t *testing.T) {
 	db := importedTraceDB(t, false)

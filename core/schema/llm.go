@@ -216,18 +216,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation."),
 			),
-		// agent is deliberately cached (no DoNotCache): the instance ID
+		// agent is deliberately cached (no DoNotCache): the runtime handle
 		// argument pins the lookup to one spawned instance, so the same
 		// chain always denotes the same agent value — which is exactly what
 		// lets spawn pin its result's identity by re-exec: re-loading a
-		// spawned agent's ID replays …llm!agent(id:…) and lands on the same
+		// spawned agent's ID replays …llm!agent(handle:…) and lands on the same
 		// value, never re-minting an instance.
 		dagql.NodeFunc("agent", s.agent).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`Rehydrate a spawned agent's handle from its instance ID.`,
+			Doc(`Reconstruct a spawned agent from its runtime handle.`,
 				`This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.`).
 			Args(
-				dagql.Arg("id").Doc("The agent instance ID, as minted by the spawn that created the agent."),
+				dagql.Arg("handle").Doc("The opaque runtime handle minted by the spawn that created the agent."),
 				dagql.Arg("name").Doc("The agent's display name, as recorded by the spawn."),
 			),
 		dagql.Func("hasPending", s.hasPending).
@@ -557,12 +557,12 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 
 // spawn mints a unique agent instance from the conversation. Instance
 // identity is minted here — where instances are born — never from caller
-// entropy: the resolver generates the instance ID, then pins it by re-exec
+// entropy: the resolver generates the runtime handle, then pins it by re-exec
 // (design §9, the same trick send uses for message identity): a real Select
-// through the pure agent(id:) lookup on the same receiver yields a handle
-// whose ID is the honest, replayable chain `…llm!agent(id:"…", name:"…")` —
+// through the pure agent(handle:) lookup on the same receiver yields a handle
+// whose ID is the honest, replayable chain `…llm!agent(handle:"…", name:"…")` —
 // re-addressable from any request in the session, and carrying the unique
-// instance ID into the value's content digest, so every spawn gets a fresh
+// runtime handle into the value's content digest, so every spawn gets a fresh
 // runtime registry entry (a dismissed name can never resolve to a
 // predecessor's tombstone). spawn is DoNotCache and ID-returning like every
 // imperative verb: lazy clients force the mint exactly once and re-hydrate
@@ -603,7 +603,7 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 		Field: "agent",
 		Args: []dagql.NamedInput{
 			{
-				Name:  "id",
+				Name:  "handle",
 				Value: dagql.NewString(identity.NewID()),
 			},
 			{
@@ -633,13 +633,13 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 // touching no runtime state — a cold re-Select of a spawned agent's ID lands
 // here and projects IDLE-from-absence like any never-started agent.
 func (s *llmSchema) agent(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
-	ID   string
-	Name string
+	Handle string
+	Name   string
 }) (*core.Agent, error) {
 	return &core.Agent{
-		Seed:       parent,
-		InstanceID: args.ID,
-		Name:       args.Name,
+		Seed:   parent,
+		Handle: args.Handle,
+		Name:   args.Name,
 	}, nil
 }
 

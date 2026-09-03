@@ -31,7 +31,7 @@ import (
 const AgentInstrumentationScope = "dagger.io/agent"
 
 // agentSpanAttrs builds the identity attributes stamped on an agent's loop
-// span: the marker, the spawn-minted instance ID, the display name, and the
+// span: the marker, the spawn-minted runtime handle, the display name, and the
 // digest of the call that produced the agent value.
 //
 // The call digest is what lets a client turn a rendered roster entry back
@@ -45,8 +45,8 @@ func agentSpanAttrs(ctx context.Context, name string, self dagql.ObjectResult[*A
 		attribute.String(telemetryattrs.AgentNameAttr, name),
 	}
 	if self.Self() != nil {
-		attrs = append(attrs, attribute.String(telemetryattrs.AgentIDAttr, self.Self().InstanceID))
-		attrs = append(attrs, genAIAgentAttrs(self.Self().InstanceID, name)...)
+		attrs = append(attrs, attribute.String(telemetryattrs.AgentIDAttr, self.Self().Handle))
+		attrs = append(attrs, genAIAgentAttrs(self.Self().Handle, name)...)
 	}
 	if dig, err := self.RecipeDigest(ctx); err == nil {
 		attrs = append(attrs, attribute.String(telemetryattrs.AgentCallDigestAttr, dig.String()))
@@ -78,7 +78,7 @@ func genAIAgentAttrsFromContext(ctx context.Context) []attribute.KeyValue {
 		return nil
 	}
 	self := agent.Self()
-	return genAIAgentAttrs(self.InstanceID, self.Name)
+	return genAIAgentAttrs(self.Handle, self.Name)
 }
 
 // EmitAgentState publishes one agent-state record, attributed to the loop

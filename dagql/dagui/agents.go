@@ -24,7 +24,7 @@ import (
 // spans) the engine published for it, the identity carried on them, and the
 // lifecycle state folded from its state records.
 type AgentNode struct {
-	// ID is the agent's spawn-minted instance ID — the grouping key. It is
+	// ID is the agent's spawn-minted runtime handle — the grouping key. It is
 	// deliberately NOT the span ID: a resume after a failure relaunches the
 	// loop under a fresh span, and both spans belong to the same agent.
 	ID string
@@ -175,7 +175,7 @@ func (db *DB) buildAgents() []*AgentNode {
 // AgentRestore is one entry of a restore plan: what a resuming client needs
 // to re-hydrate one agent instance from a trace it has ingested.
 type AgentRestore struct {
-	// ID is the agent's spawn-minted instance ID — the identity it is
+	// ID is the agent's spawn-minted runtime handle — the identity it is
 	// restored UNDER, which is what makes the restored agent the same agent
 	// (its old loop spans and its new ones fold into one roster entry, and
 	// the chief's recorded chain binds its workers by this ID).
@@ -199,7 +199,7 @@ type AgentRestore struct {
 	// (DB.CallIDForDigest) and re-hydrates the instance through.
 	SnapshotDigest string
 
-	// ParentAgentID is the instance ID of the agent whose loop span encloses
+	// ParentAgentID is the runtime handle of the agent whose loop span encloses
 	// this one — a worker's chief. Empty for a top-level agent, which is the
 	// fact focus selection is made of (§3.1c).
 	ParentAgentID string

@@ -40,10 +40,10 @@ type Hirer {
     # @cache(Never): spawns, messages and awaits a real agent runtime —
     # side effects that must actually run, never replay from cache.
     let worker = seed.withSystemPrompt(workerPrompt).spawn(name: name)
-    # Await INSIDE the module call: the opening turn provably completes
+    # Response INSIDE the module call: the opening turn provably completes
     # while this function-call client is still alive; the call returning is
     # what ends that client.
-    worker.send(task).await
+    worker.send(task).response
     currentNode.{{... on Dagger.Hirer!}}.withWorker(name, worker)
   }
 
@@ -59,7 +59,7 @@ type Hirer {
   """
   Send a message to a hired worker and block for the reply of the turn that
   consumes it — the staff module's ask: resume-first, then send, then
-  await, all inside THIS call's own function-call client.
+  response, all inside THIS call's own function-call client.
   """
   ask(
     name: String!,
@@ -69,11 +69,11 @@ type Hirer {
     # answer would masquerade as a fresh round-trip.
     let worker = member(name)
     worker.resume
-    worker.send(message).await
+    worker.send(message).response
   }
 
   """
-  The ask, addressed by handle instead of name: resume + send + await on a
+  The ask, addressed by handle instead of name: resume + send + response on a
   caller-provided Agent. This is how a client that rebuilt a handle from
   the trace hands it INTO a module tool — the path that must work wherever
   node(id:) on the same handle works.
@@ -84,7 +84,7 @@ type Hirer {
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): same as ask.
     agent.resume
-    agent.send(message).await
+    agent.send(message).response
   }
 
   # Address a worker by name, with a helpful miss (mirrors staff.member).

@@ -174,14 +174,14 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 			require.Contains(t, display, "withSkills(",
 				"the skills binding must be in the rebuilt chain")
 			require.Contains(t, display,
-				fmt.Sprintf(`agent(id: %q, name: %q)`, node.ID, "rostered"))
+				fmt.Sprintf(`agent(handle: %q, name: %q)`, node.ID, "rostered"))
 
 			// Everything past here comes from the runtime registry rather
 			// than the recipe, which is what addressing has to reach.
 			require.Equal(t, "rostered",
 				rebuilt.mustRun(ctx, t, `name`).Get("name").String())
 			require.Equal(t, node.ID,
-				rebuilt.mustRun(ctx, t, `instanceID`).Get("instanceID").String())
+				rebuilt.mustRun(ctx, t, `handle`).Get("handle").String())
 			require.Equal(t, "FAILED", rebuilt.state(ctx, t))
 			transcript, _ := rebuilt.snapshot(ctx, t)
 			require.Contains(t, transcript, marker)
