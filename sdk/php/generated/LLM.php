@@ -14,14 +14,14 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * Rehydrate a spawned agent's handle from its instance ID.
+     * Reconstruct a spawned agent from its runtime handle.
      *
      * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
      */
-    public function agent(string $id, string $name): Agent
+    public function agent(string $handle, string $name): Agent
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agent');
-        $innerQueryBuilder->setArgument('id', $id);
+        $innerQueryBuilder->setArgument('handle', $handle);
         $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Agent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

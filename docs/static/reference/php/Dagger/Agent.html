@@ -153,22 +153,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_handle">handle</a>()
+        
+                                            <p><p>The opaque runtime handle minted by the spawn that created this agent.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
                                             <p><p>A unique identifier for this Agent.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_instanceID">instanceID</a>()
-        
-                                            <p><p>The unique instance identity minted by the spawn that created this agent.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -186,9 +186,9 @@
                     <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_message">message</a>(string $id)
+                    <a href="#method_message">message</a>(string $handle)
         
-                                            <p><p>Look up a previously sent message by its message ID, returning its handle.</p></p>                </div>
+                                            <p><p>Look up a previously sent message by its opaque handle.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -198,7 +198,7 @@
                 <div class="col-md-8">
                     <a href="#method_name">name</a>()
         
-                                            <p><p>Display label and identity discriminator — not a session-wide address.</p></p>                </div>
+                                            <p><p>Display label for the agent; carries no identity.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -306,17 +306,7 @@
                     <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_waitFor">waitFor</a>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
-        
-                                            <p><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_waitSettled">waitSettled</a>()
+                    <a href="#method_wait">wait</a>()
         
                                             <p><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -449,8 +439,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_handle">
+        <div class="location">at line 32</div>
+        <code>                    string
+    <strong>handle</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The opaque runtime handle minted by the spawn that created this agent.</p></p>                <p><p>It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 30</div>
+        <div class="location">at line 41</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -469,38 +491,6 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_instanceID">
-        <div class="location">at line 41</div>
-        <code>                    string
-    <strong>instanceID</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The unique instance identity minted by the spawn that created this agent.</p></p>                <p><p>It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -549,7 +539,7 @@
                     <h3 id="method_message">
         <div class="location">at line 68</div>
         <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
-    <strong>message</strong>(string $id)
+    <strong>message</strong>(string $handle)
         </code>
     </h3>
     <div class="details">    
@@ -557,8 +547,8 @@
             
 
         <div class="method-description">
-                            <p><p>Look up a previously sent message by its message ID, returning its handle.</p></p>                <p><p>This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).</p>
-<p>Fails if the agent has no runtime entry in this session, or no record of the given ID.</p></p>        
+                            <p><p>Look up a previously sent message by its opaque handle.</p></p>                <p><p>This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).</p>
+<p>Fails if the agent has no runtime entry in this session, or no record of the given handle.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -566,7 +556,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$id</td>
+                <td>$handle</td>
                 <td></td>
             </tr>
             </table>
@@ -600,7 +590,7 @@
             
 
         <div class="method-description">
-                            <p><p>Display label and identity discriminator — not a session-wide address.</p></p>                        
+                            <p><p>Display label for the agent; carries no identity.</p></p>                        
         </div>
         <div class="tags">
             
@@ -841,7 +831,7 @@
 
         <div class="method-description">
                             <p><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></p>                <p><p>Never blocks, never drops; concurrent sends queue in order.</p>
-<p>The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.</p>
+<p>The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.</p>
 <p>Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.</p></p>        
         </div>
         <div class="tags">
@@ -1017,10 +1007,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_waitFor">
+                    <h3 id="method_wait">
         <div class="location">at line 245</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>waitFor</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
+    <strong>wait</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1028,49 +1018,7 @@
             
 
         <div class="method-description">
-                            <p><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></p>                <p><p>A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.</p></p>        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null</td>
-                <td>$state</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_waitSettled">
-        <div class="location">at line 260</div>
-        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>waitSettled</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></p>                <p><p>The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.</p></p>        
+                            <p><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></p>                <p><p>Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.</p></p>        
         </div>
         <div class="tags">
             
