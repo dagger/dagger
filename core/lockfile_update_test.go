@@ -155,6 +155,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"https://example.com/repo.git"},
 					workspace.LookupOption{Name: "tagPrefix", Value: "sdk/go"},
+					workspace.LookupOption{Name: "version", Value: "v1.2"},
 				),
 			},
 			"refs/tags/sdk/go/v1.2.3",
@@ -176,6 +177,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"registry.example/acme/image"},
 					workspace.LookupOption{Name: "protocol", Value: "http"},
+					workspace.LookupOption{Name: "version", Value: "2"},
 				),
 			},
 			"2.0.0",
@@ -215,6 +217,14 @@ func TestUpdateGitLatestLockEntryValidatesInputs(t *testing.T) {
 				workspace.LookupOption{Name: "tagPrefix", Value: ""},
 			),
 			wantErr: "invalid git-latest tagPrefix",
+		},
+		{
+			name: "invalid version query",
+			inputs: workspace.LookupInputs(
+				[]any{"https://example.com/repo.git"},
+				workspace.LookupOption{Name: "version", Value: "v1.x"},
+			),
+			wantErr: `invalid git-latest version v1.x: invalid version query "v1.x"`,
 		},
 		{
 			name: "unknown option",
@@ -353,6 +363,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		[]any{"docker.io/library/alpine"},
 		workspace.LookupOption{Name: "protocol", Value: "https"},
 		workspace.LookupOption{Name: "insecureSkipTLSVerify", Value: true},
+		workspace.LookupOption{Name: "version", Value: "v3.20"},
 	)
 	got, err := parseOCILockInputs(workspace.LockOperationOCILatest, inputs, true)
 	require.NoError(t, err)
@@ -360,6 +371,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		Protocol:              serverresolver.RegistryProtocolHTTPS,
 		InsecureSkipTLSVerify: true,
 	}, got.registryTransport)
+	require.Equal(t, "v3.20", got.version)
 
 	_, err = parseOCILockInputs(
 		workspace.LockOperationOCILatest,

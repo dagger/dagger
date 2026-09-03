@@ -116,6 +116,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				`Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.`,
 			).
 			Args(
+				dagql.Arg("version").
+					Doc(`Version query used to select the greatest matching release ref.`).
+					View(AfterVersion(workspace.VersionQueriesVersion)),
 				dagql.Arg("tagPrefix").
 					Doc(`Restrict release tags to a monorepo subpath.`).
 					Internal(),
@@ -2294,6 +2297,7 @@ func (s *gitSchema) log(
 }
 
 type latestArgs struct {
+	Version   string `default:""`
 	TagPrefix string `name:"tagPrefix" default:""`
 }
 
@@ -2309,9 +2313,10 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRefWithTagPrefix(
+		ref, err := core.SelectGitRefWithVersionQuery(
 			remote,
 			args.TagPrefix,
+			args.Version,
 		)
 		if err != nil {
 			return inst, err
@@ -2324,6 +2329,12 @@ func (s *gitSchema) latest(
 		lockOptions = append(lockOptions, workspace.LookupOption{
 			Name:  "tagPrefix",
 			Value: args.TagPrefix,
+		})
+	}
+	if args.Version != "" {
+		lockOptions = append(lockOptions, workspace.LookupOption{
+			Name:  "version",
+			Value: args.Version,
 		})
 	}
 	lockInputs := workspace.LookupInputs(
@@ -2348,9 +2359,10 @@ func (s *gitSchema) latest(
 	var selectedRef string
 	if lockResolution.Pin != "" {
 		selectedRef = lockResolution.Pin
-		if err := core.ValidateGitLatestRef(
+		if err := core.ValidateGitVersionRef(
 			selectedRef,
 			args.TagPrefix,
+			args.Version,
 		); err != nil {
 			return inst, fmt.Errorf("%s lock value: %w", workspace.LockOperationGitLatest, err)
 		}
@@ -2359,9 +2371,10 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRefWithTagPrefix(
+		ref, err := core.SelectGitRefWithVersionQuery(
 			remote,
 			args.TagPrefix,
+			args.Version,
 		)
 		if err != nil {
 			return inst, err
