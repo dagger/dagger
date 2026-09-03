@@ -14,6 +14,17 @@ namespace Dagger;
 class Agent extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * Why the loop failed, for a FAILED agent; empty otherwise.
+     *
+     * The snapshot holds the completed prefix — send or resume retries from it.
+     */
+    public function error(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'error');
+    }
+
+    /**
      * A unique identifier for this Agent.
      */
     public function id(): Id
@@ -68,6 +79,26 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+     *
+     * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+     *
+     * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+     *
+     * Idempotent per subscriber; re-subscribing replaces the state set.
+     */
+    public function notify(Agent $subscriber, ?array $on = null): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('notify');
+        $leafQueryBuilder->setArgument('subscriber', $subscriber);
+        if (null !== $on) {
+        $leafQueryBuilder->setArgument('on', $on);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'notify');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -146,10 +177,13 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
      */
-    public function send(string $message): AgentMessage
+    public function send(string $message, ?string $replyTo = ''): AgentMessage
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('send');
         $leafQueryBuilder->setArgument('message', $message);
+        if (null !== $replyTo) {
+        $leafQueryBuilder->setArgument('replyTo', $replyTo);
+        }
         $id = $this->queryLeaf($leafQueryBuilder, 'send');
         return $this->client->loadObjectFromId(\Dagger\AgentMessage::class, new \Dagger\Id((string)$id), 'AgentMessage');
     }
@@ -215,6 +249,18 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder->setArgument('state', $state);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'waitFor');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+     *
+     * The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+     */
+    public function waitSettled(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('waitSettled');
+        $id = $this->queryLeaf($leafQueryBuilder, 'waitSettled');
         return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 }
