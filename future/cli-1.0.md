@@ -30,7 +30,7 @@ Do not call a runtime an SDK. Old engine code uses that name, but the concepts a
 ## Goals
 
 1. Give module installation and module development one command group.
-2. Remove the `dagger sdk` command group.
+2. Keep SDK and scope metadata visible through a small `dagger sdk` command group.
 3. Replace module dependencies with generated module clients.
 4. Store all explicit generation inputs in `dagger.toml`.
 5. Use the same generation path during initialization and later generation.
@@ -110,6 +110,14 @@ dagger
 │       ├── rm <MODULE>
 │       ├── list [--all] [--sdk=SDK]
 │       └── scope [--sdk=SDK]
+│
+├── sdk
+│   ├── list
+│   └── scope
+│       ├── list [--is-module=BOOL] [--name=NAME] [--sdk=SDK]
+│       ├── is-module [--path=PATH] [-u] [BOOL]
+│       ├── name [--path=PATH] [-u] [NAME]
+│       └── sdk [--path=PATH] [-u] [SDK]
 │
 ├── workspace (alias: ws)
 │   ├── activity [--all]
@@ -326,11 +334,55 @@ The `--sdk` flag filters the result by SDK name.
 
 The command sorts rows by scope, SDK, and target.
 
+### `dagger sdk list`
+
+This command lists the SDKs recorded in the current `dagger.toml`.
+
+The command prints these columns:
+
+```text
+NAME  MODULE
+```
+
+The command sorts rows by SDK name.
+
+### `dagger sdk scope list`
+
+This command lists all recorded SDK scopes.
+
+The command prints these columns:
+
+```text
+NAME  PATH  SDK  IS-MODULE
+```
+
+`--name` and `--sdk` select exact values. `--is-module` selects either module scopes or client-only scopes. The command sorts rows by path and SDK.
+
+### `dagger sdk scope` fields
+
+These commands read or edit one scope field:
+
+```console
+dagger sdk scope [--path=PATH] is-module [-u] [BOOL]
+dagger sdk scope [--path=PATH] name [-u] [NAME]
+dagger sdk scope [--path=PATH] sdk [-u] [SDK]
+```
+
+With no value, each command prints the current value. One value sets the field. `--unset` or `-u` removes the field.
+
+Without `--path`, the command selects the most specific recorded scope that contains `Workspace.cwd`. With `--path`, it selects the scope at that exact path. A relative path starts at `Workspace.cwd`. An absolute path starts at the workspace root.
+
+Setting `sdk` moves the complete scope record to the selected SDK. Unsetting `sdk` removes the complete scope record. Unsetting another field removes the scope record if no scope data remains.
+
+These field commands edit `dagger.toml` only. They do not run generation. A later generation uses the new scope data.
+
+SDK scope commands do not use an environment overlay. SDKs and scopes belong to the base workspace config.
+
 ### Removed commands
 
 Remove these commands:
 
-- `dagger sdk` and all subcommands.
+- The old `dagger sdk` lifecycle subcommands. The new group contains only `list` and `scope`.
 - `dagger module sdk`.
 - `dagger module deps` and all subcommands.
 - `dagger module engine` and all subcommands.
@@ -397,7 +449,7 @@ The engine normalizes scope paths before comparison.
 
 An omitted `is-module` value is false.
 
-`name` stores the resolved module name. It is required when `is-module = true`. The engine passes this name to every module-generation call.
+`name` stores the scope name. It is required when `is-module = true`. The engine passes this name to every generation call for the scope.
 
 One scope can contain a module, clients, or both.
 

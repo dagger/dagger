@@ -264,29 +264,16 @@ func runSDKModuleClientList(cmd *cobra.Command) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		dag := ec.Dagger()
-		ws := dag.CurrentWorkspace()
-		configFile, err := ws.ConfigFile(ctx)
-		if err != nil {
+		state, err := loadSDKWorkspaceConfig(ctx, ec.Dagger().CurrentWorkspace(), false)
+		if err != nil || state == nil {
 			return err
 		}
-		if configFile == "" {
+		cfg := state.config
+		cwd := state.cwd
+		configDir := state.configDir
+		if cfg == nil {
 			return nil
 		}
-		cwd, err := ws.Cwd(ctx)
-		if err != nil {
-			return err
-		}
-		data, err := ws.ConfigRead(ctx)
-		if err != nil {
-			return err
-		}
-		cfg, err := workspace.ParseConfig([]byte(data))
-		if err != nil {
-			return err
-		}
-		cwd = cliWorkspaceRelPath(cwd)
-		configDir := filepath.Dir(filepath.Clean(filepath.Join(cwd, configFile)))
 
 		type row struct{ scope, sdk, target string }
 		var rows []row
