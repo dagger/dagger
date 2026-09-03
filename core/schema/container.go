@@ -2600,6 +2600,22 @@ type containerPublishArgs struct {
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
 }
 
+func evaluateContainerImageParts(
+	ctx context.Context,
+	cache *dagql.Cache,
+	containers ...dagql.ObjectResult[*core.Container],
+) error {
+	for _, container := range containers {
+		if container.Self() == nil {
+			continue
+		}
+		if err := cache.EvaluateParts(ctx, container, core.ContainerPartMetadata, core.ContainerPartFS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2613,14 +2629,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return "", err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(variantResults))
-	evals = append(evals, parent)
-	for _, variant := range variantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
 	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
@@ -4146,14 +4155,7 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(variantResults))
-	evals = append(evals, parent)
-	for _, variant := range variantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
 	variants := make([]*core.Container, 0, len(variantResults))
@@ -4227,14 +4229,7 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(platformVariantResults))
-	evals = append(evals, parent)
-	for _, variant := range platformVariantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
 		return inst, err
 	}
 	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
@@ -4294,14 +4289,7 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(platformVariantResults))
-	evals = append(evals, parent)
-	for _, variant := range platformVariantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
 		return core.Void{}, err
 	}
 	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
@@ -4443,7 +4431,7 @@ func (s *containerSchema) manifest(
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
 		return inst, err
 	}
 	parentDigest, err := parent.RecipeDigest(ctx)
@@ -4480,7 +4468,7 @@ func (s *containerSchema) layer(
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
 		return inst, err
 	}
 	parentDigest, err := parent.RecipeDigest(ctx)

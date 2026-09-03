@@ -32,6 +32,7 @@ type containerPartsTestBaseOp struct {
 	workdir        string
 	env            []string
 	volatileEnv    []string
+	platform       Platform
 	metaSnapshot   bkcache.ImmutableRef
 	mountSnapshots map[string]bkcache.ImmutableRef
 	// mountTargets are read-only directory mounts whose sources this op
@@ -123,6 +124,9 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 			ctr.Config.WorkingDir = op.workdir
 			ctr.Config.Env = append([]string(nil), op.env...)
 			ctr.VolatileEnv = append([]string(nil), op.volatileEnv...)
+			if op.platform.OS != "" {
+				ctr.Platform = op.platform
+			}
 			return nil
 		})
 	case containerDelegationGroup(ContainerPartFS):
@@ -898,6 +902,33 @@ func TestContainerWithoutPathsJointWriteGroup(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, []dagql.LazyGroupKey{ContainerLazyGroupWrite}, groups)
+}
+
+func TestContainerGetVariantRefsEvaluatesImageParts(t *testing.T) {
+	ctx, _, _, _ := newContainerPartsTestCtx(t)
+	op := &containerPartsTestBaseOp{
+		LazyState:    NewLazyState(),
+		workdir:      "/",
+		platform:     Platform{OS: "linux", Architecture: "amd64"},
+		mountTargets: []string{"/unused"},
+	}
+	variant := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{{
+			Target:          "/unused",
+			DirectorySource: new(LazyAccessor[*Directory, *Container]),
+		}},
+		Lazy: op,
+	}
+
+	_, err := getVariantRefs(ctx, []*Container{variant})
+	require.ErrorContains(t, err, "platform linux/amd64: unset snapshot")
+	require.Equal(t, int32(1), op.metaRuns.Load())
+	require.Equal(t, int32(1), op.fsRuns.Load())
+	require.Equal(t, int32(0), op.execMetaRuns.Load())
+	require.Equal(t, 0, op.mountRunsFor("/unused"))
+	require.NotNil(t, variant.lazyOpForRouting())
 }
 
 // A metadata read on a pending template-A chain settles metadata through
