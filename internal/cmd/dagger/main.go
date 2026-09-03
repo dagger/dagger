@@ -427,13 +427,17 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
-	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
+
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
+	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
+	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
+	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)
@@ -455,7 +459,6 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 
 func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
-	engineFlags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	engineFlags.Lookup("profile").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)

@@ -23,7 +23,7 @@ This design separates the current global flags into four groups:
 Capability scoping controls flag validation and help output. It does not have
 to prevent a flag from appearing before the subcommand. For example,
 `dagger -W ./workspace check` can remain valid when `check` declares
-`MayCallEngine`.
+`MaySelectWorkspace`.
 
 ## Command Capabilities
 
@@ -31,13 +31,15 @@ to prevent a flag from appearing before the subcommand. For example,
 |---|---|
 | `MayCallEngine` | The command can connect to and call the engine. |
 | `MaySelectWorkspace` | The command can use `-W`, `--workspace` to select or resolve a workspace. |
+| `MayReadWorkspaceConfig` | The command can use `--env` when reading workspace configuration. |
+| `MayWriteWorkspaceConfig` | The command can use `--env` when writing workspace configuration. |
 | `MayRenderPipeline` | The command can show a user-facing pipeline trace. |
 | `MayProduceOutput` | The command can produce an output that can require user review before a side effect. |
 
 The capabilities are independent. A command can declare more than one.
 
 - A normal pipeline command usually declares `MayCallEngine`,
-  `MaySelectWorkspace`, and `MayRenderPipeline`.
+  `MaySelectWorkspace`, `MayReadWorkspaceConfig`, and `MayRenderPipeline`.
 - `dagger trace` declares `MayRenderPipeline` but does not call the engine.
 - A configuration command can call the engine without rendering its internal
   trace to the user.
@@ -55,13 +57,27 @@ a trace, `--verbose` prints a final trace even if the command does not declare
 `MayRenderPipeline`. It does not enable the live TUI or make `--no-exit`,
 `--web`, or `--interactive` applicable.
 
-### Follow-up: `--env`
+### Workspace environment selection
 
-`--env` is currently scoped by `MayCallEngine` because it is passed as an
-engine connection parameter. It also selects the environment overlay that a
-workspace configuration command reads or edits. If configuration editing no
-longer requires an engine call, `--env` will need a separate capability for
-this second meaning.
+`--env` selects an `env.<name>` overlay in `dagger.toml`. For a read, the
+command uses the environment-applied configuration. For a write, the command
+targets that environment overlay. The flag is available when a command
+declares `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig`.
+
+`dagger module init` and `dagger api client init` declare both capabilities.
+They resolve the SDK from the environment-applied configuration and record the
+new module or client in that environment overlay. Generated files are still
+exported to the workspace filesystem. Their dynamic SDK command registration
+also applies the selected environment.
+
+An environment SDK role replaces the base module's `as-sdk` value. An init
+command starts with the effective role, adds or replaces the requested entry,
+and writes the complete result under `env.<name>.modules.<sdk>.as-sdk`. This
+keeps the base role unchanged and gives the environment a consistent module and
+client ownership list.
+
+`dagger setup` remains base-only. It declares neither workspace configuration
+capability and does not accept `--env`.
 
 ## Workspace Configuration
 
@@ -98,7 +114,7 @@ column means that no change is proposed.
 | Move to configuration | `--cloud` | Hidden | `cloud.engines.enabled` |
 | Move to configuration | `--scale-out` | Hidden | `cloud.engines.scale-out` |
 | Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
-| Scope by capability | `--env` | Visible | `MayCallEngine` |
+| Scope by capability | `--env` | Visible | `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig` |
 | Scope by capability | `-q`, `--quiet` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-s`, `--silent` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-d`, `--debug` | Visible | `MayCallEngine OR MayRenderPipeline` |
@@ -119,5 +135,6 @@ column means that no change is proposed.
 
 ## Status
 
-`MayCallEngine` and `MayRenderPipeline` capability scoping are implemented.
-The other changes are planned.
+`MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
+`MayWriteWorkspaceConfig`, and `MayRenderPipeline` capability scoping are
+implemented. The other changes are planned.

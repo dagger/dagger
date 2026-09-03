@@ -85,6 +85,32 @@ func TestCurrentModuleSDKName(t *testing.T) {
 	}
 }
 
+func TestCurrentModuleSDKNameUsesSelectedEnv(t *testing.T) {
+	oldEnv := workspaceEnv
+	workspaceEnv = "dev"
+	t.Cleanup(func() { workspaceEnv = oldEnv })
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, workspace.ConfigFileName), []byte(`
+[modules.my-sdk]
+source = "github.com/dagger/my-sdk"
+
+[[modules.my-sdk.as-sdk.modules]]
+path = ".dagger/modules/base"
+
+[[env.dev.modules.my-sdk.as-sdk.modules]]
+path = ".dagger/modules/foo"
+`), 0o644))
+	moduleDir := filepath.Join(root, ".dagger", "modules", "foo")
+	require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, modules.Filename), []byte("name = \"foo\"\n"), 0o644))
+
+	t.Chdir(moduleDir)
+	name, err := currentModuleSDKName()
+	require.NoError(t, err)
+	require.Equal(t, "my-sdk", name)
+}
+
 // A dagger.toml in a subdirectory of the repo is where the two spellings stop
 // coinciding: a config-relative entry is measured from the config, a
 // root-anchored one from the repository root above it.

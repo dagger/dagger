@@ -68,9 +68,6 @@ func init() {
 }
 
 func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("client init does not support --env; it scaffolds clients into the base workspace config")
-	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,

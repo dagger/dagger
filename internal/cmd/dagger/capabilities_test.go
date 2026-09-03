@@ -33,18 +33,30 @@ func TestCommandCapabilityInheritance(t *testing.T) {
 	require.False(t, commandHasCapability(child, mayCallEngine))
 }
 
+func TestMaySelectWorkspaceFlags(t *testing.T) {
+	oldWorkspace := workspaceRef
+	t.Cleanup(func() { workspaceRef = oldWorkspace })
+
+	flags := pflag.NewFlagSet("workspace", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+
+	flag := flags.Lookup("workspace")
+	require.NotNil(t, flag)
+	require.Equal(t, "W", flag.Shorthand)
+	require.False(t, flag.Hidden)
+	require.Equal(t, []string{string(maySelectWorkspace)}, flag.Annotations[flagCapabilitiesAnnotation])
+}
+
 func TestMayCallEngineFlags(t *testing.T) {
-	oldEnv := workspaceEnv
 	oldProfile := profileFlag
 	t.Cleanup(func() {
-		workspaceEnv = oldEnv
 		profileFlag = oldProfile
 	})
 
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
 	installMayCallEngineFlags(flags)
 
-	expected := []string{"env", "profile"}
+	expected := []string{"profile"}
 	var count int
 	flags.VisitAll(func(*pflag.Flag) { count++ })
 	require.Equal(t, len(expected), count)
@@ -53,8 +65,31 @@ func TestMayCallEngineFlags(t *testing.T) {
 		require.NotNil(t, flag, name)
 		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
 	}
-	require.False(t, flags.Lookup("env").Hidden)
 	require.True(t, flags.Lookup("profile").Hidden)
+}
+
+func TestWorkspaceConfigFlags(t *testing.T) {
+	oldEnv := workspaceEnv
+	t.Cleanup(func() { workspaceEnv = oldEnv })
+
+	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+
+	flag := flags.Lookup("env")
+	require.NotNil(t, flag)
+	require.Equal(t, []string{
+		string(mayReadWorkspaceConfig),
+		string(mayWriteWorkspaceConfig),
+	}, flag.Annotations[flagAnyCapabilitiesAnnotation])
+	require.False(t, flag.Hidden)
+
+	read := &cobra.Command{Use: "read"}
+	setCommandCapabilities(read, mayReadWorkspaceConfig)
+	require.True(t, FlagAvailableForCommand(read, flag))
+	write := &cobra.Command{Use: "write"}
+	setCommandCapabilities(write, mayWriteWorkspaceConfig)
+	require.True(t, FlagAvailableForCommand(write, flag))
+	require.False(t, FlagAvailableForCommand(&cobra.Command{Use: "plain"}, flag))
 }
 
 func TestMayCallEngineCommands(t *testing.T) {
@@ -123,6 +158,46 @@ func TestMayCallEngineCommands(t *testing.T) {
 	}
 }
 
+func TestMaySelectWorkspaceCommands(t *testing.T) {
+	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
+		"dagger activity",
+		"dagger cloud check",
+		"dagger cloud rerun",
+		"dagger workspace remote",
+	)
+	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, maySelectWorkspace))
+
+	var visit func(*cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		if commandHasCapability(cmd, mayCallEngine) {
+			require.True(t, commandHasCapability(cmd, maySelectWorkspace), cmd.CommandPath())
+		}
+		for _, child := range cmd.Commands() {
+			visit(child)
+		}
+	}
+	visit(rootCmd)
+
+	for name, cmd := range map[string]*cobra.Command{
+		"activity":           activityCmd,
+		"cloud check list":   cloudCheckListCmd,
+		"cloud check status": cloudCheckStatusCmd,
+		"cloud rerun":        cloudRerunCmd,
+		"workspace remote":   workspaceRemoteCmd,
+	} {
+		require.True(t, commandHasCapability(cmd, maySelectWorkspace), name)
+		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
+	}
+	for name, cmd := range map[string]*cobra.Command{
+		"cloud login":   cloudLoginCmd,
+		"sdk installed": sdkInstalledCmd,
+		"sdk search":    sdkSearchCmd,
+		"trace":         traceCmd,
+	} {
+		require.False(t, commandHasCapability(cmd, maySelectWorkspace), name)
+	}
+}
+
 func TestMayRenderPipelineFlags(t *testing.T) {
 	oldQuiet := quiet
 	oldSilent := silent
@@ -167,6 +242,92 @@ func TestMayRenderPipelineFlags(t *testing.T) {
 	for _, name := range []string{"dot-output", "dot-focus-field", "dot-show-internal"} {
 		require.True(t, flags.Lookup(name).Hidden, name)
 	}
+}
+
+func TestWorkspaceConfigCommands(t *testing.T) {
+	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+	envFlag := flags.Lookup("env")
+	require.NotNil(t, envFlag)
+	require.True(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
+	require.True(t, FlagAvailableForCommand(apiClientInitCmd, envFlag))
+	require.True(t, FlagAvailableForCommand(sdkInstalledCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(setupCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(sdkInstallCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(workspaceRootCmd, envFlag))
+
+	readers := []string{
+		"dagger",
+		"dagger agent",
+		"dagger api call",
+		"dagger api client init",
+		"dagger api client list",
+		"dagger api functions",
+		"dagger api listen",
+		"dagger api query",
+		"dagger api session",
+		"dagger api with-session",
+		"dagger call",
+		"dagger check",
+		"dagger core",
+		"dagger functions",
+		"dagger generate",
+		"dagger install",
+		"dagger installed",
+		"dagger listen",
+		"dagger mcp",
+		"dagger module deps add",
+		"dagger module deps list",
+		"dagger module deps rm",
+		"dagger module deps update",
+		"dagger module engine require",
+		"dagger module engine require-current",
+		"dagger module engine require-latest",
+		"dagger module engine required",
+		"dagger module init",
+		"dagger module sdk",
+		"dagger query",
+		"dagger run",
+		"dagger sdk client-options",
+		"dagger sdk installed",
+		"dagger sdk module-options",
+		"dagger session",
+		"dagger settings",
+		"dagger shell",
+		"dagger terminal",
+		"dagger uninstall",
+		"dagger up",
+		"dagger update",
+		"dagger workspace",
+		"dagger workspace config",
+		"dagger workspace settings",
+	}
+	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
+
+	writers := []string{
+		"dagger",
+		"dagger api client init",
+		"dagger install",
+		"dagger module init",
+		"dagger settings",
+		"dagger uninstall",
+		"dagger workspace",
+		"dagger workspace config",
+		"dagger workspace settings",
+	}
+	require.ElementsMatch(t, writers, commandsDeclaringCapability(rootCmd, mayWriteWorkspaceConfig))
+
+	for name, cmd := range map[string]*cobra.Command{
+		"sdk install":      sdkInstallCmd,
+		"setup":            setupCmd,
+		"workspace root":   workspaceRootCmd,
+		"workspace remote": workspaceRemoteCmd,
+	} {
+		require.False(t, commandHasCapability(cmd, mayReadWorkspaceConfig), name)
+		require.False(t, commandHasCapability(cmd, mayWriteWorkspaceConfig), name)
+	}
+	require.True(t, commandHasCapability(sdkInstalledCmd, mayReadWorkspaceConfig))
+	require.False(t, commandHasCapability(sdkInstalledCmd, mayWriteWorkspaceConfig))
 }
 
 func TestMayRenderPipelineCommands(t *testing.T) {

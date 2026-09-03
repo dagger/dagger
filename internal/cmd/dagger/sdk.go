@@ -574,6 +574,12 @@ func readLocalWorkspaceConfig() (*workspace.Config, string, error) {
 			if err != nil {
 				return nil, "", fmt.Errorf("parse workspace config %q: %w", cfgPath, err)
 			}
+			if workspaceEnv != "" {
+				cfg, err = workspace.ApplyEnvOverlay(cfg, workspaceEnv)
+				if err != nil {
+					return nil, "", err
+				}
+			}
 			return cfg, cfgPath, nil
 		}
 		parent := filepath.Dir(dir)

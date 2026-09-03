@@ -15,12 +15,16 @@ import (
 type commandCapability string
 
 const (
-	mayCallEngine     commandCapability = "MayCallEngine"
-	mayRenderPipeline commandCapability = "MayRenderPipeline"
+	mayCallEngine           commandCapability = "MayCallEngine"
+	maySelectWorkspace      commandCapability = "MaySelectWorkspace"
+	mayReadWorkspaceConfig  commandCapability = "MayReadWorkspaceConfig"
+	mayWriteWorkspaceConfig commandCapability = "MayWriteWorkspaceConfig"
+	mayRenderPipeline       commandCapability = "MayRenderPipeline"
 
 	commandCapabilitiesAnnotation      = "dagger.io/command-capabilities"
 	localCommandCapabilitiesAnnotation = "dagger.io/local-command-capabilities"
 	flagCapabilitiesAnnotation         = "dagger.io/flag-capabilities"
+	flagAnyCapabilitiesAnnotation      = "dagger.io/flag-any-capabilities"
 )
 
 // setCommandCapabilities declares behavior that a command can expose. A
@@ -69,16 +73,26 @@ func setFlagSetCapabilities(flags *pflag.FlagSet, capabilities ...commandCapabil
 	})
 }
 
-// setFlagCapabilities declares the capabilities a command must have for the
-// flag to be available on it.
+// setFlagCapabilities declares the capabilities a command must all have for
+// the flag to be available on it.
 func setFlagCapabilities(flag *pflag.Flag, capabilities ...commandCapability) {
+	addFlagCapabilities(flag, flagCapabilitiesAnnotation, capabilities...)
+}
+
+// setFlagAnyCapabilities declares the capabilities of which a command must
+// have at least one for the flag to be available on it.
+func setFlagAnyCapabilities(flag *pflag.Flag, capabilities ...commandCapability) {
+	addFlagCapabilities(flag, flagAnyCapabilitiesAnnotation, capabilities...)
+}
+
+func addFlagCapabilities(flag *pflag.Flag, annotation string, capabilities ...commandCapability) {
 	if flag.Annotations == nil {
 		flag.Annotations = map[string][]string{}
 	}
 	for _, capability := range capabilities {
 		value := string(capability)
-		if !slices.Contains(flag.Annotations[flagCapabilitiesAnnotation], value) {
-			flag.Annotations[flagCapabilitiesAnnotation] = append(flag.Annotations[flagCapabilitiesAnnotation], value)
+		if !slices.Contains(flag.Annotations[annotation], value) {
+			flag.Annotations[annotation] = append(flag.Annotations[annotation], value)
 		}
 	}
 }
@@ -90,6 +104,14 @@ func FlagAvailableForCommand(cmd *cobra.Command, flag *pflag.Flag) bool {
 		if !commandHasCapability(cmd, commandCapability(required)) {
 			return false
 		}
+	}
+	if any := flag.Annotations[flagAnyCapabilitiesAnnotation]; len(any) > 0 {
+		for _, required := range any {
+			if commandHasCapability(cmd, commandCapability(required)) {
+				return true
+			}
+		}
+		return false
 	}
 	return true
 }
@@ -181,8 +203,8 @@ func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {
 }
 
 func init() {
-	setLocalCommandCapabilities(rootCmd, mayCallEngine, mayRenderPipeline)
-	setLocalCommandCapabilities(workspaceCmd, mayCallEngine)
+	setLocalCommandCapabilities(rootCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayRenderPipeline)
+	setLocalCommandCapabilities(workspaceCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	for _, cmd := range []*cobra.Command{
 		checksCmd,
@@ -205,24 +227,27 @@ func init() {
 		mcpCmd,
 		moduleSdkCmd,
 	} {
-		setCommandCapabilities(cmd, mayCallEngine, mayRenderPipeline)
+		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
 	setCommandCapabilities(traceCmd, mayRenderPipeline)
 
 	for _, cmd := range []*cobra.Command{
-		apiFunctionsCmd,
-		functionsAliasCmd,
 		moduleDepInstallCmd,
 		moduleDepUninstallCmd,
-		moduleUpdateCmd,
-		installedCmd,
 		settingsCmd,
 		workspaceSettingsCmd,
-		workspaceRootCmd,
-		workspaceCwdCmd,
-		workspaceConfigFileCmd,
 		workspaceConfigCmd,
-		workspaceRemotesCmd,
+		moduleInitCmd,
+		apiClientInitCmd,
+	} {
+		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
+	}
+
+	for _, cmd := range []*cobra.Command{
+		apiFunctionsCmd,
+		functionsAliasCmd,
+		moduleUpdateCmd,
+		installedCmd,
 		moduleDepsAddCmd,
 		moduleDepsRmCmd,
 		moduleDepsUpdateCmd,
@@ -231,15 +256,32 @@ func init() {
 		moduleEngineRequireCmd,
 		moduleEngineRequireLatestCmd,
 		moduleEngineRequireCurrentCmd,
-		moduleInitCmd,
-		apiClientInitCmd,
 		apiClientListCmd,
-		sdkInstallCmd,
-		sdkUninstallCmd,
 		sdkModuleOptionsCmd,
 		sdkClientOptionsCmd,
+	} {
+		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
+	}
+	setCommandCapabilities(sdkInstalledCmd, mayReadWorkspaceConfig)
+
+	for _, cmd := range []*cobra.Command{
+		workspaceRootCmd,
+		workspaceCwdCmd,
+		workspaceConfigFileCmd,
+		workspaceRemotesCmd,
+		sdkInstallCmd,
+		sdkUninstallCmd,
 		setupCmd,
 	} {
-		setCommandCapabilities(cmd, mayCallEngine)
+		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
+	}
+
+	for _, cmd := range []*cobra.Command{
+		activityCmd,
+		cloudCheckCmd,
+		cloudRerunCmd,
+		workspaceRemoteCmd,
+	} {
+		setCommandCapabilities(cmd, maySelectWorkspace)
 	}
 }

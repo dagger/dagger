@@ -165,6 +165,12 @@ func currentModuleSDKName() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse workspace config %q: %w", wsConfigPath, err)
 	}
+	if workspaceEnv != "" {
+		wsCfg, err = workspace.ApplyEnvOverlay(wsCfg, workspaceEnv)
+		if err != nil {
+			return "", err
+		}
+	}
 
 	for installedName, installed := range wsCfg.Modules {
 		if installed.AsSDK == nil {

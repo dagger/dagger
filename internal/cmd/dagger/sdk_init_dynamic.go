@@ -38,6 +38,18 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 	if err != nil {
 		return err
 	}
+	if cfg != nil && workspaceEnv != "" {
+		applied, err := workspace.ApplyEnvOverlay(cfg, workspaceEnv)
+		var undefined *workspace.UndefinedEnvError
+		if errors.As(err, &undefined) {
+			workspace.EnsureEnv(cfg, workspaceEnv)
+			applied, err = workspace.ApplyEnvOverlay(cfg, workspaceEnv)
+		}
+		if err != nil {
+			return err
+		}
+		cfg = applied
+	}
 	if cfg == nil {
 		clearDynamicSDKInitCommands(moduleInitCmd)
 		clearDynamicSDKInitCommands(apiClientInitCmd)
@@ -59,6 +71,17 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
+		if workspaceEnv != "" {
+			raw, readErr := callWorkspaceConfigRead(ctx, ec.Dagger())
+			if readErr == nil {
+				cfg, err = workspace.ParseConfig([]byte(raw))
+				if err != nil {
+					return err
+				}
+			} else if !isUndefinedEnvError(readErr, workspaceEnv) {
+				return readErr
+			}
+		}
 		return registerSDKInitCommandsFromConfigForKind(ctx, ec.Dagger(), moduleInitCmd, apiClientInitCmd, cfg, cfgDir, kind, args)
 	})
 }
