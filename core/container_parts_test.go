@@ -44,6 +44,50 @@ type containerPartsTestBaseOp struct {
 	fsBodyHook func()
 }
 
+type containerPartsTestDirectorySourceOp struct {
+	LazyState
+	runs atomic.Int32
+}
+
+func (op *containerPartsTestDirectorySourceOp) Evaluate(ctx context.Context, dir *Directory) error {
+	return op.LazyState.Evaluate(ctx, "test.directorySource", func(context.Context) error {
+		op.runs.Add(1)
+		dir.Dir.SetValue("/source")
+		dir.Lazy = nil
+		return nil
+	})
+}
+
+func (op *containerPartsTestDirectorySourceOp) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (op *containerPartsTestDirectorySourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, nil
+}
+
+type containerPartsTestFileSourceOp struct {
+	LazyState
+	runs atomic.Int32
+}
+
+func (op *containerPartsTestFileSourceOp) Evaluate(ctx context.Context, file *File) error {
+	return op.LazyState.Evaluate(ctx, "test.fileSource", func(context.Context) error {
+		op.runs.Add(1)
+		file.File.SetValue("/source/file")
+		file.Lazy = nil
+		return nil
+	})
+}
+
+func (op *containerPartsTestFileSourceOp) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (op *containerPartsTestFileSourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, nil
+}
+
 func (op *containerPartsTestBaseOp) mountRunsFor(target string) int {
 	op.mountRunsMu.Lock()
 	defer op.mountRunsMu.Unlock()
@@ -143,6 +187,8 @@ func newContainerPartsTestCtx(t *testing.T) (context.Context, *dagql.Cache, *dag
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Volume]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Secret]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Socket]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*File]{}))
 	return ctx, cache, srv, "container-parts-test-session"
 }
 
@@ -336,6 +382,138 @@ func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {
 			require.Equal(t, int32(0), baseOp.fsRuns.Load())
 			require.Equal(t, 0, baseOp.mountRunsFor("/old"))
 			require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+		})
+	}
+}
+
+func TestContainerMountedSourceWriterParts(t *testing.T) {
+	tests := []struct {
+		name  string
+		apply func(*testing.T, context.Context, *dagql.Cache, *dagql.Server, string, dagql.ObjectResult[*Container], *Container) (Lazy[*Container], *atomic.Int32, any)
+		value func(*Container) any
+	}{
+		{
+			name: "directory",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) (Lazy[*Container], *atomic.Int32, any) {
+				sourceOp := &containerPartsTestDirectorySourceOp{LazyState: NewLazyState()}
+				source := &Directory{
+					Dir:      new(LazyAccessor[string, *Directory]),
+					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+					Lazy:     sourceOp,
+				}
+				sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mounted-source-directory", source)
+				accessor := new(LazyAccessor[*Directory, *Container])
+				child.Mounts = child.Mounts.With(ContainerMount{Target: "/new", Readonly: true, DirectorySource: accessor})
+				return &ContainerWithMountedDirectoryLazy{
+					LazyState: NewLazyState(), Parent: parent, Target: "/new", Source: sourceRes, Readonly: true,
+				}, &sourceOp.runs, accessor
+			},
+			value: func(child *Container) any {
+				value, _ := child.mountAt("/new").DirectorySource.Peek()
+				return value
+			},
+		},
+		{
+			name: "file",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) (Lazy[*Container], *atomic.Int32, any) {
+				sourceOp := &containerPartsTestFileSourceOp{LazyState: NewLazyState()}
+				source := &File{
+					File:     new(LazyAccessor[string, *File]),
+					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+					Lazy:     sourceOp,
+				}
+				sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mounted-source-file", source)
+				accessor := new(LazyAccessor[*File, *Container])
+				child.Mounts = child.Mounts.With(ContainerMount{Target: "/new", FileSource: accessor})
+				return &ContainerWithMountedFileLazy{
+					LazyState: NewLazyState(), Parent: parent, Target: "/new", Source: sourceRes,
+				}, &sourceOp.runs, accessor
+			},
+			value: func(child *Container) any {
+				value, _ := child.mountAt("/new").FileSource.Peek()
+				return value
+			},
+		},
+		{
+			name: "dockerfile compatible directory",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) (Lazy[*Container], *atomic.Int32, any) {
+				sourceOp := &containerPartsTestDirectorySourceOp{LazyState: NewLazyState()}
+				source := &Directory{
+					Dir:      new(LazyAccessor[string, *Directory]),
+					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+					Lazy:     sourceOp,
+				}
+				sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "mounted-source-dockerfile", source)
+				accessor := new(LazyAccessor[*Directory, *Container])
+				child.Mounts = child.Mounts.With(ContainerMount{Target: "/new", Readonly: true, DirectorySource: accessor})
+				return &ContainerWithMountedPathDockerfileCompatLazy{
+					LazyState: NewLazyState(), Parent: parent, Target: "/new", Source: sourceRes, SourcePath: "/", Readonly: true,
+				}, &sourceOp.runs, accessor
+			},
+			value: func(child *Container) any {
+				value, _ := child.mountAt("/new").DirectorySource.Peek()
+				return value
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+			baseOp := &containerPartsTestBaseOp{
+				LazyState:    NewLazyState(),
+				workdir:      "/",
+				mountTargets: []string{"/existing"},
+			}
+			base := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Mounts: ContainerMounts{{
+					Target:          "/existing",
+					Readonly:        true,
+					DirectorySource: new(LazyAccessor[*Directory, *Container]),
+				}},
+				Lazy: baseOp,
+			}
+			baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "mounted-source-base-"+test.name, base)
+			clonedMounts, err := CloneContainerMounts(ctx, base.Mounts)
+			require.NoError(t, err)
+			child := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Config:       CloneContainerImageConfig(base.Config),
+				Mounts:       clonedMounts,
+			}
+			var sourceRuns *atomic.Int32
+			var initialAccessor any
+			child.Lazy, sourceRuns, initialAccessor = test.apply(t, ctx, cache, srv, sessionID, baseRes, child)
+			childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "mounted-source-child-"+test.name, child)
+
+			require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+			require.NotNil(t, child.mountAt("/existing"))
+			require.NotNil(t, child.mountAt("/new"))
+			require.Same(t, initialAccessor, func() any {
+				if child.mountAt("/new").DirectorySource != nil {
+					return child.mountAt("/new").DirectorySource
+				}
+				return child.mountAt("/new").FileSource
+			}())
+			require.Equal(t, int32(0), sourceRuns.Load())
+			require.Equal(t, int32(0), baseOp.fsRuns.Load())
+			require.Equal(t, 0, baseOp.mountRunsFor("/existing"))
+			require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+
+			require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMount("/new")))
+			require.NotNil(t, test.value(child))
+			require.Equal(t, int32(1), sourceRuns.Load())
+			require.Equal(t, int32(0), baseOp.fsRuns.Load())
+			require.Equal(t, 0, baseOp.mountRunsFor("/existing"))
+
+			require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMount("/existing")))
+			require.Equal(t, 1, baseOp.mountRunsFor("/existing"))
+			require.Equal(t, int32(1), sourceRuns.Load())
+			require.Equal(t, int32(0), baseOp.fsRuns.Load())
 		})
 	}
 }

@@ -123,6 +123,9 @@ var (
 	_ LazyContainerParts = (*ContainerExecLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithRootFSLazy)(nil)
 	_ LazyContainerParts = (*ContainerFromImageRefLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedDirectoryLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedFileLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedPathDockerfileCompatLazy)(nil)
 )
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
@@ -343,6 +346,44 @@ func templateAContainerGroups(ctr *Container, parts []dagql.PartKey) ([]dagql.La
 	for _, part := range parts {
 		group := ContainerLazyGroupMetadata
 		if part != ContainerPartMetadata {
+			group = containerDelegationGroup(part)
+		}
+		if _, dup := seen[group]; dup {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+// containerMountWriterGroups maps one newly mounted snapshot part to a
+// write group and delegates every other snapshot part. Metadata is
+// already settled, so target resolution sees the final working
+// directory and mount list.
+func containerMountWriterGroups(ctr *Container, target string, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	target = absPath(ctr.Config.WorkingDir, target)
+	writtenPart := ContainerPartMount(target)
+	if parts == nil {
+		groups := []dagql.LazyGroupKey{ContainerLazyGroupMetadata, ContainerLazyGroupWrite}
+		for _, part := range containerSnapshotParts(ctr) {
+			if part == writtenPart {
+				continue
+			}
+			groups = append(groups, containerDelegationGroup(part))
+		}
+		return groups, nil
+	}
+	var groups []dagql.LazyGroupKey
+	seen := make(map[dagql.LazyGroupKey]struct{}, len(parts))
+	for _, part := range parts {
+		var group dagql.LazyGroupKey
+		switch part {
+		case ContainerPartMetadata:
+			group = ContainerLazyGroupMetadata
+		case writtenPart:
+			group = ContainerLazyGroupWrite
+		default:
 			group = containerDelegationGroup(part)
 		}
 		if _, dup := seen[group]; dup {
