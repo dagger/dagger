@@ -202,8 +202,8 @@ class ObjectVisitor extends AbstractVisitor {
       return field.getTypeRef().formatOutput();
     }
     if (Helpers.isIdToConvert(field)) {
-      // sync-like fields: return the parent object type
-      return ClassName.bestGuess(Helpers.formatName(field.getParentObject()));
+      // ID handle: return the object the ID resolves to
+      return ClassName.bestGuess(Helpers.idHandleType(field));
     }
     String expectedType = field.getExpectedType();
     return field.getTypeRef().formatInput(expectedType);
@@ -295,8 +295,18 @@ class ObjectVisitor extends AbstractVisitor {
           .addException(ExecutionException.class)
           .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
     } else if (Helpers.isIdToConvert(field)) {
-      fieldMethodBuilder.addStatement("nextQueryBuilder.executeQuery()");
-      fieldMethodBuilder.addStatement("return this");
+      // Resolve the ID, then address the object it names through node(id:)
+      fieldMethodBuilder.addStatement(
+          "$T objectID = nextQueryBuilder.executeQuery($T.class)",
+          ClassName.bestGuess("ID"),
+          ClassName.bestGuess("ID"));
+      // Interfaces are instantiated through their client class, like object returns
+      String handleType = Helpers.idHandleType(field);
+      String handleClass = getSchema().isInterface(handleType) ? handleType + "Client" : handleType;
+      fieldMethodBuilder.addStatement(
+          "return new $T(this.queryBuilder.chainNode($S, objectID))",
+          ClassName.bestGuess(handleClass),
+          handleType);
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
