@@ -617,30 +617,32 @@ During the code-facing transition, an SDK module can generate its legacy module 
 
 The engine must parse and validate the output config.
 
-The engine exposes versioned module manifest builders. An SDK constructs a manifest with structured values and converts it to a file. The engine owns the file name, default values, TOML schema, and serialization.
+The engine exposes one module manifest builder. An SDK constructs a manifest with structured values. The engine owns the file names, default values, schemas, and serialization.
 
 ```graphql
 extend type Query {
-  moduleManifest: ModuleManifestVersions!
+  moduleManifest(name: String!): ModuleManifest!
 }
 
-type ModuleManifestVersions {
-  v1(name: String!): ModuleManifestV1!
-  v2(name: String!): ModuleManifestV2!
-}
+type ModuleManifest {
+  withDangEntrypoint(source: String!): ModuleManifest!
+  withModuleEntrypoint(source: String!): ModuleManifest!
 
-type ModuleManifestV1 {
-  withRuntime(source: String!): ModuleManifestV1!
-  withSource(path: String!): ModuleManifestV1!
-  withEngineVersion(version: String!): ModuleManifestV1!
-  withInclude(path: String!): ModuleManifestV1!
-  asFile: File!
-}
+  withLegacyGoRuntime: ModuleManifest!
+  withLegacyDangRuntime: ModuleManifest!
+  withLegacyPythonRuntime: ModuleManifest!
+  withLegacyTypescriptRuntime: ModuleManifest!
+  withLegacyPHPRuntime: ModuleManifest!
+  withLegacyElixirRuntime: ModuleManifest!
+  withLegacyJavaRuntime: ModuleManifest!
+  withLegacyEngineVersion(version: String!): ModuleManifest!
+  withLegacyInclude(path: String!): ModuleManifest!
+  withoutLegacyFields: ModuleManifest!
 
-type ModuleManifestV2 {
-  withDangEntrypoint(source: String!): ModuleManifestV2!
-  withModuleEntrypoint(source: String!): ModuleManifestV2!
-  asFile: File!
+  validate(targetEngineVersion: String): Void!
+  tomlFile: File!
+  legacyJSONFile: File!
+  directory: Directory!
 }
 
 extend type Workspace {
@@ -652,18 +654,27 @@ extend type Workspace {
 }
 ```
 
-`v1` generates the current unversioned `dagger-module.toml` format. It does not add `manifestVersion = 1`. The default source is `.`. The default engine version is the running engine version. `withInclude` is additive and keeps call order. `asFile` returns an error until the runtime is set.
+`withDangEntrypoint` sets an embedded Dang entrypoint. `withModuleEntrypoint` sets a module entrypoint. If both functions are called, the last call replaces the earlier entrypoint.
 
-`v2` generates manifest version 2. `withDangEntrypoint` sets an embedded Dang entrypoint. `withModuleEntrypoint` sets a module entrypoint. If both functions are called, the last call replaces the earlier entrypoint. `asFile` returns an error until an entrypoint is set.
+The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. A legacy runtime defaults its engine version to the running engine version. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, engine version, and include paths.
 
-The builder can generate v2 manifests before the engine supports loading them. Manifest v2 loading is a separate change.
+`tomlFile` returns `dagger-module.toml`. It contains the entrypoint and any legacy fallback fields. `legacyJSONFile` returns `dagger.json`. It contains only the legacy fields and returns an error if no legacy runtime is set.
 
-For example, a Dang SDK can create the initial manifest without TOML logic:
+`directory` always returns the applicable manifest file overlay. It contains `dagger-module.toml`. It also contains `dagger.json` when a legacy runtime is set.
+
+The TOML schema has no explicit manifest version. An entrypoint selects the new loading path. A new engine uses the entrypoint and ignores the legacy fields. An engine that does not support entrypoints ignores the entrypoint and uses the legacy runtime. An invalid entrypoint is an error. The engine must not fall back to the legacy runtime after an entrypoint error.
+
+The builder can generate entrypoint manifests before the engine supports loading them. Entrypoint loading is a separate change.
+
+For example, a Dang SDK can generate the current manifest and its legacy fallback without TOML or JSON logic:
 
 ```dang
-ws.withFile(
-  "dagger-module.toml",
-  moduleManifest.v1(name: name).withRuntime(source: runtimeSource).asFile,
+ws.withDirectory(
+  ".",
+  moduleManifest(name: name)
+    .withDangEntrypoint(source: "main.dang")
+    .withLegacyDangRuntime
+    .directory,
 )
 ```
 

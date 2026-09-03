@@ -4224,92 +4224,85 @@ type ModuleConfigClient implements Node {
   id: ID!
 }
 
-"""A Dagger module manifest in the current unversioned format."""
-type ModuleManifestV1 implements Node {
-  """Serialize the manifest as dagger-module.toml."""
-  asFile: File!
+"""A Dagger module manifest."""
+type ModuleManifest implements Node {
+  """Return a directory with all applicable manifest files."""
+  directory: Directory!
 
-  """A unique identifier for this ModuleManifestV1."""
+  """A unique identifier for this ModuleManifest."""
   id: ID!
 
-  """
-  Set the required engine API version.
+  """Serialize the legacy fields as dagger.json."""
+  legacyJSONFile: File!
 
-  The default is the running engine version.
-  """
-  withEngineVersion(
-    """Required engine API version."""
-    version: String!
-  ): ModuleManifestV1!
-
-  """
-  Add a path from the module context to the runtime input.
-
-  This operation is additive.
-  """
-  withInclude(
-    """Path to include."""
-    path: String!
-  ): ModuleManifestV1!
-
-  """Set the runtime that builds and executes the module."""
-  withRuntime(
-    """Runtime source."""
-    source: String!
-  ): ModuleManifestV1!
-
-  """
-  Set the module implementation path relative to dagger-module.toml.
-
-  The default is '.'.
-  """
-  withSource(
-    """Module implementation path."""
-    path: String!
-  ): ModuleManifestV1!
-}
-
-"""A Dagger module manifest in format version 2."""
-type ModuleManifestV2 implements Node {
   """Serialize the manifest as dagger-module.toml."""
-  asFile: File!
+  tomlFile: File!
 
-  """A unique identifier for this ModuleManifestV2."""
-  id: ID!
+  """
+  Validate the manifest.
 
-  """Use the built-in Dang entrypoint driver."""
+  If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+  """
+  validate(
+    """Optional target engine version."""
+    targetEngineVersion: String
+  ): Void!
+
+  """Use the built-in Dang entrypoint."""
   withDangEntrypoint(
     """Entrypoint source address."""
     source: String!
-  ): ModuleManifestV2!
+  ): ModuleManifest!
 
-  """Use another module as the entrypoint driver."""
+  """Add the legacy Dang runtime."""
+  withLegacyDangRuntime: ModuleManifest!
+
+  """Add the legacy Elixir runtime."""
+  withLegacyElixirRuntime: ModuleManifest!
+
+  """
+  Set the engine version for the legacy runtime.
+
+  The default is the running engine version.
+  """
+  withLegacyEngineVersion(
+    """Required engine API version."""
+    version: String!
+  ): ModuleManifest!
+
+  """Add the legacy Go runtime."""
+  withLegacyGoRuntime: ModuleManifest!
+
+  """
+  Add an include path for the legacy runtime.
+
+  This operation is additive.
+  """
+  withLegacyInclude(
+    """Path to include."""
+    path: String!
+  ): ModuleManifest!
+
+  """Add the legacy Java runtime."""
+  withLegacyJavaRuntime: ModuleManifest!
+
+  """Add the legacy PHP runtime."""
+  withLegacyPHPRuntime: ModuleManifest!
+
+  """Add the legacy Python runtime."""
+  withLegacyPythonRuntime: ModuleManifest!
+
+  """Add the legacy TypeScript runtime."""
+  withLegacyTypescriptRuntime: ModuleManifest!
+
+  """Use another module as the entrypoint."""
   withModuleEntrypoint(
     """Entrypoint module address."""
     source: String!
-  ): ModuleManifestV2!
-}
+  ): ModuleManifest!
 
-"""Versioned Dagger module manifest builders."""
-type ModuleManifestVersions implements Node {
-  """A unique identifier for this ModuleManifestVersions."""
-  id: ID!
-
-  """
-  Construct a manifest in the current unversioned format.
-
-  The generated file does not contain manifestVersion = 1.
-  """
-  v1(
-    """Module name."""
-    name: String!
-  ): ModuleManifestV1!
-
-  """Construct a manifest in format version 2."""
-  v2(
-    """Module name."""
-    name: String!
-  ): ModuleManifestV2!
+  """Remove the legacy runtime, engine version, and include paths."""
+  withoutLegacyFields: ModuleManifest!
 }
 
 """
@@ -4977,8 +4970,11 @@ type Query implements Node {
   """Create a new module."""
   module: Module!
 
-  """Construct a versioned module manifest."""
-  moduleManifest: ModuleManifestVersions!
+  """Construct a module manifest."""
+  moduleManifest(
+    """Module name."""
+    name: String!
+  ): ModuleManifest!
 
   """Create a new module source instance from a source ref string"""
   moduleSource(

@@ -11618,21 +11618,27 @@ impl Node for ModuleConfigClient {
     }
 }
 #[derive(Clone)]
-pub struct ModuleManifestV1 {
+pub struct ModuleManifest {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-impl IntoID<Id> for ModuleManifestV1 {
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestValidateOpts<'a> {
+    /// Optional target engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub target_engine_version: Option<&'a str>,
+}
+impl IntoID<Id> for ModuleManifest {
     fn into_id(
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ModuleManifestV1 {
+impl Loadable for ModuleManifest {
     fn graphql_type() -> &'static str {
-        "ModuleManifestV1"
+        "ModuleManifest"
     }
     fn from_query(
         proc: Option<Arc<DaggerSessionProc>>,
@@ -11646,234 +11652,197 @@ impl Loadable for ModuleManifestV1 {
         }
     }
 }
-impl ModuleManifestV1 {
-    /// Serialize the manifest as dagger-module.toml.
-    pub fn as_file(&self) -> File {
-        let query = self.selection.select("asFile");
+impl ModuleManifest {
+    /// Return a directory with all applicable manifest files.
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this ModuleManifest.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Serialize the legacy fields as dagger.json.
+    pub fn legacy_json_file(&self) -> File {
+        let query = self.selection.select("legacyJSONFile");
         File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// A unique identifier for this ModuleManifestV1.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
+    /// Serialize the manifest as dagger-module.toml.
+    pub fn toml_file(&self) -> File {
+        let query = self.selection.select("tomlFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Validate the manifest.
+    /// If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn validate(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("validate");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Set the required engine API version.
+    /// Validate the manifest.
+    /// If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn validate_opts<'a>(
+        &self,
+        opts: ModuleManifestValidateOpts<'a>,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("validate");
+        if let Some(target_engine_version) = opts.target_engine_version {
+            query = query.arg("targetEngineVersion", target_engine_version);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Use the built-in Dang entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Entrypoint source address.
+    pub fn with_dang_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withDangEntrypoint");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Dang runtime.
+    pub fn with_legacy_dang_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyDangRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Elixir runtime.
+    pub fn with_legacy_elixir_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyElixirRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the engine version for the legacy runtime.
     /// The default is the running engine version.
     ///
     /// # Arguments
     ///
     /// * `version` - Required engine API version.
-    pub fn with_engine_version(&self, version: impl Into<String>) -> ModuleManifestV1 {
-        let mut query = self.selection.select("withEngineVersion");
+    pub fn with_legacy_engine_version(&self, version: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyEngineVersion");
         query = query.arg("version", version.into());
-        ModuleManifestV1 {
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Add a path from the module context to the runtime input.
+    /// Add the legacy Go runtime.
+    pub fn with_legacy_go_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyGoRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add an include path for the legacy runtime.
     /// This operation is additive.
     ///
     /// # Arguments
     ///
     /// * `path` - Path to include.
-    pub fn with_include(&self, path: impl Into<String>) -> ModuleManifestV1 {
-        let mut query = self.selection.select("withInclude");
+    pub fn with_legacy_include(&self, path: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyInclude");
         query = query.arg("path", path.into());
-        ModuleManifestV1 {
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set the runtime that builds and executes the module.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - Runtime source.
-    pub fn with_runtime(&self, source: impl Into<String>) -> ModuleManifestV1 {
-        let mut query = self.selection.select("withRuntime");
-        query = query.arg("source", source.into());
-        ModuleManifestV1 {
+    /// Add the legacy Java runtime.
+    pub fn with_legacy_java_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyJavaRuntime");
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set the module implementation path relative to dagger-module.toml.
-    /// The default is '.'.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Module implementation path.
-    pub fn with_source(&self, path: impl Into<String>) -> ModuleManifestV1 {
-        let mut query = self.selection.select("withSource");
-        query = query.arg("path", path.into());
-        ModuleManifestV1 {
+    /// Add the legacy PHP runtime.
+    pub fn with_legacy_php_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyPHPRuntime");
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-}
-impl Node for ModuleManifestV1 {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct ModuleManifestV2 {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for ModuleManifestV2 {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for ModuleManifestV2 {
-    fn graphql_type() -> &'static str {
-        "ModuleManifestV2"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl ModuleManifestV2 {
-    /// Serialize the manifest as dagger-module.toml.
-    pub fn as_file(&self) -> File {
-        let query = self.selection.select("asFile");
-        File {
+    /// Add the legacy Python runtime.
+    pub fn with_legacy_python_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyPythonRuntime");
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// A unique identifier for this ModuleManifestV2.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Use the built-in Dang entrypoint driver.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - Entrypoint source address.
-    pub fn with_dang_entrypoint(&self, source: impl Into<String>) -> ModuleManifestV2 {
-        let mut query = self.selection.select("withDangEntrypoint");
-        query = query.arg("source", source.into());
-        ModuleManifestV2 {
+    /// Add the legacy TypeScript runtime.
+    pub fn with_legacy_typescript_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyTypescriptRuntime");
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Use another module as the entrypoint driver.
+    /// Use another module as the entrypoint.
     ///
     /// # Arguments
     ///
     /// * `source` - Entrypoint module address.
-    pub fn with_module_entrypoint(&self, source: impl Into<String>) -> ModuleManifestV2 {
+    pub fn with_module_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
         let mut query = self.selection.select("withModuleEntrypoint");
         query = query.arg("source", source.into());
-        ModuleManifestV2 {
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the legacy runtime, engine version, and include paths.
+    pub fn without_legacy_fields(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutLegacyFields");
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
 }
-impl Node for ModuleManifestV2 {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct ModuleManifestVersions {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for ModuleManifestVersions {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for ModuleManifestVersions {
-    fn graphql_type() -> &'static str {
-        "ModuleManifestVersions"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl ModuleManifestVersions {
-    /// A unique identifier for this ModuleManifestVersions.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Construct a manifest in the current unversioned format.
-    /// The generated file does not contain manifestVersion = 1.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Module name.
-    pub fn v_1(&self, name: impl Into<String>) -> ModuleManifestV1 {
-        let mut query = self.selection.select("v1");
-        query = query.arg("name", name.into());
-        ModuleManifestV1 {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Construct a manifest in format version 2.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Module name.
-    pub fn v_2(&self, name: impl Into<String>) -> ModuleManifestV2 {
-        let mut query = self.selection.select("v2");
-        query = query.arg("name", name.into());
-        ModuleManifestV2 {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-}
-impl Node for ModuleManifestVersions {
+impl Node for ModuleManifest {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -13476,10 +13445,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Construct a versioned module manifest.
-    pub fn module_manifest(&self) -> ModuleManifestVersions {
-        let query = self.selection.select("moduleManifest");
-        ModuleManifestVersions {
+    /// Construct a module manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Module name.
+    pub fn module_manifest(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("moduleManifest");
+        query = query.arg("name", name.into());
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

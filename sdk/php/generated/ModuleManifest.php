@@ -9,17 +9,17 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A structured Dagger module manifest.
+ * A Dagger module manifest.
  */
 class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Serialize the manifest as a dagger-module.toml file.
+     * Return a directory with all applicable manifest files.
      */
-    public function asFile(): File
+    public function directory(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFile');
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -29,5 +29,153 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Serialize the legacy fields as dagger.json.
+     */
+    public function legacyJSONFile(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('legacyJSONFile');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Serialize the manifest as dagger-module.toml.
+     */
+    public function tomlFile(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tomlFile');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Validate the manifest.
+     *
+     * If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+     */
+    public function validate(?string $targetEngineVersion = null): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('validate');
+        if (null !== $targetEngineVersion) {
+        $leafQueryBuilder->setArgument('targetEngineVersion', $targetEngineVersion);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'validate');
+    }
+
+    /**
+     * Use the built-in Dang entrypoint.
+     */
+    public function withDangEntrypoint(string $source): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDangEntrypoint');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy Dang runtime.
+     */
+    public function withLegacyDangRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyDangRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy Elixir runtime.
+     */
+    public function withLegacyElixirRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyElixirRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the engine version for the legacy runtime.
+     *
+     * The default is the running engine version.
+     */
+    public function withLegacyEngineVersion(string $version): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyEngineVersion');
+        $innerQueryBuilder->setArgument('version', $version);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy Go runtime.
+     */
+    public function withLegacyGoRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyGoRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add an include path for the legacy runtime.
+     *
+     * This operation is additive.
+     */
+    public function withLegacyInclude(string $path): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyInclude');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy Java runtime.
+     */
+    public function withLegacyJavaRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyJavaRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy PHP runtime.
+     */
+    public function withLegacyPHPRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyPHPRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy Python runtime.
+     */
+    public function withLegacyPythonRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyPythonRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add the legacy TypeScript runtime.
+     */
+    public function withLegacyTypescriptRuntime(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyTypescriptRuntime');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Use another module as the entrypoint.
+     */
+    public function withModuleEntrypoint(string $source): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleEntrypoint');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the legacy runtime, engine version, and include paths.
+     */
+    public function withoutLegacyFields(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLegacyFields');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -2301,6 +2301,13 @@ export type ModuleServicesOpts = {
   include?: string[]
 }
 
+export type ModuleManifestValidateOpts = {
+  /**
+   * Optional target engine version.
+   */
+  targetEngineVersion?: string
+}
+
 /**
  * Experimental features of a module
  */
@@ -12002,22 +12009,24 @@ export class ModuleConfigClient extends BaseClient {
 }
 
 /**
- * A Dagger module manifest in the current unversioned format.
+ * A Dagger module manifest.
  */
-export class ModuleManifestV1 extends BaseClient {
+export class ModuleManifest extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _validate?: Void = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID) {
+  constructor(ctx?: Context, _id?: ID, _validate?: Void) {
     super(ctx)
 
     this._id = _id
+    this._validate = _validate
   }
 
   /**
-   * A unique identifier for this ModuleManifestV1.
+   * A unique identifier for this ModuleManifest.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -12032,179 +12041,156 @@ export class ModuleManifestV1 extends BaseClient {
   }
 
   /**
-   * Serialize the manifest as dagger-module.toml.
+   * Return a directory with all applicable manifest files.
    */
-  asFile = (): File => {
-    const ctx = this._ctx.select("asFile")
+  directory = (): Directory => {
+    const ctx = this._ctx.select("directory")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Serialize the legacy fields as dagger.json.
+   */
+  legacyJSONFile = (): File => {
+    const ctx = this._ctx.select("legacyJSONFile")
     return new File(ctx)
   }
 
   /**
-   * Set the required engine API version.
+   * Serialize the manifest as dagger-module.toml.
+   */
+  tomlFile = (): File => {
+    const ctx = this._ctx.select("tomlFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Validate the manifest.
+   *
+   * If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+   * @param opts.targetEngineVersion Optional target engine version.
+   */
+  validate = async (opts?: ModuleManifestValidateOpts): Promise<void> => {
+    if (this._validate) {
+      return
+    }
+
+    const ctx = this._ctx.select("validate", { ...opts })
+
+    await ctx.execute()
+  }
+
+  /**
+   * Use the built-in Dang entrypoint.
+   * @param source Entrypoint source address.
+   */
+  withDangEntrypoint = (source: string): ModuleManifest => {
+    const ctx = this._ctx.select("withDangEntrypoint", { source })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Dang runtime.
+   */
+  withLegacyDangRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyDangRuntime")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Elixir runtime.
+   */
+  withLegacyElixirRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyElixirRuntime")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Set the engine version for the legacy runtime.
    *
    * The default is the running engine version.
    * @param version Required engine API version.
    */
-  withEngineVersion = (version: string): ModuleManifestV1 => {
-    const ctx = this._ctx.select("withEngineVersion", { version })
-    return new ModuleManifestV1(ctx)
+  withLegacyEngineVersion = (version: string): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyEngineVersion", { version })
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * Add a path from the module context to the runtime input.
+   * Add the legacy Go runtime.
+   */
+  withLegacyGoRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyGoRuntime")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add an include path for the legacy runtime.
    *
    * This operation is additive.
    * @param path Path to include.
    */
-  withInclude = (path: string): ModuleManifestV1 => {
-    const ctx = this._ctx.select("withInclude", { path })
-    return new ModuleManifestV1(ctx)
+  withLegacyInclude = (path: string): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyInclude", { path })
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * Set the runtime that builds and executes the module.
-   * @param source Runtime source.
+   * Add the legacy Java runtime.
    */
-  withRuntime = (source: string): ModuleManifestV1 => {
-    const ctx = this._ctx.select("withRuntime", { source })
-    return new ModuleManifestV1(ctx)
+  withLegacyJavaRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyJavaRuntime")
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * Set the module implementation path relative to dagger-module.toml.
-   *
-   * The default is '.'.
-   * @param path Module implementation path.
+   * Add the legacy PHP runtime.
    */
-  withSource = (path: string): ModuleManifestV1 => {
-    const ctx = this._ctx.select("withSource", { path })
-    return new ModuleManifestV1(ctx)
+  withLegacyPHPRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPHPRuntime")
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * Call the provided function with current ModuleManifestV1.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
+   * Add the legacy Python runtime.
    */
-  with = (arg: (param: ModuleManifestV1) => ModuleManifestV1) => {
-    return arg(this)
+  withLegacyPythonRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPythonRuntime")
+    return new ModuleManifest(ctx)
   }
-}
-
-/**
- * A Dagger module manifest in format version 2.
- */
-export class ModuleManifestV2 extends BaseClient {
-  private readonly _id?: ID = undefined
 
   /**
-   * Constructor is used for internal usage only, do not create object from it.
+   * Add the legacy TypeScript runtime.
    */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
+  withLegacyTypescriptRuntime = (): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyTypescriptRuntime")
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * A unique identifier for this ModuleManifestV2.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Serialize the manifest as dagger-module.toml.
-   */
-  asFile = (): File => {
-    const ctx = this._ctx.select("asFile")
-    return new File(ctx)
-  }
-
-  /**
-   * Use the built-in Dang entrypoint driver.
-   * @param source Entrypoint source address.
-   */
-  withDangEntrypoint = (source: string): ModuleManifestV2 => {
-    const ctx = this._ctx.select("withDangEntrypoint", { source })
-    return new ModuleManifestV2(ctx)
-  }
-
-  /**
-   * Use another module as the entrypoint driver.
+   * Use another module as the entrypoint.
    * @param source Entrypoint module address.
    */
-  withModuleEntrypoint = (source: string): ModuleManifestV2 => {
+  withModuleEntrypoint = (source: string): ModuleManifest => {
     const ctx = this._ctx.select("withModuleEntrypoint", { source })
-    return new ModuleManifestV2(ctx)
+    return new ModuleManifest(ctx)
   }
 
   /**
-   * Call the provided function with current ModuleManifestV2.
+   * Remove the legacy runtime, engine version, and include paths.
+   */
+  withoutLegacyFields = (): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyFields")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Call the provided function with current ModuleManifest.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with = (arg: (param: ModuleManifestV2) => ModuleManifestV2) => {
+  with = (arg: (param: ModuleManifest) => ModuleManifest) => {
     return arg(this)
-  }
-}
-
-/**
- * Versioned Dagger module manifest builders.
- */
-export class ModuleManifestVersions extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this ModuleManifestVersions.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Construct a manifest in the current unversioned format.
-   *
-   * The generated file does not contain manifestVersion = 1.
-   * @param name Module name.
-   */
-  v1 = (name: string): ModuleManifestV1 => {
-    const ctx = this._ctx.select("v1", { name })
-    return new ModuleManifestV1(ctx)
-  }
-
-  /**
-   * Construct a manifest in format version 2.
-   * @param name Module name.
-   */
-  v2 = (name: string): ModuleManifestV2 => {
-    const ctx = this._ctx.select("v2", { name })
-    return new ModuleManifestV2(ctx)
   }
 }
 
@@ -13568,11 +13554,12 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Construct a versioned module manifest.
+   * Construct a module manifest.
+   * @param name Module name.
    */
-  moduleManifest = (): ModuleManifestVersions => {
-    const ctx = this._ctx.select("moduleManifest")
-    return new ModuleManifestVersions(ctx)
+  moduleManifest = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("moduleManifest", { name })
+    return new ModuleManifest(ctx)
   }
 
   /**

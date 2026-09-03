@@ -11405,17 +11405,17 @@ class ModuleConfigClient(Type):
 
 
 @typecheck
-class ModuleManifestV1(Type):
-    """A Dagger module manifest in the current unversioned format."""
+class ModuleManifest(Type):
+    """A Dagger module manifest."""
 
-    def as_file(self) -> File:
-        """Serialize the manifest as dagger-module.toml."""
+    def directory(self) -> Directory:
+        """Return a directory with all applicable manifest files."""
         _args: list[Arg] = []
-        _ctx = self._select("asFile", _args)
-        return File(_ctx)
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
 
     async def id(self) -> str:
-        """A unique identifier for this ModuleManifestV1.
+        """A unique identifier for this ModuleManifest.
 
         Note
         ----
@@ -11442,8 +11442,80 @@ class ModuleManifestV1(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def with_engine_version(self, version: str) -> Self:
-        """Set the required engine API version.
+    def legacy_json_file(self) -> File:
+        """Serialize the legacy fields as dagger.json."""
+        _args: list[Arg] = []
+        _ctx = self._select("legacyJSONFile", _args)
+        return File(_ctx)
+
+    def toml_file(self) -> File:
+        """Serialize the manifest as dagger-module.toml."""
+        _args: list[Arg] = []
+        _ctx = self._select("tomlFile", _args)
+        return File(_ctx)
+
+    async def validate(
+        self,
+        *,
+        target_engine_version: str | None = None,
+    ) -> Void:
+        """Validate the manifest.
+
+        If targetEngineVersion is set, also validate the legacy runtime
+        against that engine version.
+
+        Parameters
+        ----------
+        target_engine_version:
+            Optional target engine version.
+
+        Returns
+        -------
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("targetEngineVersion", target_engine_version, None),
+        ]
+        _ctx = self._select("validate", _args)
+        await _ctx.execute()
+
+    def with_dang_entrypoint(self, source: str) -> Self:
+        """Use the built-in Dang entrypoint.
+
+        Parameters
+        ----------
+        source:
+            Entrypoint source address.
+        """
+        _args = [
+            Arg("source", source),
+        ]
+        _ctx = self._select("withDangEntrypoint", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_dang_runtime(self) -> Self:
+        """Add the legacy Dang runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withLegacyDangRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_elixir_runtime(self) -> Self:
+        """Add the legacy Elixir runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withLegacyElixirRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_engine_version(self, version: str) -> Self:
+        """Set the engine version for the legacy runtime.
 
         The default is the running engine version.
 
@@ -11455,11 +11527,17 @@ class ModuleManifestV1(Type):
         _args = [
             Arg("version", version),
         ]
-        _ctx = self._select("withEngineVersion", _args)
-        return ModuleManifestV1(_ctx)
+        _ctx = self._select("withLegacyEngineVersion", _args)
+        return ModuleManifest(_ctx)
 
-    def with_include(self, path: str) -> Self:
-        """Add a path from the module context to the runtime input.
+    def with_legacy_go_runtime(self) -> Self:
+        """Add the legacy Go runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withLegacyGoRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_include(self, path: str) -> Self:
+        """Add an include path for the legacy runtime.
 
         This operation is additive.
 
@@ -11471,103 +11549,35 @@ class ModuleManifestV1(Type):
         _args = [
             Arg("path", path),
         ]
-        _ctx = self._select("withInclude", _args)
-        return ModuleManifestV1(_ctx)
+        _ctx = self._select("withLegacyInclude", _args)
+        return ModuleManifest(_ctx)
 
-    def with_runtime(self, source: str) -> Self:
-        """Set the runtime that builds and executes the module.
-
-        Parameters
-        ----------
-        source:
-            Runtime source.
-        """
-        _args = [
-            Arg("source", source),
-        ]
-        _ctx = self._select("withRuntime", _args)
-        return ModuleManifestV1(_ctx)
-
-    def with_source(self, path: str) -> Self:
-        """Set the module implementation path relative to dagger-module.toml.
-
-        The default is '.'.
-
-        Parameters
-        ----------
-        path:
-            Module implementation path.
-        """
-        _args = [
-            Arg("path", path),
-        ]
-        _ctx = self._select("withSource", _args)
-        return ModuleManifestV1(_ctx)
-
-    def with_(
-        self, cb: Callable[["ModuleManifestV1"], "ModuleManifestV1"]
-    ) -> "ModuleManifestV1":
-        """Call the provided callable with current ModuleManifestV1.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class ModuleManifestV2(Type):
-    """A Dagger module manifest in format version 2."""
-
-    def as_file(self) -> File:
-        """Serialize the manifest as dagger-module.toml."""
+    def with_legacy_java_runtime(self) -> Self:
+        """Add the legacy Java runtime."""
         _args: list[Arg] = []
-        _ctx = self._select("asFile", _args)
-        return File(_ctx)
+        _ctx = self._select("withLegacyJavaRuntime", _args)
+        return ModuleManifest(_ctx)
 
-    async def id(self) -> str:
-        """A unique identifier for this ModuleManifestV2.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def with_legacy_php_runtime(self) -> Self:
+        """Add the legacy PHP runtime."""
         _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
+        _ctx = self._select("withLegacyPHPRuntime", _args)
+        return ModuleManifest(_ctx)
 
-    def with_dang_entrypoint(self, source: str) -> Self:
-        """Use the built-in Dang entrypoint driver.
+    def with_legacy_python_runtime(self) -> Self:
+        """Add the legacy Python runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withLegacyPythonRuntime", _args)
+        return ModuleManifest(_ctx)
 
-        Parameters
-        ----------
-        source:
-            Entrypoint source address.
-        """
-        _args = [
-            Arg("source", source),
-        ]
-        _ctx = self._select("withDangEntrypoint", _args)
-        return ModuleManifestV2(_ctx)
+    def with_legacy_typescript_runtime(self) -> Self:
+        """Add the legacy TypeScript runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withLegacyTypescriptRuntime", _args)
+        return ModuleManifest(_ctx)
 
     def with_module_entrypoint(self, source: str) -> Self:
-        """Use another module as the entrypoint driver.
+        """Use another module as the entrypoint.
 
         Parameters
         ----------
@@ -11578,79 +11588,22 @@ class ModuleManifestV2(Type):
             Arg("source", source),
         ]
         _ctx = self._select("withModuleEntrypoint", _args)
-        return ModuleManifestV2(_ctx)
+        return ModuleManifest(_ctx)
+
+    def without_legacy_fields(self) -> Self:
+        """Remove the legacy runtime, engine version, and include paths."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutLegacyFields", _args)
+        return ModuleManifest(_ctx)
 
     def with_(
-        self, cb: Callable[["ModuleManifestV2"], "ModuleManifestV2"]
-    ) -> "ModuleManifestV2":
-        """Call the provided callable with current ModuleManifestV2.
+        self, cb: Callable[["ModuleManifest"], "ModuleManifest"]
+    ) -> "ModuleManifest":
+        """Call the provided callable with current ModuleManifest.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
-
-
-@typecheck
-class ModuleManifestVersions(Type):
-    """Versioned Dagger module manifest builders."""
-
-    async def id(self) -> str:
-        """A unique identifier for this ModuleManifestVersions.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    def v1(self, name: str) -> ModuleManifestV1:
-        """Construct a manifest in the current unversioned format.
-
-        The generated file does not contain manifestVersion = 1.
-
-        Parameters
-        ----------
-        name:
-            Module name.
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("v1", _args)
-        return ModuleManifestV1(_ctx)
-
-    def v2(self, name: str) -> ModuleManifestV2:
-        """Construct a manifest in format version 2.
-
-        Parameters
-        ----------
-        name:
-            Module name.
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("v2", _args)
-        return ModuleManifestV2(_ctx)
 
 
 @typecheck
@@ -13313,11 +13266,19 @@ class Query(Root):
         _ctx = self._select("module", _args)
         return Module(_ctx)
 
-    def module_manifest(self) -> ModuleManifestVersions:
-        """Construct a versioned module manifest."""
-        _args: list[Arg] = []
+    def module_manifest(self, name: str) -> ModuleManifest:
+        """Construct a module manifest.
+
+        Parameters
+        ----------
+        name:
+            Module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
         _ctx = self._select("moduleManifest", _args)
-        return ModuleManifestVersions(_ctx)
+        return ModuleManifest(_ctx)
 
     def module_source(
         self,
@@ -17259,9 +17220,7 @@ __all__ = [
     "ListTypeDef",
     "Module",
     "ModuleConfigClient",
-    "ModuleManifestV1",
-    "ModuleManifestV2",
-    "ModuleManifestVersions",
+    "ModuleManifest",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",

@@ -380,12 +380,13 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Construct a versioned module manifest.
+     * Construct a module manifest.
      */
-    public function moduleManifest(): ModuleManifestVersions
+    public function moduleManifest(string $name): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleManifest');
-        return new \Dagger\ModuleManifestVersions($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container

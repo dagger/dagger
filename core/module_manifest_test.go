@@ -4,78 +4,113 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/stretchr/testify/require"
 )
 
-func TestModuleManifestV1Contents(t *testing.T) {
+func TestModuleManifestTOMLContents(t *testing.T) {
 	t.Parallel()
 
-	manifest := (&ModuleManifestV1{
-		Name:          "payments",
-		EngineVersion: engine.Version,
-		Source:        ".",
-	}).
-		WithRuntime("github.com/dagger/go-runtime").
-		WithSource("src").
-		WithInclude("**/*.go").
-		WithInclude("go.mod")
+	manifest := (&ModuleManifest{Name: "payments"}).
+		WithDangEntrypoint("./internal/dagger/main.dang").
+		WithLegacyGoRuntime().
+		WithLegacyEngineVersion("v0.20.3").
+		WithLegacyInclude("**/*.go").
+		WithLegacyInclude("go.mod")
 
-	contents, err := manifest.Contents()
+	contents, err := manifest.TOMLContents()
 	require.NoError(t, err)
+	require.Equal(t, `name = "payments"
+engineVersion = "v0.20.3"
+include = ["**/*.go", "go.mod"]
 
-	cfg, err := modules.ParseModuleConfigForFilename(contents, modules.Filename)
-	require.NoError(t, err)
-	require.Equal(t, "payments", cfg.Name)
-	require.Equal(t, engine.Version, cfg.EngineVersion)
-	require.Equal(t, "src", cfg.Source)
-	require.Equal(t, "github.com/dagger/go-runtime", cfg.SDK.Source)
-	require.Equal(t, []string{"**/*.go", "go.mod"}, cfg.Include)
-}
-
-func TestModuleManifestV1BuilderIsImmutable(t *testing.T) {
-	t.Parallel()
-
-	base := &ModuleManifestV1{Name: "payments", Source: "."}
-	configured := base.WithRuntime("go").WithInclude("go.mod")
-
-	require.Empty(t, base.Runtime)
-	require.Empty(t, base.Include)
-	require.Equal(t, "go", configured.Runtime)
-	require.Equal(t, []string{"go.mod"}, configured.Include)
-}
-
-func TestModuleManifestV1ContentsRequiresIdentity(t *testing.T) {
-	t.Parallel()
-
-	_, err := (&ModuleManifestV1{Runtime: "go"}).Contents()
-	require.ErrorContains(t, err, "name is required")
-
-	_, err = (&ModuleManifestV1{Name: "payments"}).Contents()
-	require.ErrorContains(t, err, "runtime is required")
-}
-
-func TestModuleManifestV2Contents(t *testing.T) {
-	t.Parallel()
-
-	manifest := (&ModuleManifestV2{Name: "hello"}).
-		WithDangEntrypoint("./internal/dagger/entrypoint")
-
-	contents, err := manifest.Contents()
-	require.NoError(t, err)
-	require.Equal(t, `manifestVersion = 2
-name = "hello"
+[runtime]
+  source = "go"
 
 [entrypoint]
   kind = "dang"
-  source = "./internal/dagger/entrypoint"
+  source = "./internal/dagger/main.dang"
 `, string(contents))
+	require.NotContains(t, string(contents), "manifestVersion")
 }
 
-func TestModuleManifestV2EntrypointSetterReplacesPreviousValue(t *testing.T) {
+func TestModuleManifestLegacyJSONContents(t *testing.T) {
 	t.Parallel()
 
-	base := &ModuleManifestV2{Name: "hello"}
+	manifest := (&ModuleManifest{Name: "payments"}).
+		WithModuleEntrypoint("./entrypoint").
+		WithLegacyPythonRuntime().
+		WithLegacyEngineVersion("v0.20.3").
+		WithLegacyInclude("src/**")
+
+	contents, err := manifest.LegacyJSONContents()
+	require.NoError(t, err)
+
+	cfg, err := modules.ParseModuleConfigForFilename(contents, modules.LegacyFilename)
+	require.NoError(t, err)
+	require.Equal(t, "payments", cfg.Name)
+	require.Equal(t, "v0.20.3", cfg.EngineVersion)
+	require.Equal(t, "python", cfg.SDK.Source)
+	require.Equal(t, []string{"src/**"}, cfg.Include)
+	require.NotContains(t, string(contents), "entrypoint")
+}
+
+func TestModuleManifestLegacyRuntimes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		configure func(*ModuleManifest) *ModuleManifest
+		runtime   string
+	}{
+		{name: "go", configure: (*ModuleManifest).WithLegacyGoRuntime, runtime: "go"},
+		{name: "dang", configure: (*ModuleManifest).WithLegacyDangRuntime, runtime: "dang"},
+		{name: "python", configure: (*ModuleManifest).WithLegacyPythonRuntime, runtime: "python"},
+		{name: "typescript", configure: (*ModuleManifest).WithLegacyTypescriptRuntime, runtime: "typescript"},
+		{name: "php", configure: (*ModuleManifest).WithLegacyPHPRuntime, runtime: "php"},
+		{name: "elixir", configure: (*ModuleManifest).WithLegacyElixirRuntime, runtime: "elixir"},
+		{name: "java", configure: (*ModuleManifest).WithLegacyJavaRuntime, runtime: "java"},
+	}
+	runtimes := make([]string, 0, len(tests))
+	for _, test := range tests {
+		runtimes = append(runtimes, test.runtime)
+	}
+	require.ElementsMatch(t, sdkmeta.Builtins, runtimes)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			manifest := test.configure(&ModuleManifest{Name: "payments"})
+			require.Equal(t, test.runtime, manifest.LegacyRuntime)
+			require.NotEmpty(t, manifest.LegacyEngineVersion)
+			require.NoError(t, manifest.Validate(""))
+		})
+	}
+}
+
+func TestModuleManifestBuilderIsImmutable(t *testing.T) {
+	t.Parallel()
+
+	base := &ModuleManifest{Name: "payments"}
+	entrypoint := base.WithDangEntrypoint("./main.dang")
+	fat := entrypoint.WithLegacyGoRuntime().WithLegacyInclude("go.mod")
+	current := fat.WithoutLegacyFields()
+
+	require.Empty(t, base.EntrypointKind)
+	require.Empty(t, entrypoint.LegacyRuntime)
+	require.Equal(t, "go", fat.LegacyRuntime)
+	require.Equal(t, []string{"go.mod"}, fat.LegacyInclude)
+	require.Empty(t, current.LegacyRuntime)
+	require.Empty(t, current.LegacyEngineVersion)
+	require.Empty(t, current.LegacyInclude)
+	require.Equal(t, "dang", current.EntrypointKind)
+}
+
+func TestModuleManifestEntrypointSetterReplacesPreviousValue(t *testing.T) {
+	t.Parallel()
+
+	base := &ModuleManifest{Name: "hello"}
 	dang := base.WithDangEntrypoint("./main.dang")
 	module := dang.WithModuleEntrypoint("./entrypoint")
 
@@ -86,12 +121,79 @@ func TestModuleManifestV2EntrypointSetterReplacesPreviousValue(t *testing.T) {
 	require.Equal(t, "./entrypoint", module.EntrypointSource)
 }
 
-func TestModuleManifestV2ContentsRequiresEntrypoint(t *testing.T) {
+func TestModuleManifestValidation(t *testing.T) {
 	t.Parallel()
 
-	_, err := (&ModuleManifestV2{Name: "hello"}).Contents()
-	require.ErrorContains(t, err, "entrypoint is required")
+	tests := []struct {
+		name     string
+		manifest *ModuleManifest
+		target   string
+		wantErr  string
+	}{
+		{
+			name:     "name",
+			manifest: (&ModuleManifest{}).WithLegacyGoRuntime(),
+			wantErr:  "name is required",
+		},
+		{
+			name:     "loading path",
+			manifest: &ModuleManifest{Name: "hello"},
+			wantErr:  "requires an entrypoint or legacy runtime",
+		},
+		{
+			name:     "partial entrypoint",
+			manifest: &ModuleManifest{Name: "hello", EntrypointKind: "dang"},
+			wantErr:  "kind and source must be set together",
+		},
+		{
+			name:     "entrypoint kind",
+			manifest: &ModuleManifest{Name: "hello", EntrypointKind: "other", EntrypointSource: "."},
+			wantErr:  "kind must be dang or module",
+		},
+		{
+			name: "legacy runtime",
+			manifest: &ModuleManifest{
+				Name:                "hello",
+				LegacyRuntime:       "rust",
+				LegacyEngineVersion: "v0.20.0",
+			},
+			wantErr: `legacy runtime "rust" is not supported`,
+		},
+		{
+			name: "legacy engine version",
+			manifest: &ModuleManifest{
+				Name:          "hello",
+				LegacyRuntime: "go",
+			},
+			wantErr: "legacy engine version is required",
+		},
+		{
+			name:     "orphaned legacy field",
+			manifest: (&ModuleManifest{Name: "hello"}).WithDangEntrypoint(".").WithLegacyInclude("src/**"),
+			wantErr:  "legacy runtime is required",
+		},
+		{
+			name:     "target engine version",
+			manifest: (&ModuleManifest{Name: "hello"}).WithLegacyGoRuntime().WithLegacyEngineVersion("v1.2.0"),
+			target:   "v1.1.0",
+			wantErr:  "requires dagger v1.2.0, but target engine is v1.1.0",
+		},
+	}
 
-	_, err = (&ModuleManifestV2{Name: "hello", EntrypointKind: "other", EntrypointSource: "."}).Contents()
-	require.ErrorContains(t, err, "kind must be dang or module")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := test.manifest.Validate(test.target)
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestModuleManifestLegacyJSONRequiresLegacyRuntime(t *testing.T) {
+	t.Parallel()
+
+	manifest := (&ModuleManifest{Name: "hello"}).WithDangEntrypoint("./main.dang")
+	_, err := manifest.LegacyJSONContents()
+	require.ErrorContains(t, err, "has no legacy runtime")
 }
