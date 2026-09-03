@@ -39,7 +39,10 @@ function daggerWebFontsPlugin() {
           preload("inter-400.woff2"),
           {
             tagName: "link",
-            attributes: { rel: "preconnect", href: "https://fonts.googleapis.com" },
+            attributes: {
+              rel: "preconnect",
+              href: "https://fonts.googleapis.com",
+            },
           },
           {
             tagName: "link",
@@ -127,13 +130,6 @@ const config: Config = {
             ...Object.fromEntries(
               versions.slice(1).map((v) => [v, { noIndex: true }]),
             ),
-            // Path/label are derived (non-default versions are served at
-            // /<version>/); the default "unmaintained" banner points readers
-            // at the 1.0 docs.
-            "0.21.4": {
-              badge: false,
-              noIndex: true,
-            },
             current: {
               label: "Next",
               path: "next",
@@ -165,7 +161,7 @@ const config: Config = {
   plugins: [
     daggerWebFontsPlugin,
     // Custom webpack configuration for path aliases
-    function (context, options) {
+    function(context, options) {
       return {
         name: "custom-webpack-config",
         configureWebpack(config, isServer, utils) {
