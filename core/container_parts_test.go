@@ -476,6 +476,8 @@ func TestContainerMetadataMountNamedOwnerReadsParentRootFS(t *testing.T) {
 			}
 			childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "named-owner-child-"+test.name, child)
 
+			// This stripped-down class has no file selector, so evaluation stops
+			// immediately before production would demand the parent's rootfs.
 			require.Error(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
 			require.Equal(t, int32(1), baseOp.metaRuns.Load())
 			require.Equal(t, int32(0), baseOp.fsRuns.Load())
@@ -839,52 +841,129 @@ func TestContainerPathWriterRouting(t *testing.T) {
 }
 
 func TestContainerPathWriterExactMountRemoval(t *testing.T) {
-	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
-	baseOp := &containerPartsTestBaseOp{LazyState: NewLazyState(), workdir: "/", mountTargets: []string{"/file"}}
-	base := &Container{
-		FS:           new(LazyAccessor[*Directory, *Container]),
-		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
-		Mounts: ContainerMounts{{
-			Target:     "/file",
-			FileSource: new(LazyAccessor[*File, *Container]),
-		}},
-		Lazy: baseOp,
-	}
-	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-removal-base", base)
-	sourceOp := &containerPartsTestDirectorySourceOp{LazyState: NewLazyState()}
-	source := &Directory{
-		Dir:      new(LazyAccessor[string, *Directory]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-		Lazy:     sourceOp,
-	}
-	sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "path-writer-removal-source", source)
-	clonedMounts, err := CloneContainerMounts(ctx, base.Mounts)
-	require.NoError(t, err)
-	op := &ContainerWithDirectoryLazy{
-		LazyState: NewLazyState(),
-		Parent:    baseRes,
-		Path:      "/file",
-		Source:    sourceRes,
-	}
-	child := &Container{
-		FS:           new(LazyAccessor[*Directory, *Container]),
-		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
-		Mounts:       clonedMounts,
-		Lazy:         op,
-	}
-	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-removal-child", child)
+	t.Run("with directory removes file mount", func(t *testing.T) {
+		ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+		baseOp := &containerPartsTestBaseOp{LazyState: NewLazyState(), workdir: "/", mountTargets: []string{"/file"}}
+		base := &Container{
+			FS:           new(LazyAccessor[*Directory, *Container]),
+			MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+			Mounts: ContainerMounts{{
+				Target:     "/file",
+				FileSource: new(LazyAccessor[*File, *Container]),
+			}},
+			Lazy: baseOp,
+		}
+		baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-removal-base", base)
+		sourceOp := &containerPartsTestDirectorySourceOp{LazyState: NewLazyState()}
+		source := &Directory{
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+			Lazy:     sourceOp,
+		}
+		sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "path-writer-removal-source", source)
+		clonedMounts, err := CloneContainerMounts(ctx, base.Mounts)
+		require.NoError(t, err)
+		op := &ContainerWithDirectoryLazy{
+			LazyState: NewLazyState(),
+			Parent:    baseRes,
+			Path:      "/file",
+			Source:    sourceRes,
+		}
+		child := &Container{
+			FS:           new(LazyAccessor[*Directory, *Container]),
+			MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+			Mounts:       clonedMounts,
+			Lazy:         op,
+		}
+		childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-removal-child", child)
 
-	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
-	require.Nil(t, child.mountAt("/file"))
-	require.Equal(t, int32(0), sourceOp.runs.Load())
-	require.Equal(t, int32(0), baseOp.fsRuns.Load())
-	require.Equal(t, 0, baseOp.mountRunsFor("/file"))
-	groups, err := op.ContainerLazyGroups(ctx, child, []dagql.PartKey{ContainerPartFS})
-	require.NoError(t, err)
-	require.Equal(t, []dagql.LazyGroupKey{ContainerLazyGroupWrite}, groups)
-	allGroups, err := op.ContainerLazyGroups(ctx, child, nil)
-	require.NoError(t, err)
-	require.NotContains(t, allGroups, containerDelegationGroup(ContainerPartMount("/file")))
+		require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+		require.Nil(t, child.mountAt("/file"))
+		require.Equal(t, int32(0), sourceOp.runs.Load())
+		require.Equal(t, int32(0), baseOp.fsRuns.Load())
+		require.Equal(t, 0, baseOp.mountRunsFor("/file"))
+		groups, err := op.ContainerLazyGroups(ctx, child, []dagql.PartKey{ContainerPartFS})
+		require.NoError(t, err)
+		require.Equal(t, []dagql.LazyGroupKey{ContainerLazyGroupWrite}, groups)
+		allGroups, err := op.ContainerLazyGroups(ctx, child, nil)
+		require.NoError(t, err)
+		require.NotContains(t, allGroups, containerDelegationGroup(ContainerPartMount("/file")))
+	})
+
+	t.Run("with file removes directory mount", func(t *testing.T) {
+		ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+		baseOp := &containerPartsTestBaseOp{
+			LazyState:    NewLazyState(),
+			workdir:      "/",
+			mountTargets: []string{"/outer", "/outer/file"},
+		}
+		base := &Container{
+			FS:           new(LazyAccessor[*Directory, *Container]),
+			MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+			Mounts: ContainerMounts{
+				{Target: "/outer", DirectorySource: new(LazyAccessor[*Directory, *Container])},
+				{Target: "/outer/file", DirectorySource: new(LazyAccessor[*Directory, *Container])},
+			},
+			Lazy: baseOp,
+		}
+		baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-directory-removal-base", base)
+		sourceOp := &containerPartsTestFileSourceOp{LazyState: NewLazyState()}
+		source := &File{
+			File:     new(LazyAccessor[string, *File]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+			Lazy:     sourceOp,
+		}
+		sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "path-writer-directory-removal-source", source)
+		clonedMounts, err := CloneContainerMounts(ctx, base.Mounts)
+		require.NoError(t, err)
+		op := &ContainerWithFileLazy{
+			LazyState: NewLazyState(),
+			Parent:    baseRes,
+			Path:      "/outer/file",
+			Source:    sourceRes,
+		}
+		child := &Container{
+			FS:           new(LazyAccessor[*Directory, *Container]),
+			MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+			Mounts:       clonedMounts,
+			Lazy:         op,
+		}
+		childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "path-writer-directory-removal-child", child)
+
+		require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+		require.Nil(t, child.mountAt("/outer/file"))
+		require.NotNil(t, child.mountAt("/outer"))
+		require.Equal(t, int32(0), sourceOp.runs.Load())
+		require.Equal(t, int32(0), baseOp.fsRuns.Load())
+		require.Equal(t, 0, baseOp.mountRunsFor("/outer"))
+		require.Equal(t, 0, baseOp.mountRunsFor("/outer/file"))
+		groups, err := op.ContainerLazyGroups(ctx, child, []dagql.PartKey{ContainerPartMount("/outer")})
+		require.NoError(t, err)
+		require.Equal(t, []dagql.LazyGroupKey{ContainerLazyGroupWrite}, groups)
+		allGroups, err := op.ContainerLazyGroups(ctx, child, nil)
+		require.NoError(t, err)
+		require.NotContains(t, allGroups, containerDelegationGroup(ContainerPartMount("/outer/file")))
+	})
+}
+
+func TestContainerWithoutPathFullEvaluationWithEmptyRootFS(t *testing.T) {
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+	parent := NewContainer(Platform{})
+	parentRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "without-path-empty-parent", parent)
+	op := &ContainerWithoutPathLazy{
+		LazyState: NewLazyState(),
+		Parent:    parentRes,
+		Path:      "/missing",
+	}
+	child := NewContainer(Platform{})
+	child.Lazy = op
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "without-path-empty-child", child)
+
+	require.NoError(t, cache.Evaluate(ctx, childRes))
+	require.Nil(t, child.lazyOpForRouting())
+	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
+	_, fsSet := child.FS.Peek()
+	require.False(t, fsSet)
 }
 
 func TestContainerWithoutPathsJointWriteGroup(t *testing.T) {

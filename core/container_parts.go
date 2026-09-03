@@ -423,6 +423,8 @@ func containerSnapshotPartsForPaths(ctr *Container, paths []string) ([]dagql.Par
 // containerPathWriterGroups maps every snapshot part containing a target
 // path to one joint write group. Metadata is settled before this runs, so
 // exact mount removals have already changed the target resolution.
+// Targets in cache or tmpfs mounts return their unsupported-path error during
+// the post-metadata nil enumeration used to check lazy consumption.
 func containerPathWriterGroups(ctr *Container, paths []string, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
 	resolveTargets := parts == nil
 	for _, part := range parts {

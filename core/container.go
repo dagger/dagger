@@ -7144,6 +7144,8 @@ func useOCIMediaTypes(mediaTypes ImageMediaTypes) bool {
 }
 
 func filterEmptyContainers(containers []*Container) []*Container {
+	// Callers must settle metadata and fs first. Peek intentionally treats a
+	// pending rootfs accessor as empty.
 	var l []*Container
 	for _, c := range containers {
 		if c.FS == nil {
