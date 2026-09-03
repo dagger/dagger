@@ -58,7 +58,7 @@ classic actor model, and — most instructive, as a working system —
 "chief-of-staff" pattern is one long-lived agent orchestrating workers through
 generic MCP tools.
 
-```
+```text
 System      Enqueue primitive              Pause                           Resume
 ----------  -----------------------------  ------------------------------  -------------------------------
 A2A         SendMessage (contextId/taskId) task -> input-required          follow-up message to taskId
@@ -1023,7 +1023,6 @@ Semantics ratified during implementation:
 
 ## 9. Alternatives considered
 
-
 - **Task ledger (A2A-style)**: no resident runtime; immutable `AgentTask`
   objects under a shared context, `INPUT_REQUIRED` as a stored state.
   Cleaner durability, but a parallel lifecycle subsystem next to Services,
@@ -1830,10 +1829,12 @@ turned a wall of identical `failed to decode receiver Call` wrappers into one
 named frame (`dagql/dagui/extract.go`, `extract_test.go`). With that in a
 built CLI, focusing a `modules/staff` worker gave:
 
-    agent "scout" cannot be addressed: cannot rebuild ID for "agent" (Agent):
-    call xxh3:47ab2dce6d1d5b1e never reached this client, referenced as
-    argument "directory" of "withSkills" (LLM)
-    xxh3:edf3a4032b78d5df(directory: xxh3:47ab2dce6d1d5b1e)
+```text
+agent "scout" cannot be addressed: cannot rebuild ID for "agent" (Agent):
+call xxh3:47ab2dce6d1d5b1e never reached this client, referenced as
+argument "directory" of "withSkills" (LLM)
+xxh3:edf3a4032b78d5df(directory: xxh3:47ab2dce6d1d5b1e)
+```
 
 Note this is an ARGUMENT gap, where the first occurrence of this failure was
 on the receiver spine. Both shapes are the same defect; neither is special.
@@ -1939,4 +1940,3 @@ revives workers on receiver load, including reads. Item 14 used to be a second
 hazard, misreporting this section's own commits as whole-file adds and making
 a worker's commit unpullable; it is fixed, but an engine built before the fix
 still shows it (§10.1).
-

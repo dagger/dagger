@@ -117,7 +117,6 @@ With re-hydration explicit, `Send` should use `Get` and error on a miss
 starts an entry that *exists* — and the one way to conjure an agent from a
 seed becomes a verb someone actually typed.
 
-
 ### 3.2 Module: return a pure state setter, reached through `currentNode`
 
 `Query.currentNode` returns the object that *received* the current module
@@ -330,7 +329,6 @@ Nor does the roster foreclose "load from trace" — it front-runs it. The fields
 worth saving are the same ones a trace-derived roster would carry, so the
 format is the durable part and the store can change underneath it later.
 
-
 ## 7. Landing it safely
 
 `modules/staff` provides the staff tooling used to drive sessions like this
@@ -355,4 +353,3 @@ Suggested order: §3.1 (core `rehydrate` + non-generative `send`) and §3.2
 (staff setters) together, since both are needed before a resumed session is
 trustworthy; then §6 (the roster in the save file), which depends on
 `rehydrate`; then §3.3 as a sweep; then §4 as the guard that keeps it true.
-
