@@ -224,7 +224,8 @@ func init() {
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
-	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
+	cobra.AddTemplateFunc("availableFlags", availableFlagsForCommand)
+	cobra.AddTemplateFunc("inheritedFlags", inheritedFlags)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
@@ -255,6 +256,9 @@ var rootCmd = &cobra.Command{
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
+		if restore := hideUnavailableCompletionFlags(cmd, args); restore != nil {
+			cobra.OnFinalize(restore)
+		}
 		applyCommandProgressDefaults(cmd)
 
 		if cpuprofile != "" {
@@ -426,20 +430,13 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
-	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
-	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
-	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
-	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
 
-	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
-	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
-	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+	installMayRenderPipelineFlags(flags)
 
 	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
 	// all those functions will run in a remote cloud engine which gets created at execution time
@@ -455,17 +452,31 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	flags.Lookup("profile").Hidden = true
 
-	for _, fl := range []string{
-		"dot-output",
-		"dot-focus-field",
-		"dot-show-internal",
-		"workdir",
-	} {
-		if err := flags.MarkHidden(fl); err != nil {
-			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
-			os.Exit(1)
-		}
+	if err := flags.MarkHidden("workdir"); err != nil {
+		fmt.Fprintln(stdout, "Error hiding flag: workdir", err)
+		os.Exit(1)
 	}
+}
+
+func installMayRenderPipelineFlags(flags *pflag.FlagSet) {
+	renderFlags := pflag.NewFlagSet(string(mayRenderPipeline), pflag.ContinueOnError)
+	renderFlags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	renderFlags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	renderFlags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
+	renderFlags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
+	renderFlags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
+
+	hiddenFlags := pflag.NewFlagSet("hidden", pflag.ContinueOnError)
+	hiddenFlags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
+	hiddenFlags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
+	hiddenFlags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+	hiddenFlags.VisitAll(func(flag *pflag.Flag) {
+		flag.Hidden = true
+	})
+
+	renderFlags.AddFlagSet(hiddenFlags)
+	setFlagSetCapabilities(renderFlags, mayRenderPipeline)
+	flags.AddFlagSet(renderFlags)
 }
 
 // disableFlagsInUseLine disables the automatic addition of [flags]
@@ -624,16 +635,27 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(args []string) {
-	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+func parseGlobalFlags(root *cobra.Command, args []string) {
+	cmd, commandArgs := resolveCommand(root, args)
+	if cmd == nil {
+		return
+	}
+
+	flags := copyCommandFlags(cmd, "global")
 	flags.Usage = func() {}
-	flags.ParseErrorsAllowlist.UnknownFlags = true
-	installGlobalFlags(flags)
-	if err := flags.Parse(args); err != nil && !errors.Is(err, pflag.ErrHelp) {
+	flags.VisitAll(func(flag *pflag.Flag) {
+		global := root.PersistentFlags().Lookup(flag.Name)
+		selected := cmd.Flags().Lookup(flag.Name)
+		if global == nil || selected != global {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	if err := flags.Parse(commandArgs); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
-	if !flags.Changed("x-release") {
+	globalXRelease := root.PersistentFlags().Lookup("x-release")
+	if globalXRelease == nil || cmd.Flags().Lookup("x-release") != globalXRelease || !flags.Changed("x-release") {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
@@ -821,10 +843,14 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 
 func Main() {
 	installGlobalFlags(rootCmd.PersistentFlags())
+	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(os.Args[1:])
+	parseGlobalFlags(rootCmd, os.Args[1:])
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -1005,11 +1031,11 @@ func isExperimental(cmd *cobra.Command) bool {
 	return experimental
 }
 
-func hasInheritedFlags(cmd *cobra.Command) bool {
+func inheritedFlags(cmd *cobra.Command) *pflag.FlagSet {
 	if val, ok := cmd.Annotations["help:hideInherited"]; ok && val == "true" {
-		return false
+		return pflag.NewFlagSet("inherited", pflag.ContinueOnError)
 	}
-	return cmd.HasAvailableInheritedFlags()
+	return availableFlagsForCommand(cmd, cmd.InheritedFlags())
 }
 
 // getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
@@ -1374,16 +1400,18 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 {{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
-{{- if .HasAvailableLocalFlags}}
+{{- $localFlags := availableFlags . .LocalFlags}}
+{{- if $localFlags.HasAvailableFlags}}
 
-{{ groupFlags .LocalFlags | trimTrailingWhitespaces }}
+{{ groupFlags $localFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 
-{{- if hasInheritedFlags . }}
+{{- $inheritedFlags := inheritedFlags .}}
+{{- if $inheritedFlags.HasAvailableFlags}}
 
 {{ "Inherited Options" | toUpperBold }}
-{{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces }}
+{{ flagUsagesWrapped $inheritedFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 

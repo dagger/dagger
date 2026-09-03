@@ -56,6 +56,7 @@ func main() {
 	buf := new(bytes.Buffer)
 	if err := cobradocs.Markdown(root, buf, cobradocs.MarkdownOptions{
 		Frontmatter: frontmatter,
+		IncludeFlag: daggercmd.FlagAvailableForCommand,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "generate markdown: %v\n", err)
 		os.Exit(1)

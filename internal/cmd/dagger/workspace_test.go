@@ -401,7 +401,11 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	workdir = "."
 	workspaceRef = ""
 
-	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call"}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	parseGlobalFlags(root, []string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
 
 	require.Equal(t, "/work/shell", workdir)
 	require.Equal(t, "./ws", workspaceRef)
