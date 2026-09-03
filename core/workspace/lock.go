@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -123,6 +124,20 @@ func ParseLock(data []byte) (*Lock, error) {
 		return nil, err
 	}
 	return &Lock{file: file}, nil
+}
+
+// FutureLockfileVersionError turns an unsupported future lockfile version into
+// actionable engine upgrade guidance. It returns nil for all other parse errors.
+func FutureLockfileVersionError(err error) error {
+	var versionErr *lockfile.UnsupportedVersionError
+	if !errors.As(err, &versionErr) || !versionErr.IsNewer() {
+		return nil
+	}
+	return fmt.Errorf(
+		"lockfile version %q is newer than supported version %q; upgrade Dagger to continue",
+		versionErr.Version,
+		versionErr.Supported,
+	)
 }
 
 // NewLock returns an empty workspace lock.
