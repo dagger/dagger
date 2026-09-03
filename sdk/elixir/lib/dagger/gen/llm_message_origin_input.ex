@@ -7,12 +7,12 @@ defmodule Dagger.LLMMessageOriginInput do
   use Dagger.Core.Base, kind: :input, name: "LLMMessageOriginInput"
 
   @type t() :: %__MODULE__{
-          agent_id: String.t() | nil,
+          agent_handle: String.t() | nil,
           agent_name: String.t() | nil,
           kind: Dagger.LLMMessageOriginKind.t(),
           ref: String.t() | nil,
           reply_to: String.t() | nil
         }
 
-  defstruct [:agent_id, :agent_name, :kind, :ref, :reply_to]
+  defstruct [:agent_handle, :agent_name, :kind, :ref, :reply_to]
 end

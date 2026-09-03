@@ -14,16 +14,16 @@ namespace Dagger;
 class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+     * The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
      */
-    public function agentId(): string
+    public function agentHandle(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('agentId');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'agentId');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('agentHandle');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'agentHandle');
     }
 
     /**
-     * The display name of the agent behind agentId.
+     * The display name of the agent behind agentHandle.
      */
     public function agentName(): string
     {
@@ -50,7 +50,7 @@ class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, N
     }
 
     /**
-     * The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+     * The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
      */
     public function ref(): string
     {

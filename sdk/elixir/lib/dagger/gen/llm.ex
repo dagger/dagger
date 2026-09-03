@@ -16,14 +16,17 @@ defmodule Dagger.LLM do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Rehydrate a spawned agent's handle from its instance ID.
+  Reconstruct a spawned agent from its runtime handle.
 
   This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
   """
   @spec agent(t(), String.t(), String.t()) :: Dagger.Agent.t()
-  def agent(%__MODULE__{} = llm, id, name) do
+  def agent(%__MODULE__{} = llm, handle, name) do
     query_builder =
-      llm.query_builder |> QB.select("agent") |> QB.put_arg("id", id) |> QB.put_arg("name", name)
+      llm.query_builder
+      |> QB.select("agent")
+      |> QB.put_arg("handle", handle)
+      |> QB.put_arg("name", name)
 
     %Dagger.Agent{
       query_builder: query_builder,
