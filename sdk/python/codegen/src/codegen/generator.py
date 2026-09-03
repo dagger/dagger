@@ -136,6 +136,11 @@ class Context:
         """Expose nullable object fields as values that must be resolved."""
         return supports_nullable_objects(self.schema_version)
 
+    @property
+    def supports_id_handles(self) -> bool:
+        """Load every @expectedType ID return as the object it names."""
+        return supports_id_handles(self.schema_version)
+
     def process_type(self, name: str):
         # This is only needed to keep track of remaining types because
         # of forward references.
@@ -372,6 +377,10 @@ def id_from_type(t: GraphQLType) -> IDName | None:
 
 LEGACY_SDK_COMPAT_CUTOVER = (0, 21, 0)
 NULLABLE_OBJECT_SDK_CUTOVER = (1, 0, 0, "beta", 10)
+# The first schema version whose bindings load every ID-returning field that
+# carries an @expectedType directive as the object it names. Older views only
+# convert fields returning their parent's own ID (the sync-like shape).
+ID_HANDLE_SDK_CUTOVER = (1, 0, 0, "beta", 12)
 
 
 def legacy_sdk_compat(schema_version: str) -> bool:
@@ -394,6 +403,23 @@ def parse_version(version: str) -> tuple[int, int, int] | None:
 
 def supports_nullable_objects(schema_version: str) -> bool:
     """Whether nullable object fields use the new resolved return shape."""
+    return schema_version_at_least(schema_version, NULLABLE_OBJECT_SDK_CUTOVER)
+
+
+def supports_id_handles(schema_version: str) -> bool:
+    """Whether every @expectedType ID return is loaded as its object."""
+    return schema_version_at_least(schema_version, ID_HANDLE_SDK_CUTOVER)
+
+
+def schema_version_at_least(
+    schema_version: str,
+    cutover: tuple[int, int, int, str, int],
+) -> bool:
+    """Compare a schema version against a feature's beta cutover.
+
+    Unknown or non-semver versions (development builds) get every feature;
+    a beta prerelease is compared by its beta number, ignoring any dev suffix.
+    """
     if not schema_version:
         return True
 
@@ -405,7 +431,7 @@ def supports_nullable_objects(schema_version: str) -> bool:
         return True
 
     core = tuple(int(part) for part in match.groups()[:3])
-    cutover_core = NULLABLE_OBJECT_SDK_CUTOVER[:3]
+    cutover_core = cutover[:3]
     if core != cutover_core:
         return core > cutover_core
 
@@ -413,8 +439,8 @@ def supports_nullable_objects(schema_version: str) -> bool:
     if prerelease is None:
         return True
     if prerelease == "beta" and number is not None:
-        return int(number) >= NULLABLE_OBJECT_SDK_CUTOVER[4]
-    return prerelease > NULLABLE_OBJECT_SDK_CUTOVER[3]
+        return int(number) >= cutover[4]
+    return prerelease > cutover[3]
 
 
 def legacy_id_name(type_name: TypeName) -> IDName:
@@ -761,22 +787,28 @@ class _ObjectField:
             ctx.supports_nullable_objects,
         )
 
-        # Any field in the API that returns an ID for its parent object should
-        # return the binding for the object instead in the SDK to allow continued
-        # chaining, except if it's called "id".
+        # Any field in the API that returns an ID with an @expectedType should
+        # return the binding for that object instead in the SDK to allow
+        # continued chaining, except if it's called "id".
         #
         # For example, the API `Service { start: ID! @expectedType(name: "Service") }`
         # should produce the following binding signature:
         # >>> class Service:
         # ...     async def start(self) -> Self: ...
         #
+        # and `LLM { spawn: ID! @expectedType(name: "Agent") }` produces:
+        # >>> class LLM:
+        # ...     async def spawn(self) -> Agent: ...
+        #
+        # Schema views before the ID handle cutover only convert the parent's
+        # own ID (the sync-like shape), so their signatures don't move.
         self.convert_id = False
         if (
             name != "id"
             and is_id_type(field.type)
             and self.is_leaf
             and self.expected_type
-            and self.parent_name == self.expected_type
+            and (self.parent_name == self.expected_type or ctx.supports_id_handles)
         ):
             self.type = self.expected_type
             self.convert_id = True
@@ -846,7 +878,14 @@ class _ObjectField:
             yield "_args: list[Arg] = []"
 
         if self.convert_id:
-            args = ("self", f'"{self.graphql_name}"', "_args")
+            args = ["self", f'"{self.graphql_name}"', "_args"]
+            if self.type != self.parent_name:
+                # Load another type's ID as that type, via its client
+                # class when the handle names an interface.
+                handle = self.ctx.schema.get_type(self.type)
+                args.append(
+                    f"_{self.type}Client" if is_interface_type(handle) else self.type
+                )
             yield f"return await self._ctx.execute_sync({', '.join(args)})"
             return
 

@@ -658,3 +658,111 @@ var containerExecArgsJSON = `
         "possibleTypes": null
       }
 `
+
+// idHandleSchemaJSON has an object whose ID-returning fields name its own
+// type (sync), another object (spawn), and an interface (syncer).
+const idHandleSchemaJSON = `
+[
+  {
+    "kind": "SCALAR",
+    "name": "ID",
+    "fields": null,
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "INTERFACE",
+    "name": "Syncer",
+    "description": "",
+    "fields": [],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "Agent",
+    "description": "",
+    "fields": [],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "LLM",
+    "description": "",
+    "fields": [
+      {
+        "args": [],
+        "deprecationReason": null,
+        "description": "",
+        "isDeprecated": false,
+        "name": "sync",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"LLM\""}]}]
+      },
+      {
+        "args": [],
+        "deprecationReason": null,
+        "description": "",
+        "isDeprecated": false,
+        "name": "spawn",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+      },
+      {
+        "args": [],
+        "deprecationReason": null,
+        "description": "",
+        "isDeprecated": false,
+        "name": "syncer",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  }
+]
+`
+
+func renderIDHandleObject(t *testing.T, schemaVersion string) string {
+	t.Helper()
+	schema := objectsInit(t, idHandleSchemaJSON)
+	tmpl := templates.New(schemaVersion, &schema, "", generator.Config{})
+
+	var b bytes.Buffer
+	require.NoError(t, tmpl.ExecuteTemplate(&b, "object", schema.Types.Get("LLM")))
+	return b.String()
+}
+
+func TestObjectIDHandlesLoadTheirExpectedType(t *testing.T) {
+	got := renderIDHandleObject(t, "v1.0.0")
+
+	// the parent's own ID keeps loading the parent
+	require.Contains(t, got, "sync = async (): Promise<LLM> => {")
+	require.Contains(t, got, `return new LLM(ctx.copy().selectNode(response, "LLM"))`)
+	// another object's ID loads that object
+	require.Contains(t, got, "spawn = async (): Promise<Agent> => {")
+	require.Contains(t, got, `return new Agent(ctx.copy().selectNode(response, "Agent"))`)
+	// an interface's ID loads through the interface's client class
+	require.Contains(t, got, "syncer = async (): Promise<Syncer> => {")
+	require.Contains(t, got, `return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))`)
+}
+
+func TestObjectIDHandlesKeepRawIDsBeforeCutover(t *testing.T) {
+	got := renderIDHandleObject(t, "v1.0.0-beta.11")
+
+	require.Contains(t, got, "sync = async (): Promise<LLM> => {")
+	require.Contains(t, got, "spawn = async (): Promise<ID> => {")
+	require.Contains(t, got, "syncer = async (): Promise<ID> => {")
+	require.NotContains(t, got, "new Agent(")
+	require.NotContains(t, got, "new _SyncerClient(")
+}
