@@ -3510,21 +3510,15 @@ func (s *workspaceSchema) terminals(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.TerminalGroup, error) {
-	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parentResult.Self()) {
 		return &core.TerminalGroup{}, nil
-	}
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
 	}
 
 	allTerminals, err := collectWorkspaceModuleTargets(
 		ctx,
-		include,
+		s,
+		parentResult,
+		args.Include,
 		"terminal targets",
 		"terminal target",
 		terminalTargetsFromModule,
@@ -3544,21 +3538,15 @@ func (s *workspaceSchema) agents(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.AgentGroup, error) {
-	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parentResult.Self()) {
 		return &core.AgentGroup{}, nil
-	}
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
 	}
 
 	allAgents, err := collectWorkspaceModuleTargets(
 		ctx,
-		include,
+		s,
+		parentResult,
+		args.Include,
 		"agents",
 		"agent",
 		agentTargetsFromModule,
@@ -3571,18 +3559,53 @@ func (s *workspaceSchema) agents(
 	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
+// workspaceTargetModules returns the workspace's primary modules as they
+// should be seen when composing targets (agents, terminals) from them.
+func (s *workspaceSchema) workspaceTargetModules(
+	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	include []string,
+) ([]dagql.ObjectResult[*core.Module], error) {
+	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// The served modules above are the workspace as it was on disk when the
+	// session started. Re-resolve whatever the workspace's pending overlay
+	// touches, so an agent recomposing itself (install/reload) sees its own
+	// staged edits to module source and to dagger.toml.
+	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+	return mergeOverlayModules(mods, overlayMods), nil
+}
+
+// collectWorkspaceModuleTargets composes one kind of target (agents, terminal
+// targets) from every primary module in the workspace, as seen through its
+// pending overlay, keeping only those matching the include patterns.
 func collectWorkspaceModuleTargets[T any](
 	ctx context.Context,
-	include []string,
+	s *workspaceSchema,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	includeArg dagql.Optional[dagql.ArrayInput[dagql.String]],
 	groupLabel string,
 	targetLabel string,
 	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
 	node func(T) *core.ModTreeNode,
 ) ([]T, error) {
-	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
+	include := workspaceIncludePatterns(includeArg)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parentResult.Self())
+	if err != nil {
 		return nil, err
 	}
-	mods, err := currentWorkspacePrimaryModules(ctx)
+
+	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
 	if err != nil {
 		return nil, err
 	}

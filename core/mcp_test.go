@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -16,12 +18,184 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+func TestTimeoutTool(t *testing.T) {
+	timeoutArgs := func(duration, tool string, arguments map[string]any) map[string]any {
+		return map[string]any{
+			"duration":  duration,
+			"tool":      tool,
+			"arguments": arguments,
+		}
+	}
+
+	t.Run("schema", func(t *testing.T) {
+		tool := timeoutToolForTest(t)
+		require.False(t, tool.ReadOnly)
+		require.Equal(t, []string{"duration", "tool", "arguments"}, tool.Schema["required"])
+		properties := tool.Schema["properties"].(map[string]any)
+		require.Equal(t, "string", properties["duration"].(map[string]any)["type"])
+		require.Equal(t, "string", properties["tool"].(map[string]any)["type"])
+		require.Equal(t, "object", properties["arguments"].(map[string]any)["type"])
+	})
+
+	t.Run("success", func(t *testing.T) {
+		wantArgs := map[string]any{"message": "hello"}
+		wantResult := map[string]any{"status": "ok"}
+		var gotArgs any
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(_ context.Context, args any) (any, error) {
+				gotArgs = args
+				return wantResult, nil
+			},
+		})
+
+		result, err := tool.Call(t.Context(), timeoutArgs("1s", "echo", wantArgs))
+		require.NoError(t, err)
+		// The nested call goes through MCP.Call, which renders a non-string
+		// result the way the model would see it.
+		require.JSONEq(t, `{"status":"ok"}`, result.(string))
+		require.Equal(t, wantArgs, gotArgs)
+	})
+
+	t.Run("deadline cancellation reaches nested tool", func(t *testing.T) {
+		observed := make(chan error, 1)
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "wait",
+			Call: func(ctx context.Context, _ any) (any, error) {
+				select {
+				case <-ctx.Done():
+					observed <- ctx.Err()
+					return nil, ctx.Err()
+				case <-time.After(time.Second):
+					return nil, fmt.Errorf("nested context was not cancelled")
+				}
+			},
+		})
+
+		_, err := tool.Call(t.Context(), timeoutArgs("10ms", "wait", map[string]any{}))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorContains(t, err, `tool "wait" did not finish within 10ms`)
+		require.ErrorIs(t, <-observed, context.DeadlineExceeded)
+	})
+
+	t.Run("invalid duration", func(t *testing.T) {
+		called := false
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(context.Context, any) (any, error) {
+				called = true
+				return nil, nil
+			},
+		})
+
+		_, err := tool.Call(t.Context(), timeoutArgs("eventually", "echo", map[string]any{}))
+		require.ErrorContains(t, err, `invalid timeout duration "eventually"`)
+		require.False(t, called)
+	})
+
+	t.Run("unavailable target", func(t *testing.T) {
+		tool := timeoutToolForTest(t)
+		_, err := tool.Call(t.Context(), timeoutArgs("1s", "hidden", map[string]any{}))
+		require.EqualError(t, err, `tool "hidden" is not available`)
+	})
+
+	t.Run("self wrapping", func(t *testing.T) {
+		tool := timeoutToolForTest(t, LLMTool{
+			Name: "echo",
+			Call: func(_ context.Context, args any) (any, error) {
+				return args, nil
+			},
+		})
+		innerArgs := map[string]any{"message": "hello"}
+
+		result, err := tool.Call(t.Context(), timeoutArgs("1s", "Timeout",
+			timeoutArgs("1s", "echo", innerArgs)))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"message":"hello"}`, result.(string))
+	})
+
+	t.Run("nested call is traced as a tool call of its own", func(t *testing.T) {
+		sr, ctx := replayTestRecorder(t)
+		tool := timeoutToolForTest(t, LLMTool{
+			Name:   "echo",
+			Server: "Echoes",
+			Call: func(ctx context.Context, _ any) (any, error) {
+				// Dispatched through MCP.Call, the nested tool runs beneath a
+				// tool-call span of its own rather than the Timeout span.
+				require.True(t, trace.SpanFromContext(ctx).SpanContext().IsValid())
+				return "echoed", nil
+			},
+		})
+		_, err := tool.Call(ctx, timeoutArgs("1s", "echo", map[string]any{"message": "hello"}))
+		require.NoError(t, err)
+
+		var found bool
+		for _, span := range sr.Ended() {
+			if span.Name() != "echo" {
+				continue
+			}
+			found = true
+			toolAttr, ok := spanAttr(span, telemetry.LLMToolAttr)
+			require.True(t, ok)
+			require.Equal(t, "echo", toolAttr.AsString())
+			serverAttr, ok := spanAttr(span, telemetry.LLMToolServerAttr)
+			require.True(t, ok)
+			require.Equal(t, "Echoes", serverAttr.AsString())
+		}
+		require.True(t, found, "no tool-call span for the nested call")
+	})
+}
+
+func timeoutToolForTest(t *testing.T, targets ...LLMTool) *LLMTool {
+	t.Helper()
+	m := newMCP()
+	allTools := NewLLMToolSet()
+	for _, target := range targets {
+		require.True(t, allTools.Add(target))
+	}
+	m.loadBuiltins(nil, allTools)
+	tool, err := m.LookupTool("Timeout", allTools.Order)
+	require.NoError(t, err)
+	return tool
+}
+
+func TestGenMCPToolPreservesSchema(t *testing.T) {
+	tool, err := genMcpTool(LLMTool{
+		Name:        "commit",
+		Description: "Commit changes.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"date": map[string]any{
+					"anyOf": []any{
+						map[string]any{"type": "string"},
+						map[string]any{"type": "null"},
+					},
+					"default": nil,
+				},
+			},
+			"additionalProperties": false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "commit", tool.Name)
+	require.Equal(t, "Commit changes.", tool.Description)
+	require.JSONEq(t, `{
+		"type":"object",
+		"properties":{
+			"date":{
+				"anyOf":[{"type":"string"},{"type":"null"}],
+				"default":null
+			}
+		},
+		"additionalProperties":false
+	}`, string(tool.RawInputSchema))
+}
 
 // TestAssembleLines covers log-line assembly from raw stdio segments: log
 // records aren't guaranteed to be line-aligned, so a line that straddles two

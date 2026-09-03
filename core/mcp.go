@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql"
@@ -49,9 +50,6 @@ type LLMTool struct {
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
 	Schema map[string]any `json:"schema"`
-	// Whether the tool schema is strict.
-	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
-	Strict bool `json:"-"`
 	// Whether we should hide the LLM tool call span in favor of just showing its
 	// child spans.
 	HideSelf bool `json:"-"`
@@ -61,6 +59,10 @@ type LLMTool struct {
 	// in parallel against the same workspace; CallBatch merges their results
 	// before updating the workspace.
 	ReturnsChangeset bool `json:"-"`
+	// Whether the tool returns an LLM — a continuation (see MCP.adoptLLM).
+	// step() runs these in a second batch after every other call in the turn,
+	// so the conversation they receive already reflects the turn's effects.
+	ReturnsLLM bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -99,6 +101,32 @@ type MCP struct {
 	// the model through ListSkills/ReadSkill alongside the engine-embedded and
 	// workspace-discovered skills.
 	skillDirs []dagql.ObjectResult[*Directory]
+	// selfLLM is the conversation dispatching the current step's tool calls —
+	// inst + withResponse, i.e. up to and including the in-flight tool call.
+	// The object-tool adapter passes it explicitly to hidden LLM arguments.
+	// Transient: cleared by Clone, never persisted.
+	selfLLM dagql.ObjectResult[*LLM]
+	// continuation is an LLM returned by a tool during this step (see
+	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
+	// results to IT rather than to the LLM that made the call, so the loop
+	// resumes from the returned conversation — env, tools, prompts and all.
+	// Continuations run after the turn's other calls (SplitContinuationCalls),
+	// so by then there is no other state left to persist. Transient: cleared by
+	// Clone.
+	continuation dagql.ObjectResult[*LLM]
+	// stateChanged records that a tool call changed the bound workspace or
+	// bindings since selfLLM was set — this MCP has diverged from the
+	// conversation an LLM! argument would receive. A continuation adopted in
+	// that state would silently drop the divergence (step() resumes from the
+	// continuation, not from this MCP), so adoptLLM refuses it. step() folds
+	// the changes into a fresh selfLLM before the continuation phase, which
+	// resets this (see SetSelfLLM). Transient: cleared by Clone.
+	stateChanged bool
+	// standalone marks an MCP serving tools without a driving conversation
+	// (dagger mcp): no selfLLM will ever be set, so LLM-typed tool arguments
+	// have nothing to be filled from and are treated as unsatisfiable (see
+	// implicitToolArgs). Unlike the per-step scratch above, it survives Clone.
+	standalone bool
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -150,8 +178,98 @@ func (m *MCP) Clone() *MCP {
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
+	// Per-step scratch state: the dispatching conversation and any continuation
+	// a tool returned belong to the step that set them, not to the clone.
+	cp.selfLLM = dagql.ObjectResult[*LLM]{}
+	cp.continuation = dagql.ObjectResult[*LLM]{}
+	cp.stateChanged = false
 	cp.mu = &sync.Mutex{}
 	return &cp
+}
+
+// Standalone returns a copy that serves tools without a driving conversation,
+// e.g. to an external MCP client (dagger mcp). LLM-typed tool arguments are
+// then unsatisfiable: a method requiring one is not offered at all, and an
+// optional one is exposed by ID like any other object argument (see
+// implicitToolArgs).
+func (m *MCP) Standalone() *MCP {
+	m = m.Clone()
+	m.standalone = true
+	return m
+}
+
+// SetSelfLLM records the conversation dispatching this step's tool calls, so
+// the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
+// by step() on its transient MCP clone before each CallBatch: first with the
+// response itself, then — before the continuation phase — with the turn's
+// workspace and binding changes folded in, so a continuation transforms the
+// state the turn actually produced. The conversation is in sync with this MCP
+// at that point by construction, so the divergence flag resets.
+func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.selfLLM = llm
+	m.stateChanged = false
+}
+
+// errContinuationAdopted is returned by the state rings (applyChangeset,
+// rebindWorkspace, rebindBoundTool) once a continuation has been adopted this
+// turn: step() resumes from the continuation, so a change made after it would
+// be dropped without a trace. Continuations normally run last (see
+// SplitContinuationCalls), so this only fires when one was reached some other
+// way, e.g. wrapped in the Timeout builtin.
+var errContinuationAdopted = errors.New("a conversation-replacing tool call already ran this turn; re-issue this call in the next turn so it applies to the continued conversation")
+
+// guardStateChange is called by the state rings before they mutate this MCP.
+func (m *MCP) guardStateChange() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.continuation.Self() != nil {
+		return errContinuationAdopted
+	}
+	return nil
+}
+
+// markStateChanged is called by the state rings after they mutate this MCP.
+func (m *MCP) markStateChanged() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stateChanged = true
+}
+
+// SplitContinuationCalls partitions a turn's tool calls into the ones to run
+// first and the continuations (ReturnsLLM tools) that step() runs afterwards,
+// in a second CallBatch, once every other call's effect on the workspace and
+// bindings has been folded into the conversation they receive. A continuation
+// is the turn's outermost transform — "replace the conversation" — so it takes
+// everything else that happened as input: `[editModule, reload]` reloads the
+// edit, whichever phase editModule itself ran in. Calls to unknown tools stay
+// in the first batch so they fail there normally.
+func (m *MCP) SplitContinuationCalls(tools []LLMTool, toolCalls []*LLMToolCall) (regular, continuations []*LLMToolCall) {
+	for _, toolCall := range toolCalls {
+		tool, err := m.LookupTool(toolCall.Name, tools)
+		if err == nil && tool.ReturnsLLM {
+			continuations = append(continuations, toolCall)
+			continue
+		}
+		regular = append(regular, toolCall)
+	}
+	return regular, continuations
+}
+
+// Continuation returns the LLM a tool returned during this step, if any. step()
+// resumes from it instead of the LLM that made the call.
+func (m *MCP) Continuation() dagql.ObjectResult[*LLM] {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.continuation
+}
+
+// currentLLM returns the conversation dispatching this step's tool calls.
+func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.selfLLM
 }
 
 func (m *MCP) Returned() bool {
@@ -162,12 +280,12 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-// Server returns the GraphQL schema the LLM sees — the schema its Dang scripts
-// evaluate against and the schema tools introspect. When the LLM is bound to a
-// Workspace (via LLM.withWorkspace), the schema derives from THAT workspace's
-// served modules, so the model sees exactly what the Dagger CLI would serve for
-// its own workspace, not the outer client's. Absent a binding it falls back to
-// the env's served deps.
+// Server returns the stable GraphQL schema used for core builtins and tool
+// dispatch. When the LLM is bound to a Workspace (via LLM.withWorkspace), it
+// uses that workspace's served snapshot but deliberately does not compile
+// pending overlay module edits. Bound object tools use the defining schemas
+// captured at composition; explicit recomposition is what adopts an overlay.
+// Without a workspace binding it falls back to the current client's served deps.
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 	if m.workspace.Self() != nil {
 		return WorkspaceServedSchema(ctx, m.workspace)
@@ -393,7 +511,7 @@ type changesetCapture struct {
 }
 
 // applyStateReturn implements the state-mutation convention shared by tool calls
-// and Dang eval results. Two kinds of value advance the agent's workspace:
+// and Dang eval results. Three kinds of value advance the agent's state:
 //
 //   - a Changeset overlays onto the bound workspace (via Workspace.withChanges,
 //     yielding a new immutable overlay Workspace) so the agent's edits accumulate
@@ -401,12 +519,20 @@ type changesetCapture struct {
 //   - a Workspace *replaces* the bound one — a tool that produces a whole new
 //     workspace (e.g. a checkout or install) makes it the agent's current
 //     workspace, mirroring the Changeset convention.
+//   - an LLM *replaces the conversation*: the tool acts as a continuation and
+//     the loop resumes from the returned LLM — its env, tools, system prompts
+//     and history — instead of the one that made the call. Since an LLM binds a
+//     workspace, this subsumes the Workspace case. See adoptLLM.
 //
-// Either way it summarizes the resulting patch. step() persists the new workspace
-// via a withWorkspace selector so the change survives history rebuilds. It reports
-// handled=false for any other value so the caller can fall through to normal
-// object/scalar output.
+// Either way it summarizes what changed. step() persists a new workspace via a
+// withWorkspace selector, or resumes from the continuation, so the change
+// survives history rebuilds. It reports handled=false for any other value so the
+// caller can fall through to normal object/scalar output.
 func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql.Typed) (handled bool, out string, err error) {
+	if next, ok := dagql.UnwrapAs[dagql.ObjectResult[*LLM]](val); ok {
+		out, err := m.adoptLLM(ctx, srv, next)
+		return true, out, err
+	}
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
 		if capture, ok := ctx.Value(changesetCaptureKey{}).(*changesetCapture); ok {
 			capture.changes = changes
@@ -429,13 +555,23 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 // summarizes the diff from the previous workspace so the model sees what the tool
 // changed, reusing the Changeset patch summary.
 func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (string, error) {
+	if err := m.guardStateChange(); err != nil {
+		return "", err
+	}
 	prev := m.workspace
 	m.workspace = ws
+	m.markStateChanged()
 	if prev.Self() == nil {
 		// No prior workspace to diff against (e.g. the LLM was unbound); just adopt
 		// it without a patch summary.
 		return "Set the current workspace.", nil
 	}
+	return m.summarizeWorkspaceChange(ctx, srv, prev, ws)
+}
+
+// summarizeWorkspaceChange renders the patch from one workspace's root to
+// another's, so the model sees what a workspace swap changed.
+func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
 	before, err := workspaceRoot(ctx, srv, prev)
 	if err != nil {
 		return "", err
@@ -461,11 +597,237 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 	return m.summarizePatch(ctx, srv, changes), nil
 }
 
+// adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
+// from — the continuation ring of the state-return convention. The object-tool
+// adapter passes the current conversation directly to the tool's hidden `LLM!`
+// argument; the tool transforms it and returns the result. step() then appends
+// this turn's tool results to the RETURNED LLM instead of the one that made the
+// call, so the swap takes effect mid-turn without restarting the session.
+//
+// ANY LLM may be adopted — there is no lineage gate. This mirrors
+// rebindWorkspace, the sibling ring of the same convention: a tool may return
+// any workspace at all, and what makes that safe is not prevention but
+// VISIBILITY (a patch summary the model reads). Continuations are written by
+// the env's author, so refusing a "suspicious" history protects nobody, while
+// a lineage rule would block the uses this exists for: self-compaction,
+// summarize-and-restart, handing a sub-agent's conversation back.
+//
+// What remains:
+//
+//   - eager validation: the returned LLM's env/tools are loaded HERE rather
+//     than lazily on the next turn, so e.g. installing a module that fails to
+//     load fails the tool call instead of bricking the loop. A failure here is
+//     an ordinary failed tool call: the agent survives, the old conversation
+//     stands.
+//   - one per turn: LLMs do not merge the way Changesets do, so at most one
+//     continuation may be adopted per batch of tool calls.
+//   - visibility: the string returned here is the model's notice of what
+//     changed — which tools came and went, and whether the conversation
+//     history itself was replaced. A swap is never silent.
+//
+// Two mechanical details the caller handles rather than this function:
+//
+//   - ordering: step() runs continuations after every other call in the turn
+//     (SplitContinuationCalls), with the turn's workspace and binding changes
+//     already folded into the conversation they receive, so a continuation
+//     transforms what the turn produced. If one is reached out of order (e.g.
+//     wrapped in the Timeout builtin) the stateChanged check below refuses it
+//     rather than let it drop earlier work, and errContinuationAdopted refuses
+//     later work rather than let the continuation drop it.
+//   - tool results: step() appends the turn's tool results to the adopted LLM,
+//     and a tool-result block is only valid where the matching tool call exists
+//     in the history. See toolResultSelectors in llm.go, which degrades an
+//     orphaned result to a plain user message.
+func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.ObjectResult[*LLM]) (string, error) {
+	if next.Self() == nil {
+		return "", fmt.Errorf("cannot continue from a null LLM")
+	}
+	current := m.currentLLM()
+	if current.Self() == nil {
+		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
+	}
+
+	// Load the new toolset now, so a broken env fails the tool call rather than
+	// the next turn. Doubles as the material for the summary below.
+	after, err := next.Self().mcp.Tools(ctx)
+	if err != nil {
+		return "", fmt.Errorf("returned LLM's tools failed to load: %w", err)
+	}
+	before, err := current.Self().mcp.Tools(ctx)
+	if err != nil {
+		// Non-fatal: without the old toolset we just can't diff it.
+		slog.Warn("failed to load current LLM tools for continuation summary", "error", err)
+		before = nil
+	}
+
+	// Computed before taking the lock: it evaluates dagql calls.
+	wsNote := m.summarizeContinuationWorkspace(ctx, srv, current.Self(), next.Self())
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.continuation.Self() != nil {
+		return "", fmt.Errorf("a conversation-replacing tool call already ran this turn; only one is allowed")
+	}
+	if m.stateChanged {
+		return "", fmt.Errorf("another state-changing tool call already ran this turn, and the conversation handed to this call does not reflect it; call the conversation-replacing tool in a turn of its own")
+	}
+	m.continuation = next
+	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
+	if wsNote != "" {
+		summary += "\n" + wsNote
+	}
+	return summary, nil
+}
+
+// summarizeContinuationWorkspace reports how the continuation's bound
+// workspace differs from the one the tool was handed, as the patch summary
+// rebindWorkspace gives for a workspace swap: a continuation derived from its
+// input (a reload, or the input plus a marker file) shows just the delta, and
+// one bound to an unrelated workspace shows everything the turn loses by
+// adopting it. Empty when the workspace is unchanged or either side has none.
+func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Server, current, next *LLM) string {
+	if current == nil || next == nil || current.mcp == nil || next.mcp == nil {
+		return ""
+	}
+	prev, ws := current.mcp.workspace, next.mcp.workspace
+	if prev.Self() == nil || ws.Self() == nil {
+		return ""
+	}
+	prevID, err := prev.ID()
+	if err != nil {
+		return ""
+	}
+	wsID, err := ws.ID()
+	if err != nil {
+		return ""
+	}
+	if stableIDDigest(prevID) == stableIDDigest(wsID) {
+		return ""
+	}
+	summary, err := m.summarizeWorkspaceChange(ctx, srv, prev, ws)
+	if err != nil {
+		slog.Warn("failed to summarize continuation workspace change", "error", err)
+		return "Workspace changed."
+	}
+	return "Workspace changed:\n" + summary
+}
+
+// historyPreserved reports whether next's message history still contains
+// current's, unchanged, as a prefix — i.e. the conversation was transformed
+// (install/reload) rather than replaced.
+//
+// This is NOT a gate: it is an input to the adoption summary, so the model is
+// told when its history changed shape. Comparing histories by VALUE rather
+// than chasing the dagql ID chain is deliberate: a Result's ID is an opaque
+// runtime handle, and an LLM is usually transformed by being PASSED to
+// something (`agents.compose(base: llm)`) rather than received by it, so ID
+// ancestry is both awkward to compute and easy to get wrong.
+func historyPreserved(current, next *LLM) bool {
+	if current == nil || next == nil {
+		return false
+	}
+	if len(next.Messages) < len(current.Messages) {
+		return false
+	}
+	for i, msg := range current.Messages {
+		if !messagesEqual(msg, next.Messages[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func messagesEqual(a, b *LLMMessage) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Role != b.Role || len(a.Content) != len(b.Content) {
+		return false
+	}
+	for i, blockA := range a.Content {
+		blockB := b.Content[i]
+		if blockA == blockB {
+			continue
+		}
+		if blockA == nil || blockB == nil {
+			return false
+		}
+		if blockA.Kind != blockB.Kind ||
+			blockA.Text != blockB.Text ||
+			blockA.CallID != blockB.CallID ||
+			blockA.ToolName != blockB.ToolName ||
+			string(blockA.Arguments) != string(blockB.Arguments) ||
+			blockA.Errored != blockB.Errored ||
+			blockA.Signature != blockB.Signature {
+			return false
+		}
+	}
+	return true
+}
+
+// summarizeContinuation is the model's notice of what a continuation changed:
+// the toolset diff, plus a line about the conversation history when it was
+// replaced rather than extended. When the history is preserved — the common
+// install/reload case — it says nothing extra.
+func summarizeContinuation(current, next *LLM, before, after []LLMTool) string {
+	summary := summarizeToolsetChange(before, after)
+	if current == nil || next == nil || historyPreserved(current, next) {
+		return summary
+	}
+	return summary + "\n" + fmt.Sprintf(
+		"Conversation history replaced: %d messages -> %d messages.",
+		len(current.Messages), len(next.Messages))
+}
+
+// summarizeToolsetChange reports how a continuation changed the agent's
+// toolset — the thing the model most needs to know after an install/reload.
+func summarizeToolsetChange(before, after []LLMTool) string {
+	beforeNames := make(map[string]bool, len(before))
+	for _, t := range before {
+		beforeNames[t.Name] = true
+	}
+	afterNames := make(map[string]bool, len(after))
+	for _, t := range after {
+		afterNames[t.Name] = true
+	}
+	var added, removed []string
+	for _, t := range after {
+		if !beforeNames[t.Name] {
+			added = append(added, t.Name)
+		}
+	}
+	for _, t := range before {
+		if !afterNames[t.Name] {
+			removed = append(removed, t.Name)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+
+	lines := []string{"Continuing from the returned conversation."}
+	if len(added) > 0 {
+		lines = append(lines, "Tools added: "+strings.Join(added, ", "))
+	}
+	if len(removed) > 0 {
+		lines = append(lines, "Tools removed: "+strings.Join(removed, ", "))
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		lines = append(lines, fmt.Sprintf("Toolset unchanged (%d tools).", len(after)))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // applyChangeset overlays a Changeset onto the bound workspace and updates
 // m.workspace to the new overlay Workspace.
 func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
 	if m.workspace.Self() == nil {
 		return fmt.Errorf("cannot apply changes: no workspace bound")
+	}
+	if err := m.guardStateChange(); err != nil {
+		return err
 	}
 	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
 	if err != nil {
@@ -490,6 +852,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		return err
 	}
 	m.workspace = newWS
+	m.markStateChanged()
 	return nil
 }
 
@@ -1150,13 +1513,19 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	}
 
 	var mergeErr error
+	var conflictNote string
 	if len(changes) > 0 {
 		srv, err := m.Server(ctx)
 		if err != nil {
 			mergeErr = err
+		} else if err := m.guardStateChange(); err != nil {
+			// Checked up front so the refusal reads as what it is, rather
+			// than as a merge failure.
+			mergeErr = err
 		} else {
-			merged, err := mergeChangesets(ctx, srv, changes)
+			merged, note, err := mergeChangesets(ctx, srv, changes)
 			if err == nil {
+				conflictNote = note
 				err = m.applyChangeset(ctx, srv, merged)
 			}
 			mergeErr = err
@@ -1166,9 +1535,19 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	messages := make([]*LLMMessage, len(callResults))
 	for i, result := range callResults {
 		block := result.message.Content[0]
-		if mergeErr != nil && !result.failed && result.capture.changes.Self() != nil {
+		contributed := !result.failed && result.capture.changes.Self() != nil
+		switch {
+		case errors.Is(mergeErr, errContinuationAdopted) && contributed:
+			block.Text = mergeErr.Error()
+			block.Errored = true
+		case mergeErr != nil && contributed:
 			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
 			block.Errored = true
+		case conflictNote != "" && contributed:
+			// The changes did land, so this is not a failed tool call — but the
+			// merged result has conflict markers in it, which the agent must
+			// resolve before building on top of them.
+			block.Text += "\n\n" + conflictNote
 		}
 		endToolCallDisplay(toolCallDisplays, block.CallID, block.Errored, block.Text)
 		messages[i] = result.message
@@ -1176,11 +1555,64 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	return messages
 }
 
-func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+// mergeChangesets combines the changesets produced by a batch of parallel tool
+// calls into one.
+//
+// The fast path is git's octopus merge (Changeset.withChangesets), which is
+// efficient and gives full git merge semantics — including rename detection —
+// but it refuses to resolve any content-level conflict. Worse, "conflict" there
+// includes merely *adjacent* edits, and a single conflicting pair fails the
+// whole batch. Discarding the result would throw away every participating
+// call's work, which is the expensive part: the agents have already done their
+// reasoning, edits and verification by the time we get here.
+//
+// So on failure, fall back to folding the changesets together one at a time
+// with Changeset.withChangeset in LEAVE_CONFLICT_MARKERS mode: the same
+// three-way git merge, allowed to leave the conflicts in the tree. The work is
+// preserved and the agent gets a tree it can inspect and repair, rather than an
+// error and an empty workspace. The returned note is non-empty in that case, so
+// the caller can tell the agent to resolve the markers.
+func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], string, error) {
 	if len(changes) == 1 {
-		return changes[0], nil
+		return changes[0], "", nil
 	}
 
+	merged, mergeErr := octopusMergeChangesets(ctx, srv, changes)
+	if mergeErr == nil {
+		return merged, "", nil
+	}
+
+	merged, err := markerMergeChangesets(ctx, srv, changes)
+	if err != nil {
+		// Preserving the work didn't pan out either; report the original merge
+		// failure, with the fallback's own failure as context.
+		return dagql.ObjectResult[*Changeset]{}, "", errors.Join(mergeErr, err)
+	}
+	return merged, conflictMarkerNote(mergeErr), nil
+}
+
+// conflictMarkerNote tells the agent what happened to its changes when the
+// clean merge failed. The underlying git error names the conflicting paths
+// (e.g. "CONFLICT (content): Merge conflict in foo.go"), which is the most
+// useful part, so it is quoted verbatim. The rules it states are git's own for
+// a merge left unresolved, as Changeset.withChangeset's LEAVE_CONFLICT_MARKERS
+// applies them: overlapping edits and files added on both sides get markers, a
+// file modified on one side and deleted on the other keeps the modified
+// version, and a binary file keeps the earlier call's version.
+func conflictMarkerNote(mergeErr error) string {
+	return fmt.Sprintf(`NOTE: parallel edits from this batch overlapped, so they could not be merged cleanly.
+Rather than discarding them, they were merged with git-style conflict markers
+(<<<<<<< / ======= / >>>>>>>) left wherever edits overlap, including a file added
+by more than one call. A file modified by one call and deleted by another keeps
+the modified version; a binary file changed by more than one call keeps the
+earlier call's version.
+Search the workspace for conflict markers and resolve them before building on these changes.
+
+The merge reported:
+%s`, mergeErr)
+}
+
+func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
 	otherIDs := make(dagql.ArrayInput[dagql.ID[*Changeset]], len(changes)-1)
 	for i, changeset := range changes[1:] {
 		id, err := changeset.ID()
@@ -1199,6 +1631,41 @@ func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.Obj
 		},
 	}); err != nil {
 		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	return merged, nil
+}
+
+// markerMergeChangesets folds the changesets into one with successive
+// Changeset.withChangeset merges in LEAVE_CONFLICT_MARKERS mode. It is the
+// conflict-preserving fallback for octopusMergeChangesets: the same three-way
+// git merge, run pairwise because the octopus strategy cannot leave a merge
+// unresolved, so every kind of conflict gets git's own treatment — markers for
+// overlapping edits and for a file added on both sides, the modified version
+// for a modify/delete pair — instead of the hunk-level best effort of a patch
+// replay, which can only mark what git apply rejects and skips a file it
+// cannot patch at all.
+//
+// Merging through the withChangeset field rather than the raw Go method keeps
+// the result an attached dagql result, which applyChangeset needs.
+func markerMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	merged := changes[0]
+	for i, changeset := range changes[1:] {
+		id, err := changeset.ID()
+		if err != nil {
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
+		}
+		var next dagql.ObjectResult[*Changeset]
+		if err := srv.Select(ctx, merged, &next, dagql.Selector{
+			View:  srv.View,
+			Field: "withChangeset",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](id)},
+				{Name: "onConflict", Value: LeaveConflictMarkersOnMergeConflict},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("merge changeset %d with conflict markers: %w", i+1, err)
+		}
+		merged = next
 	}
 	return merged, nil
 }
@@ -1731,8 +2198,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
-		Strict: false,
-		Call:   m.readLogsTool(srv),
+		Call: m.readLogsTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
@@ -1760,8 +2226,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Strict: false,
-		Call:   m.readTraceTool(srv),
+		Call: m.readTraceTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -1776,9 +2241,88 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Strict: false,
-		Call:   m.listServicesTool(srv),
+		Call: m.listServicesTool(srv),
 	})
+	allTools.Add(LLMTool{
+		Name:        "Timeout",
+		Description: "Run one currently exposed tool with a timeout.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"duration": map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "Name of the currently exposed tool to invoke.",
+				},
+				"arguments": map[string]any{
+					"type":                 "object",
+					"description":          "Arguments to pass to the nested tool.",
+					"additionalProperties": true,
+				},
+			},
+			"required":             []string{"duration", "tool", "arguments"},
+			"additionalProperties": false,
+		},
+		Call: m.timeoutTool(allTools),
+	})
+}
+
+// timeoutTool runs one of the currently exposed tools under a deadline. The
+// nested call is dispatched the way the loop dispatches every tool call, so it
+// shows up in the trace as a tool call of its own beneath the Timeout call.
+func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
+	return func(ctx context.Context, rawArgs any) (any, error) {
+		args, ok := rawArgs.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid arguments: %T", rawArgs)
+		}
+		durationArg, ok := args["duration"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid duration: expected string")
+		}
+		duration, err := time.ParseDuration(durationArg)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout duration %q: %w", durationArg, err)
+		}
+		toolName, ok := args["tool"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid tool: expected string")
+		}
+		toolArgs, ok := args["arguments"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid nested tool arguments: expected object")
+		}
+		if _, err := m.LookupTool(toolName, allTools.Order); err != nil {
+			return nil, err
+		}
+		encodedArgs, err := json.Marshal(toolArgs)
+		if err != nil {
+			return nil, fmt.Errorf("encode nested tool arguments: %w", err)
+		}
+		ctx, cancel := context.WithTimeout(ctx, duration)
+		defer cancel()
+
+		// Run the nested call as the loop runs every tool call: under a
+		// tool-call display span of its own, so the trace shows it as the
+		// tool call it is with its arguments and logs rolled up beneath it,
+		// and through MCP.Call, for the tool attributes, workspace binding and
+		// result bounding that path applies.
+		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
+		displays := newDisplayPhases(ctx, "")
+		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
+		res, failed := m.Call(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
+		endToolCallDisplay(displays.toolCalls, call.CallID, failed, res)
+		if failed {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
+			}
+			return nil, errors.New(res)
+		}
+		return res, nil
+	}
 }
 
 func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {

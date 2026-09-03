@@ -1533,22 +1533,22 @@ func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 	return llm
 }
 
-// WithTools binds an object so every eligible method becomes a tool
-// (hack/designs/workspace-agents.md). A tool that returns the bound object's own type rebinds
-// it as the new agent state; except lists method names to exclude (e.g. the
-// module's own entrypoint).
-func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
+// WithTools binds an object so every eligible method from definingSchema becomes
+// a tool (hack/designs/workspace-agents.md). A tool that returns the bound object's
+// own type rebinds it as the new agent state; except lists method names to exclude
+// (e.g. the module's own entrypoint).
+func (llm *LLM) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithTools(obj, except)
+	llm.mcp = llm.mcp.WithTools(obj, definingSchema, except)
 	return llm
 }
 
 // WithLazyTools binds an object's methods as tools from its unevaluated ID,
-// without loading it — the object is loaded only when a tool is invoked on it.
+// preserving the schema that defined its type without loading the object.
 // See MCP.WithLazyTools.
-func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *LLM {
+func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithLazyTools(id, objType, except)
+	llm.mcp = llm.mcp.WithLazyTools(id, objType, definingSchema, except)
 	return llm
 }
 
@@ -1700,7 +1700,6 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	if err != nil {
 		return inst, err
 	}
-	sels := []dagql.Selector{responseSel}
 	// Extract tool calls from response content blocks for the MCP layer.
 	var toolCalls []*LLMToolCall
 	for _, block := range res.Content {
@@ -1712,13 +1711,147 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			})
 		}
 	}
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
+
+	// Tool-call display spans are ended by CallBatch as each tool returns. End
+	// the remaining (text/thinking) spans once the turn's results have been
+	// applied, so they close in the order they streamed.
+	endedByCallBatch := make(map[trace.Span]bool, len(res.ToolCallDisplays))
+	for _, tc := range res.ToolCallDisplays {
+		endedByCallBatch[tc.Span] = true
+	}
+	endRemainingDisplaySpans := func() {
+		for _, s := range res.DisplaySpans {
+			if !endedByCallBatch[s] {
+				s.End()
+			}
+		}
+	}
+
+	// Materialize the assistant response BEFORE dispatching the tool calls, so
+	// the object-tool adapter can pass the conversation up to and including its
+	// own call directly to hidden LLM arguments. This is the same chain a
+	// single multi-selector Select would build; only the timing differs.
+	var responded dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, inst, &responded, responseSel); err != nil {
+		for _, s := range res.DisplaySpans {
+			s.End()
+		}
+		return inst, err
+	}
+	llm.mcp.SetSelfLLM(responded)
+
+	// Continuations — tools returning an LLM — run in a second batch after
+	// every other call, so the conversation they receive already carries the
+	// turn's workspace and binding changes: `[editModule, reload]` reloads the
+	// edit. See MCP.SplitContinuationCalls.
+	regularCalls, continuationCalls := llm.mcp.SplitContinuationCalls(tools, toolCalls)
+	resultMsgs := llm.mcp.CallBatch(ctx, tools, regularCalls, res.ToolCallDisplays)
+
+	// In-step state changes — a Changeset overlaid onto the bound workspace, a
+	// Workspace returned, an object rebound as the new state — live only on this
+	// step's transient MCP clone. They must be re-recorded onto the materialized
+	// state as withWorkspace/withTools selectors, or later steps rebuild history
+	// from the stale bindings and silently revert them.
+	stateSels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
+
+	base := responded
+	if len(continuationCalls) > 0 {
+		if len(stateSels) > 0 {
+			// Fold the turn's state into the conversation the continuations
+			// receive, so they transform what the turn produced rather than
+			// what it started from. Materialized here instead of at the end,
+			// the way the response itself was above.
+			var withState dagql.ObjectResult[*LLM]
+			if err := srv.Select(ctx, responded, &withState, stateSels...); err != nil {
+				for _, tc := range continuationCalls {
+					endToolCallDisplay(res.ToolCallDisplays, tc.CallID, true, err.Error())
+				}
+				endRemainingDisplaySpans()
+				return inst, err
+			}
+			base = withState
+			stateSels = nil
+		}
+		llm.mcp.SetSelfLLM(base)
+		resultMsgs = append(resultMsgs, llm.mcp.CallBatch(ctx, tools, continuationCalls, res.ToolCallDisplays)...)
+	}
+
+	// A tool may have returned an LLM: it acted as a continuation, and the turn
+	// resumes from THAT conversation — its env, tools, system prompts and
+	// history — instead of the one that made the call (see MCP.adoptLLM). Its ID
+	// records the transform, so replay lands on it. The turn's state changes
+	// were folded into the conversation it derived from above, and adoptLLM
+	// refuses a continuation that would drop any, so nothing remains to persist
+	// on top of it.
+	if cont := llm.mcp.Continuation(); cont.Self() != nil {
+		base = cont
+	}
+
+	toolNames := make(map[string]string, len(toolCalls))
+	for _, tc := range toolCalls {
+		toolNames[tc.CallID] = tc.Name
+	}
+	sels := toolResultSelectors(base.Self(), resultMsgs, toolNames)
+	sels = append(sels, stateSels...)
+
+	var stepped dagql.ObjectResult[*LLM]
+	if len(sels) == 0 {
+		// Nothing left to record: base is already materialized, whether it is
+		// the bare response (no tool calls this turn) or a continuation.
+		endRemainingDisplaySpans()
+		return base, nil
+	}
+	if err := srv.Select(ctx, base, &stepped, sels...); err != nil {
+		endRemainingDisplaySpans()
+		return inst, err
+	}
+	endRemainingDisplaySpans()
+
+	return stepped, nil
+}
+
+// toolResultSelectors builds the selectors that append this turn's tool results
+// to `target` — normally the LLM that made the calls, but after a continuation
+// (MCP.adoptLLM) an arbitrary conversation the tool handed back.
+//
+// Providers require every tool_result to directly follow the matching
+// tool_use, keyed by call ID: the call must be in the last assistant message,
+// and nothing may already answer it. An adopted conversation need not satisfy
+// that — a self-compaction or summarize-and-restart continuation drops the call
+// altogether, and one that ran further turns of its own (a sub-agent's
+// conversation handed back) has moved past it — so appending the result as a
+// tool-result block there would produce a protocol-invalid history, which the
+// provider rejects on every later step. Such a result is instead appended as a
+// plain user message carrying the same information, so nothing is lost and the
+// history stays valid. Where the call IS still the pending one (the
+// install/reload case, which preserves history) results append normally.
+func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]string) []dagql.Selector {
+	var sels []dagql.Selector
+	for _, msg := range msgs {
+		callID := msg.ToolResultCallID()
+		if target != nil && !toolResultAttachable(target.Messages, callID) {
+			name := toolNames[callID]
+			if name == "" {
+				name = callID
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withPrompt",
+				Args: []dagql.NamedInput{
+					{
+						Name: "prompt",
+						Value: dagql.NewString(fmt.Sprintf("[continued via tool %s]\n%s",
+							name, msg.ToolResultContent())),
+					},
+				},
+			})
+			continue
+		}
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResult",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "callId",
-					Value: dagql.NewString(msg.ToolResultCallID()),
+					Value: dagql.NewString(callID),
 				},
 				{
 					Name:  "content",
@@ -1731,13 +1864,25 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			},
 		})
 	}
+	return sels
+}
 
-	// Persist an in-step workspace change (e.g. a tool returned a Changeset that
-	// was overlaid onto the bound workspace) so the edit survives the LLM history
-	// rebuild — a rebuild otherwise re-binds the original workspace (via NewLLM or
-	// the last recorded withWorkspace) and loses the overlay. Handle-safe compare
-	// (post-eval IDs are handle-form).
-	if wsAfter, err := llm.mcp.WorkspaceID(); err == nil && wsAfter != nil &&
+// stateDeltaSelectors builds the selectors that re-record what this step's tool
+// calls changed on the transient MCP clone, relative to the bindings captured
+// entering the step, so the change survives the LLM history rebuild:
+//
+//   - a workspace change (e.g. a tool returned a Changeset that was overlaid
+//     onto the bound workspace) as withWorkspace — a rebuild otherwise re-binds
+//     the original workspace (via NewLLM or the last recorded withWorkspace)
+//     and loses the overlay;
+//   - a state transition — a tool that returned its bound object's own type
+//     rebinds it (hack/designs/workspace-agents.md) — as a withTools selector
+//     for each binding whose object changed.
+//
+// Comparisons are handle-safe (post-eval IDs are handle-form).
+func stateDeltaSelectors(m *MCP, wsBefore *call.ID, toolsBefore []boundToolBinding) []dagql.Selector {
+	var sels []dagql.Selector
+	if wsAfter, err := m.WorkspaceID(); err == nil && wsAfter != nil &&
 		stableIDDigest(wsAfter) != stableIDDigest(wsBefore) {
 		sels = append(sels, dagql.Selector{
 			Field: "withWorkspace",
@@ -1749,12 +1894,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			},
 		})
 	}
-
-	// Persist an in-step state transition: a tool that returned its bound object's
-	// own type rebinds it (hack/designs/workspace-agents.md). Re-emit a withTools selector for
-	// each binding whose object changed, so the new state survives the history
-	// rebuild — the same shape as the withWorkspace persist above.
-	if toolsAfter, err := llm.mcp.BoundToolBindings(); err == nil {
+	if toolsAfter, err := m.BoundToolBindings(); err == nil {
 		for i, after := range toolsAfter {
 			if i < len(toolsBefore) &&
 				stableIDDigest(after.ID) == stableIDDigest(toolsBefore[i].ID) {
@@ -1775,30 +1915,50 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			})
 		}
 	}
+	return sels
+}
 
-	// Tool-call display spans were already ended by CallBatch as each tool
-	// returned. End the remaining (text/thinking) spans now that the turn's
-	// results have been applied, so they close in the order they streamed.
-	endedByCallBatch := make(map[trace.Span]bool, len(res.ToolCallDisplays))
-	for _, tc := range res.ToolCallDisplays {
-		endedByCallBatch[tc.Span] = true
+// toolResultAttachable reports whether a tool result for callID can be appended
+// to the history as a tool-result block: the call must be in the LAST assistant
+// message, and nothing after that message may already answer it. That is the
+// shape providers accept — a tool_result directly following its tool_use — so
+// merely finding the call somewhere in the history is not enough: a
+// conversation that went on to further assistant turns, or that already
+// carries a result for the call, has moved past it.
+func toolResultAttachable(msgs []*LLMMessage, callID string) bool {
+	if callID == "" {
+		return false
 	}
-	endRemainingDisplaySpans := func() {
-		for _, s := range res.DisplaySpans {
-			if !endedByCallBatch[s] {
-				s.End()
-			}
+	last := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i] != nil && msgs[i].Role == LLMMessageRoleAssistant {
+			last = i
+			break
 		}
 	}
-
-	var stepped dagql.ObjectResult[*LLM]
-	if err := srv.Select(ctx, inst, &stepped, sels...); err != nil {
-		endRemainingDisplaySpans()
-		return inst, err
+	if last < 0 || !messageHasBlock(msgs[last], LLMContentToolCall, callID) {
+		return false
 	}
-	endRemainingDisplaySpans()
+	for _, msg := range msgs[last+1:] {
+		if messageHasBlock(msg, LLMContentToolResult, callID) {
+			return false
+		}
+	}
+	return true
+}
 
-	return stepped, nil
+// messageHasBlock reports whether msg contains a content block of the given
+// kind for the given call ID.
+func messageHasBlock(msg *LLMMessage, kind LLMContentBlockKind, callID string) bool {
+	if msg == nil {
+		return false
+	}
+	for _, block := range msg.Content {
+		if block != nil && block.Kind == kind && block.CallID == callID {
+			return true
+		}
+	}
+	return false
 }
 
 // emitNewMessageSpans emits display spans for the messages appended since the

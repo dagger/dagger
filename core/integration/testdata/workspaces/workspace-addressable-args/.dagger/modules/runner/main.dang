@@ -1,0 +1,28 @@
+"""
+Tools with required object-typed args, for the address-lifting integration
+tests (hack/designs/sandboxes.md §4).
+"""
+type Runner {
+  """
+  Run a command in a sandbox container and return its stdout.
+
+  The required Container! arg is address-liftable, so this function must
+  still be exposed as a tool, with sandbox rendered as an address string:
+  the model can pass an image ref (or a Container ID from a prior tool
+  result) and the engine lifts it via Query.address at dispatch.
+  """
+  exec(cmd: [String!]!, sandbox: Container!): String! {
+    sandbox.withExec(cmd).stdout
+  }
+
+  """
+  List a directory's entries.
+
+  The required Directory! arg is NOT address-liftable (Directory addresses
+  fall back to host paths — a capability the model must not gain), so this
+  function must NOT be exposed as a tool.
+  """
+  lsDir(dir: Directory!): [String!]! {
+    dir.entries
+  }
+}

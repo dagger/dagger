@@ -36,6 +36,13 @@ func (MCPSuite) TestModuleWithoutPrivilegedExposesModuleMethods(ctx context.Cont
 	require.NotContains(t, tools, "container")
 
 	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
+
+	// There is no conversation behind a standalone server, so an LLM argument
+	// is unsatisfiable: a method that requires one is not offered, and an
+	// optional one is left unset rather than failing the call.
+	require.NotContains(t, tools, "compact")
+	require.Contains(t, tools, "annotate")
+	require.Equal(t, "no conversation", callToolText(ctx, t, cli, "annotate", map[string]any{}))
 }
 
 func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, t *testctx.T) {

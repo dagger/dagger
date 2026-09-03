@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -435,7 +436,19 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 	if ref.Call != nil {
 		resultID, err := cache.resultIDForCall(ref.Call)
 		if err != nil {
-			return nil, err
+			// The inline recipe has no attached result in the e-graph — e.g.
+			// a client-supplied recipe-form handle (rebuilt from telemetry)
+			// whose producing call's results were released. Hand back the
+			// recipe form itself: the consumer then evaluates it on use,
+			// exactly as node(id:) on the same handle would, instead of
+			// refusing an argument that is perfectly addressable. The
+			// pre-resolved ResultID is only a shortcut; the recipe is the
+			// truth.
+			recipeID, recipeErr := ref.Call.RecipeID(ctx)
+			if recipeErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("rebuild recipe ID: %w", recipeErr))
+			}
+			return recipeID, nil
 		}
 		ref = &ResultCallRef{ResultID: uint64(resultID)}
 	}

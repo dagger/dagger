@@ -1,4 +1,6 @@
-"""Tools that return a Workspace, for @agent integration tests."""
+"""
+Tools that return a Workspace, for @agent integration tests.
+"""
 type Swapper {
   """
   Return the current workspace with a marker file added.
@@ -9,6 +11,36 @@ type Swapper {
   """
   swap(ws: Workspace!): Workspace! {
     ws.withNewFile("SWAPPED.txt", "swapped by tool")
+  }
+
+  """
+  Continue the conversation with a workspace that has a marker file.
+
+  MCP passes the current LLM directly, including the tool call itself; returning
+  a derived LLM makes the tool a continuation — the agent loop
+  resumes from the returned conversation instead of the one that called it.
+  """
+  continueWithMarker(llm: LLM!): LLM! {
+    llm.withWorkspace(llm.workspace.withNewFile("CONTINUED.txt", "swapped by continuation"))
+  }
+
+  """
+  Hand back a conversation whose history has been wiped.
+
+  There is no lineage gate: any LLM may be adopted, so this IS adopted — the
+  shape of a self-compaction or summarize-and-restart continuation. The turn's
+  tool result has no matching tool call in the returned history, so it is
+  appended as a plain message instead of a (protocol-invalid) tool result.
+
+  The returned conversation is re-pointed at the model recorded in
+  continuation-model.txt: the post-adoption history no longer matches the
+  script the calling conversation was replaying (its first message is the
+  engine's "[continued via tool ...]" notice), so a replay-driven test has to
+  hand the fresh conversation the script that DOES match. The test writes that
+  file into the workspace.
+  """
+  startFresh(llm: LLM!): LLM! {
+    llm.withoutMessageHistory.withModel(llm.workspace.file("continuation-model.txt").contents)
   }
 
   addFirst(ws: Workspace!): Changeset! {
@@ -33,5 +65,43 @@ type Swapper {
     let root = ws.directory("/")
     let scaffolded = root.withNewFile("scaffold/README.md", "scaffolded")
     scaffolded.withNewDirectory("scaffold/empty-dir").changes(root)
+  }
+
+  """
+  Rewrite both lines of shared.txt one way, and add NEW.txt.
+
+  Paired with clashSecond to produce two parallel changesets that rewrite the
+  same lines and add the same new file with different content, i.e. a batch
+  that cannot merge cleanly.
+  """
+  clashFirst(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root
+      .withNewFile("shared.txt", "line1: RED\nline2: RED\n")
+      .withNewFile("NEW.txt", "red new file\n")
+      .changes(root)
+  }
+
+  """
+  Rewrite both lines of shared.txt the other way, and add NEW.txt. See
+  clashFirst.
+  """
+  clashSecond(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root
+      .withNewFile("shared.txt", "line1: BLUE\nline2: BLUE\n")
+      .withNewFile("NEW.txt", "blue new file\n")
+      .changes(root)
+  }
+
+  """
+  Delete shared.txt.
+
+  Paired with clashFirst for a modify/delete conflict: one call rewrites the
+  file, the other removes it.
+  """
+  removeShared(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withoutFile("shared.txt").changes(root)
   }
 }

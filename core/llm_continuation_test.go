@@ -1,0 +1,318 @@
+package core
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
+)
+
+func textMsg(role LLMMessageRole, text string) *LLMMessage {
+	return &LLMMessage{
+		Role:    role,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: text}},
+	}
+}
+
+func TestHistoryPreserved(t *testing.T) {
+	base := []*LLMMessage{
+		textMsg(LLMMessageRoleUser, "hello"),
+		textMsg(LLMMessageRoleAssistant, "hi"),
+	}
+
+	// historyPreserved is not a gate — nothing is rejected for failing it. It
+	// only decides whether the adoption summary tells the model its history
+	// changed shape.
+	t.Run("identical history is preserved", func(t *testing.T) {
+		require.True(t, historyPreserved(&LLM{Messages: base}, &LLM{Messages: base}))
+	})
+
+	t.Run("appended history is preserved", func(t *testing.T) {
+		next := append(append([]*LLMMessage{}, base...), textMsg(LLMMessageRoleUser, "more"))
+		require.True(t, historyPreserved(&LLM{Messages: base}, &LLM{Messages: next}))
+	})
+
+	t.Run("equal-by-value (not pointer) history is preserved", func(t *testing.T) {
+		// A history that round-tripped through the API is rebuilt from fresh
+		// structs, so the comparison must be on content, not identity.
+		rebuilt := []*LLMMessage{
+			textMsg(LLMMessageRoleUser, "hello"),
+			textMsg(LLMMessageRoleAssistant, "hi"),
+		}
+		require.True(t, historyPreserved(&LLM{Messages: base}, &LLM{Messages: rebuilt}))
+	})
+
+	t.Run("fresh conversation is not preserved", func(t *testing.T) {
+		require.False(t, historyPreserved(&LLM{Messages: base}, &LLM{}))
+	})
+
+	t.Run("truncated history is not preserved", func(t *testing.T) {
+		require.False(t, historyPreserved(&LLM{Messages: base}, &LLM{Messages: base[:1]}))
+	})
+
+	t.Run("rewritten history is not preserved", func(t *testing.T) {
+		rewritten := []*LLMMessage{
+			textMsg(LLMMessageRoleUser, "hello"),
+			textMsg(LLMMessageRoleAssistant, "something else entirely"),
+		}
+		require.False(t, historyPreserved(&LLM{Messages: base}, &LLM{Messages: rewritten}))
+	})
+
+	t.Run("empty current is preserved by anything", func(t *testing.T) {
+		require.True(t, historyPreserved(&LLM{}, &LLM{Messages: base}))
+	})
+
+	t.Run("nil is never preserved", func(t *testing.T) {
+		require.False(t, historyPreserved(nil, &LLM{Messages: base}))
+		require.False(t, historyPreserved(&LLM{Messages: base}, nil))
+	})
+}
+
+func TestMessagesEqual(t *testing.T) {
+	toolCall := func(args string) *LLMMessage {
+		return &LLMMessage{
+			Role: LLMMessageRoleAssistant,
+			Content: []*LLMContentBlock{{
+				Kind:      LLMContentToolCall,
+				CallID:    "call-1",
+				ToolName:  "install",
+				Arguments: JSON(args),
+			}},
+		}
+	}
+	require.True(t, messagesEqual(toolCall(`{"ref":"./m"}`), toolCall(`{"ref":"./m"}`)))
+	require.False(t, messagesEqual(toolCall(`{"ref":"./m"}`), toolCall(`{"ref":"./n"}`)))
+
+	// Role, block count, and every block field participate.
+	require.False(t, messagesEqual(
+		textMsg(LLMMessageRoleUser, "x"),
+		textMsg(LLMMessageRoleAssistant, "x"),
+	))
+	require.False(t, messagesEqual(
+		&LLMMessage{Role: LLMMessageRoleUser},
+		textMsg(LLMMessageRoleUser, "x"),
+	))
+	require.False(t, messagesEqual(
+		&LLMMessage{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{
+			Kind: LLMContentThinking, Text: "t", Signature: "sig-a",
+		}}},
+		&LLMMessage{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{
+			Kind: LLMContentThinking, Text: "t", Signature: "sig-b",
+		}}},
+	))
+}
+
+func TestSummarizeToolsetChange(t *testing.T) {
+	tools := func(names ...string) []LLMTool {
+		out := make([]LLMTool, len(names))
+		for i, n := range names {
+			out[i] = LLMTool{Name: n}
+		}
+		return out
+	}
+
+	t.Run("added tools are listed", func(t *testing.T) {
+		out := summarizeToolsetChange(tools("read", "write"), tools("read", "write", "zoom", "screen"))
+		require.Contains(t, out, "Continuing from the returned conversation.")
+		require.Contains(t, out, "Tools added: screen, zoom")
+		require.NotContains(t, out, "Tools removed")
+	})
+
+	t.Run("removed tools are listed", func(t *testing.T) {
+		out := summarizeToolsetChange(tools("read", "write"), tools("read"))
+		require.Contains(t, out, "Tools removed: write")
+	})
+
+	t.Run("unchanged toolset reports its size", func(t *testing.T) {
+		out := summarizeToolsetChange(tools("read", "write"), tools("write", "read"))
+		require.Contains(t, out, "Toolset unchanged (2 tools).")
+	})
+
+	t.Run("unknown previous toolset reports everything as added", func(t *testing.T) {
+		out := summarizeToolsetChange(nil, tools("read"))
+		require.Contains(t, out, "Tools added: read")
+	})
+}
+
+func TestSummarizeContinuation(t *testing.T) {
+	tools := []LLMTool{{Name: "read"}}
+	base := []*LLMMessage{
+		textMsg(LLMMessageRoleUser, "hello"),
+		textMsg(LLMMessageRoleAssistant, "hi"),
+	}
+
+	t.Run("preserved history says nothing extra", func(t *testing.T) {
+		next := append(append([]*LLMMessage{}, base...), textMsg(LLMMessageRoleUser, "more"))
+		out := summarizeContinuation(&LLM{Messages: base}, &LLM{Messages: next}, tools, tools)
+		require.NotContains(t, out, "Conversation history replaced")
+	})
+
+	t.Run("replaced history is reported", func(t *testing.T) {
+		out := summarizeContinuation(
+			&LLM{Messages: base},
+			&LLM{Messages: []*LLMMessage{textMsg(LLMMessageRoleUser, "summary so far")}},
+			tools, tools,
+		)
+		require.Contains(t, out, "Conversation history replaced: 2 messages -> 1 messages.")
+		// The toolset diff is still there: the two notices compose.
+		require.Contains(t, out, "Toolset unchanged (1 tools).")
+	})
+}
+
+func TestToolResultSelectors(t *testing.T) {
+	toolCallMsg := func(callID, name string) *LLMMessage {
+		return &LLMMessage{
+			Role: LLMMessageRoleAssistant,
+			Content: []*LLMContentBlock{{
+				Kind:     LLMContentToolCall,
+				CallID:   callID,
+				ToolName: name,
+			}},
+		}
+	}
+	resultMsg := func(callID, text string) *LLMMessage {
+		return &LLMMessage{
+			Role: LLMMessageRoleUser,
+			Content: []*LLMContentBlock{{
+				Kind:   LLMContentToolResult,
+				CallID: callID,
+				Text:   text,
+			}},
+		}
+	}
+	names := map[string]string{"call-1": "reload"}
+
+	t.Run("result whose call is in the adopted history appends normally", func(t *testing.T) {
+		target := &LLM{Messages: []*LLMMessage{toolCallMsg("call-1", "reload")}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withToolResult", sels[0].Field)
+		require.Equal(t, dagql.NewString("call-1"), sels[0].Args[0].Value)
+	})
+
+	t.Run("result for a call in an earlier assistant turn degrades to a user message", func(t *testing.T) {
+		// The adopted conversation went on past the call — a sub-agent's
+		// conversation handed back after further turns of its own. A
+		// tool_result there would not directly follow its tool_use, which
+		// providers reject on the next step.
+		target := &LLM{Messages: []*LLMMessage{
+			toolCallMsg("call-1", "reload"),
+			textMsg(LLMMessageRoleAssistant, "carried on"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+		require.Equal(t, dagql.NewString("[continued via tool reload]\nok"), sels[0].Args[0].Value)
+	})
+
+	t.Run("result for a call already answered degrades to a user message", func(t *testing.T) {
+		// The continuation answered the call itself; a second tool_result for
+		// the same ID is as invalid as an orphaned one.
+		target := &LLM{Messages: []*LLMMessage{
+			toolCallMsg("call-1", "reload"),
+			resultMsg("call-1", "answered by the continuation"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+	})
+
+	t.Run("sibling results already appended do not orphan the call", func(t *testing.T) {
+		// Results for OTHER calls of the same turn sit between the tool_use and
+		// this result; the call is still the pending one.
+		target := &LLM{Messages: []*LLMMessage{
+			{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+				{Kind: LLMContentToolCall, CallID: "call-1", ToolName: "reload"},
+				{Kind: LLMContentToolCall, CallID: "call-2", ToolName: "read"},
+			}},
+			resultMsg("call-2", "read ok"),
+		}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withToolResult", sels[0].Field)
+	})
+
+	t.Run("orphaned result degrades to a user message", func(t *testing.T) {
+		// The adopted conversation dropped the call (self-compaction,
+		// summarize-and-restart): a tool_result block with no matching tool_use
+		// would be protocol-invalid, so the information is carried as prose.
+		target := &LLM{Messages: []*LLMMessage{textMsg(LLMMessageRoleUser, "summary so far")}}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+		require.Equal(t, "prompt", sels[0].Args[0].Name)
+		require.Equal(t, dagql.NewString("[continued via tool reload]\nok"), sels[0].Args[0].Value)
+	})
+
+	t.Run("unknown tool name falls back to the call ID", func(t *testing.T) {
+		target := &LLM{}
+		sels := toolResultSelectors(target, []*LLMMessage{resultMsg("call-9", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withPrompt", sels[0].Field)
+		require.Equal(t, dagql.NewString("[continued via tool call-9]\nok"), sels[0].Args[0].Value)
+	})
+
+	t.Run("a nil target keeps tool results as tool results", func(t *testing.T) {
+		sels := toolResultSelectors(nil, []*LLMMessage{resultMsg("call-1", "ok")}, names)
+		require.Len(t, sels, 1)
+		require.Equal(t, "withToolResult", sels[0].Field)
+	})
+}
+
+func TestSplitContinuationCalls(t *testing.T) {
+	tools := []LLMTool{
+		{Name: "reload", ReturnsLLM: true},
+		{Name: "edit", ReturnsChangeset: true},
+		{Name: "read", ReadOnly: true},
+	}
+	calls := []*LLMToolCall{
+		{CallID: "c1", Name: "reload"},
+		{CallID: "c2", Name: "edit"},
+		{CallID: "c3", Name: "missing"},
+		{CallID: "c4", Name: "read"},
+	}
+	regular, continuations := newMCP().SplitContinuationCalls(tools, calls)
+
+	// Continuations are pulled out regardless of the order the model emitted
+	// them; everything else — including a call to an unknown tool, which must
+	// still fail through the normal path — keeps its relative order.
+	require.Equal(t, []*LLMToolCall{calls[0]}, continuations)
+	require.Equal(t, []*LLMToolCall{calls[1], calls[2], calls[3]}, regular)
+}
+
+func TestStateRingsAndContinuationsAreExclusiveOutOfOrder(t *testing.T) {
+	// Continuations normally run last (SplitContinuationCalls), with the turn's
+	// state folded into the conversation they receive. These guards cover a
+	// continuation reached out of order — e.g. through the Timeout builtin —
+	// where whichever side runs second would otherwise be silently dropped.
+
+	t.Run("state rings refuse after a continuation", func(t *testing.T) {
+		m := newMCP()
+		require.NoError(t, m.guardStateChange())
+		require.NoError(t, m.rebindBoundTool("Doug", nil))
+
+		srv := newCoreDagqlServerForTest(t, &Query{})
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*LLM]{Typed: &LLM{}}))
+		cont, err := dagql.NewObjectResultForCall(&LLM{}, srv, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "continuation",
+			Type:        dagql.NewResultCallType((&LLM{}).Type()),
+		})
+		require.NoError(t, err)
+		m.continuation = cont
+		require.ErrorIs(t, m.guardStateChange(), errContinuationAdopted)
+		require.ErrorIs(t, m.rebindBoundTool("Doug", nil), errContinuationAdopted)
+	})
+
+	t.Run("SetSelfLLM resets the divergence flag", func(t *testing.T) {
+		m := newMCP()
+		require.False(t, m.stateChanged)
+		m.markStateChanged()
+		require.True(t, m.stateChanged)
+		// step() folds the change into the conversation it hands to the
+		// continuation phase, so the flag clears with it.
+		m.SetSelfLLM(dagql.ObjectResult[*LLM]{})
+		require.False(t, m.stateChanged)
+	})
+}

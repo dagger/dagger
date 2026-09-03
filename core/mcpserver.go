@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
-	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -16,95 +15,12 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
-// mcpDefaultAny lets us skip the typed defaults
-func mcpDefaultAny(v any) mcp.PropertyOption {
-	return func(schema map[string]any) {
-		schema["default"] = v
+func genMcpTool(tool LLMTool) (mcp.Tool, error) {
+	schema, err := json.Marshal(tool.Schema)
+	if err != nil {
+		return mcp.Tool{}, fmt.Errorf("marshal schema for tool %q: %w", tool.Name, err)
 	}
-}
-
-func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
-	toolOpts := []mcp.ToolOption{
-		mcp.WithDescription(tool.Description),
-	}
-	var required []string
-	if v, ok := tool.Schema["required"]; ok {
-		required, ok = v.([]string)
-		if !ok {
-			return nil, fmt.Errorf("expecting type []string for \"required\" for tool %q", tool.Name)
-		}
-	}
-	props, ok := tool.Schema["properties"]
-	if !ok {
-		return nil, fmt.Errorf("schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
-	}
-	for argName, v := range props.(map[string]any) {
-		var propOpts []mcp.PropertyOption
-		argSchema := v.(map[string]any)
-		if desc, ok := argSchema["description"]; ok {
-			s, ok := desc.(string)
-			if !ok {
-				return nil, fmt.Errorf("description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
-			}
-			propOpts = append(propOpts, mcp.Description(s))
-		}
-		var typ string
-		var strictNullable bool
-		if v, ok := argSchema["type"]; !ok {
-			return nil, fmt.Errorf("schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
-		} else {
-			switch x := v.(type) {
-			case string:
-				typ = x
-			case []string:
-				typ = x[0]
-				if len(x) < 2 {
-					return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string with at least two elements, got %T", argName, tool.Name, v)
-				}
-				if x[1] == "null" {
-					strictNullable = true
-				} else {
-					return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string with \"null\" as the second element, got %T", argName, tool.Name, v)
-				}
-			default:
-				return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string, got %T", argName, tool.Name, v)
-			}
-		}
-
-		if v, ok := argSchema["default"]; ok {
-			propOpts = append(propOpts, mcpDefaultAny(v))
-		}
-		if slices.Contains(required, argName) && !strictNullable {
-			propOpts = append(propOpts, mcp.Required())
-		}
-
-		var mcpArg func(string, ...mcp.PropertyOption) mcp.ToolOption
-		switch typ {
-		case "array":
-			items, ok := argSchema["items"]
-			if !ok {
-				return nil, fmt.Errorf("schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
-			}
-			// TODO: verify items has a valid schema: {"type": string} ? At least OpenAI requires it.
-			mcpArg = mcp.WithArray
-			propOpts = append(propOpts, mcp.Items(items))
-		case "boolean":
-			mcpArg = mcp.WithBoolean
-		case "integer":
-			mcpArg = mcp.WithNumber
-		case "number":
-			mcpArg = mcp.WithNumber
-		case "object":
-			mcpArg = mcp.WithObject
-		case "string":
-			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
-			mcpArg = mcp.WithString
-		default:
-			return nil, fmt.Errorf("arg %q of tool %q is of unsupported type %q", argName, tool.Name, typ)
-		}
-		toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
-	}
-	return toolOpts, nil
+	return mcp.NewToolWithRawSchema(tool.Name, tool.Description, schema), nil
 }
 
 type mcpServer struct {
@@ -153,11 +69,11 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 			continue
 		}
 
-		toolOpts, err := genMcpToolOpts(tool)
+		mcpTool, err := genMcpTool(tool)
 		if err != nil {
 			return nil, err
 		}
-		mcpTools = append(mcpTools, mcpserver.ServerTool{Tool: mcp.NewTool(tool.Name, toolOpts...), Handler: s.genMcpToolHandler(tool)})
+		mcpTools = append(mcpTools, mcpserver.ServerTool{Tool: mcpTool, Handler: s.genMcpToolHandler(tool)})
 	}
 	return mcpTools, nil
 }
@@ -248,7 +164,7 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
 			mcpserver.WithInstructions(instructions)),
 		dag,
-		llm.mcp,
+		llm.mcp.Standalone(),
 		rwc,
 	}
 

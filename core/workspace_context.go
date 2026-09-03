@@ -162,19 +162,9 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
-// WorkspaceServedSchema derives the served GraphQL schema for a specific
-// Workspace, independent of which client is currently executing. It switches to
-// the workspace's owning client (so the served-module set reflects that
-// workspace's dagger.toml / installed modules), forces the full module set to
-// load — the LLM needs the whole schema, not whatever a prior request
-// demand-loaded — and returns the built schema server.
-//
-// This is what makes the LLM's schema derive from its OWN Workspace (the one it
-// was bound to via LLM.withWorkspace) rather than from the outer client's env.
-// For the common case where the bound Workspace is the current client's
-// workspace, the owning client is the current client, so this resolves to the
-// same schema the CLI serves. For a value/synthetic Workspace (no owning client
-// or config) it degrades gracefully to the current client's schema.
+// WorkspaceServedSchema returns the stable served GraphQL schema for a
+// Workspace. Pending overlays are resolved only by explicit agent
+// recomposition; bound object tools retain the schema that defined them.
 func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*dagql.Server, error) {
 	wsCtx, err := WorkspaceServedContext(ctx, ws)
 	if err != nil {

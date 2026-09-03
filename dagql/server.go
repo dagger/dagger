@@ -1249,6 +1249,65 @@ func interfaceFieldsPresent(iface *Interface, objectType ObjectType, view call.V
 	return true
 }
 
+// ObjectTypeForID resolves the object type named by id without evaluating the
+// object itself. When the current schema does not carry the type, a recipe's
+// module provenance is loaded and used to rebuild the dependency-aware schema
+// that defined it.
+func (s *Server) ObjectTypeForID(ctx context.Context, id *call.ID) (ObjectType, bool, error) {
+	objType, _, ok, err := s.ObjectTypeAndServerForID(ctx, id)
+	return objType, ok, err
+}
+
+// ObjectTypeAndServerForID resolves the object type named by id and the server
+// whose schema defines it, without evaluating the object itself. The defining
+// server matters to callers that must retain the type's schema after switching
+// to another schema which may not contain the type.
+func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (ObjectType, *Server, bool, error) {
+	if id == nil || id.Type() == nil {
+		return nil, nil, false, nil
+	}
+	typeName := id.Type().NamedType()
+	if objType, ok := s.ObjectType(typeName); ok {
+		return objType, s, true, nil
+	}
+	if id.IsHandle() || id.Module() == nil || id.Module().ID() == nil || s.resultServerForCall == nil {
+		return nil, nil, false, nil
+	}
+
+	moduleResult, err := s.LoadType(ctx, id.Module().ID())
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
+	}
+	if moduleResult == nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is null", typeName)
+	}
+	shared := moduleResult.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is not attached", typeName)
+	}
+	resultCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(id.Type().ToAST()),
+		Field: id.Field(),
+		View:  id.View(),
+		Module: &ResultCallModule{
+			ResultRef: &ResultCallRef{ResultID: uint64(shared.id), shared: shared},
+			Name:      id.Module().Name(),
+			Ref:       id.Module().Ref(),
+			Pin:       id.Module().Pin(),
+		},
+	}
+	resolved, err := s.resultServerForCall(ctx, resultCall)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
+	}
+	if resolved == nil {
+		return nil, nil, false, nil
+	}
+	objType, ok := resolved.ObjectType(typeName)
+	return objType, resolved, ok, nil
+}
+
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
 	ctx = srvToContext(ctx, s)

@@ -474,7 +474,6 @@ func (m *MCP) loadSkillTools(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Strict: true,
 		Call: ToolFunc(srv, func(ctx context.Context, _ struct{}) (any, error) {
 			return listSkills(ctx, sources)
 		}),
