@@ -116,6 +116,29 @@ func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *
 	}
 }
 
+func (LockfileSuite) TestDefaultMigratesInvalidLegacyLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	legacyLockPath := filepath.Join(workdir, workspace.LegacyLockFilePath)
+	legacyLockContents := []byte(`[["version","1"]]`)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyLockPath), 0o755))
+	require.NoError(t, os.WriteFile(legacyLockPath, legacyLockContents, 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	assertOCISHALockEntry(t, lockBytes)
+
+	legacyLockBytes, err := os.ReadFile(legacyLockPath)
+	require.NoError(t, err)
+	require.Equal(t, legacyLockContents, legacyLockBytes)
+}
+
 func (LockfileSuite) TestDefaultRejectsFutureLockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)

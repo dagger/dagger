@@ -2421,7 +2421,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	require.Equal(t, "sha256:deadbeef", got)
 }
 
-func TestReadWorkspaceLockStateReplacesInvalidLock(t *testing.T) {
+func TestReadWorkspaceLockStateDoesNotWriteInvalidLock(t *testing.T) {
 	t.Parallel()
 
 	ws := &core.Workspace{
@@ -2430,9 +2430,10 @@ func TestReadWorkspaceLockStateReplacesInvalidLock(t *testing.T) {
 	}
 	ws.SetHostPath("/repo")
 	lockPath := filepath.Join("/repo", "dagger.lock")
+	lockContents := []byte(`[["version","1"]]`)
 	reader := &fakeWorkspaceLockStateReader{
 		files: map[string][]byte{
-			lockPath: []byte(`[["version","1"]]`),
+			lockPath: lockContents,
 		},
 	}
 
@@ -2440,13 +2441,11 @@ func TestReadWorkspaceLockStateReplacesInvalidLock(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, lock.Entries())
 	require.Contains(t, reader.files, lockPath)
-	require.Empty(t, reader.files[lockPath])
-	require.Equal(t, []string{lockPath}, reader.exported)
+	require.Equal(t, lockContents, reader.files[lockPath])
 }
 
 type fakeWorkspaceLockStateReader struct {
-	files    map[string][]byte
-	exported []string
+	files map[string][]byte
 }
 
 func (r fakeWorkspaceLockStateReader) ReadCallerHostFile(_ context.Context, path string) ([]byte, error) {
@@ -2454,21 +2453,6 @@ func (r fakeWorkspaceLockStateReader) ReadCallerHostFile(_ context.Context, path
 		return data, nil
 	}
 	return nil, os.ErrNotExist
-}
-
-func (r *fakeWorkspaceLockStateReader) LocalFileExport(
-	_ context.Context,
-	srcPath, _ string,
-	destPath string,
-	_ bool,
-) error {
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return err
-	}
-	r.files[destPath] = data
-	r.exported = append(r.exported, destPath)
-	return nil
 }
 
 func stringPtr(v string) *string {

@@ -2382,7 +2382,6 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-	LocalFileExport(ctx context.Context, srcPath, filePath, destPath string, allowParentDirPath bool) error
 }, ws *core.Workspace) (*workspace.Lock, error) {
 	lockPath, err := workspaceLockPath(ws)
 	if err != nil {
@@ -2419,12 +2418,8 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 			return nil, conflictErr
 		}
 		console(ctx, "Warning: resetting invalid workspace lockfile.")
-		slog.WarnContext(ctx, "invalid workspace lockfile; replacing it with an empty lockfile", "path", readPath, "error", err)
-		emptyLock := workspace.NewLock()
-		if err := exportWorkspaceLockToHostPath(ctx, bk, readPath, emptyLock); err != nil {
-			return nil, fmt.Errorf("replacing invalid lock: %w", err)
-		}
-		return emptyLock, nil
+		slog.WarnContext(ctx, "invalid workspace lockfile; using an empty lock", "path", readPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }
@@ -2508,19 +2503,14 @@ func isWorkspaceLockNotFound(err error) bool {
 }
 
 func exportWorkspaceLockToHost(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, lock *workspace.Lock) error {
-	lockPath, err := workspaceLockPath(ws)
-	if err != nil {
-		return err
-	}
-	return exportWorkspaceLockToHostPath(ctx, bk, lockPath, lock)
-}
-
-func exportWorkspaceLockToHostPath(ctx context.Context, bk interface {
-	LocalFileExport(ctx context.Context, srcPath, filePath, destPath string, allowParentDirPath bool) error
-}, lockPath string, lock *workspace.Lock) error {
 	lockBytes, err := lock.Marshal()
 	if err != nil {
 		return fmt.Errorf("marshal lock: %w", err)
+	}
+
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return err
 	}
 
 	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
