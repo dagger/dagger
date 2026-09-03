@@ -1,6 +1,7 @@
 package lockfile
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,6 +18,20 @@ func TestParseRejectsV1(t *testing.T) {
 
 	_, err := Parse([]byte(input))
 	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
+	var versionErr *UnsupportedVersionError
+	require.ErrorAs(t, err, &versionErr)
+	require.False(t, versionErr.IsNewer())
+}
+
+func TestParseRejectsFutureVersion(t *testing.T) {
+	_, err := Parse([]byte(`[["version","3"]]`))
+	require.ErrorContains(t, err, `unsupported lockfile version "3"`)
+
+	var versionErr *UnsupportedVersionError
+	require.True(t, errors.As(err, &versionErr))
+	require.Equal(t, "3", versionErr.Version)
+	require.Equal(t, "2", versionErr.Supported)
+	require.True(t, versionErr.IsNewer())
 }
 
 func TestMarshalDeterministicOrdering(t *testing.T) {

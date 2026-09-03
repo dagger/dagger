@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -50,6 +51,25 @@ type Entry struct {
 	Operation string
 	Inputs    []any
 	Value     string
+}
+
+// UnsupportedVersionError reports a syntactically valid lockfile version that
+// this package cannot parse.
+type UnsupportedVersionError struct {
+	Version   string
+	Supported string
+}
+
+func (err *UnsupportedVersionError) Error() string {
+	return fmt.Sprintf("unsupported lockfile version %q", err.Version)
+}
+
+// IsNewer reports whether the unsupported version is newer than the supported
+// version. Non-integer versions are not considered newer.
+func (err *UnsupportedVersionError) IsNewer() bool {
+	version, versionErr := strconv.Atoi(err.Version)
+	supported, supportedErr := strconv.Atoi(err.Supported)
+	return versionErr == nil && supportedErr == nil && version > supported
 }
 
 // New returns an empty lockfile.
@@ -213,7 +233,10 @@ func parseVersionHeader(line []byte) (string, error) {
 	}
 	version := versionPair[1]
 	if version != versionValueV2 {
-		return "", fmt.Errorf("unsupported lockfile version %q", version)
+		return "", &UnsupportedVersionError{
+			Version:   version,
+			Supported: versionValueV2,
+		}
 	}
 	return version, nil
 }

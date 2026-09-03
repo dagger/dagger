@@ -116,6 +116,25 @@ func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *
 	}
 }
 
+func (LockfileSuite) TestDefaultRejectsFutureLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := `[["version","3"]]`
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err,
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
+}
+
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	lockContents := mustMarshalOCISHALock(t, "not-a-digest")

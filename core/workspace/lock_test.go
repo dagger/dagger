@@ -67,6 +67,16 @@ func TestParseLockRejectsV1(t *testing.T) {
 	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
 }
 
+func TestFutureLockfileVersionError(t *testing.T) {
+	_, err := ParseLock([]byte(`[["version","3"]]`))
+	require.EqualError(t, FutureLockfileVersionError(err),
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	_, err = ParseLock([]byte(`[["version","1"]]`))
+	require.NoError(t, FutureLockfileVersionError(err))
+}
+
 func TestEntries(t *testing.T) {
 	lock := NewLock()
 	inputs := []any{"alpine:latest", "linux/amd64"}
