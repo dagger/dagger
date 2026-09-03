@@ -1205,10 +1205,19 @@ func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Cont
 		WithNewFile("sub/dagger-module.toml", `name = "submod"
 engineVersion = "latest"
 `).
+		WithNewFile("dep-a/dagger-module.toml", `name = "dep-a"
+engineVersion = "latest"
+`).
+		WithNewFile("dep-b/dagger-module.toml", `name = "dep-b"
+engineVersion = "latest"
+`).
 		WithNewFile("nested/marker", "x")
 
 	t.Run("relative path resolves from the workspace root cwd", func(ctx context.Context, t *testctx.T) {
 		src := base.AsWorkspace().ModuleSource("sub")
+		kind, err := src.Kind(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.ModuleSourceKindDirSource, kind)
 		exists, err := src.ConfigExists(ctx)
 		require.NoError(t, err)
 		require.True(t, exists)
@@ -1242,6 +1251,103 @@ engineVersion = "latest"
 		require.Error(t, err)
 		require.ErrorContains(t, err, "escapes workspace root")
 	})
+
+	t.Run("directory sources preserve distinct dependencies", func(ctx context.Context, t *testctx.T) {
+		ws := base.AsWorkspace()
+		withDeps := ws.ModuleSource("sub").WithDependencies([]*dagger.ModuleSource{
+			ws.ModuleSource("dep-a"),
+			ws.ModuleSource("dep-b"),
+		})
+		deps, err := withDeps.Dependencies(ctx)
+		require.NoError(t, err)
+		require.Len(t, deps, 2)
+
+		remaining, err := withDeps.WithoutDependencies([]string{"../dep-a"}).Dependencies(ctx)
+		require.NoError(t, err)
+		require.Len(t, remaining, 1)
+		name, err := remaining[0].ModuleOriginalName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dep-b", name)
+	})
+}
+
+func (WorkspaceAPISuite) TestModuleSourcePreservesWorkspaceBacking(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	for path, contents := range map[string]string{
+		"modules/parent/dagger-module.toml": `name = "parent"
+engineVersion = "latest"
+
+[[dependencies]]
+name = "dep-a"
+source = "../dep-a"
+`,
+		"modules/dep-a/dagger-module.toml": `name = "dep-a"
+engineVersion = "latest"
+`,
+		"modules/dep-b/dagger-module.toml": `name = "dep-b"
+engineVersion = "latest"
+`,
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workdir, path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o600))
+	}
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	ws := c.CurrentWorkspace()
+
+	parent := ws.ModuleSource("modules/parent")
+	kind, err := parent.Kind(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.ModuleSourceKindLocalSource, kind)
+	configuredDeps, err := parent.Dependencies(ctx)
+	require.NoError(t, err)
+	require.Len(t, configuredDeps, 1)
+	configuredDepKind, err := configuredDeps[0].Kind(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.ModuleSourceKindLocalSource, configuredDepKind)
+
+	staged := ws.WithNewFile("modules/parent/dagger-module.toml", `name = "staged-parent"
+engineVersion = "latest"
+`).ModuleSource("modules/parent")
+	stagedKind, err := staged.Kind(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.ModuleSourceKindLocalSource, stagedKind)
+	stagedName, err := staged.ModuleOriginalName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "staged-parent", stagedName)
+
+	withDeps := parent.WithDependencies([]*dagger.ModuleSource{
+		ws.ModuleSource("modules/dep-a"),
+		ws.ModuleSource("modules/dep-b"),
+	})
+	deps, err := withDeps.Dependencies(ctx)
+	require.NoError(t, err)
+	require.Len(t, deps, 2)
+
+	withoutA := withDeps.WithoutDependencies([]string{"../dep-a"})
+	remaining, err := withoutA.Dependencies(ctx)
+	require.NoError(t, err)
+	require.Len(t, remaining, 1)
+	name, err := remaining[0].ModuleOriginalName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dep-b", name)
+}
+
+func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesKind(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := c.Directory().WithNewFile("module/dagger-module.toml", `name = "git-module"
+engineVersion = "latest"
+`)
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()
+
+	src := ws.ModuleSource("module")
+	kind, err := src.Kind(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.ModuleSourceKindGitSource, kind)
+	name, err := src.ModuleOriginalName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git-module", name)
 }
 
 func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx context.Context, t *testctx.T) {

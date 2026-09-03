@@ -227,6 +227,12 @@ type ModuleSource struct {
 
 	ContextDirectory dagql.ObjectResult[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
+	// Workspace is the originating workspace for sources loaded through
+	// Workspace.moduleSource. It preserves the workspace's backing source,
+	// pending overlay, and owner route without flattening the workspace into a
+	// Directory. SourceRootSubpath remains workspace-root-relative.
+	Workspace dagql.ObjectResult[*Workspace] `json:"-"`
+
 	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
 	Local  *LocalModuleSource
 	Git    *GitModuleSource
@@ -319,7 +325,20 @@ func (src *ModuleSource) AttachDependencyResults(
 		return nil, nil
 	}
 
-	owned := make([]dagql.AnyResult, 0, 4+len(src.Dependencies)+len(src.Toolchains))
+	owned := make([]dagql.AnyResult, 0, 5+len(src.Dependencies)+len(src.Toolchains))
+
+	if src.Workspace.Self() != nil {
+		attached, err := attach(src.Workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source workspace: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach module source workspace: unexpected result %T", attached)
+		}
+		src.Workspace = typed
+		owned = append(owned, typed)
+	}
 
 	if src.ContextDirectory.Self() != nil {
 		attached, err := attach(src.ContextDirectory)
@@ -467,6 +486,7 @@ type persistedModuleSourcePayload struct {
 	SourceSubpath                   string                                `json:"sourceSubpath,omitempty"`
 	OriginalSubpath                 string                                `json:"originalSubpath,omitempty"`
 	ContextDirectoryResultID        uint64                                `json:"contextDirectoryResultID,omitempty"`
+	WorkspaceResultID               uint64                                `json:"workspaceResultID,omitempty"`
 	Kind                            ModuleSourceKind                      `json:"kind"`
 	Local                           *LocalModuleSource                    `json:"local,omitempty"`
 	Git                             *persistedGitModuleSourcePayload      `json:"git,omitempty"`
@@ -821,6 +841,13 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 		payload.ContextDirectoryResultID = contextDirID
 	}
+	if src.Workspace.Self() != nil {
+		workspaceID, err := encodePersistedObjectRef(cache, src.Workspace, "module source workspace")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.WorkspaceResultID = workspaceID
+	}
 	payload.DependencyResultIDs = make([]uint64, 0, len(src.Dependencies))
 	for _, dep := range src.Dependencies {
 		if dep.Self() == nil {
@@ -893,6 +920,10 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	if err != nil {
 		return nil, err
 	}
+	workspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceResultID, "module source workspace")
+	if err != nil {
+		return nil, err
+	}
 	dependencies := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.DependencyResultIDs))
 	for _, depID := range persisted.DependencyResultIDs {
 		depRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, depID, "module source dependency")
@@ -937,6 +968,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		SourceSubpath:                 persisted.SourceSubpath,
 		OriginalSubpath:               persisted.OriginalSubpath,
 		ContextDirectory:              contextDirectory,
+		Workspace:                     workspace,
 		Kind:                          persisted.Kind,
 		Local:                         persisted.Local,
 	}
@@ -1102,6 +1134,27 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, "", err
+	}
+	if src.Workspace.Self() != nil {
+		envFilePath := path.Join("/", src.SourceRootSubpath, ".env")
+		var envFile *EnvFile
+		if err := dag.Select(ctx, src.Workspace, &envFile,
+			dagql.Selector{
+				Field: "file",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(envFilePath)}},
+			},
+			dagql.Selector{
+				Field: "asEnvFile",
+				Args: []dagql.NamedInput{
+					{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+				},
+			},
+		); status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
+			return nil, "", nil
+		} else if err != nil {
+			return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", envFilePath, err)
+		}
+		return envFile, envFilePath, nil
 	}
 
 	// FIXME: .env must be at the root of the module directory
@@ -1470,6 +1523,8 @@ func (src *ModuleSource) LoadContextDir(
 	// Git, or a Directory.
 	if ws, ok := WorkspaceFromContext(ctx); ok {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
+	} else if src.Workspace.Self() != nil {
+		inst, err = src.loadContextFromWorkspace(ctx, dag, src.Workspace, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	}
@@ -1735,6 +1790,17 @@ func (src *ModuleSource) LoadContextFile(
 	dag *dagql.Server,
 	path string,
 ) (inst dagql.ObjectResult[*File], err error) {
+	if src.Workspace.Self() != nil {
+		workspacePath := workspaceContextDirPath(src.SourceRootSubpath, path)
+		if err := dag.Select(ctx, src.Workspace, &inst, dagql.Selector{
+			Field: "file",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(workspacePath)}},
+		}); err != nil {
+			return inst, fmt.Errorf("failed to select workspace file: %w", err)
+		}
+		return inst, nil
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -1840,7 +1906,7 @@ func (src *ModuleSource) LoadContextGit(
 	ctx context.Context,
 	dag *dagql.Server,
 ) (inst dagql.ObjectResult[*GitRepository], err error) {
-	if src.Kind == ModuleSourceKindGit {
+	if src.Kind == ModuleSourceKindGit && src.Workspace.Self() == nil {
 		// easy, we're running a git repo
 		err := dag.Select(ctx, dag.Root(), &inst,
 			dagql.Selector{
@@ -2051,6 +2117,33 @@ func ResolveDepToSource(
 		if filepath.IsAbs(depSrcRef) {
 			// they need to be relative to the parent module's source root
 			return inst, fmt.Errorf("local module dep source path %q is absolute", depSrcRef)
+		}
+		if parentSrc.Workspace.Self() != nil {
+			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			if !filepath.IsLocal(depPath) {
+				return inst, fmt.Errorf("local module dep source path %q escapes workspace", depSrcRef)
+			}
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(filepath.ToSlash(depPath))},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			if err := dag.Select(ctx, parentSrc.Workspace, &inst, selectors...); err != nil {
+				if errors.Is(err, dagql.ErrCacheRecursiveCall) {
+					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
+				}
+				return inst, err
+			}
+			return inst, nil
 		}
 
 		switch parentSrc.Kind {
@@ -2340,6 +2433,12 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 	if fs.src == nil {
 		return "", nil, os.ErrNotExist
 	}
+	if fs.src.Workspace.Self() != nil {
+		return WorkspaceStatFS{
+			Workspace: fs.src.Workspace,
+			Root:      fs.src.SourceRootSubpath,
+		}.Stat(ctx, path)
+	}
 
 	switch fs.src.Kind {
 	case ModuleSourceKindLocal:
@@ -2360,6 +2459,12 @@ func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, b
 	if fs.src == nil {
 		return "", false, nil
 	}
+	if fs.src.Workspace.Self() != nil {
+		return WorkspaceStatFS{
+			Workspace: fs.src.Workspace,
+			Root:      fs.src.SourceRootSubpath,
+		}.Exists(ctx, path)
+	}
 
 	switch fs.src.Kind {
 	case ModuleSourceKindLocal:
@@ -2374,6 +2479,79 @@ func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, b
 	default:
 		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+// WorkspaceStatFS implements StatFS against a workspace without first
+// converting its complete tree to a Directory. Root is workspace-relative;
+// callers may use it to scope paths to a module within the workspace.
+type WorkspaceStatFS struct {
+	Workspace dagql.ObjectResult[*Workspace]
+	Root      string
+}
+
+func (fs WorkspaceStatFS) Stat(ctx context.Context, p string) (string, *Stat, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	workspacePath := filepath.Join("/", fs.Root, p)
+	parentPath := filepath.Dir(workspacePath)
+	basename := filepath.Base(workspacePath)
+	var dir dagql.ObjectResult[*Directory]
+	if err := dag.Select(ctx, fs.Workspace, &dir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(parentPath)},
+			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(basename)}},
+		},
+	}); err != nil {
+		return "", nil, err
+	}
+	return CallDirStat(ctx, dir, basename)
+}
+
+func (fs WorkspaceStatFS) Exists(ctx context.Context, p string) (string, bool, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	workspacePath := filepath.Join("/", fs.Root, p)
+	parentPath := filepath.Dir(workspacePath)
+	basename := filepath.Base(workspacePath)
+	var dir dagql.ObjectResult[*Directory]
+	if err := dag.Select(ctx, fs.Workspace, &dir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(parentPath)},
+			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(basename)}},
+		},
+	}); err != nil {
+		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
+			return filepath.Dir(p), false, nil
+		}
+		return "", false, err
+	}
+	return CallDirExists(ctx, dir, basename)
+}
+
+// WorkspaceReadFile reads one workspace file without materializing the
+// workspace's complete tree.
+func WorkspaceReadFile(ctx context.Context, workspace dagql.ObjectResult[*Workspace], p string) ([]byte, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var contents dagql.String
+	if err := dag.Select(ctx, workspace, &contents,
+		dagql.Selector{
+			Field: "file",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(filepath.Join("/", p))}},
+		},
+		dagql.Selector{Field: "contents"},
+	); err != nil {
+		return nil, err
+	}
+	return []byte(contents), nil
 }
 
 type ModuleSourceExperimentalFeature string

@@ -66,7 +66,7 @@ func (s *workspaceSchema) initClientChanges(
 			return res, scope, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	targetModule, err := s.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, "")
+	targetModule, err := s.resolveClientTargetModule(workspaceCtx, parent, moduleLoadRef, "")
 	if err != nil {
 		return res, scope, err
 	}
@@ -158,7 +158,7 @@ func (s *workspaceSchema) initClientChanges(
 
 func (s *workspaceSchema) resolveClientTargetModule(
 	ctx context.Context,
-	ws *core.Workspace,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
 	ref string,
 	pin string,
 ) (dagql.ObjectResult[*core.ModuleSource], error) {
@@ -168,14 +168,10 @@ func (s *workspaceSchema) resolveClientTargetModule(
 		return src, fmt.Errorf("dagql server: %w", err)
 	}
 	if workspace.IsLocalRef(ref, "") {
-		root, err := s.workspaceOverlayRootfs(ctx, ws)
-		if err != nil {
-			return src, err
-		}
-		if err := srv.Select(ctx, root, &src, dagql.Selector{
-			Field: "asModuleSource",
+		if err := srv.Select(ctx, workspaceResult, &src, dagql.Selector{
+			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(ref))},
+				{Name: "path", Value: dagql.String(filepath.ToSlash(ref))},
 			},
 		}); err != nil {
 			return src, fmt.Errorf("load module source: %w", err)

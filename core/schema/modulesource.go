@@ -1074,6 +1074,128 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	return inst, nil
 }
 
+// workspaceModuleSource loads a module without flattening its workspace into a
+// Directory. Local and Git workspaces retain their native source kind while
+// filesystem reads continue through the workspace, preserving staged changes
+// and the workspace owner's host route.
+func (s *moduleSourceSchema) workspaceModuleSource(
+	ctx context.Context,
+	workspaceResult dagql.ObjectResult[*core.Workspace],
+	sourceRootPath string,
+) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
+	ws := workspaceResult.Self()
+	if ws == nil {
+		return inst, fmt.Errorf("workspace module source: workspace is required")
+	}
+
+	sourceRootPath = filepath.Clean(sourceRootPath)
+	if sourceRootPath == "" {
+		sourceRootPath = "."
+	}
+	src := &core.ModuleSource{
+		ConfigExists:      true,
+		ConfigFilename:    modules.Filename,
+		SourceRootSubpath: sourceRootPath,
+		OriginalSubpath:   sourceRootPath,
+		Workspace:         workspaceResult,
+	}
+
+	switch base := ws.BaseSource().(type) {
+	case *core.WorkspaceSourceClientLocal:
+		src.Kind = core.ModuleSourceKindLocal
+		src.Local = &core.LocalModuleSource{ContextDirectoryPath: base.HostPath}
+	case *core.WorkspaceSourceGitRef:
+		ref := base.Ref.Self()
+		if ref == nil || ref.Repo.Self() == nil || !ref.Repo.Self().URL.Valid {
+			return inst, fmt.Errorf("workspace module source: Git workspace has no repository URL")
+		}
+		cloneRef := ref.Repo.Self().URL.Value.String()
+		src.Kind = core.ModuleSourceKindGit
+		src.Git = &core.GitModuleSource{
+			CloneRef:    cloneRef,
+			HTMLRepoURL: cloneRef,
+			Version:     cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
+			Commit:      ref.Ref.SHA,
+			Ref:         ref.Ref.Name,
+		}
+		src.Git.Symbolic = cloneRef
+		if sourceRootPath != "." {
+			src.Git.Symbolic += "/" + filepath.ToSlash(sourceRootPath)
+		}
+		src.Git.HTMLURL, err = src.Git.Link(sourceRootPath, -1, -1)
+		if err != nil {
+			return inst, fmt.Errorf("workspace module source URL: %w", err)
+		}
+	default:
+		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
+	}
+
+	configFilename, found, err := moduleConfigInDir(ctx, core.WorkspaceStatFS{
+		Workspace: workspaceResult,
+	}, filepath.Join("/", sourceRootPath))
+	if err != nil {
+		return inst, fmt.Errorf("workspace module source %q: find module config: %w", sourceRootPath, err)
+	}
+	if !found {
+		return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
+	}
+	src.ConfigFilename = configFilename
+	configContents, err := core.WorkspaceReadFile(ctx, workspaceResult, filepath.Join(sourceRootPath, configFilename))
+	if err != nil {
+		return inst, fmt.Errorf("workspace module source %q: read module config: %w", sourceRootPath, err)
+	}
+	if err := s.initFromModConfig(configContents, src); err != nil {
+		return inst, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("workspace module source: engine client: %w", err)
+	}
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		if err := s.loadModuleSourceContext(ctx, src); err != nil {
+			return fmt.Errorf("load workspace module source context: %w", err)
+		}
+		if src.SDK != nil {
+			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+			if err != nil {
+				return fmt.Errorf("load SDK for workspace module source: %w", err)
+			}
+			src.SDKImpl = loaded
+		}
+		return nil
+	})
+
+	src.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigDependencies))
+	for i, depCfg := range src.ConfigDependencies {
+		eg.Go(func() error {
+			dep, err := core.ResolveDepToSource(ctx, bk, dag, src, depCfg.Source, depCfg.Pin, depCfg.Name)
+			if err != nil {
+				return fmt.Errorf("resolve workspace module dependency: %w", err)
+			}
+			src.Dependencies[i] = dep
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return inst, err
+	}
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load workspace module user defaults: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
+}
+
 // set values in the given src using values read from the module config file provided as bytes
 func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
 	// sanity checks
@@ -1218,6 +1340,18 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
+	}
+
+	if src.Workspace.Self() != nil {
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+		return dag.Select(ctx, src.Workspace, &src.ContextDirectory, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
+				{Name: "gitignore", Value: dagql.NewBoolean(true)},
+			},
+		})
 	}
 
 	switch src.Kind {
@@ -1702,6 +1836,14 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 				return nil, fmt.Errorf("unhandled module source kind: %s", newRelatedModule.Self().Kind)
 			}
 
+		case core.ModuleSourceKindDir:
+			switch newRelatedModule.Self().Kind {
+			case core.ModuleSourceKindDir, core.ModuleSourceKindGit:
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
+			default:
+				return nil, fmt.Errorf("unhandled module source kind: %s", newRelatedModule.Self().Kind)
+			}
+
 		default:
 			return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
 		}
@@ -1737,6 +1879,19 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 					symbolicItemStr += "@" + item.Self().Git.Commit
 				}
 			}
+		case core.ModuleSourceKindDir:
+			if item.Self().DirSrc == nil || item.Self().DirSrc.OriginalContextDir.Self() == nil {
+				return nil, fmt.Errorf("directory module source %q has no original context", item.Self().ModuleName)
+			}
+			contextID, err := item.Self().DirSrc.OriginalContextDir.ID()
+			if err != nil {
+				return nil, fmt.Errorf("directory module source %q context ID: %w", item.Self().ModuleName, err)
+			}
+			encodedContextID, err := contextID.Encode()
+			if err != nil {
+				return nil, fmt.Errorf("encode directory module source %q context ID: %w", item.Self().ModuleName, err)
+			}
+			symbolicItemStr = encodedContextID + "\x00" + filepath.Clean(item.Self().SourceRootSubpath)
 		}
 
 		if _, isDuplicateSymbolic := symbolicItems[symbolicItemStr]; isDuplicateSymbolic {
@@ -1949,6 +2104,18 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 				existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
 			}
 			existingVersion = existingItem.Self().Git.Version
+
+		case core.ModuleSourceKindDir:
+			if parentSrc.Kind != core.ModuleSourceKindDir {
+				return nil, fmt.Errorf("cannot remove directory %s from module source kind %s", accessor.typ, parentSrc.Kind)
+			}
+			parentSrcRoot := filepath.Join("/", parentSrc.SourceRootSubpath)
+			itemSrcRoot := filepath.Join("/", existingItem.Self().SourceRootSubpath)
+			var err error
+			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get relative path: %w", err)
+			}
 
 		default:
 			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)

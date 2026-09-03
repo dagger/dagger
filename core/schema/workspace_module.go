@@ -121,11 +121,9 @@ type workspaceModuleSourceArgs struct {
 
 // moduleSource loads a module source from a path within the workspace, applying
 // the standard workspace path rules (absolute from the workspace root, relative
-// from the workspace cwd). The whole workspace tree is materialized so the
-// module's dagger.json and dependency include paths resolve; asModuleSource then
-// scopes to sourceRootPath. Host reads route to the workspace owner via
-// workspaceOverlayRootfs, so this works both from the session that owns the
-// workspace and from a module that received the workspace as an argument.
+// from the workspace cwd). Local and Git workspaces retain their backing source
+// and pending overlay; a genuinely Directory-backed workspace remains a
+// DIR_SOURCE.
 func (s *workspaceSchema) moduleSource(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -135,6 +133,11 @@ func (s *workspaceSchema) moduleSource(
 	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
 	if err != nil {
 		return inst, err
+	}
+
+	switch ws.BaseSource().(type) {
+	case *core.WorkspaceSourceClientLocal, *core.WorkspaceSourceGitRef:
+		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
 	}
 
 	root, err := s.workspaceOverlayRootfs(ctx, ws)

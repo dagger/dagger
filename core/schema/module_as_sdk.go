@@ -215,5 +215,5 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 		}
 	}
 
-	return wsSchema.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, client.Pin)
+	return wsSchema.resolveClientTargetModule(workspaceCtx, client.BoundWorkspace, moduleLoadRef, client.Pin)
 }
