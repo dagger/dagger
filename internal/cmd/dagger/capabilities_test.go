@@ -47,6 +47,20 @@ func TestMaySelectWorkspaceFlags(t *testing.T) {
 	require.Equal(t, []string{string(maySelectWorkspace)}, flag.Annotations[flagCapabilitiesAnnotation])
 }
 
+func TestMayProduceOutputFlags(t *testing.T) {
+	oldAutoApply := autoApply
+	t.Cleanup(func() { autoApply = oldAutoApply })
+
+	flags := pflag.NewFlagSet("output", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+
+	flag := flags.Lookup("auto-apply")
+	require.NotNil(t, flag)
+	require.Equal(t, "y", flag.Shorthand)
+	require.False(t, flag.Hidden)
+	require.Equal(t, []string{string(mayProduceOutput)}, flag.Annotations[flagCapabilitiesAnnotation])
+}
+
 func TestMayCallEngineFlags(t *testing.T) {
 	oldProfile := profileFlag
 	t.Cleanup(func() {
@@ -195,6 +209,66 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		"trace":         traceCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, maySelectWorkspace), name)
+	}
+}
+
+func TestMayProduceOutputCommands(t *testing.T) {
+	expected := []string{
+		"dagger api call",
+		"dagger api client init",
+		"dagger call",
+		"dagger core",
+		"dagger generate",
+		"dagger module init",
+		"dagger setup",
+	}
+	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayProduceOutput))
+
+	oldAutoApply := autoApply
+	t.Cleanup(func() { autoApply = oldAutoApply })
+	flags := pflag.NewFlagSet("output", pflag.ContinueOnError)
+	installGlobalFlags(flags)
+	autoApplyFlag := flags.Lookup("auto-apply")
+	require.NotNil(t, autoApplyFlag)
+	for name, cmd := range map[string]*cobra.Command{
+		"api call":        apiCallCmd.Command(),
+		"api client init": apiClientInitCmd,
+		"call":            callModCmd.Command(),
+		"core":            callCoreCmd.Command(),
+		"generate":        generateCmd,
+		"module init":     moduleInitCmd,
+		"setup":           setupCmd,
+	} {
+		require.True(t, FlagAvailableForCommand(cmd, autoApplyFlag), name)
+	}
+	for name, cmd := range map[string]*cobra.Command{
+		"api functions": apiFunctionsCmd,
+		"check":         checksCmd,
+		"sdk installed": sdkInstalledCmd,
+		"trace":         traceCmd,
+	} {
+		require.False(t, commandHasCapability(cmd, mayProduceOutput), name)
+		require.False(t, FlagAvailableForCommand(cmd, autoApplyFlag), name)
+	}
+
+	for name, cmd := range map[string]*cobra.Command{
+		"api call": apiCallCmd.Command(),
+		"call":     callModCmd.Command(),
+		"core":     callCoreCmd.Command(),
+	} {
+		flag := cmd.PersistentFlags().Lookup("output")
+		require.NotNil(t, flag, name)
+		require.Equal(t, "o", flag.Shorthand, name)
+		require.Equal(t, []string{string(mayProduceOutput)}, flag.Annotations[flagCapabilitiesAnnotation], name)
+		require.True(t, FlagAvailableForCommand(cmd, flag), name)
+	}
+	for name, cmd := range map[string]*cobra.Command{
+		"api client init": apiClientInitCmd,
+		"generate":        generateCmd,
+		"module init":     moduleInitCmd,
+		"setup":           setupCmd,
+	} {
+		require.Nil(t, cmd.Flags().Lookup("output"), name)
 	}
 }
 

@@ -431,13 +431,15 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
-	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
 
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
 	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
+
+	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")
+	setFlagCapabilities(flags.Lookup("auto-apply"), mayProduceOutput)
 
 	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)

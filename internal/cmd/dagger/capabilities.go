@@ -20,6 +20,7 @@ const (
 	mayReadWorkspaceConfig  commandCapability = "MayReadWorkspaceConfig"
 	mayWriteWorkspaceConfig commandCapability = "MayWriteWorkspaceConfig"
 	mayRenderPipeline       commandCapability = "MayRenderPipeline"
+	mayProduceOutput        commandCapability = "MayProduceOutput"
 
 	commandCapabilitiesAnnotation      = "dagger.io/command-capabilities"
 	localCommandCapabilitiesAnnotation = "dagger.io/local-command-capabilities"
@@ -283,5 +284,17 @@ func init() {
 		workspaceRemoteCmd,
 	} {
 		setCommandCapabilities(cmd, maySelectWorkspace)
+	}
+
+	for _, cmd := range []*cobra.Command{
+		generateCmd,
+		apiCallCmd.Command(),
+		callModCmd.Command(),
+		callCoreCmd.Command(),
+		moduleInitCmd,
+		apiClientInitCmd,
+		setupCmd,
+	} {
+		setCommandCapabilities(cmd, mayProduceOutput)
 	}
 }

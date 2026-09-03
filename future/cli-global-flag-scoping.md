@@ -34,7 +34,7 @@ to prevent a flag from appearing before the subcommand. For example,
 | `MayReadWorkspaceConfig` | The command can use `--env` when reading workspace configuration. |
 | `MayWriteWorkspaceConfig` | The command can use `--env` when writing workspace configuration. |
 | `MayRenderPipeline` | The command can show a user-facing pipeline trace. |
-| `MayProduceOutput` | The command can produce an output that can require user review before a side effect. |
+| `MayProduceOutput` | The command can produce an output whose disposition can require user input, such as review before a side effect or selection of a local output path. |
 
 The capabilities are independent. A command can declare more than one.
 
@@ -78,6 +78,17 @@ client ownership list.
 
 `dagger setup` remains base-only. It declares neither workspace configuration
 capability and does not accept `--env`.
+
+### Output disposition
+
+`--auto-apply` is available on commands that declare `MayProduceOutput`. It
+applies an output without interactive review when the output handler supports
+application.
+
+`-o`, `--output` is also scoped by `MayProduceOutput`, but it remains a
+command-local flag on function-call commands. It selects a local destination
+when the output handler supports saving the result. Other output-producing
+commands do not expose it until they define how an output path affects them.
 
 ## Workspace Configuration
 
@@ -136,5 +147,5 @@ column means that no change is proposed.
 ## Status
 
 `MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
-`MayWriteWorkspaceConfig`, and `MayRenderPipeline` capability scoping are
-implemented. The other changes are planned.
+`MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
+capability scoping are implemented. The other changes are planned.

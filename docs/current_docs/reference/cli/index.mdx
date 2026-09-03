@@ -16,7 +16,6 @@ dagger [options] [subcommand | file...]
 
 ```
       --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -c, --command string               Execute a dagger shell command
   -d, --debug                        Show debug logs and full verbosity
       --eager-runtime                load module runtime eagerly
@@ -77,7 +76,6 @@ dagger activity
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -125,7 +123,6 @@ dagger agent [options] [name...]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -162,7 +159,6 @@ See https://docs.dagger.io/api for the full overview.
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -202,7 +198,7 @@ dagger api call [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -y, --auto-apply                   Automatically apply changes when an output is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -237,7 +233,6 @@ module that generates it.
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -293,7 +288,7 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -y, --auto-apply                   Automatically apply changes when an output is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -325,7 +320,6 @@ dagger api client list
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -374,7 +368,6 @@ dagger api functions [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -439,7 +432,6 @@ EOF
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -503,7 +495,6 @@ dagger api with-session python main.py
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -559,7 +550,6 @@ dagger check [options] [pattern...]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -586,7 +576,6 @@ Manage Dagger Cloud
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -624,7 +613,6 @@ dagger cloud billing
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -656,7 +644,6 @@ dagger cloud billing manage [org]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -681,7 +668,6 @@ dagger cloud billing plans
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -706,7 +692,6 @@ dagger cloud check
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -741,7 +726,6 @@ dagger cloud check list [version]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -766,7 +750,6 @@ dagger cloud check off [name]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -791,7 +774,6 @@ dagger cloud check on [name]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -816,7 +798,6 @@ dagger cloud check status [name]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -847,7 +828,6 @@ dagger cloud integration
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -886,7 +866,6 @@ dagger cloud integration create github
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -911,7 +890,6 @@ dagger cloud integration list [type]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -936,7 +914,6 @@ dagger cloud integration rm <id>
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -967,7 +944,6 @@ dagger cloud login [options] [org]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -991,7 +967,6 @@ dagger cloud logout
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1039,7 +1014,6 @@ dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1069,7 +1043,6 @@ dagger cloud org [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1096,7 +1069,6 @@ dagger cloud org info [org] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1121,7 +1093,6 @@ dagger cloud org list [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1146,7 +1117,6 @@ dagger cloud org use <org> [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1200,7 +1170,6 @@ dagger cloud rerun [--check NAME ...] [--failed | --all]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1245,7 +1214,7 @@ dagger generate [options] [pattern...]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -y, --auto-apply                   Automatically apply changes when an output is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1299,7 +1268,6 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1325,7 +1293,6 @@ dagger installed
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1351,7 +1318,6 @@ Manage LLM provider configuration, API keys, and default models.
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1393,7 +1359,6 @@ dagger llm add-key <provider>
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1417,7 +1382,6 @@ dagger llm config
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1441,7 +1405,6 @@ dagger llm remove-key <provider>
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1465,7 +1428,6 @@ dagger llm reset
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1489,7 +1451,6 @@ dagger llm set-default <provider> [model]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1513,7 +1474,6 @@ dagger llm setup
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1537,7 +1497,6 @@ dagger llm show-config
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1563,7 +1522,6 @@ Operates on the dagger-module.toml reachable from the current directory.
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1587,7 +1545,6 @@ Manage this module's dependencies
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1621,7 +1578,6 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1647,7 +1603,6 @@ dagger module deps list [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1679,7 +1634,6 @@ dagger module deps rm wolfi
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1717,7 +1671,6 @@ dagger module deps update wolfi@v0.20.2
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1739,7 +1692,6 @@ Manage this module's required engine version
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -1773,7 +1725,6 @@ dagger module engine require v0.21.0
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1799,7 +1750,6 @@ dagger module engine require-current [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1825,7 +1775,6 @@ dagger module engine require-latest [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1851,7 +1800,6 @@ dagger module engine required [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1919,7 +1867,7 @@ dagger sdk install go && dagger module init go my-module
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -y, --auto-apply                   Automatically apply changes when an output is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1960,7 +1908,6 @@ dagger module sdk <subcommand> [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -1992,7 +1939,6 @@ Use an installed SDK with `dagger module init` or `dagger api client init`.
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2046,7 +1992,6 @@ dagger sdk install typescript && dagger module init typescript --help && dagger 
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2076,7 +2021,6 @@ dagger sdk installed [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2108,7 +2052,6 @@ dagger sdk search [query] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2148,7 +2091,6 @@ dagger sdk uninstall [options] <name> [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2185,7 +2127,6 @@ dagger search wolfi
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2217,7 +2158,6 @@ dagger settings [module] [key] [value...]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2274,7 +2214,7 @@ dagger setup
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -y, --auto-apply                   Automatically apply changes when an output is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2315,7 +2255,6 @@ dagger terminal [options] [pattern]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2364,7 +2303,6 @@ dagger uninstall hello
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2406,7 +2344,6 @@ dagger up [options] [pattern...]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2449,7 +2386,6 @@ dagger update
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2482,7 +2418,6 @@ dagger version
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2520,7 +2455,6 @@ dagger workspace
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2574,7 +2508,6 @@ dagger workspace config [key] [value] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
       --env string                   Apply a named env overlay; writes target it, creating it if missing
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -2600,7 +2533,6 @@ dagger workspace config-file [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2625,7 +2557,6 @@ dagger workspace cwd [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2650,7 +2581,6 @@ dagger workspace remote [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2675,7 +2605,6 @@ dagger workspace remotes [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -2700,7 +2629,6 @@ dagger workspace root [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
