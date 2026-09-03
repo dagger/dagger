@@ -8,6 +8,7 @@ import path from "path";
 import { daggerPrismTheme } from "./src/prism/theme";
 
 import { daggerVersion } from "./current_docs/partials/version";
+import versions from "./versions.json";
 
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
@@ -38,7 +39,10 @@ function daggerWebFontsPlugin() {
           preload("inter-400.woff2"),
           {
             tagName: "link",
-            attributes: { rel: "preconnect", href: "https://fonts.googleapis.com" },
+            attributes: {
+              rel: "preconnect",
+              href: "https://fonts.googleapis.com",
+            },
           },
           {
             tagName: "link",
@@ -64,7 +68,7 @@ function daggerWebFontsPlugin() {
 const config: Config = {
   title: "Dagger",
   tagline:
-    "Open-source runtime for composable workflows, powering AI agents and CI/CD with modular, repeatable, and observable pipelines.",
+    "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale.",
   favicon: "img/favicon.svg",
 
   // Set the production url of your site here
@@ -120,11 +124,18 @@ const config: Config = {
           // No lastVersion: the default (served at /) is the newest snapshot,
           // i.e. versions.json[0], which docs:version prepends on each cut.
           versions: {
+            // Only the default version (versions.json[0], served at /) should
+            // be indexed by search engines; archived snapshots and the
+            // unreleased docs otherwise compete with it in search results.
+            ...Object.fromEntries(
+              versions.slice(1).map((v) => [v, { noIndex: true }]),
+            ),
             current: {
               label: "Next",
               path: "next",
               banner: "unreleased",
               badge: false,
+              noIndex: true,
             },
           },
           sidebarPath: "./sidebars.ts",
@@ -150,7 +161,7 @@ const config: Config = {
   plugins: [
     daggerWebFontsPlugin,
     // Custom webpack configuration for path aliases
-    function (context, options) {
+    function(context, options) {
       return {
         name: "custom-webpack-config",
         configureWebpack(config, isServer, utils) {
@@ -318,7 +329,7 @@ const config: Config = {
     footer: {
       copyright: `
         <div class="colophon__inner">
-          <div>DAGGER &mdash; 2026</div>
+          <div>DAGGER &mdash; ${new Date().getFullYear()}</div>
           <div class="colophon__links">
             <a href="https://github.com/dagger/dagger">GITHUB</a>
             <a href="https://discord.gg/dagger-io">DISCORD</a>
