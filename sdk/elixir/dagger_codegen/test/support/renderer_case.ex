@@ -4,7 +4,7 @@ defmodule Dagger.Codegen.RendererCase do
   using do
     quote do
       use Mneme
-      import Dagger.Codegen.RendererCase, only: [render_type: 2, render_type: 3]
+      import Dagger.Codegen.RendererCase, only: [render_type: 2]
     end
   end
 
@@ -22,10 +22,9 @@ defmodule Dagger.Codegen.RendererCase do
     |> IO.iodata_to_binary()
   end
 
-  def render_type(renderer, path, overrides \\ []) do
+  def render_type(renderer, path) do
     path
     |> decode_type_from_file()
-    |> struct!(overrides)
     |> render(renderer)
   end
 end

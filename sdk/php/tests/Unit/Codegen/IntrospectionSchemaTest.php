@@ -49,29 +49,4 @@ class IntrospectionSchemaTest extends TestCase
         yield 'release candidate' => ['v1.0.0-rc.1', true];
         yield 'stable version' => ['v1.0.0', true];
     }
-
-    #[Test]
-    #[DataProvider('idHandleVersions')]
-    public function itChecksIdHandleVersionSupport(?string $version, bool $expected): void
-    {
-        $schema = IntrospectionSchema::fromArray([
-            '__schemaVersion' => $version,
-            '__schema' => ['types' => []],
-        ]);
-
-        self::assertSame($expected, $schema->supportsIdHandles());
-    }
-
-    public static function idHandleVersions(): iterable
-    {
-        yield 'missing version' => [null, true];
-        yield 'development version' => ['development', true];
-        yield 'old development version' => ['v0.21.0-dev', false];
-        yield 'beta 11' => ['v1.0.0-beta.11', false];
-        yield 'beta 11 development version' => ['v1.0.0-beta.11-dev', false];
-        yield 'beta 12' => ['v1.0.0-beta.12', true];
-        yield 'beta 12 development version' => ['v1.0.0-beta.12-dev', true];
-        yield 'release candidate' => ['v1.0.0-rc.1', true];
-        yield 'stable version' => ['v1.0.0', true];
-    }
 }

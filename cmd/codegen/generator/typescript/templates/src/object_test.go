@@ -756,13 +756,3 @@ func TestObjectIDHandlesLoadTheirExpectedType(t *testing.T) {
 	require.Contains(t, got, "syncer = async (): Promise<Syncer> => {")
 	require.Contains(t, got, `return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))`)
 }
-
-func TestObjectIDHandlesKeepRawIDsBeforeCutover(t *testing.T) {
-	got := renderIDHandleObject(t, "v1.0.0-beta.11")
-
-	require.Contains(t, got, "sync = async (): Promise<LLM> => {")
-	require.Contains(t, got, "spawn = async (): Promise<ID> => {")
-	require.Contains(t, got, "syncer = async (): Promise<ID> => {")
-	require.NotContains(t, got, "new Agent(")
-	require.NotContains(t, got, "new _SyncerClient(")
-}

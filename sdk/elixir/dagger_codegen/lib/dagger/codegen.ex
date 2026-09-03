@@ -6,31 +6,19 @@ defmodule Dagger.Codegen do
   alias Dagger.Codegen.Introspection.Types.Schema
 
   @nullable_objects_version Version.parse!("1.0.0-beta.10")
-  # The first schema version whose bindings load every ID-returning field that
-  # carries an @expectedType directive as the object it names. Older views only
-  # convert fields returning their parent's own ID (the sync-like shape).
-  @id_handles_version Version.parse!("1.0.0-beta.12")
 
   def generate(generator, introspection_schema) do
-    type_features = %{
-      supports_nullable_objects:
-        schema_version_at_least?(introspection_schema.version, @nullable_objects_version),
-      supports_id_handles:
-        schema_version_at_least?(introspection_schema.version, @id_handles_version)
-    }
+    supports_nullable_objects = supports_nullable_objects?(introspection_schema.version)
 
     visit(introspection_schema, fn type ->
-      code = do_generate(struct!(type, type_features), generator)
+      code = do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
       {generator.filename(type), generator.format(code)}
     end)
   end
 
-  # Compare a schema version against a feature cutover. Unknown versions
-  # (development builds) get every feature; a beta prerelease is compared by
-  # its beta number, ignoring any dev suffix.
-  defp schema_version_at_least?(nil, _cutover), do: true
+  defp supports_nullable_objects?(nil), do: true
 
-  defp schema_version_at_least?(version, cutover) do
+  defp supports_nullable_objects?(version) do
     version = String.trim_leading(version, "v")
 
     version =
@@ -40,7 +28,7 @@ defmodule Dagger.Codegen do
       end
 
     case Version.parse(version) do
-      {:ok, version} -> Version.compare(version, cutover) != :lt
+      {:ok, version} -> Version.compare(version, @nullable_objects_version) != :lt
       :error -> true
     end
   end
