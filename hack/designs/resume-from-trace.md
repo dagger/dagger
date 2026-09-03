@@ -23,7 +23,7 @@ that have NOT been measured are marked as such.
 
 ## 1. What it does, and what it does not
 
-```
+```bash
 dagger agent --trace 2f123ba77bf7bd2d4db2f70ed20613e8
 ```
 
@@ -527,7 +527,7 @@ attach, which is deliberately not owned —
 
 ### 5.4 CLI surface
 
-```
+```bash
 dagger agent --trace <TRACE_ID>              # restore all, focus the top-level agent
 dagger agent --trace <TRACE_ID> --agent scout1
 ```
