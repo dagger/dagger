@@ -415,6 +415,40 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	require.Equal(t, "./ws", workspaceRef)
 }
 
+// Cobra owns --help. The early global pass shares the real flag values, so it
+// must not apply --help: Cobra reads that value even for a command that
+// disables flag parsing, and a dynamic command such as `dagger call` would
+// then print its static usage instead of loading the module and listing its
+// functions.
+func TestParseGlobalFlagsLeavesHelpToCobra(t *testing.T) {
+	oldWorkdir := workdir
+	t.Cleanup(func() { workdir = oldWorkdir })
+	workdir = "."
+
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call", DisableFlagParsing: true}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	root.PersistentFlags().BoolP("help", "h", false, "Print usage")
+
+	for _, args := range [][]string{
+		{"call", "--help"},
+		{"call", "-h"},
+		{"--help", "call"},
+		{"call", "build", "--help"},
+	} {
+		require.NoError(t, root.PersistentFlags().Set("help", "false"))
+		parseGlobalFlags(root, args)
+		help, err := root.PersistentFlags().GetBool("help")
+		require.NoError(t, err, args)
+		require.False(t, help, args)
+	}
+
+	// The other global flags still apply.
+	parseGlobalFlags(root, []string{"call", "--workdir", "/work/help"})
+	require.Equal(t, "/work/help", workdir)
+}
+
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	oldWorkspaceEnv := workspaceEnv

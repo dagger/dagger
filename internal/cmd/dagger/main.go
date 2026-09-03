@@ -674,6 +674,15 @@ func parseGlobalFlags(root *cobra.Command, args []string) {
 	flags := copyCommandFlags(cmd, "global")
 	flags.Usage = func() {}
 	flags.VisitAll(func(flag *pflag.Flag) {
+		// Cobra owns --help. The clones share the real flag values, so applying
+		// it here would set it before Cobra runs the command. Cobra reads the
+		// value even when a command disables flag parsing, so a dynamic command
+		// such as `dagger call` would print its static usage instead of loading
+		// the module and rendering its functions.
+		if flag.Name == "help" {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+			return
+		}
 		global := root.PersistentFlags().Lookup(flag.Name)
 		selected := cmd.Flags().Lookup(flag.Name)
 		if global == nil || selected != global {
