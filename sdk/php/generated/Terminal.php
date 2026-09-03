@@ -30,7 +30,7 @@ class Terminal extends Client\AbstractObject implements Client\IdAble, Node, Syn
     public function sync(): Terminal
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\Terminal::class, new \Dagger\Id((string)$id), 'Terminal');
     }
 }

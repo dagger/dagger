@@ -58,7 +58,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Every send enqueues a distinct message into live runtime state.").
 			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
 				`Never blocks, never drops; concurrent sends queue in order.`,
-				`The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.`,
+				`The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.`,
 				`Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.`).
 			Args(
 				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),

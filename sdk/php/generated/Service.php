@@ -67,8 +67,8 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     public function start(): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
-        $this->queryLeaf($leafQueryBuilder, 'start');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'start');
+        return $this->client->loadObjectFromId(\Dagger\Service::class, new \Dagger\Id((string)$id), 'Service');
     }
 
     /**
@@ -80,8 +80,8 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
         if (null !== $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
         }
-        $this->queryLeaf($leafQueryBuilder, 'stop');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'stop');
+        return $this->client->loadObjectFromId(\Dagger\Service::class, new \Dagger\Id((string)$id), 'Service');
     }
 
     /**
@@ -90,8 +90,8 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     public function sync(): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\Service::class, new \Dagger\Id((string)$id), 'Service');
     }
 
     public function terminal(?array $cmd = []): Service

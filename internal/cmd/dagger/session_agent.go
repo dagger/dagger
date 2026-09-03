@@ -75,14 +75,15 @@ type liveAgent struct {
 var _ agentRuntime = liveAgent{}
 
 func (l liveAgent) SendMessage(ctx context.Context, msg string) (agentMessage, error) {
-	// Send executes eagerly (it returns an ID scalar) and the returned ID is
-	// pinned to the replayable `…agent(id:…)!message(id:…)` chain, so an
-	// await on it can be canceled without losing the handle.
-	msgID, err := l.agent.Send(ctx, msg)
+	// Send executes eagerly (it returns an ID scalar that the SDK loads as
+	// the message) and the returned ID is pinned to the replayable
+	// `…agent(id:…)!message(id:…)` chain, so an await on the handle can be
+	// canceled without losing it.
+	message, err := l.agent.Send(ctx, msg)
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.AgentMessage](l.dag, msgID), nil
+	return message, nil
 }
 
 func (l liveAgent) Resume(ctx context.Context) error {
@@ -415,11 +416,10 @@ func (a *sessionAgent) currentAgent(ctx context.Context) (agentRuntime, error) {
 	if rt := a.runtime(); rt != nil {
 		return rt, nil
 	}
-	agentID, err := a.llm.Spawn(ctx, dagger.LLMSpawnOpts{Name: a.name})
+	handle, err := a.llm.Spawn(ctx, dagger.LLMSpawnOpts{Name: a.name})
 	if err != nil {
 		return nil, err
 	}
-	handle := dagger.Ref[*dagger.Agent](a.session.dag, agentID)
 	// Learn the spawn-minted instance ID: it is what the roster keys on, so
 	// without it a focus request naming this very agent would attach a second
 	// conversation to the runtime this one already drives. Best-effort: an

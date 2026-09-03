@@ -208,16 +208,26 @@ defmodule Dagger.Agent do
 
   Never blocks, never drops; concurrent sends queue in order.
 
-  The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+  The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
 
   Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
   """
-  @spec send(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec send(t(), String.t()) :: {:ok, Dagger.AgentMessage.t()} | {:error, term()}
   def send(%__MODULE__{} = agent, message) do
     query_builder =
       agent.query_builder |> QB.select("send") |> QB.put_arg("message", message)
 
-    Client.execute(agent.client, query_builder)
+    with {:ok, id} <- Client.execute(agent.client, query_builder) do
+      {:ok,
+       %Dagger.AgentMessage{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("AgentMessage"),
+         client: agent.client
+       }}
+    end
   end
 
   @doc """
