@@ -110,6 +110,13 @@ var (
 	_ LazyContainerParts = (*ContainerWithoutExposedPortLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithDefaultTerminalCmdLazy)(nil)
 	_ LazyContainerParts = (*ContainerVolatileExecCacheHitLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedCacheLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedTempLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedVolumeLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedSecretLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutMountLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithUnixSocketLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithoutUnixSocketLazy)(nil)
 
 	// Template B (snapshot writers): the exec's joint output group and
 	// the static rootfs and image writers.

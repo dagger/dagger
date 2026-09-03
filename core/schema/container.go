@@ -2955,11 +2955,15 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedCache(ctx, target, cache)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedCacheLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3001,11 +3005,15 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedVolume(ctx, target, volume, args.ReadOnly)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedVolumeLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3035,11 +3043,15 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedTemp(ctx, target, args.Size.Value.Int())
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedTempLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3066,7 +3078,7 @@ func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectR
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3074,10 +3086,12 @@ func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectR
 	if _, err := ctr.WithoutMount(ctx, target); err != nil {
 		return nil, err
 	}
-	ctr.Lazy = &core.ContainerWithoutMountLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Target:    target,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithoutMountLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Target:    target,
+		}
 	}
 	return ctr, nil
 }
@@ -3549,7 +3563,7 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3557,6 +3571,10 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
+	}
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedSecret(ctx, parent, target, secret, owner, fs.FileMode(args.Mode))
+		return ctr, err
 	}
 	var secretOwner *core.Ownership
 	if owner != "" {
@@ -3981,7 +3999,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3989,6 +4007,10 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
+	}
+	if !parentPendingLazy {
+		_, err := ctr.WithUnixSocketFromParent(ctx, parent, target, socket, owner)
+		return ctr, err
 	}
 	var socketOwner *core.Ownership
 	if owner != "" {
@@ -4048,11 +4070,15 @@ func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithoutUnixSocket(ctx, target)
+		return ctr, err
+	}
 	for i, sock := range ctr.Sockets {
 		if sock.ContainerPath != target {
 			continue

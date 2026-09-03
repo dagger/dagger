@@ -4001,16 +4001,17 @@ func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EncodePersisted(ctx co
 }
 
 func (lazy *ContainerWithMountedCacheLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedCache", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedCacheLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedCacheLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedCache", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithMountedCache(ctx, lazy.Target, lazy.Cache)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4045,16 +4046,17 @@ func (lazy *ContainerWithMountedCacheLazy) EncodePersisted(ctx context.Context, 
 }
 
 func (lazy *ContainerWithMountedVolumeLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedVolume", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedVolumeLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedVolumeLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedVolume", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithMountedVolume(ctx, lazy.Target, lazy.Volume, lazy.Readonly)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4090,16 +4092,17 @@ func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context,
 }
 
 func (lazy *ContainerWithMountedTempLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedTemp", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedTempLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedTempLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedTemp", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithMountedTemp(ctx, lazy.Target, lazy.Size)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4125,16 +4128,17 @@ func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, c
 }
 
 func (lazy *ContainerWithMountedSecretLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withMountedSecret", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedSecretLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedSecretLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedSecret", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithMountedSecret(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner, lazy.Mode)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4171,16 +4175,17 @@ func (lazy *ContainerWithMountedSecretLazy) EncodePersisted(ctx context.Context,
 }
 
 func (lazy *ContainerWithoutMountLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutMount", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutMountLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutMountLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutMount", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithoutMount(ctx, lazy.Target)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4274,16 +4279,17 @@ func (lazy *ContainerWithSymlinkLazy) EncodePersisted(ctx context.Context, cache
 }
 
 func (lazy *ContainerWithUnixSocketLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withUnixSocket", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithUnixSocketLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithUnixSocketLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withUnixSocket", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithUnixSocketFromParent(ctx, lazy.Parent, lazy.Target, lazy.Source, lazy.Owner)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
@@ -4319,16 +4325,17 @@ func (lazy *ContainerWithUnixSocketLazy) EncodePersisted(ctx context.Context, ca
 }
 
 func (lazy *ContainerWithoutUnixSocketLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.withoutUnixSocket", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithoutUnixSocketLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithoutUnixSocketLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withoutUnixSocket", container, lazy.Parent, group, func(ctx context.Context) error {
 		_, err := container.WithoutUnixSocket(ctx, lazy.Target)
-		if err != nil {
-			return err
-		}
-		container.consumeLazyOp()
-		return nil
+		return err
 	})
 }
 
