@@ -148,6 +148,11 @@ func resolveCommand(root *cobra.Command, args []string) (*cobra.Command, []strin
 func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	flags := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	flags.ParseErrorsAllowlist.UnknownFlags = true
+	if cmd.DisableFlagParsing {
+		// Dynamic commands parse their own arguments after loading a schema.
+		// Stop the early global pass at the first schema-owned token.
+		flags.SetInterspersed(false)
+	}
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		clone := *flag
 		clone.Changed = false

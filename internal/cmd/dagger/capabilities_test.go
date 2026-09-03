@@ -572,6 +572,7 @@ func TestCapabilityScopedFlagValidation(t *testing.T) {
 	require.NoError(t, err)
 	disabledChild.DisableFlagParsing = true
 	require.EqualError(t, validateFlagCapabilities(disabledRoot, []string{"child", "--progress=plain"}), `flag --progress is not supported by command "root child"`)
+	require.NoError(t, validateFlagCapabilities(disabledRoot, []string{"child", "function", "--progress=plain"}))
 	setCommandCapabilities(disabledChild, mayRenderPipeline)
 	require.NoError(t, validateFlagCapabilities(disabledRoot, []string{"child", "--progress=plain"}))
 
@@ -606,6 +607,23 @@ func TestGlobalFlagParsingRespectsLocalShadow(t *testing.T) {
 	parseGlobalFlags(root, []string{"-q", "child"})
 	require.Zero(t, quiet)
 	require.False(t, localQuiet)
+}
+
+func TestGlobalFlagParsingStopsAtDynamicArguments(t *testing.T) {
+	oldXRelease := xRelease
+	t.Cleanup(func() { xRelease = oldXRelease })
+
+	root := &cobra.Command{Use: "root"}
+	var cloud bool
+	root.PersistentFlags().BoolVar(&cloud, "cloud", false, "Use a Cloud Engine")
+	dynamic := &cobra.Command{Use: "dynamic", DisableFlagParsing: true}
+	root.AddCommand(dynamic)
+
+	parseGlobalFlags(root, []string{"dynamic", "function", "--cloud"})
+	require.False(t, cloud)
+
+	parseGlobalFlags(root, []string{"--cloud", "dynamic", "function"})
+	require.True(t, cloud)
 }
 
 func TestCapabilityScopedFlagCompletion(t *testing.T) {
