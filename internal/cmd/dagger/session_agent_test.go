@@ -499,8 +499,16 @@ func TestRewindWaitsForTheCanceledTurnAndPreservesFocus(t *testing.T) {
 		<-saveRelease
 	}
 
-	var canceled error
-	chief.beginTurn(func(cause error) { canceled = cause })
+	// The cancel cause lands from rewind's goroutine while the test polls it.
+	var (
+		canceledL sync.Mutex
+		canceled  error
+	)
+	chief.beginTurn(func(cause error) {
+		canceledL.Lock()
+		defer canceledL.Unlock()
+		canceled = cause
+	})
 	s.stepped(chief)
 	<-saveStarted
 	done := make(chan error, 1)
@@ -509,6 +517,8 @@ func TestRewindWaitsForTheCanceledTurnAndPreservesFocus(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
+		canceledL.Lock()
+		defer canceledL.Unlock()
 		return errors.Is(canceled, errAgentRewound)
 	}, time.Second, 10*time.Millisecond)
 	require.Zero(t, chiefRT.reseedCount(), "reseed must wait for old turn cleanup")
