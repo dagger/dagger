@@ -25,23 +25,23 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The opaque runtime handle minted by the spawn that created this agent.
+     *
+     * It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+     */
+    public function handle(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('handle');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'handle');
+    }
+
+    /**
      * A unique identifier for this Agent.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * The unique instance identity minted by the spawn that created this agent.
-     *
-     * It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.
-     */
-    public function instanceID(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('instanceID');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'instanceID');
     }
 
     /**
@@ -59,21 +59,21 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Look up a previously sent message by its message ID, returning its handle.
+     * Look up a previously sent message by its opaque handle.
      *
-     * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+     * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
      *
-     * Fails if the agent has no runtime entry in this session, or no record of the given ID.
+     * Fails if the agent has no runtime entry in this session, or no record of the given handle.
      */
-    public function message(string $id): AgentMessage
+    public function message(string $handle): AgentMessage
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('message');
-        $innerQueryBuilder->setArgument('id', $id);
+        $innerQueryBuilder->setArgument('handle', $handle);
         return new \Dagger\AgentMessage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Display label and identity discriminator — not a session-wide address.
+     * Display label for the agent; carries no identity.
      */
     public function name(): string
     {
@@ -173,7 +173,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Never blocks, never drops; concurrent sends queue in order.
      *
-     * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
+     * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
      *
      * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
      */
@@ -238,29 +238,14 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Block until the agent reaches the given state, returning immediately if it is already there.
-     *
-     * A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
-     */
-    public function waitFor(?AgentState $state = null): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('waitFor');
-        if (null !== $state) {
-        $leafQueryBuilder->setArgument('state', $state);
-        }
-        $id = $this->queryLeaf($leafQueryBuilder, 'waitFor');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
      * Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
      *
-     * The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+     * Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
      */
-    public function waitSettled(): Agent
+    public function wait(): Agent
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('waitSettled');
-        $id = $this->queryLeaf($leafQueryBuilder, 'waitSettled');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('wait');
+        $id = $this->queryLeaf($leafQueryBuilder, 'wait');
         return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 }
