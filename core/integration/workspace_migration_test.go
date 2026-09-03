@@ -239,7 +239,7 @@ type Myapp {
 		// The allowed path for an SDK-only dagger.json is explicit migration
 		// first, then workspace mutation. Migration converts the module config
 		// in place and creates a minimal workspace config pinning only the SDK
-		// runtime, so a later `dagger install` can safely add dependencies to
+		// runtime, so a later `dagger module install` can safely add dependencies to
 		// dagger.toml.
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyGoSource(t, c, "hello from root source").
@@ -284,7 +284,7 @@ type Myapp {
 		require.NoError(t, err)
 		require.Equal(t, "hello from root source", strings.TrimSpace(callOut))
 
-		ctr = ctr.With(daggerExec("install", "./dep"))
+		ctr = ctr.With(daggerExec("module", "install", "./dep"))
 		installOut, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, installOut)
 		require.Contains(t, installOut, `Installed module "dep" in /work/dagger.toml`)
@@ -461,7 +461,9 @@ type Myapp {
 		// The converted toolchain's runtime is installed and pinned in the
 		// workspace, sharing the root module's dang SDK install.
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
-		require.Contains(t, wsOut, `path = "toolchain"`)
+		require.Contains(t, wsOut, `[sdks.dang.scopes.toolchain]`)
+		require.Contains(t, wsOut, `is-module = true`)
+		require.Contains(t, wsOut, `name = "tc"`)
 
 		// The toolchain is also a dependency of the migrated root module, so
 		// code that called it in 0.21 still resolves.
@@ -519,8 +521,10 @@ type Myapp {
 		wsOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
-		require.Contains(t, wsOut, `path = "libs/foo"`)
-		// The runtime is resolved to its real ref, matching `dagger sdk install`,
+		require.Contains(t, wsOut, `[sdks.dang.scopes."libs/foo"]`)
+		require.Contains(t, wsOut, `is-module = true`)
+		require.Contains(t, wsOut, `name = "foo"`)
+		// The runtime is resolved to its real ref, matching a generic SDK-module install,
 		// not left as the bare "dang" short name.
 		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)
 		require.NotContains(t, wsOut, `source = "dang"`)
@@ -567,8 +571,8 @@ type Myapp {
 		// workspace config by bare short name and must be resolved to a real
 		// ref. The tool uses `php`, whose sdks.json ref
 		// (github.com/dagger/php-sdk) differs from the engine-side runtime
-		// mapping, so this also pins that the CLI registry — what `dagger sdk
-		// install` uses — wins.
+		// mapping, so this also pins that the CLI registry used for SDK-module
+		// installation wins.
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "sdk": {"source": "dang"},

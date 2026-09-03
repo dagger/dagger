@@ -534,14 +534,18 @@ func workspaceConfigPendingModules(
 	slices.Sort(names)
 
 	pending := make([]pendingModule, 0, len(names))
+	sdkProviders := make(map[string]bool, len(cfg.SDKs))
+	for _, sdk := range cfg.SDKs {
+		sdkProviders[sdk.Module] = true
+	}
 	for _, name := range names {
 		entry := cfg.Modules[name]
 		// A built-in SDK install entry (e.g. dang/go written by migration) has a
 		// bare runtime name as its source, not a loadable module ref. It exists
-		// only to carry the [modules.<sdk>.as-sdk] authoring metadata; the runtime
+		// only to back a top-level [sdks.<name>] entry; the runtime
 		// itself resolves in-engine when a consuming module loads. Skip it here so
 		// the loader doesn't try to resolve the bare name as a local path.
-		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+		if sdkProviders[name] && coresdk.IsBuiltinSDKName(entry.Source) {
 			continue
 		}
 		mod := pendingModule{

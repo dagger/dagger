@@ -26,12 +26,12 @@ Dagger merges the effective configuration in a fixed order: the repository's `da
 
 ## Writing values
 
-You don't have to edit the file by hand. Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
+You don't have to edit the file by hand. Pass `-g/--global` to `dagger module settings` or `dagger workspace config` to store a value user-level instead of in the repository:
 
 ```shell
-dagger settings -g aws profile alice-dev             # always applied here
-dagger settings -g --env dev aws region us-west-2    # personal env overlay
-dagger settings -g -u aws profile                    # remove the override
+dagger module settings -g aws profile alice-dev             # always applied here
+dagger module settings -g --env dev aws region us-west-2    # personal env overlay
+dagger module settings -g -u aws profile                    # remove the override
 dagger workspace config -g modules.aws.settings.profile alice-dev
 ```
 

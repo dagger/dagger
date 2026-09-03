@@ -12,19 +12,19 @@ There are two ways to get one.
 
 ## Generated clients
 
-A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in your workspace, `dagger.toml` records it, and `dagger generate` regenerates it along with everything else.
+A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in an SDK scope. `dagger.toml` records the scope and target module, and `dagger generate` regenerates it with the other generated files.
 
-Install the SDK for the language you want the client in, then initialize a client at a path, bound to a module:
+Install the SDK for the required language. Run the client command from a project that the SDK can detect, then add the target module:
 
 ```shell
-dagger sdk install typescript
-dagger api client init typescript ./lib/client .dagger/modules/api
+dagger module install typescript
+dagger module client add .dagger/modules/api --sdk typescript
 ```
 
-`<path>` is where the client goes, relative to the current directory. A leading `/` means the workspace root. `<module>` is a workspace-relative path or a module ref. The engine records the client under the SDK in `dagger.toml` and the SDK's generators write the bindings. Pass `--no-generate` to record the client without generating yet. SDKs can add flags of their own; `dagger api client init <sdk> --help` lists them.
+The module argument can be a local module path, a module address, or an installed module name. The SDK detects the generation scope from the current workspace location. The engine records the client target under that scope in `dagger.toml`, and the SDK writes the bindings. Use `--sdk` when more than one installed SDK can manage the location.
 
 ```shell
-dagger api client list          # clients recorded in this workspace
+dagger module client list       # clients in the current scope
 dagger generate                 # regenerate bindings after the bound module changes
 ```
 

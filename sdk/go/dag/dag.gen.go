@@ -216,6 +216,12 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
+// Construct a versioned module manifest.
+func ModuleManifest() *dagger.ModuleManifestVersions {
+	client := initClient()
+	return client.ModuleManifest()
+}
+
 // Create a new module source instance from a source ref string
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()

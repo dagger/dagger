@@ -114,6 +114,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Detect the most specific SDK-module scope that contains the current location.
+     */
+    public function detectScope(?string $sdk = ''): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('detectScope');
+        if (null !== $sdk) {
+        $leafQueryBuilder->setArgument('sdk', $sdk);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'detectScope');
+    }
+
+    /**
      * Returns a Directory from the workspace.
      *
      * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
@@ -417,6 +429,22 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a generated module client added to its detected scope.
+     */
+    public function withClient(string $module, ?string $sdk = '', ?Json $settings = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
+        $innerQueryBuilder->setArgument('module', $module);
+        if (null !== $sdk) {
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $settings) {
+        $innerQueryBuilder->setArgument('settings', $settings);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a named config environment created.
      */
     public function withConfigEnv(string $name, ?bool $here = false): Workspace
@@ -462,69 +490,40 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with a generated API client initialized.
-     *
-     * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+     * Return this workspace with a file added or replaced, without mutating the source.
      */
-    public function withInitClient(
-        string $path,
-        string $sdk,
-        string $module,
-        ?Json $args = null,
-        ?bool $here = false,
-        ?bool $noGenerate = false,
-    ): Workspace {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitClient');
+    public function withFile(string $path, File $source, ?int $permissions = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('sdk', $sdk);
-        $innerQueryBuilder->setArgument('module', $module);
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $here) {
-        $innerQueryBuilder->setArgument('here', $here);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Return this workspace with a new module initialized.
+     * Return this workspace with a location initialized as a module scope.
      *
-     * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+     * The selected SDK module records the scope and generates the module source.
      */
     public function withInitModule(
-        string $name,
         string $sdk,
+        ?string $name = '',
         ?string $path = '',
-        ?string $source = '',
-        ?array $include = [],
-        ?Json $args = null,
-        ?bool $here = false,
-        ?bool $noGenerate = false,
+        ?Json $settings = null,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitModule');
-        $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('sdk', $sdk);
+        if (null !== $name) {
+        $innerQueryBuilder->setArgument('name', $name);
+        }
         if (null !== $path) {
         $innerQueryBuilder->setArgument('path', $path);
         }
-        if (null !== $source) {
-        $innerQueryBuilder->setArgument('source', $source);
-        }
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $here) {
-        $innerQueryBuilder->setArgument('here', $here);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
+        if (null !== $settings) {
+        $innerQueryBuilder->setArgument('settings', $settings);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -620,11 +619,52 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with refreshed lockfile state.
+     * Return this workspace with the selected module clients updated.
+     *
+     * The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+     *
+     * The selected SDK module then regenerates every scope that owns one of the targets.
      */
-    public function withUpdatedLock(): Workspace
+    public function withUpdatedClients(?array $modules = [], ?bool $all = false, ?string $sdk = ''): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedClients');
+        if (null !== $modules) {
+        $innerQueryBuilder->setArgument('modules', $modules);
+        }
+        if (null !== $all) {
+        $innerQueryBuilder->setArgument('all', $all);
+        }
+        if (null !== $sdk) {
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with refreshed lockfile state.
+     *
+     * SDK client scopes are regenerated unless noGenerate is true.
+     */
+    public function withUpdatedLock(?bool $noGenerate = false): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedLock');
+        if (null !== $noGenerate) {
+        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with refreshed lockfile state for installed modules.
+     *
+     * An SDK client scope is regenerated when it targets an updated module.
+     */
+    public function withUpdatedModules(?array $names = []): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedModules');
+        if (null !== $names) {
+        $innerQueryBuilder->setArgument('names', $names);
+        }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -635,6 +675,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a module client removed from the current scope.
+     *
+     * The selected SDK module regenerates the complete scope.
+     */
+    public function withoutClient(string $module): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutClient');
+        $innerQueryBuilder->setArgument('module', $module);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

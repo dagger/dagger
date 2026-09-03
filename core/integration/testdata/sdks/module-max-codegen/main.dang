@@ -1,0 +1,18 @@
+"""
+Test SDK that runs a module's built-in code generator from a module call.
+"""
+type ModuleMaxCodegen {
+  detectScope(ws: Workspace!): String! {
+    ""
+  }
+
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    let generated = ws.moduleSource(".").generatedContextDirectory
+    ws.withDirectory(".", generated)
+  }
+}

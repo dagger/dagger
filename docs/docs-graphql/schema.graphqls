@@ -1729,17 +1729,6 @@ type Container implements Exportable & Node & Syncer {
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule implements Node {
-  """
-  Treat the currently executing module as an SDK installed in the given
-  workspace, exposing the modules and clients it manages.
-
-  Errors if the current module is not installed as an SDK in this workspace.
-  """
-  asSDK(
-    """The workspace to resolve SDK-role data against."""
-    workspace: ID! @expectedType(name: "Workspace")
-  ): CurrentModuleAsSDK!
-
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -1798,58 +1787,6 @@ type CurrentModule implements Node {
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
   ): File!
-}
-
-"""
-The SDK-role data for the currently executing module, as installed in the supplied workspace.
-"""
-type CurrentModuleAsSDK implements Node {
-  """The generated clients this SDK produces in the workspace."""
-  clients: [CurrentModuleAsSDKClient!]!
-
-  """A unique identifier for this CurrentModuleAsSDK."""
-  id: ID!
-
-  """
-  The managed modules relevant to the bound workspace cwd: every module at or
-  below it, plus the nearest enclosing module when the cwd itself is not
-  managed.
-  """
-  modules: [CurrentModuleAsSDKModule!]!
-
-  """The user-facing name of this SDK in the workspace."""
-  name: String!
-}
-
-"""A generated client the current SDK produces in the workspace."""
-type CurrentModuleAsSDKClient implements Node {
-  """A unique identifier for this CurrentModuleAsSDKClient."""
-  id: ID!
-
-  """
-  The module the client is bound to (workspace-relative path or canonical ref).
-  """
-  module: String!
-
-  """
-  The resolved module source this client is bound to, including its dependency closure and pinned version.
-  """
-  moduleSource: ModuleSource!
-
-  """Workspace-root-relative path of the generated client."""
-  path: String!
-
-  """The pinned version of the bound module, if any."""
-  pin: String!
-}
-
-"""A workspace-local module managed by the current SDK."""
-type CurrentModuleAsSDKModule implements Node {
-  """A unique identifier for this CurrentModuleAsSDKModule."""
-  id: ID!
-
-  """Workspace-root-relative path to the managed module."""
-  path: String!
 }
 
 type DiffStat implements Node {
@@ -3126,8 +3063,10 @@ type Generator implements Node {
   """Return the fully qualified name of the generator"""
   name: String!
 
-  """The original module in which the generator has been defined"""
-  originalModule: Module!
+  """
+  The module that defined the generator, or null for an engine-defined generator
+  """
+  originalModule: Module
 
   """The path of the generator within its module"""
   path: [String!]!
@@ -4285,6 +4224,94 @@ type ModuleConfigClient implements Node {
   id: ID!
 }
 
+"""A Dagger module manifest in the current unversioned format."""
+type ModuleManifestV1 implements Node {
+  """Serialize the manifest as dagger-module.toml."""
+  asFile: File!
+
+  """A unique identifier for this ModuleManifestV1."""
+  id: ID!
+
+  """
+  Set the required engine API version.
+
+  The default is the running engine version.
+  """
+  withEngineVersion(
+    """Required engine API version."""
+    version: String!
+  ): ModuleManifestV1!
+
+  """
+  Add a path from the module context to the runtime input.
+
+  This operation is additive.
+  """
+  withInclude(
+    """Path to include."""
+    path: String!
+  ): ModuleManifestV1!
+
+  """Set the runtime that builds and executes the module."""
+  withRuntime(
+    """Runtime source."""
+    source: String!
+  ): ModuleManifestV1!
+
+  """
+  Set the module implementation path relative to dagger-module.toml.
+
+  The default is '.'.
+  """
+  withSource(
+    """Module implementation path."""
+    path: String!
+  ): ModuleManifestV1!
+}
+
+"""A Dagger module manifest in format version 2."""
+type ModuleManifestV2 implements Node {
+  """Serialize the manifest as dagger-module.toml."""
+  asFile: File!
+
+  """A unique identifier for this ModuleManifestV2."""
+  id: ID!
+
+  """Use the built-in Dang entrypoint driver."""
+  withDangEntrypoint(
+    """Entrypoint source address."""
+    source: String!
+  ): ModuleManifestV2!
+
+  """Use another module as the entrypoint driver."""
+  withModuleEntrypoint(
+    """Entrypoint module address."""
+    source: String!
+  ): ModuleManifestV2!
+}
+
+"""Versioned Dagger module manifest builders."""
+type ModuleManifestVersions implements Node {
+  """A unique identifier for this ModuleManifestVersions."""
+  id: ID!
+
+  """
+  Construct a manifest in the current unversioned format.
+
+  The generated file does not contain manifestVersion = 1.
+  """
+  v1(
+    """Module name."""
+    name: String!
+  ): ModuleManifestV1!
+
+  """Construct a manifest in format version 2."""
+  v2(
+    """Module name."""
+    name: String!
+  ): ModuleManifestV2!
+}
+
 """
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
@@ -4361,21 +4388,6 @@ type ModuleSource implements Node & Syncer {
     """The workspace to apply generated files to."""
     workspace: ID! @expectedType(name: "Workspace")
   ): Workspace!
-
-  """
-  Generate this module's transitive local dependency closure and return the
-  staged changes as a single changeset against the unstaged workspace root.
-
-  Each local dependency is generated by its own SDK against a workspace scoped
-  to it, carrying the dependency's own already-generated dependencies. Remote
-  (git) dependencies are assumed committed and skipped. Overlay the result onto
-  the workspace before generating this module; it is not this module's own
-  generated code.
-  """
-  generateLocalDependencies(
-    """The workspace to generate the local dependencies against."""
-    workspace: ID! @expectedType(name: "Workspace")
-  ): Changeset!
 
   """
   The generated files and directories made on top of the module source's context directory, returned as a Changeset.
@@ -4964,6 +4976,9 @@ type Query implements Node {
 
   """Create a new module."""
   module: Module!
+
+  """Construct a versioned module manifest."""
+  moduleManifest: ModuleManifestVersions!
 
   """Create a new module source instance from a source ref string"""
   moduleSource(
@@ -5779,6 +5794,16 @@ type Workspace implements Node {
   cwd: String!
 
   """
+  Detect the most specific SDK-module scope that contains the current location.
+  """
+  detectScope(
+    """
+    Optional SDK name to probe. All installed SDK modules are probed when omitted.
+    """
+    sdk: String = ""
+  ): String!
+
+  """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
@@ -6019,6 +6044,22 @@ type Workspace implements Node {
     changes: ID! @expectedType(name: "Changeset")
   ): Workspace!
 
+  """
+  Return this workspace with a generated module client added to its detected scope.
+  """
+  withClient(
+    """
+    Installed module name, local path, or module address to generate a client for.
+    """
+    module: String!
+
+    """Optional SDK name. Scope detection selects the SDK when omitted."""
+    sdk: String = ""
+
+    """Explicit SDK-module constructor setting overrides for this scope."""
+    settings: JSON
+  ): Workspace!
+
   """Return this workspace with a named config environment created."""
   withConfigEnv(
     """Environment name."""
@@ -6066,68 +6107,43 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with a generated API client initialized.
-
-  The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+  Return this workspace with a file added or replaced, without mutating the source.
   """
-  withInitClient(
-    """
-    Output directory for the generated client, relative to the workspace cwd; a
-    leading "/" is relative to the workspace root.
-    """
+  withFile(
+    """Destination path. Relative paths resolve from the workspace cwd."""
     path: String!
 
-    """Workspace SDK name or module entry name to use."""
-    sdk: String!
+    """File to add."""
+    source: ID! @expectedType(name: "File")
 
     """
-    Workspace-relative path or canonical ref for the module the client binds to.
+    Permissions of the added file. Defaults to the source file permissions.
     """
-    module: String!
-
-    """SDK-specific init arguments."""
-    args: JSON
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    """Skip running the SDK's generators for the new client."""
-    noGenerate: Boolean = false
+    permissions: Int
   ): Workspace!
 
   """
-  Return this workspace with a new module initialized.
+  Return this workspace with a location initialized as a module scope.
 
-  The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+  The selected SDK module records the scope and generates the module source.
   """
   withInitModule(
-    """Name of the new module."""
-    name: String!
-
-    """Workspace SDK name or module entry name to use."""
+    """Workspace SDK name or module entry name to use. Required."""
     sdk: String!
 
     """
-    Path for the new module, relative to the workspace cwd; a leading "/" is
-    relative to the workspace root. Defaults to .dagger/modules/<name> beside
-    the workspace config.
+    Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
+    """
+    name: String = ""
+
+    """
+    Module path relative to the workspace cwd, or an absolute workspace path.
+    Defaults to .dagger/modules/<name> beside the active workspace config.
     """
     path: String = ""
 
-    """Source subpath within the new module."""
-    source: String = ""
-
-    """Additional include patterns for the module."""
-    include: [String!] = []
-
-    """SDK-specific init arguments."""
-    args: JSON
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    """Skip running the SDK's generators for the new module."""
-    noGenerate: Boolean = false
+    """Explicit SDK-module constructor setting overrides for this scope."""
+    settings: JSON
   ): Workspace!
 
   """
@@ -6221,13 +6237,56 @@ type Workspace implements Node {
     here: Boolean = false
 
     """
-    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    Optional override for the SDK name conventionally derived from the installed module name.
     """
     asSdkName: String = ""
   ): Workspace!
 
-  """Return this workspace with refreshed lockfile state."""
-  withUpdatedLock: Workspace!
+  """
+  Return this workspace with the selected module clients updated.
+
+  The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+
+  The selected SDK module then regenerates every scope that owns one of the targets.
+  """
+  withUpdatedClients(
+    """
+    Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+    """
+    modules: [String!] = []
+
+    """
+    Select clients in every scope instead of only the scopes containing the workspace cwd.
+    """
+    all: Boolean = false
+
+    """
+    Optional SDK name. All installed SDK modules are selected when omitted.
+    """
+    sdk: String = ""
+  ): Workspace!
+
+  """
+  Return this workspace with refreshed lockfile state.
+
+  SDK client scopes are regenerated unless noGenerate is true.
+  """
+  withUpdatedLock(
+    """Do not regenerate SDK client scopes."""
+    noGenerate: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with refreshed lockfile state for installed modules.
+
+  An SDK client scope is regenerated when it targets an updated module.
+  """
+  withUpdatedModules(
+    """
+    Installed module names to refresh. An empty list refreshes all installed modules.
+    """
+    names: [String!] = []
+  ): Workspace!
 
   """
   Return this workspace with its working directory pointed at the given workspace-relative path.
@@ -6235,6 +6294,16 @@ type Workspace implements Node {
   withWorkdir(
     """Workspace-relative path to use as the working directory."""
     path: String!
+  ): Workspace!
+
+  """
+  Return this workspace with a module client removed from the current scope.
+
+  The selected SDK module regenerates the complete scope.
+  """
+  withoutClient(
+    """The recorded target to remove."""
+    module: String!
   ): Workspace!
 
   """Return this workspace with a named config environment removed."""

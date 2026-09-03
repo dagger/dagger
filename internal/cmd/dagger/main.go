@@ -169,18 +169,10 @@ func init() {
 	upCmd.GroupID = "daily"
 	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
-	activityCmd.GroupID = "daily"
 
-	moduleDepInstallCmd.GroupID = "workspace"
-	moduleDepUninstallCmd.GroupID = "workspace"
-	installedCmd.GroupID = "workspace"
-	moduleUpdateCmd.GroupID = "workspace"
-	searchCmd.GroupID = "workspace"
-	settingsCmd.GroupID = "workspace"
+	moduleCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
-	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
@@ -196,22 +188,14 @@ func init() {
 		queryCmd,
 		apiCmd,
 		traceCmd,
-		settingsCmd,
 		checksCmd,
 		upCmd,
 		terminalCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
-		moduleDepInstallCmd,
-		moduleDepUninstallCmd,
-		moduleUpdateCmd,
-		setupCmd,
-		searchCmd,
-		installedCmd,
-		activityCmd,
 		moduleCmd,
-		sdkCmd,
+		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		functionsAliasCmd,
@@ -624,7 +608,7 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(args []string) {
+func parseGlobalFlags(args []string) []string {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
@@ -637,6 +621,7 @@ func parseGlobalFlags(args []string) {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	return flags.Args()
 }
 
 func xReleaseLogLine(msg string) string {
@@ -647,10 +632,6 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
-// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
-//
-//nolint:unparam
 func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
@@ -707,7 +688,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
-	case "settings", "workspace settings":
+	case "settings", "workspace settings", "module settings":
 		return len(args) >= 3
 	default:
 		return false
@@ -824,7 +805,7 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(os.Args[1:])
+	commandArgs := parseGlobalFlags(os.Args[1:])
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -919,8 +900,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+	if moduleSDKSettingsRegistrationArgs(commandArgs, os.Args[1:]) {
+		if err := registerModuleSDKSettingFlags(ctx, moduleInitSDKArg(commandArgs)); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}

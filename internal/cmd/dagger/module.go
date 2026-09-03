@@ -29,6 +29,19 @@ const (
 	coreModuleRef    = "core"
 )
 
+var moduleCmd = &cobra.Command{
+	Use:     "module",
+	Aliases: []string{"mod"},
+	Short:   "Install, use, and develop Dagger modules",
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "mod",
+	},
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
+}
+
 func addWorkspaceInstallFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the module in the workspace. Defaults to the name of the module being installed.")
 	addWorkspaceHereFlag(cmd)
@@ -62,6 +75,17 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 }
 
 func init() {
+	moduleCmd.AddCommand(
+		moduleDepInstallCmd,
+		moduleDepUninstallCmd,
+		installedCmd,
+		moduleUpdateCmd,
+		searchCmd,
+		settingsCmd,
+		moduleInitCmd,
+		moduleClientCmd,
+	)
+
 	moduleAddFlags(apiCallCmd.Command(), apiCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
@@ -88,23 +112,40 @@ func init() {
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
 
-var moduleUpdateCmd = newWorkspaceUpdateCmd(false)
+var moduleUpdateCmd = &cobra.Command{
+	Use:   "update [module...]",
+	Short: "Refresh lockfile state for installed modules",
+	Long: `Refresh lockfile state for installed modules.
 
-func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
-	return &cobra.Command{
-		Use:   "update",
-		Short: "Refresh installed-module state",
-		Long: `Refresh installed-module state.
-
-Refreshes entries already recorded in dagger.lock.`,
-		Example: `"dagger update"`,
-		Args:    cobra.NoArgs,
-		Hidden:  hidden,
-		RunE:    runWorkspaceUpdate,
-	}
+With no module names, this refreshes all installed modules. It does not refresh
+client targets or runtime targets. If a client scope targets an updated module,
+the command regenerates that scope. Use dagger workspace update to refresh all
+entries in dagger.lock.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runModuleUpdate,
 }
 
-var moduleDepInstallCmd = newWorkspaceInstallCmd(false, []string{"i"})
+func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
+	var noGenerate bool
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Refresh all workspace lockfile state",
+		Long: `Refresh all workspace lockfile state.
+
+Refreshes entries already recorded in dagger.lock. Regenerates SDK client scopes
+unless --no-generate is set.`,
+		Example: `"dagger workspace update"`,
+		Args:    cobra.NoArgs,
+		Hidden:  hidden,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkspaceUpdate(cmd, args, noGenerate)
+		},
+	}
+	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Update the lockfile without regenerating SDK client scopes")
+	return cmd
+}
+
+var moduleDepInstallCmd = newWorkspaceInstallCmd(false, nil)
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -118,14 +159,14 @@ Use --here to create the workspace config at the workspace cwd instead.
 
 With --env the module is recorded in that env's overlay (env.<name>.modules.*)
 and the env is created if missing.`,
-		Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
+		Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceInstall,
 	}
 }
 
-var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, []string{"un"})
+var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, nil)
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -135,7 +176,7 @@ func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
 
 With --env only the env's overlay entry is removed, never the base module.`,
-		Example: "dagger uninstall hello",
+		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceUninstall,

@@ -235,6 +235,13 @@ func init() {
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
 
+	workspaceUpdateCmd := newWorkspaceUpdateCmd(false)
+	workspaceUpdateCmd.Short = "Refresh all workspace lockfile state"
+	workspaceUpdateCmd.Long = "Refresh all installed-module, client-target, and runtime entries in dagger.lock. Regenerate SDK client scopes unless --no-generate is set."
+	workspaceUpdateCmd.Example = `"dagger workspace update"`
+
+	workspaceCmd.AddCommand(activityCmd)
+	workspaceCmd.AddCommand(workspaceUpdateCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
@@ -560,22 +567,6 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		return err
 	}
 	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
-	return err
-}
-
-func uninstallWorkspaceSDK(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
-	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutSDK(name, dagger.WorkspaceWithoutSDKOpts{Here: here}))
-	if err != nil {
-		return err
-	}
-	configPath, err := workspaceConfigHostPath(ctx, updated)
-	if err != nil {
-		return err
-	}
-	if err := updated.Export(ctx); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(out, "Uninstalled SDK %q from %s\n", name, configPath)
 	return err
 }
 

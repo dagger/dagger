@@ -288,6 +288,25 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		requireNoEntry(t, got.CurrentWorkspace.Directory.Entries, ".git")
 	})
 
+	t.Run("remote -W loads SDK settings for module help", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		workspaceDir := c.Directory().WithNewFile("dagger.toml", `[modules.go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[sdks.go]
+module = "go-sdk"
+`)
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
+
+		ctr := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty")
+
+		out, err := ctr.With(workspaceSelectionDaggerExec("-W", remoteRef, "module", "init", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Initialize a module in the workspace")
+	})
+
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).

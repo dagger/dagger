@@ -1,18 +1,19 @@
 package daggercmd
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
-	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 )
+
+var searchSDKOnly bool
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
@@ -20,14 +21,20 @@ var searchCmd = &cobra.Command{
 	Long: `Search the module registry by name or description.
 
 With no query, lists all known modules.`,
-	Example: "dagger search wolfi",
+	Example: "dagger module search wolfi",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := ""
 		if len(args) == 1 {
 			query = args[0]
 		}
-		mods, err := loadModuleRegistry()
+		var mods []registryModule
+		var err error
+		if searchSDKOnly {
+			mods, err = loadSDKSearchRegistry()
+		} else {
+			mods, err = loadModuleRegistry()
+		}
 		if err != nil {
 			return err
 		}
@@ -35,55 +42,38 @@ With no query, lists all known modules.`,
 	},
 }
 
-// listWorkspaceModules prints the modules installed in the current workspace.
-// Kept here as a helper for a future top-level `dagger installed` command
-// (planned for the CLI 1.0 redesign).
-func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client) error {
-	var res struct {
-		CurrentWorkspace struct {
-			Modules []struct {
-				Name   string
-				Source string
-			}
-		}
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query { currentWorkspace { modules { name source } } }`,
-	}, &dagger.Response{
-		Data: &res,
-	})
-	if err != nil {
-		return err
-	}
-
-	mods := res.CurrentWorkspace.Modules
-	if len(mods) == 0 {
-		_, err := fmt.Fprintln(out, "No modules installed in the workspace.")
-		return err
-	}
-
-	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tSOURCE"); err != nil {
-		return err
-	}
-	for _, m := range mods {
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", m.Name, m.Source); err != nil {
-			return err
-		}
-	}
-	return w.Flush()
+func init() {
+	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
 }
 
 // registryModule is one entry in the searchable module registry.
 type registryModule struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Repo        string `json:"repo"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Repo        string   `json:"repo"`
+	Aliases     []string `json:"aliases,omitempty"`
 	// Recommend lists the globs (e.g. "**/go.mod") used by `dagger setup`
 	// to suggest this module based on files present in the workspace.
 	// The module is recommended when any pattern matches at least one file.
 	// An empty list means never recommended.
 	Recommend []string `json:"recommend,omitempty"`
+}
+
+func loadSDKSearchRegistry() ([]registryModule, error) {
+	entries, err := loadSDKRegistry()
+	if err != nil {
+		return nil, err
+	}
+	mods := make([]registryModule, 0, len(entries))
+	for _, entry := range entries {
+		mods = append(mods, registryModule{
+			Name:        entry.Name,
+			Description: entry.Description,
+			Repo:        entry.Repo,
+			Aliases:     entry.Aliases,
+		})
+	}
+	return mods, nil
 }
 
 // embeddedModuleRegistry is the registry baked in at build time.
@@ -112,7 +102,11 @@ func searchModuleRegistry(mods []registryModule, query string) []registryModule 
 	for _, m := range mods {
 		if q == "" ||
 			strings.Contains(strings.ToLower(m.Name), q) ||
-			strings.Contains(strings.ToLower(m.Description), q) {
+			strings.Contains(strings.ToLower(m.Description), q) ||
+			strings.Contains(strings.ToLower(m.Repo), q) ||
+			slices.ContainsFunc(m.Aliases, func(alias string) bool {
+				return strings.Contains(strings.ToLower(alias), q)
+			}) {
 			out = append(out, m)
 		}
 	}
@@ -139,6 +133,6 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 		return err
 	}
 
-	_, err := fmt.Fprintln(out, "\nRun 'dagger install <REPO>' to install a module.")
+	_, err := fmt.Fprintln(out, "\nRun 'dagger module install <REPO>' to install a module.")
 	return err
 }

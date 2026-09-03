@@ -2,265 +2,381 @@ package daggercmd
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"text/tabwriter"
 
-	"github.com/dagger/dagger/core/modules"
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// moduleSdkCmd dispatches arbitrary subcommands to the current module's SDK.
-//
-// Form: `dagger module sdk <subcommand> [args...]`
-//
-// Locates the cwd module's dagger-module.toml (walking up to the workspace
-// root), reads its SDK declaration, derives the workspace-installed name
-// (last path segment, version-stripped), and runs
-// `dagger call <sdk-name> <subcommand> [args...]` via exec.CommandContext.
-// Stdin / stdout / stderr / env are inherited.
-//
-// The available subcommands depend entirely on what the SDK exposes —
-// there's no CLI-side contract beyond "you're an installed module."
-//
-// Implementation note: this wrapper deliberately does NOT open its own
-// engine session for the SDK lookup. The spawned `dagger call` opens its
-// own session; opening a parallel one in the parent would double-bootstrap
-// the engine and have two Frontends fighting over the same terminal. The
-// SDK declaration is read directly from dagger-module.toml on disk.
-var moduleSdkCmd = &cobra.Command{
-	Use:   "sdk <subcommand> [args...]",
-	Short: "Run SDK-specific commands against this module's SDK",
-	Long: `Run SDK-specific commands against the current module's SDK.
+const sdkModuleSettingAnnotation = "sdk-module-setting"
 
-Reads the SDK from the module's dagger-module.toml and dispatches
-through "dagger api call <sdk>". Available subcommands depend entirely on
-the SDK in use — the wrapper is a thin forwarder.
+var (
+	moduleInitName        string
+	moduleInitPath        string
+	moduleClientAddSDK    string
+	moduleClientScopeSDK  string
+	moduleClientListAll   bool
+	moduleClientListSDK   string
+	moduleClientUpdateAll bool
+	moduleClientUpdateSDK string
+)
 
-Examples:
-  dagger module sdk python-version 3.13
-  dagger module sdk go-mod-tidy
-  dagger module sdk python-version --help   # SDK function help (dispatched)
-  dagger module sdk --help                  # this wrapper's help
-`,
-	// All args (and any flags within them) belong to the SDK function,
-	// not to this command. Don't let cobra try to parse flags here.
-	DisableFlagParsing: true,
-	RunE:               runModuleSdk,
+var moduleInitCmd = &cobra.Command{
+	Use:                   "init <sdk>",
+	Short:                 "Initialize a module in the workspace",
+	Long:                  "Initialize a module in the workspace, using the named SDK.",
+	Example:               "dagger module init go",
+	Args:                  cobra.ExactArgs(1),
+	DisableFlagsInUseLine: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSDKModuleInit(cmd, args[0])
+	},
 }
 
-func runModuleSdk(cmd *cobra.Command, args []string) error {
-	// DisableFlagParsing forwards ALL tokens (including parent persistent
-	// flags like --load-module or --x-release) into args. The wrapper's
-	// "help vs dispatch" decision should not depend on flag noise; key on
-	// the first positional (non-flag) token instead. If there isn't one,
-	// the user typed a bare `dagger module sdk` (maybe with --help) and
-	// wants wrapper help.
-	hasSubcommand := false
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			hasSubcommand = true
-			break
-		}
-	}
-	if !hasSubcommand {
+var moduleClientCmd = &cobra.Command{
+	Use:   "client",
+	Short: "Manage generated clients for modules",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
-	}
+	},
+}
 
-	sdkName, err := currentModuleSDKName()
+var moduleClientAddCmd = &cobra.Command{
+	Use:                   "add <module>",
+	Short:                 "Add and generate a module client",
+	Args:                  cobra.ExactArgs(1),
+	DisableFlagsInUseLine: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSDKModuleClientAdd(cmd, args[0])
+	},
+}
+
+var moduleClientRemoveCmd = &cobra.Command{
+	Use:   "rm <module>",
+	Short: "Remove a module client",
+	Long:  "Remove a module client and regenerate its SDK scope.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runSDKModuleClientRemove(cmd, args[0])
+	},
+}
+
+var moduleClientUpdateCmd = &cobra.Command{
+	Use:   "update [module...]",
+	Short: "Update module clients",
+	Long: `Update the recorded module clients and regenerate their SDK scopes.
+
+With no argument, updates every client target in the current scope. Only the
+lock entries that the selected targets reach are rewritten.`,
+	Example: "dagger module client update",
+	RunE:    runSDKModuleClientUpdate,
+}
+
+var moduleClientScopeCmd = &cobra.Command{
+	Use:   "scope",
+	Short: "Print the current client-generation scope",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runSDKModuleClientScope(cmd)
+	},
+}
+
+var moduleClientListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List generated module clients",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runSDKModuleClientList(cmd)
+	},
+}
+
+func init() {
+	moduleInitCmd.Flags().StringVarP(&moduleInitName, "name", "n", "", "Module name (inferred when omitted)")
+	moduleInitCmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path (default: .dagger/modules/<name> beside dagger.toml)")
+	moduleClientAddCmd.Flags().StringVar(&moduleClientAddSDK, "sdk", "", "SDK module to use")
+	moduleClientScopeCmd.Flags().StringVar(&moduleClientScopeSDK, "sdk", "", "SDK module to query")
+	moduleClientListCmd.Flags().BoolVar(&moduleClientListAll, "all", false, "List clients in all scopes")
+	moduleClientListCmd.Flags().StringVar(&moduleClientListSDK, "sdk", "", "Filter by SDK module")
+	moduleClientUpdateCmd.Flags().BoolVar(&moduleClientUpdateAll, "all", false, "Update clients in all scopes")
+	moduleClientUpdateCmd.Flags().StringVar(&moduleClientUpdateSDK, "sdk", "", "Filter by SDK module")
+
+	moduleClientCmd.AddCommand(
+		moduleClientAddCmd,
+		moduleClientRemoveCmd,
+		moduleClientListCmd,
+		moduleClientScopeCmd,
+		moduleClientUpdateCmd,
+	)
+}
+
+func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module init does not support --env; SDK scopes live in the base workspace config")
+	}
+	settings, err := sdkModuleSettingsJSON(cmd, sdk)
 	if err != nil {
 		return err
 	}
+	return mutateSDKModuleWorkspace(cmd, `
+query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON) {
+  currentWorkspace {
+    result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings) { id }
+  }
+}`, map[string]any{
+		"sdk":      sdk,
+		"name":     moduleInitName,
+		"path":     moduleInitPath,
+		"settings": dagger.JSON(settings),
+	}, func() error {
+		_, err := fmt.Fprint(cmd.OutOrStdout(), moduleInitCustomPathMessage(moduleInitPath))
+		return err
+	})
+}
 
-	ctx := cmd.Context()
-	// Re-emit the persistent flags the user supplied on this invocation so the
-	// spawned `dagger call` runs against the same workspace, env, debug level,
-	// progress format, etc. Only flags that were actually set are forwarded;
-	// defaults are left implicit so environment variables can still apply.
-	forwarded := forwardedPersistentFlags(cmd)
-	fullArgs := append(append(forwarded, "call", sdkName), args...)
-
-	// os.Executable resolves through any wrapper / symlink to the binary
-	// currently running, so the child re-execs the same dagger build that
-	// served the parent invocation. os.Args[0] would resolve via PATH and
-	// could land on a different binary.
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate dagger binary: %w", err)
+func moduleInitCustomPathMessage(modulePath string) string {
+	if modulePath == "" {
+		return ""
 	}
-	sub := exec.CommandContext(ctx, self, fullArgs...)
-	sub.Stdin = os.Stdin
-	sub.Stdout = os.Stdout
-	sub.Stderr = os.Stderr
-	sub.Env = os.Environ()
+	return fmt.Sprintf(
+		"Initialized module %s\nCustom path; module was not installed.\n",
+		filepath.ToSlash(filepath.Clean(modulePath)),
+	)
+}
 
-	if err := sub.Run(); err != nil {
-		// Propagate the child's exit code so CI / shell pipelines see
-		// the real outcome instead of a flat 1.
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return idtui.ExitError{OriginalCode: exitErr.ExitCode()}
-		}
-		if errors.Is(err, context.Canceled) {
-			return idtui.ExitError{OriginalCode: 2}
-		}
+func runSDKModuleClientAdd(cmd *cobra.Command, module string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module client add does not support --env; SDK scopes live in the base workspace config")
+	}
+	settings, err := sdkModuleSettingsJSON(cmd, moduleClientAddSDK)
+	if err != nil {
 		return err
 	}
-	return nil
+	return mutateSDKModuleWorkspace(cmd, `
+query ModuleClientAdd($module: String!, $sdk: String, $settings: JSON) {
+  currentWorkspace {
+    result: withClient(module: $module, sdk: $sdk, settings: $settings) { id }
+  }
+}`, map[string]any{
+		"module":   module,
+		"sdk":      moduleClientAddSDK,
+		"settings": dagger.JSON(settings),
+	}, nil)
 }
 
-// currentModuleSDKName returns the workspace short name of the SDK that
-// authors the module reachable from cwd.
-//
-// Lookup steps:
-//  1. Walk up from cwd looking for dagger-module.toml (or the legacy
-//     dagger.json). The first match defines the module directory.
-//  2. Continue walking up to the workspace root (the nearest dagger.toml).
-//  3. Read the workspace config and scan [[modules.*.as-sdk.modules]] for
-//     a path entry matching the module's directory, both relative to the
-//     dagger.toml found in step 2.
-//  4. Return the parent module's short name (which is also the SDK name).
-//
-// Per the runtime/SDK split, dagger-module.toml no longer records the SDK.
-// The authoring relationship lives in workspace config. If the module
-// isn't registered under any SDK in dagger.toml, the wrapper can't tell
-// which SDK to dispatch to; that's an error the user resolves by
-// installing/registering the module via `dagger module init`.
-func currentModuleSDKName() (string, error) {
-	moduleDir, configDir, err := locateModuleAndWorkspaceRoot()
-	if err != nil {
-		return "", err
+func runSDKModuleClientRemove(cmd *cobra.Command, module string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module client rm does not support --env; SDK scopes live in the base workspace config")
 	}
-
-	// as-sdk paths are anchored two ways — relative to the config, or at the
-	// workspace root behind a leading "/" — so the comparison happens in
-	// workspace-root coordinates. Without a git root the config directory is
-	// the only boundary there is.
-	boundary := gitRootAbove(configDir)
-	if boundary == "" {
-		boundary = configDir
-	}
-	modulePath, err := filepath.Rel(boundary, moduleDir)
-	if err != nil {
-		return "", fmt.Errorf("compute workspace-relative module path: %w", err)
-	}
-	modulePath = filepath.ToSlash(filepath.Clean(modulePath))
-	configDirRel, err := filepath.Rel(boundary, configDir)
-	if err != nil {
-		return "", fmt.Errorf("compute workspace-relative config path: %w", err)
-	}
-
-	wsConfigPath := filepath.Join(configDir, workspace.ConfigFileName)
-	wsData, err := os.ReadFile(wsConfigPath)
-	if err != nil {
-		return "", fmt.Errorf("read workspace config %q: %w", wsConfigPath, err)
-	}
-	wsCfg, err := workspace.ParseConfig(wsData)
-	if err != nil {
-		return "", fmt.Errorf("parse workspace config %q: %w", wsConfigPath, err)
-	}
-
-	for installedName, installed := range wsCfg.Modules {
-		if installed.AsSDK == nil {
-			continue
-		}
-		for _, m := range installed.AsSDK.Modules {
-			managed, err := workspace.ResolveSDKManagedPath(configDirRel, m.Path)
-			if err != nil {
-				return "", fmt.Errorf("module managed by %q in %s: %w", installedName, wsConfigPath, err)
-			}
-			if managed == modulePath {
-				return installedName, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("module at %q is not registered under any [[modules.*.as-sdk.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
+	return mutateSDKModuleWorkspace(cmd, `
+query ModuleClientRemove($module: String!) {
+  currentWorkspace {
+    result: withoutClient(module: $module) { id }
+  }
+}`, map[string]any{"module": module}, nil)
 }
 
-// gitRootAbove returns the nearest directory at or above dir holding a .git,
-// which is the workspace boundary paths in dagger.toml measure against, or ""
-// when the config is not in a repository.
-func gitRootAbove(dir string) string {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
+func runSDKModuleClientUpdate(cmd *cobra.Command, modules []string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module client update does not support --env; SDK scopes live in the base workspace config")
 	}
+	return mutateSDKModuleWorkspace(cmd, `
+query ModuleClientUpdate($modules: [String!], $all: Boolean, $sdk: String) {
+  currentWorkspace {
+    result: withUpdatedClients(modules: $modules, all: $all, sdk: $sdk) { id }
+  }
+}`, map[string]any{
+		"modules": modules,
+		"all":     moduleClientUpdateAll,
+		"sdk":     moduleClientUpdateSDK,
+	}, nil)
 }
 
-// locateModuleAndWorkspaceRoot walks upward from cwd, returning the first
-// directory that contains a dagger-module.toml (or legacy dagger.json) as
-// the module root, plus the first directory that contains a dagger.toml
-// at-or-above as the workspace root.
-//
-// The walker stops climbing once it has both. If the workspace root
-// arrives before any module config, the cwd isn't inside a module.
-func locateModuleAndWorkspaceRoot() (moduleDir, workspaceRoot string, _ error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", "", fmt.Errorf("getwd: %w", err)
-	}
-	dir := cwd
-	for {
-		if moduleDir == "" {
-			for _, name := range modules.ConfigFilenames() {
-				if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-					moduleDir = dir
-					break
+func mutateSDKModuleWorkspace(
+	cmd *cobra.Command,
+	query string,
+	variables map[string]any,
+	afterApply func() error,
+) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		dag := ec.Dagger()
+		var result struct {
+			CurrentWorkspace struct {
+				Result struct {
+					ID dagger.ID
 				}
 			}
 		}
-		if _, err := os.Stat(filepath.Join(dir, workspace.ConfigFileName)); err == nil {
-			if moduleDir == "" {
-				return "", "", fmt.Errorf("no module config (%s) found between %q and the workspace root %q; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd, dir)
-			}
-			return moduleDir, dir, nil
+		if err := dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &result}); err != nil {
+			return err
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
+		if result.CurrentWorkspace.Result.ID == "" {
+			return fmt.Errorf("SDK-module workspace operation returned no workspace")
 		}
-		dir = parent
-	}
-	if moduleDir != "" {
-		return "", "", fmt.Errorf("module at %q has no workspace root (no dagger.toml in any parent); `dagger module sdk` requires a workspace", moduleDir)
-	}
-	return "", "", fmt.Errorf("no module config (%s) and no workspace root found from %q upward", strings.Join(modules.ConfigFilenames(), " or "), cwd)
+
+		current := dag.CurrentWorkspace().WithWorkdir(".")
+		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID).WithWorkdir(".")
+		applied, err := handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
+		if err != nil || !applied || afterApply == nil {
+			return err
+		}
+		return afterApply()
+	})
 }
 
-// forwardedPersistentFlags returns the persistent flags (--workspace, --env,
-// --debug, --progress, etc.) that were explicitly set on this invocation, in
-// `--name=value` form suitable to splice in before `call` when re-executing
-// the dagger binary. Skips the help flag (forwarding it would print help for
-// the spawned `call`, not the wrapper).
-func forwardedPersistentFlags(cmd *cobra.Command) []string {
-	var out []string
-	// InheritedFlags surfaces every persistent flag the parent commands
-	// declared; Visit only fires for flags whose value was explicitly set.
-	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
-		if !f.Changed || f.Name == "help" {
-			return
-		}
-		// Slice flags expose their elements via SliceValue; emit one
-		// --name=value pair per element so pflag re-parses them as a slice.
-		if sv, ok := f.Value.(pflag.SliceValue); ok {
-			for _, v := range sv.GetSlice() {
-				out = append(out, "--"+f.Name+"="+v)
+func runSDKModuleClientScope(cmd *cobra.Command) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		var result struct {
+			CurrentWorkspace struct {
+				DetectScope string
 			}
+		}
+		if err := ec.Dagger().Do(ctx, &dagger.Request{
+			Query:     `query ModuleClientScope($sdk: String) { currentWorkspace { detectScope(sdk: $sdk) } }`,
+			Variables: map[string]any{"sdk": moduleClientScopeSDK},
+		}, &dagger.Response{Data: &result}); err != nil {
+			return err
+		}
+		if result.CurrentWorkspace.DetectScope == "" {
+			return nil
+		}
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), result.CurrentWorkspace.DetectScope)
+		return err
+	})
+}
+
+func runSDKModuleClientList(cmd *cobra.Command) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		dag := ec.Dagger()
+		ws := dag.CurrentWorkspace()
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return err
+		}
+		if configFile == "" {
+			return nil
+		}
+		cwd, err := ws.Cwd(ctx)
+		if err != nil {
+			return err
+		}
+		data, err := ws.ConfigRead(ctx)
+		if err != nil {
+			return err
+		}
+		cfg, err := workspace.ParseConfig([]byte(data))
+		if err != nil {
+			return err
+		}
+		cwd = cliWorkspaceRelPath(cwd)
+		configDir := filepath.Dir(filepath.Clean(filepath.Join(cwd, configFile)))
+
+		type row struct{ scope, sdk, target string }
+		var rows []row
+		for sdkName, entry := range cfg.SDKs {
+			if moduleClientListSDK != "" && sdkName != moduleClientListSDK {
+				continue
+			}
+			for configScope, scope := range entry.Scopes {
+				workspaceScope, err := workspace.ResolveSDKManagedPath(configDir, configScope)
+				if err != nil {
+					return err
+				}
+				if !moduleClientListAll && !cliWorkspacePathContains(workspaceScope, cwd) {
+					continue
+				}
+				for _, target := range scope.Clients {
+					rows = append(rows, row{workspaceScope, sdkName, target})
+				}
+			}
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].scope != rows[j].scope {
+				return rows[i].scope < rows[j].scope
+			}
+			if rows[i].sdk != rows[j].sdk {
+				return rows[i].sdk < rows[j].sdk
+			}
+			return rows[i].target < rows[j].target
+		})
+		if len(rows) == 0 {
+			return nil
+		}
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		if _, err := fmt.Fprintln(w, "SCOPE\tSDK\tTARGET"); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", row.scope, row.sdk, row.target); err != nil {
+				return err
+			}
+		}
+		return w.Flush()
+	})
+}
+
+func sdkModuleSettingsJSON(cmd *cobra.Command, selectedSDK string) (string, error) {
+	settings := map[string]any{}
+	var visitErr error
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if visitErr != nil {
 			return
 		}
-		out = append(out, "--"+f.Name+"="+f.Value.String())
+		annotation := flag.Annotations[sdkModuleSettingAnnotation]
+		if len(annotation) != 2 {
+			return
+		}
+		flagSDK, setting := annotation[0], annotation[1]
+		if selectedSDK == "" {
+			visitErr = fmt.Errorf("--%s does not select SDK %q; also pass --sdk=%s", flag.Name, flagSDK, flagSDK)
+			return
+		}
+		if flagSDK != selectedSDK {
+			visitErr = fmt.Errorf("--%s belongs to SDK %q, not selected SDK %q", flag.Name, flagSDK, selectedSDK)
+			return
+		}
+		settings[setting] = sdkInitFlagValue(flag)
 	})
-	return out
+	if visitErr != nil {
+		return "", visitErr
+	}
+	if len(settings) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return "", fmt.Errorf("encode SDK-module settings: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func cliWorkspacePathContains(parent, child string) bool {
+	parent = cliWorkspaceRelPath(parent)
+	child = cliWorkspaceRelPath(child)
+	return parent == "." || parent == child || strings.HasPrefix(child, parent+"/")
+}
+
+func cliWorkspaceRelPath(p string) string {
+	p = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(p)), "/")
+	if p == "" {
+		return "."
+	}
+	return p
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -244,6 +245,50 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(
 	require.NoError(t, err)
 	requireEntry(t, afterBaseEntries, "base.txt")
 	requireNoEntry(t, afterBaseEntries, "new.txt")
+}
+
+// TestWorkspaceWithModuleManifestFile verifies the structured manifest helper
+// composes with Workspace.withFile and produces a valid dagger-module.toml.
+func (WorkspaceSuite) TestWorkspaceWithModuleManifestFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Directory().AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+	manifest := c.ModuleManifest().V1("payments").
+		WithRuntime("go").
+		WithSource("src").
+		WithInclude("**/*.go").
+		WithInclude("go.mod")
+	updated := base.WithFile("dagger-module.toml", manifest.AsFile())
+
+	contents, err := updated.File("dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+	cfg, err := modules.ParseModuleConfigForFilename([]byte(contents), modules.Filename)
+	require.NoError(t, err)
+	require.Equal(t, "payments", cfg.Name)
+	require.Equal(t, "src", cfg.Source)
+	require.Equal(t, "go", cfg.SDK.Source)
+	require.Equal(t, []string{"**/*.go", "go.mod"}, cfg.Include)
+	require.NotEmpty(t, cfg.EngineVersion)
+
+	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: base}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, added, "dagger-module.toml")
+}
+
+func (WorkspaceSuite) TestWorkspaceWithModuleManifestV2File(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	manifest := c.ModuleManifest().V2("payments").
+		WithDangEntrypoint("./internal/dagger/entrypoint")
+	contents, err := manifest.AsFile().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `manifestVersion = 2
+name = "payments"
+
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
+`, contents)
 }
 
 // TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource asserts the

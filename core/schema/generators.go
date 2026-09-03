@@ -50,7 +50,7 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Doc("Return the description of the generator"),
 
 		dagql.Func("originalModule", s.originalModule).
-			Doc("The original module in which the generator has been defined"),
+			Doc("The module that defined the generator, or null for an engine-defined generator"),
 
 		dagql.NodeFunc("changes", s.changes).
 			Doc("The generated changeset from the last run"),
@@ -72,7 +72,33 @@ func (s generatorsSchema) loadFailures(_ context.Context, parent *core.Generator
 }
 
 func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, args struct{}) (*core.GeneratorGroup, error) {
-	return parent.Run(ctx)
+	var specs []*core.SyntheticGeneratorSpec
+	for _, generator := range parent.Generators {
+		if generator.Synthetic != nil {
+			specs = append(specs, generator.Synthetic)
+		}
+	}
+	if len(specs) == 0 {
+		return parent.Run(ctx, nil)
+	}
+
+	base, err := syntheticGeneratorWorkspace(ctx, parent.BoundWorkspace)
+	if err != nil {
+		return nil, err
+	}
+	aggregate, err := runSDKModuleGeneratorGraph(ctx, base, specs)
+	if err != nil {
+		return nil, err
+	}
+	aggregateRunner := func(context.Context, *core.SyntheticGeneratorSpec) (dagql.ObjectResult[*core.Changeset], error) {
+		return aggregate, nil
+	}
+	completed, err := parent.Run(ctx, aggregateRunner)
+	if err != nil {
+		return nil, err
+	}
+	completed.SyntheticChanges = aggregate
+	return completed, nil
 }
 
 type generatorsGroupIsEmptyArgs struct {
@@ -104,8 +130,12 @@ func (s generatorsSchema) description(_ context.Context, parent *core.Generator,
 	return parent.Description(), nil
 }
 
-func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generator, args struct{}) (*core.Module, error) {
-	return parent.OriginalModule(), nil
+func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generator, args struct{}) (dagql.Nullable[*core.Module], error) {
+	module := parent.OriginalModule()
+	if module == nil {
+		return dagql.Null[*core.Module](), nil
+	}
+	return dagql.NonNull(module), nil
 }
 
 func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.ObjectResult[*core.Changeset], error) {
@@ -114,7 +144,7 @@ func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult
 }
 
 func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.Generator, args struct{}) (*core.Generator, error) {
-	return parent.Run(ctx)
+	return parent.Run(ctx, runSyntheticSDKGenerator)
 }
 
 func (s generatorsSchema) isEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.Boolean, error) {
