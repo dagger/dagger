@@ -124,66 +124,113 @@ func (r dockerfileImageMetaResolver) ResolveImageConfig(
 }
 
 func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *Container) error {
-	return lazy.LazyState.Evaluate(ctx, "Container.from", func(ctx context.Context) error {
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-			return err
-		}
-		container.Config = CloneContainerImageConfig(lazy.Config)
-		container.ImageRef = lazy.ImageRef
-		container.Platform = lazy.Platform
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return err
-		}
-		rslvr, err := query.RegistryResolver(ctx)
-		if err != nil {
-			return err
-		}
-		network, detach, err := ContainerRegistryNetwork(ctx, lazy.RegistryServices)
-		if err != nil {
-			return err
-		}
-		defer detach()
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
 
-		pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
-			Platform:          lazy.Platform.Spec(),
-			ResolveMode:       lazy.ResolveMode,
-			Network:           network,
-			RegistryTransport: lazy.RegistryTransport,
-		})
-		if err != nil {
-			return fmt.Errorf("pull image %q: %w", lazy.CanonicalRef, err)
+// ContainerLazyGroups maps the image metadata and rootfs to separate
+// groups. The image config is already resolved when the op is created,
+// so only the fs group pulls and imports the image layers. Other
+// snapshot parts delegate from the parent.
+func (lazy *ContainerFromImageRefLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	if parts == nil {
+		groups := []dagql.LazyGroupKey{ContainerLazyGroupMetadata, ContainerLazyGroupWrite}
+		for _, part := range containerSnapshotParts(ctr) {
+			if part == ContainerPartFS {
+				continue
+			}
+			groups = append(groups, containerDelegationGroup(part))
 		}
-		defer pulled.Release(context.WithoutCancel(ctx))
+		return groups, nil
+	}
+	var groups []dagql.LazyGroupKey
+	seen := make(map[dagql.LazyGroupKey]struct{}, len(parts))
+	for _, part := range parts {
+		var group dagql.LazyGroupKey
+		switch part {
+		case ContainerPartMetadata:
+			group = ContainerLazyGroupMetadata
+		case ContainerPartFS:
+			group = ContainerLazyGroupWrite
+		default:
+			group = containerDelegationGroup(part)
+		}
+		if _, dup := seen[group]; dup {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
 
-		rootfs, err := query.SnapshotManager().ImportImage(ctx, &bkcache.ImportedImage{
-			Ref:          pulled.Ref,
-			ManifestDesc: pulled.ManifestDesc,
-			ConfigDesc:   pulled.ConfigDesc,
-			Layers:       pulled.Layers,
-			Nonlayers:    pulled.Nonlayers,
-		}, bkcache.ImportImageOpts{
-			ImageRef:   pulled.Ref,
-			RecordType: bkclient.UsageRecordTypeRegular,
+func (lazy *ContainerFromImageRefLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	switch group {
+	case ContainerLazyGroupMetadata:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.from", group, func(ctx context.Context) error {
+			if err := materializeContainerMetadataFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			container.Config = CloneContainerImageConfig(lazy.Config)
+			container.ImageRef = lazy.ImageRef
+			container.Platform = lazy.Platform
+			return nil
 		})
-		if err != nil {
-			return fmt.Errorf("import image %q: %w", lazy.CanonicalRef, err)
-		}
-		rootfsDir := &Directory{
-			Platform: container.Platform,
-			Services: slices.Clone(container.Services),
-			Dir:      new(LazyAccessor[string, *Directory]),
-			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-		}
-		rootfsDir.Dir.setValue("/")
-		rootfsDir.Snapshot.setValue(rootfs)
-		if container.FS == nil {
-			container.FS = new(LazyAccessor[*Directory, *Container])
-		}
-		container.FS.setValue(rootfsDir)
-		container.consumeLazyOp()
-		return nil
-	})
+	case ContainerLazyGroupWrite:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.from", group, func(ctx context.Context) error {
+			query, err := CurrentQuery(ctx)
+			if err != nil {
+				return err
+			}
+			rslvr, err := query.RegistryResolver(ctx)
+			if err != nil {
+				return err
+			}
+			network, detach, err := ContainerRegistryNetwork(ctx, lazy.RegistryServices)
+			if err != nil {
+				return err
+			}
+			defer detach()
+
+			pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
+				Platform:          lazy.Platform.Spec(),
+				ResolveMode:       lazy.ResolveMode,
+				Network:           network,
+				RegistryTransport: lazy.RegistryTransport,
+			})
+			if err != nil {
+				return fmt.Errorf("pull image %q: %w", lazy.CanonicalRef, err)
+			}
+			defer pulled.Release(context.WithoutCancel(ctx))
+
+			rootfs, err := query.SnapshotManager().ImportImage(ctx, &bkcache.ImportedImage{
+				Ref:          pulled.Ref,
+				ManifestDesc: pulled.ManifestDesc,
+				ConfigDesc:   pulled.ConfigDesc,
+				Layers:       pulled.Layers,
+				Nonlayers:    pulled.Nonlayers,
+			}, bkcache.ImportImageOpts{
+				ImageRef:   pulled.Ref,
+				RecordType: bkclient.UsageRecordTypeRegular,
+			})
+			if err != nil {
+				return fmt.Errorf("import image %q: %w", lazy.CanonicalRef, err)
+			}
+			rootfsDir := &Directory{
+				Platform: container.Platform,
+				Services: slices.Clone(container.Services),
+				Dir:      new(LazyAccessor[string, *Directory]),
+				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+			}
+			rootfsDir.Dir.setValue("/")
+			rootfsDir.Snapshot.setValue(rootfs)
+			container.ensureFSAccessor().setValue(rootfsDir)
+			return nil
+		})
+	default:
+		return lazy.LazyState.EvaluateGroup(ctx, "Container.from", group, func(ctx context.Context) error {
+			return delegateContainerPart(ctx, container, lazy.Parent, dagql.PartKey(group))
+		})
+	}
 }
 
 func (lazy *ContainerFromImageRefLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
