@@ -16,6 +16,19 @@ defmodule Dagger.Agent do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Why the loop failed, for a FAILED agent; empty otherwise.
+
+  The snapshot holds the completed prefix — send or resume retries from it.
+  """
+  @spec error(t()) :: {:ok, String.t()} | {:error, term()}
+  def error(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("error")
+
+    Client.execute(agent.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Agent.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -91,6 +104,37 @@ defmodule Dagger.Agent do
       agent.query_builder |> QB.select("name")
 
     Client.execute(agent.client, query_builder)
+  end
+
+  @doc """
+  Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+
+  This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+
+  Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+
+  Idempotent per subscriber; re-subscribing replaces the state set.
+  """
+  @spec notify(t(), Dagger.Agent.t(), [{:on, [Dagger.AgentState.t()]}]) ::
+          {:ok, Dagger.Agent.t()} | {:error, term()}
+  def notify(%__MODULE__{} = agent, subscriber, optional_args \\ []) do
+    query_builder =
+      agent.query_builder
+      |> QB.select("notify")
+      |> QB.put_arg("subscriber", Dagger.ID.id!(subscriber))
+      |> QB.maybe_put_arg("on", optional_args[:on])
+
+    with {:ok, id} <- Client.execute(agent.client, query_builder) do
+      {:ok,
+       %Dagger.Agent{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Agent"),
+         client: agent.client
+       }}
+    end
   end
 
   @doc """
@@ -212,10 +256,14 @@ defmodule Dagger.Agent do
 
   Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
   """
-  @spec send(t(), String.t()) :: {:ok, Dagger.AgentMessage.t()} | {:error, term()}
-  def send(%__MODULE__{} = agent, message) do
+  @spec send(t(), String.t(), [{:reply_to, String.t() | nil}]) ::
+          {:ok, Dagger.AgentMessage.t()} | {:error, term()}
+  def send(%__MODULE__{} = agent, message, optional_args \\ []) do
     query_builder =
-      agent.query_builder |> QB.select("send") |> QB.put_arg("message", message)
+      agent.query_builder
+      |> QB.select("send")
+      |> QB.put_arg("message", message)
+      |> QB.maybe_put_arg("replyTo", optional_args[:reply_to])
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,
@@ -320,6 +368,29 @@ defmodule Dagger.Agent do
       agent.query_builder
       |> QB.select("waitFor")
       |> QB.maybe_put_arg("state", optional_args[:state])
+
+    with {:ok, id} <- Client.execute(agent.client, query_builder) do
+      {:ok,
+       %Dagger.Agent{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Agent"),
+         client: agent.client
+       }}
+    end
+  end
+
+  @doc """
+  Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+
+  The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+  """
+  @spec wait_settled(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
+  def wait_settled(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("waitSettled")
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,

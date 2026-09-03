@@ -200,7 +200,7 @@ subscriber:
   exists to fetch — truncation knob open, §9);
 - FAILED: "scout FAILED" + the loop error;
 - WAITING (later, once item 4 makes it reachable): "scout is waiting on you"
-  + the parked question.
+  - the parked question.
 
 Delivery rules, two of them load-bearing:
 

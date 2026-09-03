@@ -251,10 +251,13 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Queue a user prompt, to be sent to the model on the next step or loop.
      */
-    public function withPrompt(string $prompt): LLM
+    public function withPrompt(string $prompt, ?LLMMessageOriginInput $origin = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPrompt');
         $innerQueryBuilder->setArgument('prompt', $prompt);
+        if (null !== $origin) {
+        $innerQueryBuilder->setArgument('origin', $origin);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

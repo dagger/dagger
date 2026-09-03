@@ -14,11 +14,13 @@ namespace Dagger;
 class AgentMessage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Block until the turn that consumed this message ends, and return that turn's reply.
+     * Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
      *
      * Idempotent: cancel and re-await freely; concurrent waiters share the result.
      *
      * Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
+     *
+     * Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
      */
     public function await(): string
     {
@@ -44,5 +46,16 @@ class AgentMessage extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The message's short ref within the receiving agent's runtime, e.g. "#3".
+     *
+     * This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+     */
+    public function ref(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
     }
 }

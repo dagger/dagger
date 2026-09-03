@@ -50,6 +50,36 @@ defmodule Dagger.LLMMessage do
   end
 
   @doc """
+  Who put this message on the record, when it arrived through an agent mailbox.
+
+  Null for the user's own prompts and for everything the model or tools produced.
+  """
+  @spec origin(t()) :: {:ok, Dagger.LLMMessageOrigin.t() | nil} | {:error, term()}
+  def origin(%__MODULE__{} = llm_message) do
+    query_builder =
+      llm_message.query_builder |> QB.select("origin") |> QB.select("id")
+
+    case Client.execute(llm_message.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.LLMMessageOrigin{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("LLMMessageOrigin"),
+           client: llm_message.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   The role that produced this message.
   """
   @spec role(t()) :: {:ok, Dagger.LLMMessageRole.t()} | {:error, term()}
