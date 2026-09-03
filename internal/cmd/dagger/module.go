@@ -116,11 +116,15 @@ func init() {
 	shellAddFlags(rootCmd)
 
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
+	addWorkspaceInstallFlags(installAliasCmd)
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
+	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(installAliasCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(uninstallAliasCmd, workspaceFlagPolicyLocalOnly)
 }
 
 var moduleUpdateCmd = &cobra.Command{
@@ -157,6 +161,7 @@ unless --no-generate is set.`,
 }
 
 var moduleDepInstallCmd = newWorkspaceInstallCmd(false, nil)
+var installAliasCmd = newWorkspaceInstallCmd(true, nil)
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -178,6 +183,7 @@ and the env is created if missing.`,
 }
 
 var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, nil)
+var uninstallAliasCmd = newWorkspaceUninstallCmd(true, nil)
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
