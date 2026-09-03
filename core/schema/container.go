@@ -2719,19 +2719,6 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
 		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
 	}
-	sourcePath := args.SourcePath
-	if sourcePath == "" {
-		sourcePath = "/"
-	}
-	sourceIsFile := false
-	if path.Clean(sourcePath) != "/" {
-		stat, err := dir.Self().Stat(ctx, dir, srv, path.Join("/", sourcePath), false)
-		if err != nil {
-			return inst, err
-		}
-		sourceIsFile = stat.FileType != core.FileTypeDirectory
-	}
-
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
@@ -2743,6 +2730,10 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 			return inst, err
 		}
 	} else {
+		sourceIsFile, err := core.DockerfileCompatMountSourceIsFile(ctx, dir, srv, args.SourcePath)
+		if err != nil {
+			return inst, err
+		}
 		ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
 			LazyState:  core.NewLazyState(),
 			Parent:     parent,

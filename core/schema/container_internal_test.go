@@ -130,6 +130,50 @@ func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	require.False(t, child.CanUseFromContentDigest())
 }
 
+func TestEagerContainerMountMetadataResolvers(t *testing.T) {
+	dag, err := dagql.NewServer(t.Context(), &core.Query{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Container]{Typed: &core.Container{}}))
+	schema := &containerSchema{}
+
+	t.Run("without mount", func(t *testing.T) {
+		parentSelf := core.NewContainer(core.Platform{})
+		parentSelf.ImageRef = "parent-image"
+		parentSelf.Mounts = core.ContainerMounts{{
+			Target:      "/old",
+			TmpfsSource: &core.TmpfsMountSource{},
+		}}
+		parent, err := dagql.NewObjectResultForCall(parentSelf, dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-without-mount-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withoutMount(t.Context(), parent, containerWithoutMountArgs{Path: "/old"})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Empty(t, child.Mounts)
+		require.Empty(t, child.ImageRef)
+	})
+
+	t.Run("mounted temp", func(t *testing.T) {
+		parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-mounted-temp-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withMountedTemp(t.Context(), parent, containerWithMountedTempArgs{Path: "/tmp"})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Len(t, child.Mounts, 1)
+		require.Equal(t, "/tmp", child.Mounts[0].Target)
+		require.NotNil(t, child.Mounts[0].TmpfsSource)
+	})
+}
+
 func TestWithImageConfigMetadataMutatesContainerConfig(t *testing.T) {
 	t.Parallel()
 
