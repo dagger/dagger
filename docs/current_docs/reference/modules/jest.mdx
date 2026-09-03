@@ -13,7 +13,7 @@ Official module: [dagger/jest](https://github.com/dagger/jest)
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/jest
+dagger module install github.com/dagger/jest
 ```
 
 ## Run the tests
@@ -38,7 +38,7 @@ Use `list` to print the tests Jest discovers when test selection is unclear.
 
 ## Configure it
 
-List the current settings and their values with `dagger settings jest`, then set one with `dagger settings jest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.jest.settings]`:
+List the current settings and their values with `dagger module settings jest`, then set one with `dagger module settings jest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.jest.settings]`:
 
 - `packageManager` (default `npm`) is the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project.
 - `baseImageAddress` (default `node:25-alpine`) is the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.

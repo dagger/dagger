@@ -73,7 +73,7 @@ func workspaceMigrationParentAssignments(
 		if rel != "." {
 			// The selected config sits below the workspace root ("setup from a
 			// module subdirectory"). Its module is never installed into a
-			// workspace, so nothing records its SDK as-sdk on its behalf:
+			// workspace, so nothing records an SDK claim on its behalf:
 			//   - with toolchains, those hoist into the workspace-root
 			//     dagger.toml, and the runtime pin plus explicit-loading
 			//     warning land on that hoisted plan;
@@ -93,7 +93,7 @@ func workspaceMigrationParentAssignments(
 		}
 		// A project-style layout at the workspace root (source in a
 		// subdirectory) installs the module into its own migrated workspace
-		// config with its SDK recorded as-sdk; there is no separate runtime
+		// config with its SDK recorded; there is no separate runtime
 		// pin to hoist and no explicit-loading warning. Only the "repo is just
 		// a dagger module" shape — source at the project root — flows through
 		// here, whether or not toolchains force a workspace plan of its own.
@@ -250,7 +250,7 @@ func workspaceMigrationInstallParentSDKModules(
 	// workspace configs without refreshing lock entries during migration. Future
 	// workspace commands can resolve them through the normal lock refresh path.
 	//
-	// The install is recorded through the same as-sdk mechanism as every other
+	// The install is recorded through the same SDK registry as every other
 	// migrated runtime (short name, resolved to its real ref by the setup SDK
 	// fixup pass), so a discovered local module sharing the runtime reuses the
 	// same entry — one SDK install serves every module in the repo.
@@ -297,7 +297,7 @@ func workspaceMigrationInstallParentSDKModules(
 // workspaceMigrationInstallDiscoveredModuleSDKs records the runtime of every
 // discovered, converted-in-place local module in the workspace config that owns
 // it, so a module loaded from a local ref inside the workspace has its SDK
-// installed and pinned (with the module listed under [[modules.<sdk>.as-sdk.modules]]).
+// installed and pinned, with the module recorded as an SDK scope.
 // Discovered modules are converted in place and deliberately skip the parent-plan
 // flow (no "requires explicit loading" warning), so their SDK install is handled
 // here instead.
@@ -334,9 +334,10 @@ func workspaceMigrationInstallDiscoveredModuleSDKs(
 		}
 		modulePath = filepath.ToSlash(filepath.Clean(modulePath))
 		sdkSource := compatWorkspace.Config.SDK.Source
+		moduleName := compatWorkspace.Config.Name
 
 		if err := targets.update(owner, func(data []byte) ([]byte, error) {
-			return workspaceMigrationConfigWithMigratedModuleSDK(data, sdkSource, modulePath)
+			return workspaceMigrationConfigWithMigratedModuleSDK(data, sdkSource, modulePath, moduleName)
 		}); err != nil {
 			return nil, fmt.Errorf("install SDK for discovered module %q: %w", compatWorkspace.ProjectRoot, err)
 		}
@@ -344,12 +345,12 @@ func workspaceMigrationInstallDiscoveredModuleSDKs(
 	return parentPlans, nil
 }
 
-func workspaceMigrationConfigWithMigratedModuleSDK(configData []byte, sdkSource, modulePath string) ([]byte, error) {
+func workspaceMigrationConfigWithMigratedModuleSDK(configData []byte, sdkSource, modulePath, moduleName string) ([]byte, error) {
 	cfg, err := workspace.ParseConfig(configData)
 	if err != nil {
 		return nil, err
 	}
-	workspace.AddMigratedModuleSDK(cfg, sdkSource, modulePath)
+	workspace.AddMigratedModuleSDK(cfg, sdkSource, modulePath, moduleName)
 	return workspace.UpdateConfigBytes(configData, cfg)
 }
 

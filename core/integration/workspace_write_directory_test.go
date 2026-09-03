@@ -170,8 +170,8 @@ func workspaceInitOverExistingFixture(t testing.TB, c *dagger.Client) *dagger.Co
 		WithNewFile("dagger.toml", `[modules.init-fixture]
 source = "sdk/init-fixture"
 
-[modules.init-fixture.as-sdk]
-name = "fixture"
+[sdks.fixture]
+module = "init-fixture"
 `).
 		WithNewFile("sdk/init-fixture/dagger.json", `{
   "name": "init-fixture",
@@ -181,19 +181,25 @@ name = "fixture"
 }`).
 		WithNewFile("sdk/init-fixture/main.go", `package main
 
-import (
-	"context"
-
-	"dagger/init-fixture/internal/dagger"
-)
+import "dagger/init-fixture/internal/dagger"
 
 type InitFixture struct{}
 
-// InitModule scaffolds the SDK-owned files for a new module, onto whatever the
-// destination already holds.
-func (m *InitFixture) InitModule(ctx context.Context, ws *dagger.Workspace, name string, path string) (*dagger.Changeset, error) {
+func (m *InitFixture) DetectScope(ws *dagger.Workspace) string {
+	_ = ws
+	return ""
+}
+
+// GenerateScope scaffolds the SDK-owned files onto the module config that it
+// writes in the same workspace update.
+func (m *InitFixture) GenerateScope(ws *dagger.Workspace, isModule bool, name string, clients []*dagger.ModuleSource) *dagger.Workspace {
+	_ = clients
+	if !isModule {
+		return ws
+	}
+	manifest := dag.ModuleManifest().V1(name).WithRuntime("go").AsFile()
 	scaffold := dag.Directory().WithNewFile("scaffold.txt", name+"\n")
-	return ws.WithDirectory(path, scaffold).Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
+	return ws.WithFile("dagger-module.toml", manifest).WithDirectory(".", scaffold)
 }
 `)
 }
@@ -207,7 +213,7 @@ func (WorkspaceSuite) TestModuleInitScaffoldsOverExistingContent(ctx context.Con
 
 	initialized := workspaceInitOverExistingFixture(t, c).
 		WithNewFile(".dagger/modules/newmod/keep.txt", "written before init\n").
-		With(daggerExec("module", "init", "fixture", "newmod", "--no-generate", "--auto-apply"))
+		With(daggerExec("module", "init", "fixture", "--name", "newmod", "--auto-apply"))
 
 	out, err := initialized.CombinedOutput(ctx)
 	require.NoError(t, err, out)

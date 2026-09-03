@@ -12,12 +12,12 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -319,7 +319,7 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 				WithWorkdir("app").
 				// Workspace creation is implicit on first install; the
 				// `dagger workspace init` verb was removed in CLI 1.0.
-				With(daggerExec("install", "../"+tc.path))
+				With(daggerExec("module", "install", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
@@ -357,700 +357,44 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 	}
 }
 
-// TestSDKGeneratorOwnsClients verifies the engine-to-SDK handoff for generated
-// clients without depending on any production SDK's code generation. The SDK
-// module reads the clients assigned to it in dagger.toml and exposes an ordinary
-// generator that writes one marker file per client.
-func (GeneratorsSuite) TestSDKGeneratorOwnsClients(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	base := goGitBase(t, c).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
-		With(nonNestedDevEngine(c)).
-		WithNewFile("dagger.toml", `[modules.client-generator-fixture]
-source = ".dagger/client-generator-fixture"
-
-[modules.client-generator-fixture.as-sdk]
-name = "fixture"
-
-[[modules.client-generator-fixture.as-sdk.clients]]
-path = "clients/one"
-module = "github.com/shykes/hello"
-pin = "deadbeef"
-
-[[modules.client-generator-fixture.as-sdk.clients]]
-path = "clients/two"
-module = ".dagger/client-generator-fixture"
-`).
-		WithNewFile(".dagger/client-generator-fixture/dagger.json", `{
-  "name": "client-generator-fixture",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": "."
-}`).
-		WithNewFile(".dagger/client-generator-fixture/main.go", `package main
-
-import (
-	"context"
-	"strings"
-
-	"dagger/client-generator-fixture/internal/dagger"
-)
-
-type ClientGeneratorFixture struct{}
-
-// +generate
-func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	generated := ws
-	for _, client := range clients {
-		path, err := client.Path(ctx)
-		if err != nil {
-			return nil, err
-		}
-		module, err := client.Module(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pin, err := client.Pin(ctx)
-		if err != nil {
-			return nil, err
-		}
-		contents := module + "\n" + pin + "\n"
-		// For a locally-bound client, resolve its module source through the
-		// bound workspace and record it, proving moduleSource resolves against
-		// the workspace asSDK was called on.
-		if strings.HasPrefix(module, ".") {
-			src, err := client.ModuleSource().AsString(ctx)
-			if err != nil {
-				return nil, err
-			}
-			contents += "source=" + src + "\n"
-		}
-		generated = generated.WithNewFile(path+"/generated.txt", contents)
-	}
-
-	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
-}
-`)
-
-	list, err := base.
-		With(daggerExec("generate", "-l")).
-		CombinedOutput(ctx)
-	require.NoError(t, err, list)
-	require.Contains(t, list, "client-generator-fixture:generate-clients")
-
-	clients, err := base.
-		With(daggerExec("api", "client", "list", "--json")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `[
-  {"sdk":"fixture","path":"clients/one","module":"github.com/shykes/hello","pin":"deadbeef"},
-  {"sdk":"fixture","path":"clients/two","module":".dagger/client-generator-fixture"}
-]`, clients)
-
-	generated := base.With(daggerExec("generate", "-y"))
-
-	one, err := generated.File("clients/one/generated.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "github.com/shykes/hello\ndeadbeef\n", one)
-
-	// clients/two is locally bound, so the generator additionally resolved its
-	// module source through the bound workspace (see the fixture). A non-empty
-	// source line proves currentModuleAsSDKClientModuleSource resolved against
-	// the workspace asSDK was called on.
-	two, err := generated.File("clients/two/generated.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Contains(t, two, ".dagger/client-generator-fixture\n\nsource=")
-	require.Contains(t, two, "client-generator-fixture")
-}
-
-// initGeneratorFixture is an SDK module supporting `module init` / `client init`
-// alongside cwd-anchored generators, mirroring how the real SDKs discover work
-// (go-sdk's `modules(ws)`, typescript-sdk's `generateAllClient`): each generator
-// emits a marker for the modules or clients its workspace entry manages at or
-// below the workspace cwd. Paths in a returned changeset are cwd-relative, which
-// is what lets the engine re-root a cwd-scoped run.
-//
-// The workspace it manages always holds one pre-existing module and one
-// pre-existing client, so anything generated outside the initialized path shows
-// up as a stray marker.
-func initGeneratorFixture(t testing.TB, c *dagger.Client) *dagger.Container {
-	return initGeneratorFixtureAt(t, c, ".")
-}
-
-// initGeneratorFixtureAt builds the fixture with its dagger.toml under
-// configDir, so tests can exercise a workspace config that is not at the
-// workspace (git) root. Every path in dagger.toml — [modules.X].source and the
-// as-sdk entries alike — is recorded relative to that config directory, so the
-// fixture below reads the same wherever configDir sits.
-func initGeneratorFixtureAt(t testing.TB, c *dagger.Client, configDir string) *dagger.Container {
-	inConfigDir := func(p string) string { return path.Join(configDir, p) }
-	return goGitBase(t, c).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
-		With(nonNestedDevEngine(c)).
-		WithNewFile(inConfigDir("dagger.toml"), `[modules.init-fixture]
-source = "sdk/init-fixture"
-
-[modules.init-fixture.as-sdk]
-name = "fixture"
-
-[[modules.init-fixture.as-sdk.modules]]
-path = "existing/mod"
-
-[[modules.init-fixture.as-sdk.clients]]
-path = "existing/client"
-module = "sdk/init-fixture"
-`).
-		WithNewFile(inConfigDir("sdk/init-fixture/dagger.json"), `{
-  "name": "init-fixture",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": "."
-}`).
-		WithNewFile(inConfigDir("sdk/init-fixture/main.go"), `package main
-
-import (
-	"context"
-	"fmt"
-	"path"
-	"strings"
-
-	"dagger/init-fixture/internal/dagger"
-)
-
-type InitFixture struct{}
-
-// InitModule scaffolds the SDK-owned files for a new module.
-func (m *InitFixture) InitModule(ctx context.Context, ws *dagger.Workspace, name string, path string) (*dagger.Changeset, error) {
-	local, err := cwdLocalPath(ctx, ws, path)
-	if err != nil {
-		return nil, err
-	}
-	return dag.Directory().WithNewFile(local+"/scaffold.txt", name+"\n").Changes(dag.Directory()), nil
-}
-
-// InitClient scaffolds the SDK-owned files for a new client.
-func (m *InitFixture) InitClient(ctx context.Context, ws *dagger.Workspace, path string, module string) (*dagger.Changeset, error) {
-	local, err := cwdLocalPath(ctx, ws, path)
-	if err != nil {
-		return nil, err
-	}
-	return dag.Directory().WithNewFile(local+"/scaffold.txt", module+"\n").Changes(dag.Directory()), nil
-}
-
-// cwdLocalPath mirrors the polyfill's workspace fork: the engine hands an SDK
-// workspace-root-relative paths, but a returned changeset is applied wherever
-// the caller stands, so the path has to be rebased onto the workspace cwd — and
-// cannot be staged at all when it lies outside it.
-func cwdLocalPath(ctx context.Context, ws *dagger.Workspace, workspacePath string) (string, error) {
-	cwd, err := workspaceCwd(ctx, ws)
-	if err != nil {
-		return "", err
-	}
-	rel, ok := relativeToCwd(cwd, workspacePath)
-	if !ok {
-		return "", fmt.Errorf("workspace path %s is outside changeset root %s", workspacePath, cwd)
-	}
-	return rel, nil
-}
-
-// +generate
-func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	cwd, err := workspaceCwd(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	modules, err := dag.CurrentModule().AsSDK(ws).Modules(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	generated := ws
-	for _, mod := range modules {
-		modPath, err := mod.Path(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rel, ok := relativeToCwd(cwd, modPath)
-		if !ok {
-			continue
-		}
-		generated = generated.WithNewFile(path.Join(rel, "generated-module.txt"), modPath+"\n")
-	}
-	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
-}
-
-// +generate
-func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	cwd, err := workspaceCwd(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	generated := ws
-	for _, client := range clients {
-		clientPath, err := client.Path(ctx)
-		if err != nil {
-			return nil, err
-		}
-		module, err := client.Module(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rel, ok := relativeToCwd(cwd, clientPath)
-		if !ok {
-			continue
-		}
-		generated = generated.WithNewFile(path.Join(rel, "generated-client.txt"), module+"\n")
-	}
-	return generated.Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
-}
-
-func workspaceCwd(ctx context.Context, ws *dagger.Workspace) (string, error) {
-	cwd, err := ws.Cwd(ctx)
-	if err != nil {
-		return "", err
-	}
-	return normalizeWorkspacePath(cwd), nil
-}
-
-func normalizeWorkspacePath(p string) string {
-	trimmed := strings.Trim(p, "/")
-	if trimmed == "" {
-		return "."
-	}
-	return path.Clean(trimmed)
-}
-
-// relativeToCwd reports target relative to cwd, and whether it is at or below
-// it. A returned changeset can only carry paths under the caller's location, so
-// anything outside is skipped.
-func relativeToCwd(cwd, target string) (string, bool) {
-	target = normalizeWorkspacePath(target)
-	if cwd == "." {
-		return target, true
-	}
-	if target == cwd {
-		return ".", true
-	}
-	if strings.HasPrefix(target, cwd+"/") {
-		return strings.TrimPrefix(target, cwd+"/"), true
-	}
-	return "", false
-}
-`)
-}
-
-// TestModuleInitGeneratesForNewModuleOnly covers the `dagger module init` half
-// of dagger/dagger#13714: init runs the owning SDK's generators for what it just
-// created, so the module is usable without a separate `dagger generate`, and
-// nothing else in the workspace is touched.
-func (GeneratorsSuite) TestModuleInitGeneratesForNewModuleOnly(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixture(t, c)
-
-	t.Run("generates the new module", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		// The SDK's scaffold and the engine's module config both landed...
-		scaffold, err := initialized.File(".dagger/modules/newmod/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "newmod\n", scaffold)
-		_, err = initialized.File(".dagger/modules/newmod/dagger-module.toml").Contents(ctx)
-		require.NoError(t, err)
-
-		// ...and so did the generator output, in the same apply.
-		generated, err := initialized.File(".dagger/modules/newmod/generated-module.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".dagger/modules/newmod\n", generated)
-
-		// The pre-existing module and client sit outside the new module's cwd,
-		// so the scoped run never reached them.
-		for _, stray := range []string{"existing/mod/generated-module.txt", "existing/client/generated-client.txt"} {
-			exists, err := initialized.Exists(ctx, stray)
-			require.NoError(t, err)
-			require.False(t, exists, "generation must not escape the initialized module: %s", stray)
-		}
-	})
-
-	t.Run("--no-generate scaffolds without generating", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--no-generate", "--auto-apply"))
-
-		scaffold, err := initialized.File(".dagger/modules/newmod/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "newmod\n", scaffold)
-
-		exists, err := initialized.Exists(ctx, ".dagger/modules/newmod/generated-module.txt")
-		require.NoError(t, err)
-		require.False(t, exists)
-	})
-}
-
-// TestAPIClientInitGeneratesForNewClientOnly covers the `dagger api client init`
-// half of dagger/dagger#13714.
-func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixture(t, c)
-
-	t.Run("generates the new client", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		scaffold, err := initialized.File("clients/one/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", scaffold)
-
-		generated, err := initialized.File("clients/one/generated-client.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", generated)
-
-		for _, stray := range []string{"existing/mod/generated-module.txt", "existing/client/generated-client.txt"} {
-			exists, err := initialized.Exists(ctx, stray)
-			require.NoError(t, err)
-			require.False(t, exists, "generation must not escape the initialized client: %s", stray)
-		}
-	})
-
-	t.Run("--no-generate scaffolds without generating", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--no-generate", "--auto-apply"))
-
-		scaffold, err := initialized.File("clients/one/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", scaffold)
-
-		exists, err := initialized.Exists(ctx, "clients/one/generated-client.txt")
-		require.NoError(t, err)
-		require.False(t, exists)
-	})
-}
-
-func (GeneratorsSuite) TestInitWritesSelectedEnv(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixture(t, c)
-
-	t.Run("module", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"--env", "dev", "module", "init", "fixture", "envmod", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		config, err := initialized.File("dagger.toml").Contents(ctx)
-		require.NoError(t, err)
-		cfg, err := workspace.ParseConfig([]byte(config))
-		require.NoError(t, err)
-		require.NotContains(t, cfg.Modules, "envmod")
-		require.Equal(t, ".dagger/modules/envmod", cfg.Env["dev"].Modules["envmod"].Source)
-		require.Len(t, cfg.Modules["init-fixture"].AsSDK.Modules, 1)
-		require.Len(t, cfg.Env["dev"].Modules["init-fixture"].AsSDK.Modules, 2)
-
-		generated, err := initialized.File(".dagger/modules/envmod/generated-module.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".dagger/modules/envmod\n", generated)
-	})
-
-	t.Run("client", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"--env", "dev", "api", "client", "init", "fixture", "clients/dev", "sdk/init-fixture", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		config, err := initialized.File("dagger.toml").Contents(ctx)
-		require.NoError(t, err)
-		cfg, err := workspace.ParseConfig([]byte(config))
-		require.NoError(t, err)
-		require.Len(t, cfg.Modules["init-fixture"].AsSDK.Clients, 1)
-		require.Len(t, cfg.Env["dev"].Modules["init-fixture"].AsSDK.Clients, 2)
-
-		generated, err := initialized.File("clients/dev/generated-client.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", generated)
-	})
-}
-
-// TestInitFromSubdirectoryWorkspace covers dagger/dagger#13889: a dagger.toml
-// in a subdirectory of the git repo (the monorepo layout, several projects
-// under one root) leaves the caller's workspace cwd below the workspace root.
-// Init changesets are applied at the workspace root, so the SDK has to be shown
-// a cwd that matches — otherwise it either refuses the path outright or strips
-// the cwd prefix and splits the new module across two directories.
-func (GeneratorsSuite) TestInitFromSubdirectoryWorkspace(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixtureAt(t, c, "common").WithWorkdir("/work/common")
-
-	// withInitModule changes the workspace cwd internally, to measure and
-	// export its root-owned edits. That must not leak: as a value, the
-	// workspace it returns is the caller's, moved only by the changeset.
-	t.Run("the returned workspace keeps the caller cwd", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerQuery(`{
-			currentWorkspace {
-				cwd
-				withInitModule(name: "cwdcheck", sdk: "fixture", noGenerate: true) {
-					cwd
-				}
-			}
-		}`)).Stdout(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, out, `"cwd": "/"`,
-			"init must not move the caller's cwd to the workspace root")
-		require.Equal(t, 2, strings.Count(out, `"cwd": "/common"`),
-			"the workspace before and after init should share a cwd: %s", out)
-	})
-
-	t.Run("module init scaffolds beside its dagger.toml", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		// The engine's module config and the SDK's scaffold land together,
-		// under the project the dagger.toml belongs to.
-		scaffold, err := initialized.File("/work/common/.dagger/modules/newmod/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "newmod\n", scaffold)
-		_, err = initialized.File("/work/common/.dagger/modules/newmod/dagger-module.toml").Contents(ctx)
-		require.NoError(t, err)
-
-		// ...and so does the generator output, in the same apply.
-		generated, err := initialized.File("/work/common/.dagger/modules/newmod/generated-module.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "common/.dagger/modules/newmod\n", generated)
-
-		// Nothing was written at the git root, where the cwd-stripped path
-		// would have put it.
-		exists, err := initialized.Exists(ctx, "/work/.dagger")
-		require.NoError(t, err)
-		require.False(t, exists, "module init must not scaffold outside the config directory")
-
-		// Both paths dagger.toml records for the new module — its install
-		// source and the as-sdk entry — are relative to the config directory,
-		// so they read the same.
-		config, err := initialized.File("/work/common/dagger.toml").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, config, `source = ".dagger/modules/newmod"`)
-		require.Contains(t, config, `path = ".dagger/modules/newmod"`)
-	})
-
-	t.Run("module init resolves an explicit --path against the caller", func(ctx context.Context, t *testctx.T) {
-		t.Run("relative to the current directory", func(ctx context.Context, t *testctx.T) {
-			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "hello", "--auto-apply"))
-			out, err := initialized.CombinedOutput(ctx)
-			require.NoError(t, err, out)
-
-			scaffold, err := initialized.File("/work/common/hello/scaffold.txt").Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hello\n", scaffold)
-			_, err = initialized.File("/work/common/hello/dagger-module.toml").Contents(ctx)
-			require.NoError(t, err)
-
-			// The engine config and the SDK scaffold land together. Splitting
-			// them across directories is the failure this whole suite is about.
-			exists, err := initialized.Exists(ctx, "/work/hello")
-			require.NoError(t, err)
-			require.False(t, exists, "module init must not split the module across directories")
-		})
-
-		t.Run("leading slash means the workspace root", func(ctx context.Context, t *testctx.T) {
-			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "/tools/hello", "--auto-apply"))
-			out, err := initialized.CombinedOutput(ctx)
-			require.NoError(t, err, out)
-
-			scaffold, err := initialized.File("/work/tools/hello/scaffold.txt").Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hello\n", scaffold)
-			_, err = initialized.File("/work/tools/hello/dagger-module.toml").Contents(ctx)
-			require.NoError(t, err)
-
-			exists, err := initialized.Exists(ctx, "/work/common/tools")
-			require.NoError(t, err)
-			require.False(t, exists, "a rooted --path must not resolve under the caller")
-		})
-
-		t.Run("climbing out of the current directory", func(ctx context.Context, t *testctx.T) {
-			initialized := base.With(daggerExec(
-				"module", "init", "fixture", "hello", "--path", "../tools/hello", "--auto-apply"))
-			out, err := initialized.CombinedOutput(ctx)
-			require.NoError(t, err, out)
-
-			_, err = initialized.File("/work/tools/hello/dagger-module.toml").Contents(ctx)
-			require.NoError(t, err)
-		})
-
-		t.Run("escaping the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerExecFail(
-				"module", "init", "fixture", "hello", "--path", "../../escape", "--auto-apply")).
-				CombinedOutput(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "must not escape the workspace root")
-		})
-	})
-
-	t.Run("client init resolves its path against the caller", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "common/sdk/init-fixture", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		scaffold, err := initialized.File("/work/common/clients/one/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "common/sdk/init-fixture\n", scaffold)
-
-		exists, err := initialized.Exists(ctx, "/work/clients")
-		require.NoError(t, err)
-		require.False(t, exists, "client init must not scaffold outside the requested path")
-
-		// The recorded client is anchored at the dagger.toml holding it, its
-		// local module ref included, while the SDK is handed the
-		// workspace-root-relative form above. The fixture already records one
-		// client against the same module, so the new entry is the second.
-		config, err := initialized.File("/work/common/dagger.toml").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, config, `path = "clients/one"`)
-		require.Equal(t, 2, strings.Count(config, `module = "sdk/init-fixture"`), config)
-	})
-}
-
-// TestInitFromSubdirectoryCwd covers the plainest form of the same mismatch:
-// the workspace config is at the root, where it always has been, and only the
-// caller has moved. Init writes the workspace dagger.toml and the module under
-// the config directory — both above the caller — so it is only expressible
-// against the workspace root, which is also where init exports.
-func (GeneratorsSuite) TestInitFromSubdirectoryCwd(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixture(t, c).
-		WithExec([]string{"mkdir", "-p", "/work/sub"}).
-		WithWorkdir("/work/sub")
-
-	t.Run("module init from below the config directory", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec("module", "init", "fixture", "newmod", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		scaffold, err := initialized.File("/work/.dagger/modules/newmod/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "newmod\n", scaffold)
-		_, err = initialized.File("/work/.dagger/modules/newmod/dagger-module.toml").Contents(ctx)
-		require.NoError(t, err)
-
-		config, err := initialized.File("/work/dagger.toml").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, config, `source = ".dagger/modules/newmod"`)
-
-		// Nothing lands under the caller: the cwd-measured reading of these
-		// paths is what used to strip the leading directories.
-		exists, err := initialized.Exists(ctx, "/work/sub/.dagger")
-		require.NoError(t, err)
-		require.False(t, exists, "init must not scaffold under the caller cwd")
-	})
-
-	t.Run("client init from below the config directory", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "clients/one", "sdk/init-fixture", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		// Relative to the caller, so it lands under sub/ even though the
-		// dagger.toml it edits is a directory above.
-		scaffold, err := initialized.File("/work/sub/clients/one/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", scaffold)
-	})
-
-	t.Run("client init with a rooted path", func(ctx context.Context, t *testctx.T) {
-		initialized := base.With(daggerExec(
-			"api", "client", "init", "fixture", "/clients/one", "sdk/init-fixture", "--auto-apply"))
-		out, err := initialized.CombinedOutput(ctx)
-		require.NoError(t, err, out)
-
-		scaffold, err := initialized.File("/work/clients/one/scaffold.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "sdk/init-fixture\n", scaffold)
-
-		exists, err := initialized.Exists(ctx, "/work/sub/clients")
-		require.NoError(t, err)
-		require.False(t, exists, "a rooted client path must not resolve under the caller")
-	})
-}
-
-// TestAPIClientInitDottedModulePath covers a module ref whose dot segment is
-// not the first one ("common/.dagger/target"), the shape a root-relative ref
-// takes from a monorepo subdirectory. The ref classifier used to read any dot
-// as a hostname and route such a ref to git.
-func (GeneratorsSuite) TestAPIClientInitDottedModulePath(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := initGeneratorFixture(t, c).
-		WithNewFile("common/.dagger/target/dagger.json", `{
-  "name": "target",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": "."
-}`)
-
-	for _, tc := range []struct {
-		name string
-		ref  string
-	}{
-		{name: "workspace-relative", ref: "common/.dagger/target"},
-		{name: "explicitly relative", ref: "./common/.dagger/target"},
-		// A ref typed on Windows reaches the Linux engine verbatim.
-		{name: "windows separators", ref: `common\.dagger\target`},
-	} {
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			initialized := base.
-				WithWorkdir("/work/common").
-				With(daggerExec(
-					"api", "client", "init", "fixture", "clients/dotted", tc.ref, "--auto-apply"))
-			out, err := initialized.CombinedOutput(ctx)
-			require.NoError(t, err, out)
-
-			// The client path resolves against the caller, so it lands under
-			// common/; the module ref stays workspace-root-relative.
-			scaffold, err := initialized.File("/work/common/clients/dotted/scaffold.txt").Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "common/.dagger/target\n", scaffold)
-
-			// The generators ran for the new client too, which reads the
-			// recorded ref back through the SDK's client list.
-			generated, err := initialized.File("/work/common/clients/dotted/generated-client.txt").Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "common/.dagger/target\n", generated)
-
-			config, err := initialized.File("/work/dagger.toml").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, config, `module = "common/.dagger/target"`)
-		})
-	}
-}
-
 func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	sdkModulePath, err := filepath.Abs("../../modules/sdk-ux-go")
+	require.NoError(t, err)
 
 	modGen := goGitBase(t, c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
+		WithDirectory(".dagger/modules/sdk-ux-go", c.Host().Directory(sdkModulePath)).
 		WithNewFile("dagger.toml", `[modules.consumer]
 source = ".dagger/modules/consumer"
 entrypoint = true
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk"
+source = ".dagger/modules/sdk-ux-go"
 
-[modules.go-sdk.as-sdk]
-name = "go"
+[modules.target]
+source = "target"
+
+[modules.leaf]
+source = "leaf"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes."."]
+is-module = true
+name = "demo"
+clients = ["target"]
+
+[sdks.go.scopes.target]
+is-module = true
+name = "target"
+clients = ["leaf"]
+
+[sdks.go.scopes.leaf]
+is-module = true
+name = "leaf"
 `).
 		WithNewFile(".dagger/modules/consumer/dagger.json", `{
   "name": "consumer",
@@ -1089,105 +433,238 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 }
 `)
 
-	// SDK generators own their generated client output, so syncing generator
-	// changes is the complete generation contract.
-	out, err := modGen.
-		With(daggerNonNestedExec("call", "sync-generators")).
-		CombinedOutput(ctx)
+	// One synthetic generator reconciles complete SDK scopes. The target scope
+	// runs before the root scope because the root client targets it.
+	listOut, err := modGen.
+		With(daggerNonNestedExec("generate", "-l")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, listOut, "go-sdk:generate")
+	require.NotContains(t, listOut, "go-sdk:generate-modules")
+	require.NotContains(t, listOut, "go-sdk:generate-clients")
+
+	synced := modGen.With(daggerNonNestedExec("call", "sync-generators"))
+	out, err := synced.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "ok")
 	require.NotContains(t, out, "result *core.Changeset is detached")
+
+	generated := modGen.With(daggerNonNestedExec("generate", "-y"))
+	rootMarker, err := generated.File("internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, rootMarker, "for demo")
+	targetMarker, err := generated.File("target/internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, targetMarker, "for target")
+	clientMarker, err := generated.File("internal/dagger/clients/target.gen.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, clientMarker, "Code generated by sdk-ux-go")
+
+	// Workspace update must run the target scope before the root scope. The
+	// target scope is a client scope too, and the root cannot load it after its
+	// generated module is removed until that scope runs again.
+	withoutGeneratedTarget := generated.WithoutDirectory("target")
+	workspaceUpdated := withoutGeneratedTarget.With(daggerNonNestedExec("workspace", "update"))
+	clientMarker, err = workspaceUpdated.File("internal/dagger/clients/target.gen.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, clientMarker, "Code generated by sdk-ux-go")
+	_, err = workspaceUpdated.File("target/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+
+	withoutClientMarker := generated.WithoutFile("internal/dagger/clients/target.gen.go")
+
+	workspaceUpdatedWithoutGeneration := withoutClientMarker.With(daggerNonNestedExec("workspace", "update", "--no-generate"))
+	exists, err := workspaceUpdatedWithoutGeneration.Exists(ctx, "internal/dagger/clients/target.gen.go")
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	moduleUpdated := withoutClientMarker.With(daggerNonNestedExec("module", "update", "target"))
+	clientMarker, err = moduleUpdated.File("internal/dagger/clients/target.gen.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, clientMarker, "Code generated by sdk-ux-go")
+
+	removed := generated.With(daggerNonNestedExec("module", "client", "rm", "target", "-y"))
+	exists, err = removed.Exists(ctx, "internal/dagger/clients/target.gen.go")
+	require.NoError(t, err)
+	require.False(t, exists)
 }
 
-// TestGenerateLocalDependenciesTerminatesOnRootDep locks in that
-// Internal local-dependency generation terminates when a module's local
-// dependency closure leads back to a dependency that is currently being
-// generated one level up.
-//
-// The shape (mirroring the go-sdk workspace, where this recursed forever): the
-// workspace root module is managed as-sdk by an SDK module whose generator —
-// like the real SDK management modules — stages every visible module's local
-// dependency closure before generating it, and a nested module depends on the
-// workspace root. Staging the nested module's closure generates the root via
-// that SDK generator, whose own staging pass walks the nested module again;
-// since the root dependency is recorded in the staged workspace's
-// StagedGeneration set, the nested walk must skip it instead of recursing
-// through the generator with a fresh workspace ID per round.
-func (GeneratorsSuite) TestGenerateLocalDependenciesTerminatesOnRootDep(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestSDKModuleInitDefaults(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	sdkModulePath, err := filepath.Abs("../../modules/sdk-ux-go")
+	require.NoError(t, err)
 
 	base := goGitBase(t, c).
-		WithNewFile("dagger.toml", `[modules.root-mod]
-source = "."
+		WithDirectory("/work/apps/shop/.dagger/modules/sdk-ux-go", c.Host().Directory(sdkModulePath)).
+		WithNewFile("/work/apps/shop/dagger.toml", `[modules.go-sdk]
+source = ".dagger/modules/sdk-ux-go"
 
-[modules.nested]
-source = ".dagger/modules/nested"
-
-[modules.fanout-sdk]
-source = ".dagger/modules/fanout-sdk"
-
-[modules.fanout-sdk.as-sdk]
-
-[[modules.fanout-sdk.as-sdk.modules]]
-path = "."
+[sdks.go]
+module = "go-sdk"
 `).
-		WithNewFile("dagger.json", `{
-  "name": "root-mod",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": "."
-}`).
-		WithNewFile(".dagger/modules/nested/dagger.json", `{
-  "name": "nested",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "dependencies": [
-    { "name": "root-mod", "source": "../../.." }
-  ],
-  "source": "."
-}`).
-		WithNewFile(".dagger/modules/fanout-sdk/dagger.json", `{
-  "name": "fanout-sdk",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": "."
-}`).
-		WithNewFile(".dagger/modules/fanout-sdk/main.go", `package main
+		WithNewFile("/work/apps/shop/internal/.keep", "").
+		WithWorkdir("/work/apps/shop/internal").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
 
-import (
-	"context"
+	t.Run("requires an installed SDK", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerNonNestedExecFail("module", "init", "missing", "-y")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"missing" is not installed as an SDK`)
+	})
 
-	"dagger/fanout-sdk/internal/dagger"
-)
+	t.Run("infers name and path", func(ctx context.Context, t *testctx.T) {
+		initialized := base.
+			WithNewFile("/work/apps/shop/go.mod", "module example.com/shop\n\ngo 1.25\n").
+			With(daggerNonNestedExec("module", "init", "go", "-y"))
+		out, err := initialized.CombinedOutput(ctx)
+		require.NoError(t, err, out)
 
-type FanoutSdk struct{}
+		moduleRoot := "/work/apps/shop/.dagger/modules/shop-dev"
+		_, err = initialized.File(moduleRoot + "/dagger-module.toml").Contents(ctx)
+		require.NoError(t, err)
+		marker, err := initialized.File(moduleRoot + "/internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, marker, "for shop-dev")
 
-// Mimic an SDK-wide generator: stage each visible module's local dependency
-// closure, then emit a marker changeset.
-// +generate
-func (m *FanoutSdk) Generate(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	for _, path := range []string{".", ".dagger/modules/nested"} {
-		_, err := ws.ModuleSource(path).GenerateLocalDependencies(ws).Sync(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return dag.Directory().WithNewFile("fanout-generated", "ok").Changes(dag.Directory()), nil
+		config, err := initialized.File("/work/apps/shop/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `[sdks.go.scopes.".dagger/modules/shop-dev"]`)
+		require.Contains(t, config, `name = "shop-dev"`)
+	})
 }
-`)
 
-	// Bound the run so a regression fails instead of hanging: pre-fix this
-	// recursed with a fresh workspace per round until the client disconnected.
-	ctr := base.WithExec(
-		[]string{"timeout", "300", "dagger", "generate", "fanout-sdk", "-y", "--progress=plain"},
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
-	)
-	out, err := ctr.CombinedOutput(ctx)
+func (GeneratorsSuite) TestSDKModuleCanWriteAboveScope(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-workspace-writer")
+	require.NoError(t, err)
+
+	workspace := goGitBase(t, c).
+		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithNewFile("/work/app/dagger.toml", `[modules.workspace-writer]
+source = "../sdk"
+
+[sdks.test]
+module = "workspace-writer"
+
+[sdks.test.scopes."generated/demo"]
+is-module = true
+name = "demo"
+`).
+		WithWorkdir("/work/app").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+
+	generated := workspace.With(daggerNonNestedExec("generate", "-y"))
+	out, err := generated.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 
-	generated, err := ctr.File("fanout-generated").Contents(ctx)
+	goMod, err := generated.File("/work/app/go.mod").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "ok", generated)
+	require.Contains(t, goMod, "module example.com/demo")
+	_, err = generated.File("/work/app/generated/demo/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+}
+
+func (GeneratorsSuite) TestSDKModuleDefaultModulePath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-workspace-writer")
+	require.NoError(t, err)
+
+	workspace := goGitBase(t, c).
+		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithNewFile("/work/app/dagger.toml", `[modules.workspace-writer]
+source = "../sdk"
+
+[sdks.test]
+module = "workspace-writer"
+`).
+		WithWorkdir("/work/app").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+
+	initialized := workspace.With(daggerNonNestedExec("module", "init", "test", "--name", "demo", "-y"))
+	out, err := initialized.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.NotContains(t, out, "Custom path; module was not installed.")
+
+	_, err = initialized.File("/work/generated/demo/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+	goMod, err := initialized.File("/work/go.mod").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, goMod, "module example.com/demo")
+	config, err := initialized.File("/work/app/dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, config, "[modules.demo]\nsource = \"../generated/demo\"")
+	require.Contains(t, config, `[sdks.test.scopes."../generated/demo"]`)
+	require.Contains(t, config, `name = "demo"`)
+
+	custom := workspace.With(daggerNonNestedExec(
+		"module", "init", "test", "--name", "custom", "--path", "custom", "-y",
+	))
+	out, err = custom.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "Initialized module custom\nCustom path; module was not installed.\n")
+	config, err = custom.File("/work/app/dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, config, "[modules.custom]")
+	require.Contains(t, config, `[sdks.test.scopes.custom]`)
+}
+
+// TestSDKScopeGenerationRepairsLocalDependency starts with invalid source in
+// the root module. The nested scope needs that module's client schema. The
+// engine must generate the root scope before it loads the root module for the
+// nested client. This also covers the former root-dependency recursion: one
+// top-level graph run must terminate without starting nested generation.
+func (GeneratorsSuite) TestSDKScopeGenerationRepairsLocalDependency(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "sdk-scope-generation").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+
+	runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	generated := base.With(daggerNonNestedExec("generate", "-y"))
+	out, err := generated.CombinedOutput(runCtx)
+	require.NoError(t, err, out)
+
+	rootSource, err := generated.File("main.dang").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, rootSource, "intentionally invalid")
+
+	clientSchema, err := generated.File("nested/generated/root.schema.json").Contents(ctx)
+	require.NoError(t, err)
+	// The SDK got this file from ModuleSource.clientSchemaIntrospectionJSON.
+	// Materializing it loads the generated root module. Other tests cover the
+	// contents of the client schema; this test only requires a valid schema.
+	require.Contains(t, parseSchemaContents(t, clientSchema).typeNames(), "Query")
+}
+
+// TestWorkspaceListsSyntheticGeneratorWithoutLoadingSDK proves that generator
+// discovery uses only workspace configuration. The SDK can be temporarily
+// invalid because generation can be the operation that repairs it.
+func (GeneratorsSuite) TestWorkspaceListsSyntheticGeneratorWithoutLoadingSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	workspace := workspaceFixture(t, c, "generators-broken").
+		WithNewFile("dagger.toml", `[modules.good]
+source = ".dagger/modules/good"
+
+[modules.bad]
+source = ".dagger/modules/bad"
+
+[sdks.bad]
+module = "bad"
+`).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+
+	out, err := workspace.
+		With(daggerNonNestedExec("generate", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "bad:generate")
 }
 
 // TestWorkspaceGenerateNarrowsToRequestedModule locks in that
@@ -1778,48 +1255,57 @@ func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *dagger
 	return schema.typeNames(), queryFields
 }
 
-// TestCurrentModuleAsSDKClientModuleSourceField is a lighter engine-level check
-// that CurrentModuleAsSDKClient exposes the moduleSource field (which resolves
-// the bound module from its stored {module, pin}). Exercising it end-to-end
-// requires an installed-SDK module execution context; here we assert the field
-// is registered on the v1.0 schema view with the right type.
-func (GeneratorsSuite) TestCurrentModuleAsSDKClientModuleSourceField(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestBetaSDKModuleAPIIsRemoved(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-
 	out, err := goGitBase(t, c).
-		With(daggerQuery(`{__type(name:"CurrentModuleAsSDKClient"){fields{name type{kind ofType{kind name}}}}}`)).
+		With(daggerQuery(`{
+			current: __type(name: "CurrentModule") { fields { name } }
+			moduleSource: __type(name: "ModuleSource") { fields { name } }
+			workspace: __type(name: "Workspace") { fields { name } }
+			schema: __schema { types { name } }
+		}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 
 	var resp struct {
-		Type *struct {
+		Current struct {
 			Fields []struct {
 				Name string `json:"name"`
-				Type struct {
-					Kind   string `json:"kind"`
-					OfType *struct {
-						Kind string `json:"kind"`
-						Name string `json:"name"`
-					} `json:"ofType"`
-				} `json:"type"`
 			} `json:"fields"`
-		} `json:"__type"`
+		} `json:"current"`
+		ModuleSource struct {
+			Fields []struct {
+				Name string `json:"name"`
+			} `json:"fields"`
+		} `json:"moduleSource"`
+		Workspace struct {
+			Fields []struct {
+				Name string `json:"name"`
+			} `json:"fields"`
+		} `json:"workspace"`
+		Schema struct {
+			Types []struct {
+				Name string `json:"name"`
+			} `json:"types"`
+		} `json:"schema"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
-	require.NotNil(t, resp.Type, "CurrentModuleAsSDKClient should be present in the v1.0 schema view")
-
-	var found bool
-	for _, f := range resp.Type.Fields {
-		if f.Name != "moduleSource" {
-			continue
-		}
-		found = true
-		require.Equal(t, "NON_NULL", f.Type.Kind, "moduleSource must be non-null")
-		require.NotNil(t, f.Type.OfType)
-		require.Equal(t, "OBJECT", f.Type.OfType.Kind)
-		require.Equal(t, "ModuleSource", f.Type.OfType.Name)
+	for _, field := range resp.Current.Fields {
+		require.NotEqual(t, "asSDK", field.Name)
 	}
-	require.True(t, found, "CurrentModuleAsSDKClient should expose a moduleSource field")
+	for _, field := range resp.ModuleSource.Fields {
+		require.NotEqual(t, "generateLocalDependencies", field.Name)
+	}
+	for _, field := range resp.Workspace.Fields {
+		require.NotEqual(t, "__withGeneratedLocalDependencies", field.Name)
+	}
+	typeNames := make([]string, 0, len(resp.Schema.Types))
+	for _, typ := range resp.Schema.Types {
+		typeNames = append(typeNames, typ.Name)
+	}
+	require.NotContains(t, typeNames, "CurrentModuleAsSDK")
+	require.NotContains(t, typeNames, "CurrentModuleAsSDKModule")
+	require.NotContains(t, typeNames, "CurrentModuleAsSDKClient")
 }
 
 // TestWorkspaceGeneratorsSeeOverlayEdits locks in that a generator run via

@@ -1328,6 +1328,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\ModuleManifest",
+			"p": "Dagger/ModuleManifest.html",
+			"d": "<p>A structured Dagger module manifest.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ModuleManifestV1",
+			"p": "Dagger/ModuleManifestV1.html",
+			"d": "<p>A Dagger module manifest in the current unversioned format.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ModuleManifestV2",
+			"p": "Dagger/ModuleManifestV2.html",
+			"d": "<p>A Dagger module manifest in format version 2.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ModuleManifestVersions",
+			"p": "Dagger/ModuleManifestVersions.html",
+			"d": "<p>Versioned Dagger module manifest builders.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\ModuleSource",
 			"p": "Dagger/ModuleSource.html",
 			"d": "<p>The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.</p>",
@@ -2824,6 +2864,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::moduleManifest",
+			"p": "Dagger/Client.html#method_moduleManifest",
+			"d": "<p>Construct a versioned module manifest.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::moduleRuntime",
 			"p": "Dagger/Client.html#method_moduleRuntime",
 			"d": null
@@ -3532,12 +3578,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\CurrentModule::asSDK",
-			"p": "Dagger/CurrentModule.html#method_asSDK",
-			"d": "<p>Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\CurrentModule::dependencies",
 			"p": "Dagger/CurrentModule.html#method_dependencies",
 			"d": "<p>The dependencies of the module.</p>"
@@ -3631,12 +3671,6 @@
 			"n": "Dagger\\CurrentModuleAsSDKClient::path",
 			"p": "Dagger/CurrentModuleAsSDKClient.html#method_path",
 			"d": "<p>Workspace-root-relative path of the generated client.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\CurrentModuleAsSDKClient::pin",
-			"p": "Dagger/CurrentModuleAsSDKClient.html#method_pin",
-			"d": "<p>The pinned version of the bound module, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -5328,7 +5362,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::originalModule",
 			"p": "Dagger/Generator.html#method_originalModule",
-			"d": "<p>The original module in which the generator has been defined</p>"
+			"d": "<p>The module that defined the generator, or null for an engine-defined generator</p>"
 		},
 		{
 			"t": "M",
@@ -6442,6 +6476,96 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleManifest::asFile",
+			"p": "Dagger/ModuleManifest.html#method_asFile",
+			"d": "<p>Serialize the manifest as a dagger-module.toml file.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::id",
+			"p": "Dagger/ModuleManifest.html#method_id",
+			"d": "<p>A unique identifier for this ModuleManifest.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::asFile",
+			"p": "Dagger/ModuleManifestV1.html#method_asFile",
+			"d": "<p>Serialize the manifest as dagger-module.toml.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::id",
+			"p": "Dagger/ModuleManifestV1.html#method_id",
+			"d": "<p>A unique identifier for this ModuleManifestV1.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::withEngineVersion",
+			"p": "Dagger/ModuleManifestV1.html#method_withEngineVersion",
+			"d": "<p>Set the required engine API version.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::withInclude",
+			"p": "Dagger/ModuleManifestV1.html#method_withInclude",
+			"d": "<p>Add a path from the module context to the runtime input.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::withRuntime",
+			"p": "Dagger/ModuleManifestV1.html#method_withRuntime",
+			"d": "<p>Set the runtime that builds and executes the module.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV1::withSource",
+			"p": "Dagger/ModuleManifestV1.html#method_withSource",
+			"d": "<p>Set the module implementation path relative to dagger-module.toml.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV2::asFile",
+			"p": "Dagger/ModuleManifestV2.html#method_asFile",
+			"d": "<p>Serialize the manifest as dagger-module.toml.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV2::id",
+			"p": "Dagger/ModuleManifestV2.html#method_id",
+			"d": "<p>A unique identifier for this ModuleManifestV2.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV2::withDangEntrypoint",
+			"p": "Dagger/ModuleManifestV2.html#method_withDangEntrypoint",
+			"d": "<p>Use the built-in Dang entrypoint driver.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestV2::withModuleEntrypoint",
+			"p": "Dagger/ModuleManifestV2.html#method_withModuleEntrypoint",
+			"d": "<p>Use another module as the entrypoint driver.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestVersions::id",
+			"p": "Dagger/ModuleManifestVersions.html#method_id",
+			"d": "<p>A unique identifier for this ModuleManifestVersions.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestVersions::v1",
+			"p": "Dagger/ModuleManifestVersions.html#method_v1",
+			"d": "<p>Construct a manifest in the current unversioned format.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifestVersions::v2",
+			"p": "Dagger/ModuleManifestVersions.html#method_v2",
+			"d": "<p>Construct a manifest in format version 2.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::asModule",
 			"p": "Dagger/ModuleSource.html#method_asModule",
 			"d": "<p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p>"
@@ -6523,12 +6647,6 @@
 			"n": "Dagger\\ModuleSource::generate",
 			"p": "Dagger/ModuleSource.html#method_generate",
 			"d": "<p>Return the supplied workspace with this module's generated context applied.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::generateLocalDependencies",
-			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
-			"d": "<p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p>"
 		},
 		{
 			"t": "M",
@@ -7510,6 +7628,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::detectScope",
+			"p": "Dagger/Workspace.html#method_detectScope",
+			"d": "<p>Detect the most specific SDK-module scope that contains the current location.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"
@@ -7636,6 +7760,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withClient",
+			"p": "Dagger/Workspace.html#method_withClient",
+			"d": "<p>Return this workspace with a generated module client added to its detected scope.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
@@ -7654,15 +7784,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::withInitClient",
-			"p": "Dagger/Workspace.html#method_withInitClient",
-			"d": "<p>Return this workspace with a generated API client initialized.</p>"
+			"n": "Dagger\\Workspace::withFile",
+			"p": "Dagger/Workspace.html#method_withFile",
+			"d": "<p>Return this workspace with a file added or replaced, without mutating the source.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::withInitModule",
 			"p": "Dagger/Workspace.html#method_withInitModule",
-			"d": "<p>Return this workspace with a new module initialized.</p>"
+			"d": "<p>Return this workspace with a location initialized as a module scope.</p>"
 		},
 		{
 			"t": "M",
@@ -7702,15 +7832,33 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withUpdatedClients",
+			"p": "Dagger/Workspace.html#method_withUpdatedClients",
+			"d": "<p>Return this workspace with the selected module clients updated.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withUpdatedLock",
 			"p": "Dagger/Workspace.html#method_withUpdatedLock",
 			"d": "<p>Return this workspace with refreshed lockfile state.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withUpdatedModules",
+			"p": "Dagger/Workspace.html#method_withUpdatedModules",
+			"d": "<p>Return this workspace with refreshed lockfile state for installed modules.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withWorkdir",
 			"p": "Dagger/Workspace.html#method_withWorkdir",
 			"d": "<p>Return this workspace with its working directory pointed at the given workspace-relative path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutClient",
+			"p": "Dagger/Workspace.html#method_withoutClient",
+			"d": "<p>Return this workspace with a module client removed from the current scope.</p>"
 		},
 		{
 			"t": "M",

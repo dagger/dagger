@@ -1,0 +1,33 @@
+"""
+Test SDK for the module-max Workspace output boundary.
+"""
+type ModuleMaxWorkspaceWriter {
+  detectScope(ws: Workspace!): String! {
+    ""
+  }
+
+  defaultModulePath(ws: Workspace!, name: String!): String! {
+    "generated/" + name
+  }
+
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    let generated = if (isModule) {
+      ws.withFile(
+        "dagger-module.toml",
+        moduleManifest.v1(name: name).withRuntime(source: "go").asFile,
+      )
+    } else {
+      ws
+    }
+
+    generated.withNewFile(
+      "../../go.mod",
+      "module example.com/" + name + "\n\ngo 1.25\n",
+    )
+  }
+}

@@ -14,9 +14,9 @@ import (
 )
 
 const initialWorkspaceConfig = `# Dagger workspace configuration
-# Install modules with: dagger install <module>
+# Install modules with: dagger module install <module>
 # Example:
-#   dagger install github.com/dagger/dagger/modules/wolfi
+#   dagger module install github.com/dagger/dagger/modules/wolfi
 
 [modules]
 `

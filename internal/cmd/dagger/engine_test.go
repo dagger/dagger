@@ -155,7 +155,7 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 
 // TestEngineTelemetryConfigSkipsSharedExporters guards the fix for the noisy
 // "HTTP exporter is shutdown" / "context canceled" telemetry warnings emitted by
-// the second engine session that `dagger module init` opens. Internal plumbing
+// the SDK-command preflight session opens. Internal plumbing
 // sessions must not wire up (and later tear down) the process-wide OTLP exporter
 // singletons, otherwise the real command that runs next in the same process
 // re-exports into already-shut-down exporters. See engineTelemetryConfig.

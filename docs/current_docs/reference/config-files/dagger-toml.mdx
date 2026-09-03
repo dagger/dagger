@@ -6,7 +6,7 @@ description: "The dagger.toml workspace configuration file schema."
 
 # dagger.toml
 
-A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace, their settings, and any per-environment overrides. `dagger install` creates it on first install.
+A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace, their settings, and any per-environment overrides. `dagger module install` creates it on first install.
 
 The machine-readable schema is published at [dagger-workspace.schema.json](/reference/dagger-workspace.schema.json).
 
@@ -15,13 +15,14 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | Key | Type | Description |
 | --- | --- | --- |
 | `modules` | table | Installed modules, keyed by install name. See [`[modules.<name>]`](#modulesname). |
+| `sdks` | table | Installed SDK providers and their generation scopes. See [`[sdks.<name>]`](#sdksname). |
 | `env` | table | Named environment overlays. See [`[env.<name>]`](#envname). |
 | `ports` | table | Host port mappings for services. See [`[ports.<name>]`](#portsname). |
 | `ignore` | array | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
 | `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
 
-Resolved image and Git lookups are pinned in `dagger.lock` alongside the config, and refreshed with `dagger update`.
+Resolved image and Git lookups are pinned in `dagger.lock` alongside the config, and refreshed with `dagger workspace update`.
 
 ## `[modules.<name>]`
 
@@ -37,23 +38,46 @@ packageManager = "yarn"
 | --- | --- | --- |
 | `source` | string | Module address — a workspace-relative path, or a Git ref such as `github.com/org/mod@version`. |
 | `pin` | string | Resolved version for `source`. |
-| `settings` | table | Module settings. Keys are defined by the module; set them with `dagger settings`. |
+| `settings` | table | Module settings. Keys are defined by the module; set them with `dagger module settings`. |
 | `entrypoint` | bool | Marks this module as the workspace entrypoint. |
 | `legacy-default-path` | bool | Compatibility flag recorded by workspace migration. |
 | `check` | table | `skip = [...]` — check functions to exclude from `dagger check`. |
 | `generate` | table | `skip = [...]` — generators to exclude from `dagger generate`. |
 | `up` | table | `skip = [...]` — services to exclude from `dagger up`. |
-| `as-sdk` | table | SDK-role data, for module entries that act as an SDK in this workspace. See [`as-sdk`](#as-sdk). |
 
 Settings can point at another module's output instead of a literal value — see [Module wiring](../../config/module-wiring.mdx).
 
-## `as-sdk`
+## `[sdks.<name>]`
+
+```toml
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes.".dagger/modules/demo"]
+is-module = true
+name = "demo"
+clients = ["github.com/acme/api"]
+
+[sdks.go.scopes.".dagger/modules/demo".settings]
+legacy-module-compat = false
+```
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `name` | string | SDK name used by `dagger module init <sdk>` and `dagger api client init <sdk>`. Defaults to the module entry name. |
-| `modules` | array | Workspace-local modules this SDK authors, each with a `path`. |
-| `clients` | array | Generated bindings this SDK produces, each with `path`, `module`, `pin`, and `options`. |
+| `module` | string | Name of the installed module that provides this SDK. |
+| `scopes` | table | Generation scopes, keyed by paths relative to `dagger.toml`. |
+
+Each scope can contain one module, module clients, or both.
+
+| Scope key | Type | Description |
+| --- | --- | --- |
+| `is-module` | bool | The scope contains a Dagger module. |
+| `name` | string | Name of the module in this scope. |
+| `clients` | array | Module targets for generated clients. |
+| `settings` | table | SDK settings for this scope. |
 
 ## `[env.<name>]`
 

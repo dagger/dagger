@@ -43,44 +43,45 @@ func TestLocalModuleRefsEmpty(t *testing.T) {
 func TestAddMigratedModuleSDK(t *testing.T) {
 	t.Parallel()
 
-	t.Run("creates a builtin as-sdk install", func(t *testing.T) {
+	t.Run("creates a builtin SDK install", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{}}
-		AddMigratedModuleSDK(cfg, "go", "libs/foo")
+		AddMigratedModuleSDK(cfg, "go", "libs/foo", "foo")
 		entry, ok := cfg.Modules["dagger-go-sdk"]
 		require.True(t, ok)
 		require.Equal(t, "go", entry.Source)
-		require.NotNil(t, entry.AsSDK)
-		require.Len(t, entry.AsSDK.Modules, 1)
-		require.Equal(t, "libs/foo", entry.AsSDK.Modules[0].Path)
+		require.Equal(t, SDKEntry{Module: "dagger-go-sdk", Scopes: map[string]SDKScope{
+			"libs/foo": {IsModule: true, Name: "foo"},
+		}}, cfg.SDKs["go"])
 	})
 
 	t.Run("shares one entry across modules with the same runtime", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{}}
-		AddMigratedModuleSDK(cfg, "go", ".dagger/modules/myapp")
-		AddMigratedModuleSDK(cfg, "go", "libs/foo")
+		AddMigratedModuleSDK(cfg, "go", ".dagger/modules/myapp", "myapp")
+		AddMigratedModuleSDK(cfg, "go", "libs/foo", "foo")
 		require.Len(t, cfg.Modules, 1)
-		require.ElementsMatch(t,
-			[]string{".dagger/modules/myapp", "libs/foo"},
-			[]string{cfg.Modules["dagger-go-sdk"].AsSDK.Modules[0].Path, cfg.Modules["dagger-go-sdk"].AsSDK.Modules[1].Path},
-		)
+		require.Equal(t, map[string]SDKScope{
+			".dagger/modules/myapp": {IsModule: true, Name: "myapp"},
+			"libs/foo":              {IsModule: true, Name: "foo"},
+		}, cfg.SDKs["go"].Scopes)
 	})
 
 	t.Run("separate entries for different runtimes", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{}}
-		AddMigratedModuleSDK(cfg, "go", "a")
-		AddMigratedModuleSDK(cfg, "python", "b")
+		AddMigratedModuleSDK(cfg, "go", "a", "a")
+		AddMigratedModuleSDK(cfg, "python", "b", "b")
 		require.Contains(t, cfg.Modules, "dagger-go-sdk")
 		require.Contains(t, cfg.Modules, "dagger-python-sdk")
 	})
 
 	t.Run("external SDK keeps its ref as source", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{}}
-		AddMigratedModuleSDK(cfg, "github.com/acme/custom-sdk", "libs/foo")
+		AddMigratedModuleSDK(cfg, "github.com/acme/custom-sdk", "libs/foo", "foo")
 		entry, ok := cfg.Modules["custom-sdk"]
 		require.True(t, ok)
 		require.Equal(t, "github.com/acme/custom-sdk", entry.Source)
-		require.NotNil(t, entry.AsSDK)
-		require.Len(t, entry.AsSDK.Modules, 1)
+		require.Equal(t, SDKEntry{Module: "custom-sdk", Scopes: map[string]SDKScope{
+			"libs/foo": {IsModule: true, Name: "foo"},
+		}}, cfg.SDKs["custom"])
 	})
 }
 

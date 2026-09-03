@@ -515,6 +515,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Construct a versioned module manifest.
+  """
+  @spec module_manifest(t()) :: Dagger.ModuleManifestVersions.t()
+  def module_manifest(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("moduleManifest")
+
+    %Dagger.ModuleManifestVersions{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module source instance from a source ref string
   """
   @spec module_source(t(), String.t(), [

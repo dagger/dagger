@@ -2812,8 +2812,10 @@ type Generator implements Node {
   """Return the fully qualified name of the generator"""
   name: String!
 
-  """The original module in which the generator has been defined"""
-  originalModule: Module!
+  """
+  The module that defined the generator, or null for an engine-defined generator
+  """
+  originalModule: Module
 
   """The path of the generator within its module"""
   path: [String!]!
@@ -3537,6 +3539,103 @@ scalar ModuleConfigClientID
 """A unique identifier for an object."""
 scalar ModuleID
 
+"""A Dagger module manifest in the current unversioned format."""
+type ModuleManifestV1 implements Node {
+  """Serialize the manifest as dagger-module.toml."""
+  asFile: File!
+
+  """A unique identifier for this ModuleManifestV1."""
+  id: ID!
+
+  """
+  Set the required engine API version.
+
+  The default is the running engine version.
+  """
+  withEngineVersion(
+    """Required engine API version."""
+    version: String!
+  ): ModuleManifestV1!
+
+  """
+  Add a path from the module context to the runtime input.
+
+  This operation is additive.
+  """
+  withInclude(
+    """Path to include."""
+    path: String!
+  ): ModuleManifestV1!
+
+  """Set the runtime that builds and executes the module."""
+  withRuntime(
+    """Runtime source."""
+    source: String!
+  ): ModuleManifestV1!
+
+  """
+  Set the module implementation path relative to dagger-module.toml.
+
+  The default is '.'.
+  """
+  withSource(
+    """Module implementation path."""
+    path: String!
+  ): ModuleManifestV1!
+}
+
+"""A unique identifier for an object."""
+scalar ModuleManifestV1ID
+
+"""A Dagger module manifest in format version 2."""
+type ModuleManifestV2 implements Node {
+  """Serialize the manifest as dagger-module.toml."""
+  asFile: File!
+
+  """A unique identifier for this ModuleManifestV2."""
+  id: ID!
+
+  """Use the built-in Dang entrypoint driver."""
+  withDangEntrypoint(
+    """Entrypoint source address."""
+    source: String!
+  ): ModuleManifestV2!
+
+  """Use another module as the entrypoint driver."""
+  withModuleEntrypoint(
+    """Entrypoint module address."""
+    source: String!
+  ): ModuleManifestV2!
+}
+
+"""A unique identifier for an object."""
+scalar ModuleManifestV2ID
+
+"""Versioned Dagger module manifest builders."""
+type ModuleManifestVersions implements Node {
+  """A unique identifier for this ModuleManifestVersions."""
+  id: ID!
+
+  """
+  Construct a manifest in the current unversioned format.
+
+  The generated file does not contain manifestVersion = 1.
+  """
+  v1(
+    """Module name."""
+    name: String!
+  ): ModuleManifestV1!
+
+  """Construct a manifest in format version 2."""
+  v2(
+    """Module name."""
+    name: String!
+  ): ModuleManifestV2!
+}
+
+"""A unique identifier for an object."""
+scalar ModuleManifestVersionsID
+
 """
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
@@ -4229,6 +4328,15 @@ type Query implements Node {
 
   """Load a Module from its ID."""
   loadModuleFromID(id: ModuleID!): Module!
+
+  """Load a ModuleManifestV1 from its ID."""
+  loadModuleManifestV1FromID(id: ModuleManifestV1ID!): ModuleManifestV1!
+
+  """Load a ModuleManifestV2 from its ID."""
+  loadModuleManifestV2FromID(id: ModuleManifestV2ID!): ModuleManifestV2!
+
+  """Load a ModuleManifestVersions from its ID."""
+  loadModuleManifestVersionsFromID(id: ModuleManifestVersionsID!): ModuleManifestVersions!
 
   """Load a ModuleSource from its ID."""
   loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!

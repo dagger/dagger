@@ -31,8 +31,8 @@ If Dagger migrates an old configuration, run `dagger setup` again.
 If Dagger reports `No recommendations`, search for a module by the name of a tool in your project. For example, if the project uses ESLint:
 
 ```shell
-dagger search eslint
-dagger install github.com/dagger/eslint
+dagger module search eslint
+dagger module install github.com/dagger/eslint
 ```
 
 ## Configure modules
@@ -40,13 +40,13 @@ dagger install github.com/dagger/eslint
 Most modules use suitable default settings. List the available settings:
 
 ```shell
-dagger settings
+dagger module settings
 ```
 
 Change a setting when the default does not match the project. For example, if you installed ESLint and the project uses Yarn:
 
 ```shell
-dagger settings eslint packageManager yarn
+dagger module settings eslint packageManager yarn
 ```
 
 Settings are stored in `dagger.toml`, so they apply to all users of the workspace.

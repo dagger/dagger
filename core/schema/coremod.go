@@ -188,6 +188,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&platformSchema{},
 		&socketSchema{},
 		&moduleSourceSchema{},
+		&moduleManifestSchema{},
 		&moduleSchema{},
 		&errorSchema{},
 		&engineSchema{},

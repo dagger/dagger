@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -140,6 +139,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("contents").Doc("Contents of the new file."),
 				dagql.Arg("permissions").Doc("Permissions of the new file."),
 			),
+		dagql.NodeFunc("withFile", s.withFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a file added or replaced, without mutating the source.").
+			Args(
+				dagql.Arg("path").Doc("Destination path. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("File to add."),
+				dagql.Arg("permissions").Doc("Permissions of the added file. Defaults to the source file permissions."),
+			),
 		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with the given path replaced by a directory, without mutating the source.",
@@ -173,19 +180,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a changeset applied, without mutating the source.").
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
-			),
-		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
-			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
-				"Applies internally generated local-dependency changes for the module at the given path, and marks the workspace so nested generation for that module does not repeat the staging.").
-			Args(
-				dagql.Arg("module").Doc("Workspace-root-relative path of the module whose generated local dependencies these are."),
-				dagql.Arg("changes").Doc("The staged dependency codegen to apply."),
-			),
-		dagql.NodeFunc("__sdkGenerators", s.sdkGenerators).
-			Doc("(Internal-only) The generators exposed by an SDK installed in this workspace.",
-				"Built straight from the SDK's own module, so it demands no workspace module loading: an init flow can generate for what it just created without pulling in the rest of the workspace.").
-			Args(
-				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name whose generators to collect."),
 			),
 		dagql.NodeFunc("withWorkdir", s.withWorkdir).
 			View(AfterVersion("v1.0.0-0")).
@@ -240,7 +234,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("SDK module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`."),
+				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
 			),
 		dagql.NodeFunc("withoutSDK", s.withoutSDK).
 			View(AfterVersion("v1.0.0-0")).
@@ -250,31 +244,46 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.NodeFunc("withInitModule", s.withInitModule).
+		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a new module initialized.",
-				"The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.").
+			Doc("Return this workspace with a location initialized as a module scope.",
+				"The selected SDK module records the scope and generates the module source.").
 			Args(
-				dagql.Arg("name").Doc("Name of the new module."),
-				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
-				dagql.Arg("path").Doc(`Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.`),
-				dagql.Arg("source").Doc("Source subpath within the new module."),
-				dagql.Arg("include").Doc("Additional include patterns for the module."),
-				dagql.Arg("args").Doc("SDK-specific init arguments."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("noGenerate").Doc("Skip running the SDK's generators for the new module."),
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use. Required."),
+				dagql.Arg("name").Doc("Module name. The engine infers it from path, the active config file, or the workspace root when omitted."),
+				dagql.Arg("path").Doc("Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config."),
+				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
-		dagql.NodeFunc("withInitClient", s.withInitClient).
+		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a generated API client initialized.",
-				"The SDK's generators run for the new client, so the returned workspace carries its generated bindings.").
+			Doc("Detect the most specific SDK-module scope that contains the current location.").
 			Args(
-				dagql.Arg("path").Doc(`Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.`),
-				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
-				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
-				dagql.Arg("args").Doc("SDK-specific init arguments."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("noGenerate").Doc("Skip running the SDK's generators for the new client."),
+				dagql.Arg("sdk").Doc("Optional SDK name to probe. All installed SDK modules are probed when omitted."),
+			),
+		dagql.NodeFunc("withClient", s.withSDKModuleClient).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a generated module client added to its detected scope.").
+			Args(
+				dagql.Arg("module").Doc("Installed module name, local path, or module address to generate a client for."),
+				dagql.Arg("sdk").Doc("Optional SDK name. Scope detection selects the SDK when omitted."),
+				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
+			),
+		dagql.NodeFunc("withoutClient", s.withoutSDKModuleClient).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a module client removed from the current scope.",
+				"The selected SDK module regenerates the complete scope.").
+			Args(
+				dagql.Arg("module").Doc("The recorded target to remove."),
+			),
+		dagql.NodeFunc("withUpdatedClients", s.withUpdatedSDKModuleClients).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with the selected module clients updated.",
+				"The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.",
+				"The selected SDK module then regenerates every scope that owns one of the targets.").
+			Args(
+				dagql.Arg("modules").Doc("Recorded client targets to update. All targets in the selected scopes are updated when omitted."),
+				dagql.Arg("all").Doc("Select clients in every scope instead of only the scopes containing the workspace cwd."),
+				dagql.Arg("sdk").Doc("Optional SDK name. All installed SDK modules are selected when omitted."),
 			),
 		dagql.NodeFunc("withConfigValue", s.withConfigValue).
 			View(AfterVersion("v1.0.0-0")).
@@ -315,7 +324,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withUpdatedLock", s.withUpdatedLock).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with refreshed lockfile state."),
+			Doc("Return this workspace with refreshed lockfile state.",
+				"SDK client scopes are regenerated unless noGenerate is true.").
+			Args(
+				dagql.Arg("noGenerate").Doc("Do not regenerate SDK client scopes."),
+			),
+		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with refreshed lockfile state for installed modules.",
+				"An SDK client scope is regenerated when it targets an updated module.").
+			Args(
+				dagql.Arg("names").Doc("Installed module names to refresh. An empty list refreshes all installed modules."),
+			),
 		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Installed SDKs."),
@@ -1193,6 +1213,49 @@ func (s *workspaceSchema) withNewFile(
 	}, nil)
 }
 
+type workspaceWithFileArgs struct {
+	Path        string
+	Source      core.FileID
+	Permissions dagql.Optional[dagql.Int]
+}
+
+func (s *workspaceSchema) withFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithFileArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := args.Source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		selectorArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "source", Value: dagql.NewID[*core.File](sourceID)},
+		}
+		if args.Permissions.Valid {
+			selectorArgs = append(selectorArgs, dagql.NamedInput{Name: "permissions", Value: args.Permissions.Value})
+		}
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, base, &updated, dagql.Selector{
+			Field: "withFile",
+			Args:  selectorArgs,
+		})
+		return updated, err
+	}, nil)
+}
+
 type workspaceSearchArgs struct {
 	core.SearchOpts
 	Paths []string `default:"[]"`
@@ -1728,34 +1791,8 @@ func (s *workspaceSchema) withChanges(
 	return s.applyChangeset(ctx, parent, args.Changes, nil)
 }
 
-// __withGeneratedLocalDependencies (Dagger-internal) applies the changeset
-// produced by internal local-dependency generation for the module at the
-// given workspace-root-relative path, and records that module in the
-// workspace's StagedGeneration set so nested local-dependency generation
-// for it short-circuits instead of re-staging the closure this workspace
-// already carries. Combining the apply and the mark in one field keeps the
-// provenance structural: a workspace can only be marked for a module by
-// applying that module's staged dependency codegen.
-func (s *workspaceSchema) withGeneratedLocalDependencies(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Module  string
-		Changes dagql.ID[*core.Changeset]
-	},
-) (dagql.ObjectResult[*core.Workspace], error) {
-	modPath := cleanWorkspaceRelPath(args.Module)
-	return s.applyChangeset(ctx, parent, args.Changes, func(ws *core.Workspace) {
-		if !slices.Contains(ws.StagedGeneration, modPath) {
-			ws.StagedGeneration = append(slices.Clone(ws.StagedGeneration), modPath)
-			slices.Sort(ws.StagedGeneration)
-		}
-	})
-}
-
 // applyChangeset overlays a changeset onto the workspace, optionally mutating
-// the resulting workspace value. Shared by withChanges and
-// __withGeneratedLocalDependencies.
+// the resulting workspace value.
 func (s *workspaceSchema) applyChangeset(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -3310,7 +3347,6 @@ func (s *workspaceSchema) checks(
 	if err != nil {
 		return nil, err
 	}
-
 	noGenerate := args.NoGenerate.GetOr(false).Bool()
 	onlyGenerate := args.OnlyGenerate.GetOr(false).Bool()
 
@@ -3436,6 +3472,17 @@ func (s *workspaceSchema) generators(
 	if err != nil {
 		return nil, err
 	}
+	var staged *stagedWorkspaceConfig
+	sdkProviderModules := map[string]bool{}
+	if parent.ConfigFile != "" {
+		staged, err = s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
+		if err != nil {
+			return nil, err
+		}
+		for _, sdk := range staged.Config.SDKs {
+			sdkProviderModules[sdk.Module] = true
+		}
+	}
 
 	// Best-effort: generate is often what repairs a module that can't load —
 	// e.g. a dagger-module.toml module whose committed generated files don't
@@ -3461,6 +3508,9 @@ func (s *workspaceSchema) generators(
 
 	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
 	for _, mod := range mods {
+		if sdkProviderModules[mod.Self().Name()] {
+			continue
+		}
 		generatorGroup, err := core.NewGeneratorGroup(ctx, mod, nil)
 		if err != nil {
 			return nil, fmt.Errorf("generators from module %q: %w", mod.Self().Name(), err)
@@ -3542,6 +3592,14 @@ func (s *workspaceSchema) generators(
 			}
 		}
 		allGenerators = append(allGenerators, filtered...)
+	}
+
+	if staged != nil {
+		syntheticGenerators, err := s.syntheticSDKGenerators(ctx, staged, include)
+		if err != nil {
+			return nil, err
+		}
+		allGenerators = append(allGenerators, syntheticGenerators...)
 	}
 
 	return &core.GeneratorGroup{

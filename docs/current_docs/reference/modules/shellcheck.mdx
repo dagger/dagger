@@ -13,7 +13,7 @@ Official module: [dagger/shellcheck](https://github.com/dagger/shellcheck)
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/shellcheck
+dagger module install github.com/dagger/shellcheck
 ```
 
 ## Run the check
@@ -27,7 +27,7 @@ dagger check shellcheck:check # run ShellCheck on discovered shell scripts
 
 ## Configure it
 
-List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
+List the current settings and their values with `dagger module settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
 
 - `exclude` (default: none) is a list of script paths to skip. Use it for vendored or generated scripts the repo does not own.
 

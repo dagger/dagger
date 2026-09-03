@@ -119,7 +119,7 @@ func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -133,7 +133,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingEntry(ctx context.Context, t *te
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeOCISHALock(t, workdir, "sha256:"+strings.Repeat("0", 64))
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -148,9 +148,9 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "update")
 	require.NoError(t, err)
-	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
+	require.Equal(t, "Updated workspace", strings.TrimSpace(string(out)))
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
@@ -243,14 +243,14 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 		c := connect(ctx, t)
 		ctr := nativeWorkspaceBase(t, c)
 
-		ctr = ctr.With(daggerExecRaw("update"))
+		ctr = ctr.With(daggerExecRaw("workspace", "update"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Updated dagger.lock", strings.TrimSpace(out))
+		require.Equal(t, "Updated workspace", strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		out, err = ctr.With(daggerExecRaw("workspace", "update")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+		require.Equal(t, "Workspace already up to date", strings.TrimSpace(out))
 
 		lockContents, err := ctr.File("dagger.lock").Contents(ctx)
 		require.NoError(t, err)
@@ -580,7 +580,7 @@ func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t
 	require.ErrorContains(t, err, `invalid git-latest ref "refs/pull/1/head"`)
 }
 
-// dagger update must refresh git-latest entries for private repositories: the
+// dagger workspace update must refresh git-latest entries for private repositories: the
 // lock stores only the remote URL, so the update path has to recover the same
 // credential-helper access that created the pin.
 func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Context, t *testctx.T) {
@@ -601,7 +601,7 @@ func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Contex
 	gitConfigPath := filepath.Join(workdir, ".gitconfig")
 	require.NoError(t, os.WriteFile(gitConfigPath, []byte(makeGitCredentials("github.com", "x-token-auth", token)), 0o600))
 
-	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--silent", "update")
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--silent", "workspace", "update")
 	cmd.Env = append(cmd.Env,
 		"GIT_CONFIG_GLOBAL="+gitConfigPath,
 		"GIT_CONFIG_SYSTEM=/dev/null",
@@ -628,10 +628,10 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 		"refs/tags/"+lockTestGitTagName+"@"+staleCommit,
 	)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "workspace", "update")
 	require.NoError(t, err)
 	require.Contains(t, string(out), "git tag points to a different commit")
-	require.Contains(t, string(out), "Updated dagger.lock")
+	require.Contains(t, string(out), "Updated workspace")
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
@@ -755,7 +755,7 @@ func (LockfileSuite) TestOCILatestLockLifecycle(ctx context.Context, t *testctx.
 	staleLatestDigest := "sha256:" + strings.Repeat("1", 64)
 	writeOCILatestLock(t, workdir, stalePin, staleLatestDigest)
 
-	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "update")
 	require.NoError(t, err)
 
 	updatedLockBytes, err := os.ReadFile(lockPath)
