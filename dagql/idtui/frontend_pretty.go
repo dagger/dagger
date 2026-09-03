@@ -139,7 +139,7 @@ type frontendPretty struct {
 	shellLock     sync.Mutex
 
 	// agentDrafts holds the half-typed line of each agent the user has
-	// focused, keyed by agent instance ID: saved on blur, restored on focus,
+	// focused, keyed by agent runtime handle: saved on blur, restored on focus,
 	// so switching agents mid-sentence does not eat the sentence (§5.1).
 	agentDrafts map[string]string
 	// lastFocusedAgent is the agent focused before the current one, for the
@@ -4077,7 +4077,7 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 	return entries
 }
 
-// targetAgentID is the instance ID of the agent the prompt addresses, as
+// targetAgentID is the runtime handle of the agent the prompt addresses, as
 // reported by the handler -- the single source of truth for focus, so the
 // strip and the routing can never disagree.
 func (fe *frontendPretty) targetAgentID() string {
@@ -6366,7 +6366,7 @@ func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
 //
 // This is the one proven digest→handle path, shared by branch-from-message
 // (which finds an LLM.withPrompt/withResponse call), roster addressing (which
-// finds the pinned agent(id:, name:) lookup a loop span advertises) and
+// finds the pinned agent(handle:, name:) lookup a loop span advertises) and
 // resume (which finds an agent's committed conversation). It fails loudly
 // when a frame's payload never reached this client -- DB.CallIDForDigest
 // names the frame that referenced it -- which is the read-only signal a

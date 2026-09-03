@@ -57,9 +57,9 @@ nonces).
 > state it produced, never the call that produced it.
 
 This is not a new mechanism. `LLM.spawn` already does it by hand
-(core/schema/llm.go:487-544): it mints an instance ID, then re-Selects the
-pure `agent(id:, name:)` lookup so the *returned* ID is
-`…llm!agent(id:"…", name:"…")` rather than `…llm!spawn(…)`. The bug is that
+(core/schema/llm.go:487-544): it mints an runtime handle, then re-Selects the
+pure `agent(handle:, name:)` lookup so the *returned* ID is
+`…llm!agent(handle:"…", name:"…")` rather than `…llm!spawn(…)`. The bug is that
 this mitigation stops at the core boundary — a module function wrapping
 `spawn` has no equivalent, and gets the nonce *and* the multiplier with
 nothing to protect it.
@@ -72,9 +72,9 @@ change.**
 
 ### 3.1 Core: keep `spawn`, add its inverse
 
-`LLM.spawn` already *is* the pattern, inside core: it mints an instance ID,
+`LLM.spawn` already *is* the pattern, inside core: it mints an runtime handle,
 creates the agent, and returns a handle whose ID is the pure
-`agent(id:, name:)` lookup (core/schema/llm.go:487-544). Nothing about it
+`agent(handle:, name:)` lookup (core/schema/llm.go:487-544). Nothing about it
 needs to change, and the alternatives considered — exposing a `mint` verb, or
 having the caller supply a UUID — are both worse: they hand out identity
 before there is anything to identify, and neither buys anything the pin does
@@ -98,7 +98,7 @@ type Agent {
 }
 ```
 
-Called as `loadLLMFromID(<saved snapshot>).agent(id: <saved id>, name: <saved
+Called as `loadLLMFromID(<saved snapshot>).agent(handle: <saved id>, name: <saved
 name>).rehydrate(state: <saved state>)`. The two verbs are the same shape in
 opposite directions: `spawn` is mint-create-pin, `rehydrate` is
 adopt-create-pin.
@@ -150,7 +150,7 @@ spawn(chief: Agent!, source: Workspace!, name: String!, task: String!):
   let worker = source.agents(exclude: ["staff"]).compose
     .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
     .withSystemPrompt(workerPrompt)
-    .agent(id: UUID.string, name: name)
+    .agent(handle: UUID.string, name: name)
     .start
   worker.send(task)
   currentNode.{{... on Dagger.Staff!}}.withMember(name: name, agent: worker)
@@ -166,9 +166,9 @@ dismiss(name: String!): Dagger.Staff!
 The recorded binding becomes:
 
 ```text
-staff!withMember(name: "scout1", agent: …llm!agent(id: "…", name: "scout1"))
-     !withMember(name: "scout2", agent: …llm!agent(id: "…", name: "scout2"))
-     !withMember(name: "scout3", agent: …llm!agent(id: "…", name: "scout3"))
+staff!withMember(name: "scout1", agent: …llm!agent(handle: "…", name: "scout1"))
+     !withMember(name: "scout2", agent: …llm!agent(handle: "…", name: "scout2"))
+     !withMember(name: "scout3", agent: …llm!agent(handle: "…", name: "scout3"))
 ```
 
 Every frame is pure, nonce-free and cacheable. Re-loading it rebuilds the
@@ -251,7 +251,7 @@ alongside `llm_id`, and restore re-hydrates it before anything else runs.
 }
 ```
 
-Restore is `loadLLMFromID(snapshot).agent(id:, name:).rehydrate(state:,
+Restore is `loadLLMFromID(snapshot).agent(handle:, name:).rehydrate(state:,
 error:)` per entry, then re-enqueue `mailbox`. This needs no schema beyond
 §3.1's `rehydrate`.
 
@@ -314,8 +314,8 @@ chief still holds, and dropping tombstones older than some bound.
 with the session. Since "never drop a message" is the one thing `send`
 promises (§8), the roster should carry pending mailbox entries rather than
 document the loss — hence the `mailbox` field above. Awaiters cannot be
-restored and do not need to be: `await` is idempotent against the entry, so a
-caller re-awaits after reconnecting.
+restored and do not need to be: `response` is idempotent against the entry, so
+a caller can request it again after reconnecting.
 
 ### 6.3 This does not replace the API fix
 

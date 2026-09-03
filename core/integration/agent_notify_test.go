@@ -87,10 +87,10 @@ func (AgentRuntimeSuite) TestNotifyDeliversLifecycleEvents(ctx context.Context, 
 	require.True(t, eventOrigin, "the event message must carry an EVENT origin")
 }
 
-// TestWaitSettled covers §4.4: the settled wait returns on FAILED — where
+// TestWait covers §4.4: the settled wait returns on FAILED — where
 // waitFor(IDLE) would hang forever, the dogfooded collect() pitfall — and
 // Agent.error exposes why the loop failed.
-func (AgentRuntimeSuite) TestWaitSettled(ctx context.Context, t *testctx.T) {
+func (AgentRuntimeSuite) TestWait(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -102,9 +102,9 @@ func (AgentRuntimeSuite) TestWaitSettled(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
 
-	// waitSettled returns instead of hanging; state says how it settled,
+	// wait returns instead of hanging; state says how it settled,
 	// and error says why.
-	_, err = h.run(ctx, t, `waitSettled`)
+	_, err = h.run(ctx, t, `wait`)
 	require.NoError(t, err)
 	require.Equal(t, "FAILED", h.state(ctx, t))
 	loopErr := h.mustRun(ctx, t, `error`).Get("error").String()
@@ -113,7 +113,7 @@ func (AgentRuntimeSuite) TestWaitSettled(ctx context.Context, t *testctx.T) {
 	// An inert agent projects IDLE — already settled — so the wait returns
 	// immediately rather than erroring or blocking.
 	inert := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "inert"})
-	_, err = inert.run(ctx, t, `waitSettled`)
+	_, err = inert.run(ctx, t, `wait`)
 	require.NoError(t, err)
 	require.Equal(t, "IDLE", inert.state(ctx, t))
 }
@@ -176,7 +176,7 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 	delivery, err := worker.sendNoWait(ctx, t, "again")
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
-	_, err = worker.run(ctx, t, `waitSettled`)
+	_, err = worker.run(ctx, t, `wait`)
 	require.NoError(t, err)
 	require.Equal(t, "FAILED", worker.state(ctx, t))
 
@@ -186,7 +186,7 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 	for range 2 {
 		_, err = worker.run(ctx, t, `resume`)
 		require.NoError(t, err)
-		_, err = worker.run(ctx, t, `waitSettled`)
+		_, err = worker.run(ctx, t, `wait`)
 		require.NoError(t, err)
 		require.Equal(t, "FAILED", worker.state(ctx, t))
 	}

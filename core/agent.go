@@ -22,25 +22,25 @@ import (
 // within the session (hack/designs/async-agents.md §3).
 //
 // An Agent is a spawned instance, not a derivable value: LLM.spawn mints a
-// unique InstanceID per call and pins it into the handle's ID chain (via the
-// pure LLM.agent(id:) lookup — the same re-exec pinning AgentMessage uses),
+// unique runtime handle per call and pins it into the object's ID chain (via the
+// pure LLM.agent(handle:) lookup — the same re-exec pinning AgentMessage uses),
 // so two spawns of an identical composition are two distinct agents. The
 // value itself stays pure and content-addressed — seed conversation, minted
-// instance ID, display name — and starting it registers a runtime entry
+// runtime handle, display name — and starting it registers a runtime entry
 // (loop goroutine on a detached context, computed state) in the session's
-// AgentRuntimes table, keyed by the InstanceID. All runtime state lives in
+// AgentRuntimes table, keyed by the runtime handle. All runtime state lives in
 // that table, never on the value.
 type Agent struct {
 	// Seed is the conversation the agent's evaluation loop starts from,
 	// including its tools, workspace, and message history.
 	Seed dagql.ObjectResult[*LLM]
 
-	// InstanceID is the unique identity minted by the spawn that created
+	// Handle is the unique identity minted by the spawn that created
 	// this agent, and the agent's runtime registry key: every spawn yields
 	// a fresh entry, and a stopped instance's tombstone can never be
 	// collided with by a later spawn of the same composition.
 	//
-	// Identity is the ID and nothing else — deliberately NOT the value's
+	// Identity is the handle and nothing else — deliberately NOT the value's
 	// content digest, which would make addressing depend on the seed
 	// re-deriving byte-identically. It does not: a handle rebuilt from
 	// telemetry is the RECIPE form, so using it re-executes the chain, and
@@ -51,10 +51,10 @@ type Agent struct {
 	// IDLE-with-seed-snapshot is the honest projection of a never-started
 	// agent — looked healthy while addressing nothing, then spawned a
 	// second loop from the seed on the first send.
-	InstanceID string
+	Handle string
 
 	// Name is a display label — telemetry and error messages — with no
-	// identity role: uniqueness comes from InstanceID, never from the
+	// identity role: uniqueness comes from Handle, never from the
 	// caller's choice of name.
 	Name string
 }
@@ -147,17 +147,17 @@ const (
 // identity only; delivery and reply evidence stay on the runtime record and
 // are read through it, so a pending native delivery can be finalized after
 // send returns without freezing a prediction into the DagQL value. Reply
-// correlation rides this handle — await returns the final reply of whichever
+// correlation rides this handle — response returns the final reply of whichever
 // turn consumed the message (hack/designs/async-agents.md §3.2), which under
 // multiple senders is the only non-racy way to pair a reply with a message.
 type AgentMessage struct {
-	// AgentKey is the registry key (the agent's instance ID) of the runtime
-	// entry holding the message record.
-	AgentKey string
+	// AgentHandle is the agent runtime handle whose entry holds the message
+	// record.
+	AgentHandle string
 	// AgentName is the agent's display name, carried for error messages.
 	AgentName string
-	// MessageID uniquely identifies the message record within the entry.
-	MessageID string
+	// Handle uniquely identifies the message record within the entry.
+	Handle string
 }
 
 func (*AgentMessage) Type() *ast.Type {
@@ -261,7 +261,7 @@ type agentMessageRecord struct {
 
 // AgentRuntimes manages the lifecycle of agent runtime entries for a single
 // session: one entry per spawned agent instance, keyed by the spawn-minted
-// InstanceID, which is unique by construction so keys never collide across
+// Handle, which is unique by construction so keys never collide across
 // spawns. Entries persist as tombstones after their loop ends (state and the
 // last snapshot stay readable for the rest of the session, like
 // ExitedService); unlike Services — which free a running entry's key on exit
@@ -285,9 +285,9 @@ type AgentRuntimes struct {
 	mu      sync.Mutex
 
 	// The waits-for graph (hack/designs/agent-messaging.md §4.5): one edge
-	// per blocking wait issued FROM an agent's turn, waiter instance ID →
-	// target instance ID. Registered at the blocking primitives (await,
-	// delivery, waitFor, waitSettled) and released when the wait returns; a
+	// per blocking wait issued FROM an agent's turn, waiter runtime handle →
+	// target runtime handle. Registered at the blocking primitives (await,
+	// delivery, waitFor, wait) and released when the wait returns; a
 	// wait whose edge would close a cycle is refused with the named path.
 	// Non-agent callers (a human client, module code outside any turn)
 	// register nothing: their waits cannot deadlock a turn and can always be
@@ -348,7 +348,7 @@ func (ars *AgentRuntimes) beginAgentWait(ctx context.Context, target *AgentRunti
 	if !ok {
 		return func() {}, nil
 	}
-	waiterID := caller.Self().InstanceID
+	waiterID := caller.Self().Handle
 	waiterName := caller.Self().Name
 	if waiterID == target.key {
 		return nil, fmt.Errorf(
@@ -422,17 +422,17 @@ func (ars *AgentRuntimes) waitPathLocked(from, to string) ([]agentWaitEdge, bool
 	return dfs(from)
 }
 
-// agentKey is the registry key of an agent value: its instance ID, minted by
-// the spawn that created it. An agent with no instance ID was never minted by
-// a spawn (LLM.agent(id: "") is the only way to build one), and has no
+// agentKey is the registry key of an agent value: its runtime handle, minted by
+// the spawn that created it. An agent with no runtime handle was never minted by
+// a spawn (LLM.agent(handle: "") is the only way to build one), and has no
 // identity to address a runtime by, so it is rejected rather than sharing one
 // key with every other such value.
 func agentKey(agent dagql.ObjectResult[*Agent]) (string, error) {
 	self := agent.Self()
-	if self == nil || self.InstanceID == "" {
-		return "", fmt.Errorf("agent has no instance ID: only an agent minted by spawn can be addressed")
+	if self == nil || self.Handle == "" {
+		return "", fmt.Errorf("agent has no runtime handle: only an agent minted by spawn can be addressed")
 	}
-	return self.InstanceID, nil
+	return self.Handle, nil
 }
 
 // resolveMessageOrigin resolves who is sending a message, at the central
@@ -443,9 +443,9 @@ func agentKey(agent dagql.ObjectResult[*Agent]) (string, error) {
 func resolveMessageOrigin(ctx context.Context) *LLMMessageOrigin {
 	if caller, ok := CallerAgent(ctx); ok {
 		return &LLMMessageOrigin{
-			Kind:      LLMMessageOriginAgent,
-			AgentID:   caller.Self().InstanceID,
-			AgentName: caller.Self().Name,
+			Kind:        LLMMessageOriginAgent,
+			AgentHandle: caller.Self().Handle,
+			AgentName:   caller.Self().Name,
 		}
 	}
 	return &LLMMessageOrigin{Kind: LLMMessageOriginUser}
@@ -465,7 +465,7 @@ func originOmittedFromChain(origin *LLMMessageOrigin, receiverKey string) bool {
 	case LLMMessageOriginUser:
 		return true
 	case LLMMessageOriginAgent:
-		return origin.AgentID == receiverKey
+		return origin.AgentHandle == receiverKey
 	default:
 		return false
 	}
@@ -484,6 +484,20 @@ func (ars *AgentRuntimes) Get(ctx context.Context, agent dagql.ObjectResult[*Age
 	defer ars.mu.Unlock()
 	rt, found := ars.entries[key]
 	return rt, found, nil
+}
+
+// Require returns the runtime entry for an agent that was explicitly created
+// by spawn or rehydrate. Runtime verbs address an existing entry; they never
+// infer creation from a reconstructed handle.
+func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[*Agent]) (*AgentRuntime, error) {
+	rt, found, err := ars.Get(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("agent %q has no runtime in this session: it must be spawned or re-hydrated before it can be addressed", agent.Self().Name)
+	}
+	return rt, nil
 }
 
 // GetOrCreate returns the runtime entry for the given agent value, creating
@@ -572,12 +586,9 @@ func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResul
 // must be loud (the instance may have stepped), and a reseed that finds none
 // must be too (the caller's bookkeeping is wrong).
 func (ars *AgentRuntimes) Reseed(ctx context.Context, agent dagql.ObjectResult[*Agent], conversation dagql.ObjectResult[*LLM]) error {
-	rt, found, err := ars.Get(ctx, agent)
+	rt, err := ars.Require(ctx, agent)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return fmt.Errorf("agent %q has no runtime in this session: only a spawned or re-hydrated instance holds a conversation to replace", agent.Self().Name)
 	}
 	return rt.Reseed(ctx, conversation)
 }
@@ -607,7 +618,7 @@ func newAgentRuntime(ars *AgentRuntimes, key string, agent dagql.ObjectResult[*A
 // returning the existing entry; starting a stopped agent leaves the
 // tombstone in place.
 func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*Agent]) (*AgentRuntime, error) {
-	rt, err := ars.GetOrCreate(ctx, agent)
+	rt, err := ars.Require(ctx, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +635,7 @@ func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*A
 // creation. A registry miss used to route through GetOrCreate, which made a
 // miss a constructor: a handle rebuilt from a trace whose agent this session
 // never spawned booted a second loop from the handle's own seed, answered
-// with no history, and published the same instance ID as the original — one
+// with no history, and published the same runtime handle as the original — one
 // roster entry, two runtimes (async-agents §10.2). Restore makes that case
 // routine rather than exotic, since importing a trace rosters every agent of
 // the old session including any this one failed to re-hydrate, so the miss
@@ -643,12 +654,9 @@ func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*A
 // this reply immediately instead of at the sender's turn end
 // (hack/designs/agent-messaging.md §4.2).
 func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text, replyTo string) (*AgentMessage, error) {
-	rt, found, err := ars.Get(ctx, agent)
+	rt, err := ars.Require(ctx, agent)
 	if err != nil {
 		return nil, err
-	}
-	if !found {
-		return nil, fmt.Errorf("agent %q has no runtime in this session: it was not spawned here, and an instance restored from a trace must be re-hydrated before anything can address it", agent.Self().Name)
 	}
 	// Provenance is resolved here, at the one central enqueue path, and
 	// nowhere else (hack/designs/agent-messaging.md §4.1): the ambient agent
@@ -663,7 +671,7 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 		}
 		origin.ReplyTo = normalized
 	}
-	msgID, err := rt.enqueue(text, origin)
+	messageHandle, err := rt.enqueue(text, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -673,9 +681,9 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// delivery.
 	rt.start(ctx)
 	return &AgentMessage{
-		AgentKey:  rt.key,
-		AgentName: rt.name,
-		MessageID: msgID,
+		AgentHandle: rt.key,
+		AgentName:   rt.name,
+		Handle:      messageHandle,
 	}, nil
 }
 
@@ -692,7 +700,7 @@ func (ars *AgentRuntimes) resolveReply(origin *LLMMessageOrigin, replyTo, answer
 		return replyTo, nil
 	}
 	ars.mu.Lock()
-	sender := ars.entries[origin.AgentID]
+	sender := ars.entries[origin.AgentHandle]
 	ars.mu.Unlock()
 	if sender == nil {
 		return replyTo, nil
@@ -742,7 +750,7 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rec, found := rt.messages[msg.MessageID]
+	rec, found := rt.messages[msg.Handle]
 	if !found {
 		return "", fmt.Errorf("agent %q has no record of this message", rt.name)
 	}
@@ -757,22 +765,22 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 // hold both handles. Idempotent per subscriber; a re-subscribe replaces the
 // state set.
 //
-// Both entries are created if absent: the target's, so there is a lifecycle
-// to watch, and the subscriber's, so delivery always has a mailbox to land
-// in — an event for a subscriber that has not started yet queues until
-// something starts it, rather than being dropped. (Only a STOPPED subscriber
-// drops events: relaunch-by-notification would undo a dismissal.)
+// Both entries must already exist: spawn and rehydrate are the only runtime
+// constructors. A subscriber that exists but has not started yet still has a
+// mailbox, so an event queues until something starts it rather than being
+// dropped. (Only a STOPPED subscriber drops events: relaunch-by-notification
+// would undo a dismissal.)
 //
 // A level check fires immediately when the target is ALREADY in a subscribed
 // state, closing the race where a fast worker settles between its spawn and
 // the subscription landing — an edge trigger alone would miss that
 // completion forever.
 func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.ObjectResult[*Agent], states []AgentState) error {
-	rt, err := ars.GetOrCreate(ctx, target)
+	rt, err := ars.Require(ctx, target)
 	if err != nil {
 		return err
 	}
-	sub, err := ars.GetOrCreate(ctx, subscriber)
+	sub, err := ars.Require(ctx, subscriber)
 	if err != nil {
 		return err
 	}
@@ -912,9 +920,9 @@ func (ars *AgentRuntimes) deliverEvent(source *AgentRuntime, ev agentEvent) {
 		return
 	}
 	origin := &LLMMessageOrigin{
-		Kind:      LLMMessageOriginEvent,
-		AgentID:   source.key,
-		AgentName: source.name,
+		Kind:        LLMMessageOriginEvent,
+		AgentHandle: source.key,
+		AgentName:   source.name,
 	}
 	if _, err := subscriber.enqueue(ev.text, origin); err != nil {
 		// errAgentEventDropped: the subscriber is stopped, by design.
@@ -926,11 +934,11 @@ func (ars *AgentRuntimes) deliverEvent(source *AgentRuntime, ev agentEvent) {
 // enqueued into the given agent's permanent runtime record. This is the
 // runtime side of Agent.message — the lookup field send re-execs through to
 // pin its result's identity (design §9). Delivery is deliberately not copied
-// onto the value: the same (agent, message ID) pair always denotes the same
+// onto the value: the same (agent, message handle) pair always denotes the same
 // record while its evidence may still be pending. An agent with no runtime
-// entry, or an entry with no record of the ID, is a clear error: message never
+// entry, or an entry with no record of the handle, is a clear error: message never
 // creates anything.
-func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], msgID string) (*AgentMessage, error) {
+func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], messageHandle string) (*AgentMessage, error) {
 	rt, found, err := ars.Get(ctx, agent)
 	if err != nil {
 		return nil, err
@@ -940,19 +948,19 @@ func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectR
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if _, found := rt.messages[msgID]; !found {
-		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, msgID)
+	if _, found := rt.messages[messageHandle]; !found {
+		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, messageHandle)
 	}
 	return &AgentMessage{
-		AgentKey:  rt.key,
-		AgentName: rt.name,
-		MessageID: msgID,
+		AgentHandle: rt.key,
+		AgentName:   rt.name,
+		Handle:      messageHandle,
 	}, nil
 }
 
 func (ars *AgentRuntimes) runtimeForMessage(msg *AgentMessage) (*AgentRuntime, error) {
 	ars.mu.Lock()
-	rt, found := ars.entries[msg.AgentKey]
+	rt, found := ars.entries[msg.AgentHandle]
 	ars.mu.Unlock()
 	if !found {
 		return nil, fmt.Errorf("agent %q has no runtime entry in this session", msg.AgentName)
@@ -967,17 +975,17 @@ func (ars *AgentRuntimes) MessageDelivery(ctx context.Context, msg *AgentMessage
 	if err != nil {
 		return "", err
 	}
-	return rt.messageDelivery(ctx, msg.MessageID)
+	return rt.messageDelivery(ctx, msg.Handle)
 }
 
-// AwaitMessage blocks until the turn that consumed the given message ends,
+// MessageResponse blocks until the turn that consumed the given message ends,
 // returning that turn's reply (or the error the message resolved with).
-func (ars *AgentRuntimes) AwaitMessage(ctx context.Context, msg *AgentMessage) (string, error) {
+func (ars *AgentRuntimes) MessageResponse(ctx context.Context, msg *AgentMessage) (string, error) {
 	rt, err := ars.runtimeForMessage(msg)
 	if err != nil {
 		return "", err
 	}
-	return rt.awaitMessage(ctx, msg.MessageID)
+	return rt.awaitMessage(ctx, msg.Handle)
 }
 
 // KillAll cancels every running loop and waits (bounded by ctx) for them to
@@ -1023,7 +1031,7 @@ type AgentRuntime struct {
 
 	// self is the agent handle the entry was created from: an honest dagql
 	// instance of the agent value. Immutable after creation (any handle
-	// carrying the same instance ID denotes the same entry, whatever its
+	// carrying the same runtime handle denotes the same entry, whatever its
 	// seed re-derived to). The loop binds it into its context
 	// (AgentToContext) so tools dispatched by a step can reach the calling
 	// agent — the Agent! argument injection.
@@ -1066,7 +1074,7 @@ type AgentRuntime struct {
 	wake chan struct{}
 
 	// Lifecycle subscriptions (hack/designs/agent-messaging.md §4.3),
-	// guarded by mu: subs maps a subscriber's instance ID to the states it
+	// guarded by mu: subs maps a subscriber's runtime handle to the states it
 	// wants event messages for; lastEventState edge-triggers emission on the
 	// projection (transitionLocked fires on every fact change, most of which
 	// move nothing). eventQueue and eventDispatchRunning implement a
@@ -1277,7 +1285,7 @@ func (rt *AgentRuntime) stateLocked() AgentState {
 		// The drain popped a message off the mailbox and is recording it
 		// as a prompt (the withPrompt Select runs outside the lock, before
 		// turnOpen is set). Without this fact the pop-to-commit window
-		// would project IDLE — letting waitSettled return a reply that
+		// would project IDLE — letting wait return a reply that
 		// predates the message, and Reseed swap the conversation out from
 		// under the drain's imminent commit.
 		return AgentStateRunning
@@ -1323,7 +1331,7 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, 
 	if stopped && origin != nil && origin.Kind == LLMMessageOriginEvent {
 		return "", errAgentEventDropped
 	}
-	msgID := identity.NewID()
+	messageHandle := identity.NewID()
 	var deliveryHint AgentMessageDelivery
 	switch {
 	case stopped:
@@ -1373,8 +1381,8 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, 
 		if stopped {
 			rt.resetForRelaunchLocked()
 		}
-		rt.messages[msgID] = rec
-		rt.mailbox = append(rt.mailbox, msgID)
+		rt.messages[messageHandle] = rec
+		rt.mailbox = append(rt.mailbox, messageHandle)
 	})
 	// Poke the idle receive; drop the poke if one is already pending (the
 	// loop drains the whole mailbox per wake).
@@ -1382,7 +1390,7 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, 
 	case rt.wake <- struct{}{}:
 	default:
 	}
-	return msgID, nil
+	return messageHandle, nil
 }
 
 // finalizeDeliveryLocked records conclusive delivery evidence and wakes every
@@ -1438,15 +1446,15 @@ func (rt *AgentRuntime) failMessage(rec *agentMessageRecord, err error) {
 // This is a blocking primitive like awaitMessage — a STEERED hint is only
 // confirmed at the target's next step boundary, which a wedged target never
 // reaches — so it registers a waits-for edge too (§4.5).
-func (rt *AgentRuntime) messageDelivery(ctx context.Context, msgID string) (AgentMessageDelivery, error) {
-	release, err := rt.beginMessageWait(ctx, msgID, "awaiting delivery of message")
+func (rt *AgentRuntime) messageDelivery(ctx context.Context, messageHandle string) (AgentMessageDelivery, error) {
+	release, err := rt.beginMessageWait(ctx, messageHandle, "awaiting delivery of message")
 	if err != nil {
 		return "", err
 	}
 	defer release()
 	for {
 		rt.mu.Lock()
-		rec, found := rt.messages[msgID]
+		rec, found := rt.messages[messageHandle]
 		if !found {
 			rt.mu.Unlock()
 			return "", fmt.Errorf("agent %q has no record of this message", rt.name)
@@ -1478,15 +1486,15 @@ func (rt *AgentRuntime) messageDelivery(ctx context.Context, msgID string) (Agen
 // resume to drain), awaiting projects that context instead of blocking
 // forever — without resolving the record, so a later resume can still
 // consume the message and a re-await then reads its real reply.
-func (rt *AgentRuntime) awaitMessage(ctx context.Context, msgID string) (string, error) {
-	release, err := rt.beginMessageWait(ctx, msgID, "awaiting the reply to message")
+func (rt *AgentRuntime) awaitMessage(ctx context.Context, messageHandle string) (string, error) {
+	release, err := rt.beginMessageWait(ctx, messageHandle, "awaiting the reply to message")
 	if err != nil {
 		return "", err
 	}
 	defer release()
 	for {
 		rt.mu.Lock()
-		rec, found := rt.messages[msgID]
+		rec, found := rt.messages[messageHandle]
 		if !found {
 			rt.mu.Unlock()
 			return "", fmt.Errorf("agent %q has no record of this message", rt.name)
@@ -1540,14 +1548,14 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.mu.Unlock()
 			return nil
 		}
-		msgID := rt.mailbox[0]
+		messageHandle := rt.mailbox[0]
 		rt.mailbox = rt.mailbox[1:]
 		// The pop empties the mailbox before the turn opens; draining keeps
 		// the projection RUNNING across the unlocked withPrompt Select
 		// below. No transition fires: the projection reads RUNNING both
 		// before (mailbox non-empty) and after (draining) this mutation.
 		rt.draining = true
-		rec := rt.messages[msgID]
+		rec := rt.messages[messageHandle]
 		inst := rt.last
 		interruptSeq := rt.interruptSeq
 		rt.mu.Unlock()
@@ -1770,8 +1778,8 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 					rt.resolveLocked(rec, "", fmt.Errorf("agent %q failed during the turn that consumed this message: %w", rt.name, loopErr))
 				}
 				rt.consumed = nil
-				for _, msgID := range rt.mailbox {
-					if rec := rt.messages[msgID]; rec != nil {
+				for _, messageHandle := range rt.mailbox {
+					if rec := rt.messages[messageHandle]; rec != nil {
 						rt.finalizeDeliveryLocked(rec, AgentMessageQueued, nil)
 					}
 				}
@@ -1783,8 +1791,8 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 					rt.resolveLocked(rec, "", fmt.Errorf("agent %q stopped before completing the turn that consumed this message", rt.name))
 				}
 				rt.consumed = nil
-				for _, msgID := range rt.mailbox {
-					if rec := rt.messages[msgID]; rec != nil {
+				for _, messageHandle := range rt.mailbox {
+					if rec := rt.messages[messageHandle]; rec != nil {
 						rt.resolveLocked(rec, "", fmt.Errorf("agent %q stopped before consuming this message", rt.name))
 					}
 				}
@@ -1990,8 +1998,8 @@ func (rt *AgentRuntime) Interrupt() error {
 	rt.transitionLocked(func() {
 		rt.paused = true
 		rt.interruptSeq++
-		for _, msgID := range rt.mailbox {
-			rec := rt.messages[msgID]
+		for _, messageHandle := range rt.mailbox {
+			rec := rt.messages[messageHandle]
 			rt.resolveLocked(rec, "", rt.interruptedMessageError())
 		}
 		rt.mailbox = nil
@@ -2148,8 +2156,8 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 			// tombstone, so no awaiter sees STOPPED with mail apparently
 			// still in flight.
 			rt.transitionLocked(func() {
-				for _, msgID := range rt.mailbox {
-					if rec := rt.messages[msgID]; rec != nil {
+				for _, messageHandle := range rt.mailbox {
+					if rec := rt.messages[messageHandle]; rec != nil {
 						rt.resolveLocked(rec, "", fmt.Errorf("agent %q stopped before consuming this message", rt.name))
 					}
 				}
@@ -2167,8 +2175,8 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 		// through Send's enqueue-then-start window, so awaiters aren't
 		// left projecting the terminal state themselves.
 		rt.transitionLocked(func() {
-			for _, msgID := range rt.mailbox {
-				if rec := rt.messages[msgID]; rec != nil {
+			for _, messageHandle := range rt.mailbox {
+				if rec := rt.messages[messageHandle]; rec != nil {
 					rt.resolveLocked(rec, "", fmt.Errorf("agent %q stopped before consuming this message", rt.name))
 				}
 			}
@@ -2225,7 +2233,7 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 // this runtime's message records, naming the message by its short ref when
 // the record is known. No-op (and never refused) for non-agent callers; see
 // beginAgentWait.
-func (rt *AgentRuntime) beginMessageWait(ctx context.Context, msgID, verb string) (func(), error) {
+func (rt *AgentRuntime) beginMessageWait(ctx context.Context, messageHandle, verb string) (func(), error) {
 	if rt.ars == nil {
 		// Unit-test runtimes constructed without a registry have no graph to
 		// guard; every real entry is born through newRuntime.
@@ -2233,7 +2241,7 @@ func (rt *AgentRuntime) beginMessageWait(ctx context.Context, msgID, verb string
 	}
 	rt.mu.Lock()
 	why := verb
-	if rec, found := rt.messages[msgID]; found && rec.seq > 0 {
+	if rec, found := rt.messages[messageHandle]; found && rec.seq > 0 {
 		why = fmt.Sprintf("%s #%d", verb, rec.seq)
 	}
 	rt.mu.Unlock()

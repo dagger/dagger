@@ -110,7 +110,7 @@ func testAgentContext(t *testing.T, ctx context.Context, id, name string) contex
 	srv, err := dagql.NewServer(ctx, &Query{})
 	require.NoError(t, err)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Agent]{Typed: &Agent{}}))
-	agent := &Agent{InstanceID: id, Name: name}
+	agent := &Agent{Handle: id, Name: name}
 	res, err := dagql.NewObjectResultForCall(agent, srv, &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "test_agent",

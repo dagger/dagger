@@ -344,7 +344,7 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 			dagui.SpanSnapshot{
 				ID:         prettyTestSpanID(byte(2*i + 2)),
 				TraceID:    traceID,
-				Name:       "agent(id:)",
+				Name:       "agent(handle:)",
 				StartTime:  start.Add(time.Duration(i) * time.Second),
 				CallDigest: digest,
 			},

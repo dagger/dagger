@@ -229,7 +229,7 @@ type shellCallHandler struct {
 // in-flight turn, reporting whether there was one to absorb it. The send is
 // fire-and-forget: the engine records it immediately (joining the in-flight
 // turn at the next step boundary or queuing behind a pause) and its reply
-// arrives within the same turn's await.
+// arrives within the same turn's response.
 //
 // Routing asks the target, never "whichever turn is running": with a roster
 // the busy agent and the focused agent are routinely different agents, and
@@ -267,7 +267,7 @@ func (h *shellCallHandler) Serial(input string) bool {
 	return isCommand
 }
 
-// TargetAgentID is the instance ID of the runtime the prompt addresses, which
+// TargetAgentID is the runtime handle of the runtime the prompt addresses, which
 // the roster marks as focused. Empty until the target has spawned or attached
 // to one.
 func (h *shellCallHandler) TargetAgentID() string {
@@ -301,12 +301,12 @@ func (h *shellCallHandler) FocusAgent(ctx context.Context, agentID, name, encode
 // focused conversation's UI surfaces from the new snapshot. Called from
 // telemetry ingestion, so it must stay cheap; the engine round-trips happen
 // on a refresh goroutine.
-func (h *shellCallHandler) AgentStepped(instanceID string) {
+func (h *shellCallHandler) AgentStepped(agentHandle string) {
 	s, err := h.llmMaybe()
 	if err != nil || s == nil {
 		return
 	}
-	s.AgentStepped(instanceID)
+	s.AgentStepped(agentHandle)
 }
 
 // notePrompt records the session's first prompt, which names the auto-saved

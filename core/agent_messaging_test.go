@@ -75,13 +75,13 @@ func TestOriginOmittedFromChain(t *testing.T) {
 	// The unmarked common case: a plain user prompt.
 	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser}, "self"))
 	// A plain self-send: an agent steering itself.
-	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentID: "self"}, "self"))
+	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "self"}, "self"))
 	// Another agent's message records.
-	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentID: "other"}, "self"))
+	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "other"}, "self"))
 	// A reply marker always records, whoever sent it.
 	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser, ReplyTo: "#2"}, "self"))
 	// Events always record.
-	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginEvent, AgentID: "other"}, "self"))
+	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginEvent, AgentHandle: "other"}, "self"))
 }
 
 // twoAgentRegistry builds a registry holding runtimes for two named agents
@@ -152,7 +152,7 @@ func TestResolveReply(t *testing.T) {
 
 	// A question from scout sits consumed in chief's runtime, mid-turn.
 	msgID, err := rtA.enqueue("what branch?", &LLMMessageOrigin{
-		Kind: LLMMessageOriginAgent, AgentID: "agent-b", AgentName: "scout",
+		Kind: LLMMessageOriginAgent, AgentHandle: "agent-b", AgentName: "scout",
 	})
 	require.NoError(t, err)
 	rtA.mu.Lock()
@@ -163,7 +163,7 @@ func TestResolveReply(t *testing.T) {
 
 	// The chief replies: the record resolves with the reply text, so an
 	// awaiter of the question gets the direct answer, not the turn end.
-	chiefOrigin := &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentID: "agent-a", AgentName: "chief"}
+	chiefOrigin := &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "agent-a", AgentName: "chief"}
 	ref, err := ars.resolveReply(chiefOrigin, "#1", "main")
 	require.NoError(t, err)
 	require.Equal(t, "#1", ref)
@@ -221,7 +221,7 @@ func TestEventDelivery(t *testing.T) {
 	chief.mu.Lock()
 	rec := chief.messages[chief.mailbox[0]]
 	require.Equal(t, LLMMessageOriginEvent, rec.origin.Kind)
-	require.Equal(t, "agent-b", rec.origin.AgentID)
+	require.Equal(t, "agent-b", rec.origin.AgentHandle)
 	require.Equal(t, "scout", rec.origin.AgentName)
 	require.Contains(t, rec.text, `Agent "scout" is now idle.`)
 	chief.mu.Unlock()
@@ -271,7 +271,7 @@ func TestEventDelivery(t *testing.T) {
 // pop-to-commit window: the mailbox empties at the pop but the turn opens
 // only after the unlocked withPrompt Select, and the draining fact is what
 // keeps the projection from transiently claiming IDLE mid-progress — a lie
-// that let waitSettled return a stale reply and Reseed race the drain's
+// that let wait return a stale reply and Reseed race the drain's
 // commit. Pause still outranks it: an interrupt mid-drain parks.
 func TestDrainWindowProjectsRunning(t *testing.T) {
 	t.Parallel()
@@ -334,7 +334,7 @@ func TestEmitUserMessageSpanRecordsOrigin(t *testing.T) {
 		Role:    LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "what branch?"}},
 		Origin: &LLMMessageOrigin{
-			Kind: LLMMessageOriginAgent, AgentID: "agent-b", AgentName: "scout", Ref: "#3",
+			Kind: LLMMessageOriginAgent, AgentHandle: "agent-b", AgentName: "scout", Ref: "#3",
 		},
 	}, "")
 	emitUserMessageSpan(ctx, &LLMMessage{

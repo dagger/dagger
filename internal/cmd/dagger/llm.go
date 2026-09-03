@@ -203,7 +203,7 @@ func (s *LLMSession) SetTarget(a *sessionAgent) {
 	s.mu.Unlock()
 }
 
-// TargetAgentID is the instance ID of the runtime the prompt currently
+// TargetAgentID is the runtime handle of the runtime the prompt currently
 // addresses, or "" when the target has not spawned (or attached to) one yet.
 // The roster marks its entry with it.
 func (s *LLMSession) TargetAgentID() string {
@@ -213,12 +213,12 @@ func (s *LLMSession) TargetAgentID() string {
 	}
 	target.agentL.Lock()
 	defer target.agentL.Unlock()
-	return target.instanceID
+	return target.agentHandle
 }
 
-// agentByInstance finds the conversation driving the given runtime, or nil.
-func (s *LLMSession) agentByInstance(instanceID string) *sessionAgent {
-	if instanceID == "" {
+// agentByHandle finds the conversation driving the given runtime, or nil.
+func (s *LLMSession) agentByHandle(agentHandle string) *sessionAgent {
+	if agentHandle == "" {
 		return nil
 	}
 	s.mu.Lock()
@@ -226,7 +226,7 @@ func (s *LLMSession) agentByInstance(instanceID string) *sessionAgent {
 	s.mu.Unlock()
 	for _, a := range agents {
 		a.agentL.Lock()
-		match := a.instanceID == instanceID
+		match := a.agentHandle == agentHandle
 		a.agentL.Unlock()
 		if match {
 			return a
@@ -235,17 +235,17 @@ func (s *LLMSession) agentByInstance(instanceID string) *sessionAgent {
 	return nil
 }
 
-// Focus points the prompt at the agent with the given instance ID, attaching
+// Focus points the prompt at the agent with the given runtime handle, attaching
 // to it first when the session is not already driving it. encodedID is a
 // handle the client rebuilt from the trace (design §9: telemetry is the
 // directory); it is only consulted when attaching.
 //
 // A failed attach leaves focus where it was: an agent the client cannot
 // address is one it can watch, not one it can talk to.
-func (s *LLMSession) Focus(ctx context.Context, instanceID, name, encodedID string) error {
-	target := s.agentByInstance(instanceID)
+func (s *LLMSession) Focus(ctx context.Context, agentHandle, name, encodedID string) error {
+	target := s.agentByHandle(agentHandle)
 	if target == nil {
-		attached, err := s.Attach(ctx, instanceID, name, encodedID)
+		attached, err := s.Attach(ctx, agentHandle, name, encodedID)
 		if err != nil {
 			return err
 		}
@@ -263,8 +263,8 @@ func (s *LLMSession) Focus(ctx context.Context, instanceID, name, encodedID stri
 //
 // Re-attaching to the same agent returns the existing conversation rather than
 // forking a second view of one runtime.
-func (s *LLMSession) Attach(ctx context.Context, instanceID, name, encodedID string) (*sessionAgent, error) {
-	return s.attach(ctx, instanceID, name, encodedID, false)
+func (s *LLMSession) Attach(ctx context.Context, agentHandle, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, agentHandle, name, encodedID, false)
 }
 
 // AttachRestored adopts an agent this session RE-HYDRATED from a trace
@@ -272,12 +272,12 @@ func (s *LLMSession) Attach(ctx context.Context, instanceID, name, encodedID str
 // a restored agent has no other driver -- the session that published it is
 // gone -- so this session is the one whose business it is to stop it, and
 // .clear stopping the runtime is right.
-func (s *LLMSession) AttachRestored(ctx context.Context, instanceID, name, encodedID string) (*sessionAgent, error) {
-	return s.attach(ctx, instanceID, name, encodedID, true)
+func (s *LLMSession) AttachRestored(ctx context.Context, agentHandle, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, agentHandle, name, encodedID, true)
 }
 
-func (s *LLMSession) attach(ctx context.Context, instanceID, name, encodedID string, owned bool) (*sessionAgent, error) {
-	if existing := s.agentByInstance(instanceID); existing != nil {
+func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID string, owned bool) (*sessionAgent, error) {
+	if existing := s.agentByHandle(agentHandle); existing != nil {
 		return existing, nil
 	}
 	if encodedID == "" {
@@ -295,7 +295,7 @@ func (s *LLMSession) attach(ctx context.Context, instanceID, name, encodedID str
 		name = "agent"
 	}
 	attached := s.newAgent(name)
-	attached.bindRuntime(rt, instanceID, encodedID, owned)
+	attached.bindRuntime(rt, agentHandle, encodedID, owned)
 	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
 	// An attached/trace-restored conversation does not carry the checkpoint it
 	// originally synchronized from. Its current snapshot workspace is the safe
@@ -485,7 +485,7 @@ func emitSessionTitle(ctx context.Context, title string) {
 }
 
 // AgentStepped notifies the session that the trace reported a step boundary
-// (a conversation commit) for the runtime with the given instance ID. When
+// (a conversation commit) for the runtime with the given runtime handle. When
 // that runtime backs the TARGET conversation, the conversation-scoped
 // surfaces -- status line, changes preview -- are refreshed from its latest
 // snapshot, so they track the agent step by step instead of turn by turn.
@@ -493,8 +493,8 @@ func emitSessionTitle(ctx context.Context, title string) {
 // Cheap by design: it is invoked from the frontend's telemetry ingestion, so
 // everything that talks to the engine happens on the refresh goroutine
 // (scheduleUIRefresh), never here.
-func (s *LLMSession) AgentStepped(instanceID string) {
-	a := s.agentByInstance(instanceID)
+func (s *LLMSession) AgentStepped(agentHandle string) {
+	a := s.agentByHandle(agentHandle)
 	if a == nil || !a.isTarget() {
 		return
 	}

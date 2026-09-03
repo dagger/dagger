@@ -46,7 +46,7 @@ import (
 type traceRestore struct {
 	// traceID is the Cloud trace to restore from.
 	traceID string
-	// agent names the conversation to focus, by instance ID or display name,
+	// agent names the conversation to focus, by runtime handle or display name,
 	// overriding §3.1c's automatic choice.
 	agent string
 	// partial opts into a best-effort restore: entries the trace does not
@@ -291,7 +291,7 @@ func focusByName(restored []restoredAgent, want string) (restoredAgent, string, 
 			ids = append(ids, r.entry.ID)
 		}
 		return restoredAgent{}, "", fmt.Errorf(
-			"%d restored agents are named %q; name one by instance ID instead: %s",
+			"%d restored agents are named %q; name one by runtime handle instead: %s",
 			len(matched), want, strings.Join(ids, ", "))
 	}
 }
@@ -329,7 +329,7 @@ var _ restoreTarget = (*sessionRestore)(nil)
 const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
   node(id: $llm) {
     ... on LLM {
-      agent(id: $id, name: $name) { rehydrate(state: $state, error: $error) }
+      agent(handle: $id, name: $name) { rehydrate(state: $state, error: $error) }
     }
   }
 }`

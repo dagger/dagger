@@ -87,7 +87,7 @@ func TestAgentsRosterIsFlatAndUncontained(t *testing.T) {
 }
 
 // TestAgentsGroupsLoopSpansByInstance covers the reason the roster keys on the
-// spawn-minted instance ID rather than the span: a resume after a failure
+// spawn-minted runtime handle rather than the span: a resume after a failure
 // relaunches the loop under a NEW span, and both belong to one agent.
 func TestAgentsGroupsLoopSpansByInstance(t *testing.T) {
 	const (
@@ -649,7 +649,7 @@ func TestRestorePlanIsANoOpOnceRestored(t *testing.T) {
 	}
 
 	// The restore runs: rehydrate publishes an identity span in the live
-	// trace, under the same instance ID, carrying the same facts.
+	// trace, under the same runtime handle, carrying the same facts.
 	db.ImportSnapshots([]SpanSnapshot{
 		agentLoopSnapshot(liveLoopID, scoutAgentID, "scout", spanID(liveRootID)),
 	})

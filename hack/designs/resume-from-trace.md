@@ -30,10 +30,10 @@ dagger agent --trace 2f123ba77bf7bd2d4db2f70ed20613e8
 1. Streams the trace's spans, logs and metrics from Dagger Cloud — the whole
    trace, no filtering — into the **live frontend's** `dagui.DB`.
 2. Projects a **restore plan** from that DB: one entry per agent instance the
-   trace ever published — its instance ID, display name, lifecycle state, and
+   trace ever published — its runtime handle, display name, lifecycle state, and
    the call digest of its last committed conversation.
 3. Rebuilds each entry's conversation ID from the call payloads in the DB and
-   **re-hydrates** the instance in the live session: same instance ID, same
+   **re-hydrates** the instance in the live session: same runtime handle, same
    history, same state.
 4. Attaches the client's prompt to the session's own agent (the "chief"), and
    leaves every other restored agent addressable through the roster.
@@ -156,7 +156,7 @@ tombstone that was never re-hydrated projects IDLE-from-absence with the
 new". Re-hydration fixes that case as a side effect.
 
 **(b) Restore is all-or-nothing, and eager.** The chief's recorded chain binds
-its workers by ID (`withTools(object: staff!withWorker(name, …llm!agent(id:…)))`
+its workers by ID (`withTools(object: staff!withWorker(name, …llm!agent(handle:…)))`
 — the pure form recommendation §3.2 landed, `modules/staff/main.dang:102`).
 If a worker is not re-hydrated *before* the chief's first tool dispatch, the
 dispatch resolves the handle against an empty registry and — today — `Send`'s
@@ -239,7 +239,7 @@ type AgentRestore struct {
 and restore is one pure chain per entry:
 
 ```graphql
-loadLLMFromID(<snapshot>) { agent(id: <ID>, name: <Name>) { rehydrate(state: <State>, error: <Error>) } }
+loadLLMFromID(<snapshot>) { agent(handle: <ID>, name: <Name>) { rehydrate(state: <State>, error: <Error>) } }
 ```
 
 ## 4. Engine changes
@@ -384,7 +384,7 @@ cheaply) from this one (rebuild a complete DAG *and* show everything).
 **The sink is the live frontend's own exporters** — `Frontend.SpanExporter()`,
 `LogExporter()`, `MetricExporter()` — not a private DB. That is what buys the
 full-TUI restore of §1: one DB holds both sessions, so an agent's old and new
-loop spans merge into one roster entry (keyed on the instance ID,
+loop spans merge into one roster entry (keyed on the runtime handle,
 `dagql/dagui/agents.go:87-110`), its transcript spans both lives
 (`SurfacedConversationForAgent` iterates every loop span,
 `dagql/dagui/conversation.go:167`), and every imported tool-call span keeps
@@ -514,7 +514,7 @@ Order and atomicity are load-bearing (recommendation §6.2's seed race):
    with §4.2 that dispatch is an error rather than an amnesiac twin, but the
    error would arrive minutes later with none of this context. `--partial`
    opts into best-effort.
-4. Then attach: `LLMSession.Attach(instanceID, name, encodedAgentID)`
+4. Then attach: `LLMSession.Attach(handle, name, encodedAgentID)`
    (`internal/cmd/dagger/llm.go:235`) already adopts an agent the session did
    not spawn, rooted on its snapshot — which is exactly a restored agent. The
    encoded handle is the ID `rehydrate` returned.
@@ -556,7 +556,7 @@ runtime *instance*, but what the user is looking at is a *conversation*, and
 a conversation routinely outlives several instances.
 
 **The restore case is already solved by construction.** A re-hydrated agent
-keeps its instance ID, so its old loop spans and its new ones fold into one
+keeps its runtime handle, so its old loop spans and its new ones fold into one
 `AgentNode` (`dagql/dagui/agents.go:87-110`) and one transcript
 (`SurfacedConversationForAgent` iterates every loop span,
 `dagql/dagui/conversation.go:167-189` — it was written for the resume-retry
@@ -621,7 +621,7 @@ the CLI's reseed-or-drop policy, and `TestRosterShowsStoppedAgents`
 originally written, since it is what got built — generalized from
 compaction to every replacement): compaction is not a new conversation; it
 is the same conversation with a shorter history. The registry keys on the
-instance ID and `rt.last` is just a field, so a verb that swaps the
+runtime handle and `rt.last` is just a field, so a verb that swaps the
 committed conversation while keeping the entry — `rehydrate`'s sibling,
 minus the create — lets the client compact in place and never drop the
 runtime at all. It needs a guard (idle or paused, never mid-step, or the
@@ -636,9 +636,10 @@ swap races a step's commit).
   close it, but the common case is already safe, since a message a turn
   *consumed* is on the snapshot as a `withPrompt` selector. Document it in
   `--trace`'s help.
-- **Awaiters.** `AgentMessage.await` is idempotent against the entry, so a
-  caller re-awaits after reconnecting (async-agents §3.2) — but nothing
-  restores an await across sessions, and message records are not re-created.
+- **Response readers.** `AgentMessage.response` is idempotent against the
+  entry, so a caller can request it again after reconnecting (async-agents
+  §3.2) — but nothing restores an in-flight response request across sessions,
+  and message records are not re-created.
 - **Engine-side workspace metadata** that is not part of a recipe — e.g. a
   staged commit's `origin` provenance (async-agents item 12).
 
@@ -702,7 +703,7 @@ swap races a step's commit).
   `TestReseedKeepsTheInstance` (internal/cmd/dagger) for the CLI's
   reseed-or-drop policy, `TestRosterShowsStoppedAgents` (dagql/idtui) for
   the roster. The dismiss-and-rehire case §6 must not break needs no test
-  here: two spawns are two instance IDs, which `TestSpawnInstances`
+  here: two spawns are two runtime handles, which `TestSpawnInstances`
   already pins.
 - **End to end, replay provider.** Extend the `agentTraceSink` harness
   (`core/integration/agent_runtime_test.go:1001`): run a chief + two workers
@@ -765,7 +766,7 @@ loss; the save file grows a `trace_id`; imported metrics count, so cost and
 token totals accumulate across resumes rather than restarting at zero; there
 are no compatibility fallbacks — a trace the engine of the day did not
 instrument fails the restore instead of guessing; and there is no seam to
-mark, because a restored agent keeps its instance ID and therefore renders as
+mark, because a restored agent keeps its runtime handle and therefore renders as
 one conversation (§6).
 
 Open:
@@ -905,16 +906,16 @@ differs where it does.
   instance first, and that verb was overwhelmingly `send`. Making a miss an
   error without that would have broken every ordinary spawn-then-send. So
   entry creation is now exactly the two verbs that create an instance
-  (`spawn`, `rehydrate`); `pause`/`resume`/`interrupt`/`waitFor`/`stop` keep
-  their lazy `GetOrCreate`, because none of them can boot a loop from a stale
-  seed the way `send` did — they act on an entry, they do not feed one.
+  (`spawn`, `rehydrate`). Every other runtime verb now requires that entry;
+  none may silently turn a reconstructed handle into a runtime from a stale
+  seed.
 - **The defect §4.2 closes was observed live, not argued.** The fail-first run
-  of `TestSendRequiresRuntime` shows the trace doing exactly what §10.2 of
+  of `TestRuntimeVerbsRequireRuntime` shows the trace doing exactly what §10.2 of
   async-agents described: `Agent.send` on an instance the session never minted
   opened a loop span (`agent: ghost`) and delivered the user's message into
   it. One consequence for tests: `TestMessageIdentity`'s "agent with no
   runtime entry" case had to move from a freshly spawned agent to a bare
-  `agent(id:, name:)` handle — which is the shape a client actually holds for
+  `agent(handle:, name:)` handle — which is the shape a client actually holds for
   an unrestored instance, so the coverage improved by moving.
 - **The identity span is opened on a detached context.** `AgentRuntime.spanCtx`
   is retained past the call (that is the whole point — later transitions still
@@ -927,12 +928,8 @@ differs where it does.
   one call, and `TestRehydratePublishesIdentity` asserts the whole loop a
   client walks — roster entry, addressable call digest, rebuilt handle, and
   through it the restored conversation.
-- **Generated clients: Rust is stale and stays stale.** The Go, Python,
-  TypeScript, PHP and Elixir clients plus the GraphQL schema doc were
-  regenerated. `rust-client:apiclient` fails on `AgentMessage.await`
-  (`pub async fn await` is not valid Rust) — a pre-existing break from the
-  async-agents slice, unrelated to this one, and `sdk/rust` was left untouched
-  rather than papered over.
+- **Generated clients are current.** The former `AgentMessage.await` spelling
+  was not valid Rust; renaming the field to `response` removes that SDK break.
 
 ### 13.3 Slice 3 — the client projection (§5.2)
 
@@ -1094,7 +1091,7 @@ differs where it does.
   what makes them pass: the primary-span one by repointing the primary at the
   imported root, and separately by routing the LIVE trace through the importer
   too (which seals it, failing both halves of that test); the roster merge by
-  giving the imported chief a different instance ID, which split it into two
+  giving the imported chief a different runtime handle, which split it into two
   entries.
 
 ### 13.5 Slice 5 — the fetch (§5.1)
@@ -1285,7 +1282,7 @@ differs where it does.
 - **`--partial` skips exactly the refused entries, and still fails when that
   leaves nothing.** A best-effort restore that restores nothing is an empty
   session that looks like it worked, which is the outcome §12 rules out.
-- **Focus by `--agent` resolves instance IDs before names, and refuses an
+- **Focus by `--agent` resolves runtime handles before names, and refuses an
   ambiguous name.** A name is a display label two agents may legitimately share
   (async-agents §8 spent the spawn pivot establishing that); an ID never is.
 - **Restored conversations are owned** (`AttachRestored`, a second entry point

@@ -44,8 +44,6 @@ type agentRuntime interface {
 	// Interrupt preempts the in-flight step, keeping the completed prefix,
 	// and parks the runtime PAUSED.
 	Interrupt(ctx context.Context) error
-	// WaitFor blocks until the runtime reaches the given state.
-	WaitFor(ctx context.Context, state dagger.AgentState) error
 	// State is the runtime's projected lifecycle state.
 	State(ctx context.Context) (dagger.AgentState, error)
 	// SnapshotID is the ID of the runtime's last committed conversation --
@@ -63,7 +61,7 @@ type agentRuntime interface {
 // and the reply of the turn that consumed it.
 type agentMessage interface {
 	Delivery(ctx context.Context) (dagger.AgentMessageDelivery, error)
-	Await(ctx context.Context) (string, error)
+	Response(ctx context.Context) (string, error)
 }
 
 // liveAgent binds a real engine Agent to the agentRuntime interface.
@@ -77,7 +75,7 @@ var _ agentRuntime = liveAgent{}
 func (l liveAgent) SendMessage(ctx context.Context, msg string) (agentMessage, error) {
 	// Send executes eagerly (it returns an ID scalar that the SDK loads as
 	// the message) and the returned ID is pinned to the replayable
-	// `…agent(id:…)!message(id:…)` chain, so an await on the handle can be
+	// `…agent(handle:…)!message(handle:…)` chain, so a response read on the handle can be
 	// canceled without losing it.
 	message, err := l.agent.Send(ctx, msg)
 	if err != nil {
@@ -96,13 +94,30 @@ func (l liveAgent) Interrupt(ctx context.Context) error {
 	return err
 }
 
-func (l liveAgent) WaitFor(ctx context.Context, state dagger.AgentState) error {
-	_, err := l.agent.WaitFor(ctx, dagger.AgentWaitForOpts{State: state})
-	return err
-}
-
 func (l liveAgent) State(ctx context.Context) (dagger.AgentState, error) {
 	return l.agent.State(ctx)
+}
+
+// waitForAgentState is CLI plumbing for the exact PAUSED transition needed
+// after an interrupt. Exact-state waiting is intentionally not public Agent
+// API: it is easy for callers to wait forever when an agent settles elsewhere.
+func waitForAgentState(ctx context.Context, rt agentRuntime, want dagger.AgentState) error {
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		state, err := rt.State(ctx)
+		if err != nil {
+			return err
+		}
+		if state == want {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (l liveAgent) SnapshotID(ctx context.Context) (dagger.ID, error) {
@@ -136,11 +151,11 @@ type sessionAgent struct {
 	// name is the display label the roster shows. It carries no identity.
 	name string
 
-	// instanceID is the runtime's spawn-minted instance ID, learned when a
+	// agentHandle is the runtime's spawn-minted runtime handle, learned when a
 	// handle is bound. It is the roster's grouping key, so it is also how a
 	// focus request coming back from the roster resolves to a conversation --
 	// including the session's own, which must not be attached to twice.
-	instanceID string
+	agentHandle string
 
 	// agent is the runtime handle backing turns: created lazily on the first
 	// prompt submit (spawned from llm), or bound by attaching to an agent
@@ -162,7 +177,7 @@ type sessionAgent struct {
 	// from, kept so a re-attach recognises the same roster entry.
 	attachedID string
 
-	// turnCancel cancels the in-flight turn's await, non-nil only while
+	// turnCancel cancels the in-flight turn's response, non-nil only while
 	// WithPrompt runs. It is per-conversation on purpose: Ctrl-C interrupts
 	// the FOCUSED agent, which is not necessarily the one holding a turn.
 	// pending buffers messages submitted while the turn was still opening,
@@ -231,7 +246,7 @@ type sessionAgent struct {
 // uses, distinguishing "the user preempted this turn" from a canceled session.
 var errAgentInterrupted = errors.New("interrupted")
 
-// errAgentRewound cancels the client-side await when inline editing abandons a
+// errAgentRewound cancels the client-side response when inline editing abandons a
 // turn. The shell suppresses it: unlike Ctrl-C, rewind is a successful control
 // operation whose replacement text is about to appear in the input.
 var errAgentRewound = errors.New("rewound for editing")
@@ -403,11 +418,11 @@ func (a *sessionAgent) reset() {
 // spawning one from its LLM on first use. Spawn mints a unique instance per
 // call -- the engine's guarantee that a fresh spawn can never resolve to an
 // earlier agent's runtime (e.g. two .clear'd conversations with identical
-// history) -- and returns the pinned instance ID, so later verbs re-load a
+// history) -- and returns the pinned runtime handle, so later verbs re-load a
 // compact reference instead of replaying the whole conversation chain.
 //
 // The engine round-trips run under spawnL rather than agentL: agentL is taken
-// by the render path (the roster reads the target's instance ID on every
+// by the render path (the roster reads the target's runtime handle on every
 // frame), so holding it across a spawn would stall the UI for as long as the
 // spawn takes.
 func (a *sessionAgent) currentAgent(ctx context.Context) (agentRuntime, error) {
@@ -420,19 +435,19 @@ func (a *sessionAgent) currentAgent(ctx context.Context) (agentRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Learn the spawn-minted instance ID: it is what the roster keys on, so
+	// Learn the spawn-minted runtime handle: it is what the roster keys on, so
 	// without it a focus request naming this very agent would attach a second
 	// conversation to the runtime this one already drives. Best-effort: an
 	// engine older than the field still spawns and prompts perfectly well, it
 	// just cannot be correlated with its roster entry, so this must never
 	// fail a turn.
-	instanceID, err := handle.InstanceID(ctx)
+	agentHandle, err := handle.Handle(ctx)
 	if err != nil {
-		slog.Debug("agent instance ID unavailable; roster correlation disabled", "error", err)
-		instanceID = ""
+		slog.Debug("agent runtime handle unavailable; roster correlation disabled", "error", err)
+		agentHandle = ""
 	}
 	rt := liveAgent{dag: a.session.dag, agent: handle}
-	a.bindRuntime(rt, instanceID, "", true)
+	a.bindRuntime(rt, agentHandle, "", true)
 	return rt, nil
 }
 
@@ -447,11 +462,11 @@ func (a *sessionAgent) runtime() agentRuntime {
 // bindRuntime binds an already-existing runtime to this conversation, e.g. one
 // attached to from the roster. owned records whether stopping it is this
 // session's business.
-func (a *sessionAgent) bindRuntime(rt agentRuntime, instanceID, attachedID string, owned bool) {
+func (a *sessionAgent) bindRuntime(rt agentRuntime, agentHandle, attachedID string, owned bool) {
 	a.agentL.Lock()
 	defer a.agentL.Unlock()
 	a.agent = rt
-	a.instanceID = instanceID
+	a.agentHandle = agentHandle
 	a.attachedID = attachedID
 	a.owned = owned
 }
@@ -465,7 +480,7 @@ func (a *sessionAgent) detachAgent() agentRuntime {
 	rt, owned := a.agent, a.owned
 	a.agent = nil
 	a.owned = false
-	a.instanceID = ""
+	a.agentHandle = ""
 	a.attachedID = ""
 	if !owned {
 		return nil
@@ -495,7 +510,7 @@ func (a *sessionAgent) dropAgent() {
 // beginTurn publishes the cancel func of the turn now in flight, making this
 // conversation interruptible and its turn able to absorb submitted messages.
 //
-// It is called at the START of a submit, not when the await opens: sending
+// It is called at the START of a submit, not when the response opens: sending
 // the prompt takes engine round-trips (compaction, spawn, send), and a message
 // typed during that window must join THIS turn rather than open a rival one --
 // a rival submit would re-run attachReferences and auto-compaction, either of
@@ -529,7 +544,7 @@ func (a *sessionAgent) endTurn() {
 // whether there was one. The send is fire-and-forget: the engine records it
 // immediately (absorbing it into the running turn at the next step boundary --
 // STEERED -- or queuing it behind a pause), and its reply arrives within the
-// same turn's await, so there is nothing further to wait on here.
+// same turn's response, so there is nothing further to wait on here.
 //
 // A turn that is still opening has no runtime to send to yet, so the message
 // is buffered and flushed by the submit that opened it -- accepted either
@@ -583,7 +598,7 @@ func (a *sessionAgent) flushPending(rt agentRuntime) {
 // to preempt. It is what Ctrl-C means with a roster: the FOCUSED agent stops,
 // which is not necessarily the agent holding a turn.
 //
-// With a turn in flight, canceling its await is enough -- WithPrompt then
+// With a turn in flight, canceling its response is enough -- WithPrompt then
 // issues the server-side interrupt and re-roots on the kept prefix. Without
 // one the runtime may still be working on its own (an attached agent), so it
 // is interrupted directly -- but only if it is actually busy: interrupt on an
@@ -661,7 +676,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 			if err := rt.Interrupt(ctx); err != nil {
 				return err
 			}
-			if err := rt.WaitFor(ctx, dagger.AgentStatePaused); err != nil {
+			if err := waitForAgentState(ctx, rt, dagger.AgentStatePaused); err != nil {
 				return err
 			}
 		}
@@ -719,7 +734,7 @@ func (a *sessionAgent) interruptAgent(rt agentRuntime) {
 		slog.Warn("failed to interrupt agent", "error", err)
 		return
 	}
-	if err := rt.WaitFor(ctx, dagger.AgentStatePaused); err != nil {
+	if err := waitForAgentState(ctx, rt, dagger.AgentStatePaused); err != nil {
 		slog.Debug("interrupted agent did not park in time", "error", err)
 	}
 }
@@ -740,7 +755,7 @@ func (a *sessionAgent) syncFromAgent(rt agentRuntime) error {
 // WithPrompt submits one prompt-mode message and blocks until the turn it
 // opens (or joins) ends. The turn itself runs server-side in the Agent
 // runtime: submit = send the message, resume the agent (a no-op unless a prior
-// Ctrl-C parked it), then await the message's reply. Mid-turn submissions
+// Ctrl-C parked it), then response the message's reply. Mid-turn submissions
 // (Submit) and interrupts (Interrupt) act on that same runtime; when the turn
 // ends the conversation's LLM is re-rooted on the agent's committed snapshot
 // so history, /commands, and session saving keep operating on the honest
@@ -807,10 +822,10 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	}
 
 	// Block until the turn that consumed the prompt ends.
-	_, awaitErr := msg.Await(ctx)
+	_, responseErr := msg.Response(ctx)
 
-	if awaitErr != nil && ctx.Err() != nil {
-		// The await was canceled -- by Ctrl-C on this agent, or by the
+	if responseErr != nil && ctx.Err() != nil {
+		// The response was canceled -- by Ctrl-C on this agent, or by the
 		// session going away. Interrupt the agent server-side, keeping the
 		// completed prefix. The turn stays open with the prompt pending; the
 		// next submit's Resume continues it.
@@ -820,7 +835,7 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 		// prompt, and a canceled session stays context.Canceled so the turn
 		// span is marked canceled rather than failed.
 		if cause := context.Cause(ctx); cause != nil {
-			awaitErr = cause
+			responseErr = cause
 		}
 	}
 
@@ -829,9 +844,9 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	// interrupted, re-root on the agent's committed snapshot so the rest of
 	// the session reflects everything that actually happened.
 	if err := a.syncFromAgent(rt); err != nil {
-		if awaitErr != nil {
+		if responseErr != nil {
 			slog.Warn("failed to sync LLM from agent snapshot", "error", err)
-			return awaitErr
+			return responseErr
 		}
 		return err
 	}
@@ -842,7 +857,7 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	// Auto-save so the session is preserved even across interrupted turns.
 	a.session.stepped(a)
 
-	return awaitErr
+	return responseErr
 }
 
 // updateLLM replaces the conversation's LLM wholesale -- prompt-turn snapshots

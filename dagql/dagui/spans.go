@@ -304,7 +304,7 @@ type SpanSnapshot struct {
 
 	// Agent marks the long-lived loop span of a started agent runtime
 	// (running exactly while the loop does; its subtree carries the agent's
-	// turns). AgentID is the spawn-minted instance ID that identifies the
+	// turns). AgentID is the spawn-minted runtime handle that identifies the
 	// agent ACROSS loop spans — a resume-retry relaunches the loop, so one
 	// agent can own several. AgentCallDigest is the digest of the call that
 	// produced the agent value, from which a client can reconstruct a
