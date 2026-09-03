@@ -16,24 +16,22 @@
 (*   - persisted decode, import, flush, restart (ModelPersistence)         *)
 (*   - calls issued from inside a call executor, which the server's drain  *)
 (*     neither counts nor rejects (ModelNestedCalls)                       *)
+(*   - per-session operation accounting: admission against the release     *)
+(*     tombstone, late refusal at the return boundary, deferred release    *)
+(*     cleanup by the last exiting operation, lazy callback attempt        *)
+(*     tokens, and shutdown quiescence (Cache.Close)                       *)
 (*                                                                         *)
-(* The model reflects the code as it is. Configurations select scenarios   *)
-(* (which machinery is active, which external events and failures can      *)
-(* happen), never alternative code shapes. Where the current code has a    *)
-(* known deficiency, a configuration reproduces it as an expected          *)
-(* invariant violation, so the deficiency cannot silently change shape.    *)
+(* Configurations select scenarios: which machinery is active and which    *)
+(* external events and failures can happen. They never select alternative  *)
+(* implementations.                                                        *)
 (*                                                                         *)
 (* GRANULARITY                                                             *)
-(* One atomic model action per Go critical section: one hold of egraphMu,  *)
-(* callsMu, sessionMu, or lazyMu, or one lock-free region between holds.  *)
-(* Races live BETWEEN critical sections; the model explores exactly those  *)
-(* interleavings and no finer-grained fake ones. Every action's comment    *)
-(* names the Go function and lines it abstracts.                           *)
+(* One atomic model action represents one Go critical section or one       *)
+(* lock-free atomic transition. Races live between those actions.          *)
 (*                                                                         *)
 (* ABSTRACTIONS                                                            *)
 (*   - Equivalence is a static partition of call identities (ClassOf).     *)
-(*     The e-graph's merging machinery is not modeled. Lookup returns      *)
-(*     some live result in the request's class, or misses.                 *)
+(*     The e-graph's class-merging machinery is not modeled.               *)
 (*   - Lookup may miss even when a candidate exists. This over-            *)
 (*     approximates the candidate/session filtering that is not modeled,   *)
 (*     and it exercises the engine's accepted duplicate-execution window   *)
@@ -42,18 +40,22 @@
 (*     considers equivalent are interchangeable.                           *)
 (*   - Not modeled: session resources, TTL/expiry, DoNotCache,             *)
 (*     recipe-replay taint, and the arbitrary-value cache                  *)
-(*     (acquireSessionArbitraryLocked, cache.go:751 - the same atomic      *)
-(*     record-and-count claim as the modeled result claim, under callsMu   *)
-(*     with sessionMu nested; Go tests carry its coverage).                *)
-(*   - ReleaseSession can fire at ANY time, including while the session    *)
-(*     has calls in flight. The server's drain (dagqlInFlight,             *)
-(*     engine/server/session.go:603-608) narrows but does not close that   *)
-(*     window: it counts only serveQuery handler goroutines, and the       *)
-(*     detached call executor (cache.go:3954) keeps issuing nested cache   *)
-(*     calls with the same session ID while it unwinds from cancellation.  *)
-(*     DrainOnRelease models the drain as implemented (handler calls       *)
-(*     only); ModelNestedCalls adds the executor-nested calls that         *)
-(*     escape it.                                                          *)
+(*     (acquireSessionArbitraryLocked - the same atomic record-and-count   *)
+(*     claim as the modeled result claim, under callsMu with sessionMu     *)
+(*     nested; it follows the same operation-accounting and                *)
+(*     deferred-release contract; Go tests carry its coverage).            *)
+(*   - Not modeled: the lock-time registration guards in the e-graph       *)
+(*     mutation helpers (TeachCallEquivalentToResult, TeachContentDigest,  *)
+(*     AddExplicitDependency, WithSessionResourceHandle). Numeric result   *)
+(*     IDs are engine-lifetime unique, so those guards only refuse         *)
+(*     mutations for already-collected results; Go tests carry them.       *)
+(*   - Every modeled cache operation has session metadata. The             *)
+(*     implementation also uses a cache-wide operation count when metadata *)
+(*     is absent; shutdown treats both counts identically.                 *)
+(*   - ReleaseSession can fire while cache operations are active. The      *)
+(*     server drain controls only whether handler-origin calls are still   *)
+(*     admitted to release; executor-nested calls remain outside it. Cache *)
+(*     operation accounting covers both origins.                           *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -65,26 +67,17 @@ CONSTANTS
                         \* is in; results of same-class calls are
                         \* interchangeable for cache hits
     MaxInvocations,     \* how many GetOrInitCalls may be issued in total
-    MaxResults,         \* bound on allocated sharedResult IDs
+    MaxResults,         \* bound on allocated sharedResult records
 
     \* --- external events -------------------------------------------------
     AllowRelease,       \* enable session release; off in configs that
                         \* isolate a question from release races
-    DrainOnRelease,     \* model the server's politeness around release, AS
-                        \* IMPLEMENTED - it covers handler-origin calls only:
-                        \*   - TRUE: ReleaseSession waits until the
-                        \*     session's HANDLER-origin calls are terminal
-                        \*     (the dagqlInFlight drain, session.go:603-608,
-                        \*     counts serveQuery handlers only) and released
-                        \*     sessions get no new handler calls (the
-                        \*     dagqlClosing reject, session.go:1719-1725).
-                        \*     Executor-NESTED calls (ModelNestedCalls) are
-                        \*     not counted and not rejected - exactly as in
-                        \*     the engine.
-                        \*   - FALSE: the cache on its own, no politeness
-                        \* TRUE asks "does the drain, as implemented,
-                        \* prevent this?"; FALSE asks what the cache
-                        \* guarantees by itself.
+    DrainOnRelease,     \* model the server's handler drain. TRUE delays
+                        \* release until handler-origin calls are terminal;
+                        \* FALSE allows release without that courtesy.
+                        \* Executor-nested calls are outside the drain in
+                        \* either case. The cache's own operation count is
+                        \* load-bearing for safety in both cases.
     AllowPruneCut,      \* enable the PruneCut action; off in configs that
                         \* isolate a question from prune races
 
@@ -102,25 +95,14 @@ CONSTANTS
     ImportInit,         \* the model may START from a small imported graph
                         \* instead of an empty cache - results retained by
                         \* persisted and dependency edges, no session edges,
-                        \* payloads possibly still encoded ("envelope"),
-                        \* exactly what importPersistedState reconstructs
-                        \* after a clean restart.
-    ModelNestedCalls,   \* calls issued from inside a call executor.
-                        \* GetOrInitCall runs fn on a detached goroutine
-                        \* (cache.go:3954) whose context survives caller
-                        \* cancellation (WithCancelCause of WithoutCancel,
-                        \* cache.go:3897), and resolvers make nested cache
-                        \* calls carrying the SAME session ID
-                        \* (dagql/objects.go:684; context values survive
-                        \* WithoutCancel). Nothing counts that goroutine:
-                        \* the drain waits only for serveQuery handlers, so
-                        \* after a cancellation, teardown can pass the drain
-                        \* and run ReleaseSession while the executor is
-                        \* still unwinding and still claiming session
-                        \* edges. Nested spawns are allowed while any of
-                        \* the session's executors is running or winding
-                        \* down, and are never blocked by DrainOnRelease.
-
+                        \* payloads possibly still encoded ("envelope") -
+                        \* the result-level shape importPersistedState
+                        \* reconstructs after a clean restart.
+    ModelNestedCalls,   \* calls issued from inside a detached call executor.
+                        \* They carry the same session ID and may reach the
+                        \* cache after the handler drain has completed. New
+                        \* operations are refused after the cache tombstone;
+                        \* operations admitted earlier keep release deferred.
     \* --- failure and cancellation injection --------------------------------
     \* Each enables one nondeterministic event the environment can inject.
     \* Configurations keep injections off unless their question needs them,
@@ -147,10 +129,13 @@ CONSTANTS
 
 \* Config sanity check, evaluated once at startup: the ClassOf table must
 \* assign a class to every call and to nothing else.
-ASSUME DOMAIN ClassOf = Calls
+ASSUME /\ DOMAIN ClassOf = Calls
+       /\ Calls # {}
 
 \* Convenience value for configs: every call in one equivalence class.
 OneClass == [c \in Calls |-> "k1"]
+DistinctClasses == [c \in Calls |-> c]
+EquivalenceClasses == {ClassOf[c] : c \in Calls}
 
 \* Sessions are interchangeable with each other, and so are calls: the spec
 \* never treats any one specially. Declaring that symmetry (SYMMETRY Symm
@@ -183,25 +168,19 @@ VARIABLES
                         \* present. Claims add both sets atomically. The sets
                         \* differ only while release has removed records and
                         \* has not yet removed their snapshotted units.
-    sessionRelease,     \* per-session release progress, mirroring
-                        \* ReleaseSession's two critical sections
-                        \* (cache.go:760-834):
-                        \*   phase "live":       not released
-                        \*   phase "collecting": the sessionMu section ran -
-                        \*     records snapshotted into snap and wiped -
-                        \*     but the egraphMu decrements have not
-                        \*   phase "released":   both sections ran
-                        \* snap holds the record snapshot the decrement
-                        \* section will consume.
+    sessionRelease,     \* per-session lifecycle. active counts admitted
+                        \* cache operations. phase is live, marking,
+                        \* deferred, collecting, deleting, or released.
+                        \* snap is the release plan's result-edge snapshot;
+                        \* exitingLazy is 1 when one or more callback tokens
+                        \* are between done close and goroutine exit.
     evals,              \* one record per issued Cache.Evaluate caller
                         \* (empty unless ModelLazy)
     epoch,              \* 1 before the modeled restart, 2 after. One
                         \* graceful-shutdown/restart cycle per run.
-    flushed             \* "none", or the snapshot the graceful shutdown
-                        \* captured: one row per then-registered result.
-                        \* Mirrors what snapshotPersistState writes
-                        \* (cache_persistence_worker.go:27) minus the
-                        \* e-graph detail this model abstracts away.
+    flushed             \* shutdown state and, once complete, the snapshot:
+                        \* closing refuses admission; rows contains one
+                        \* record per result captured by persistence.
 
 vars == <<invocations, res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
           sessionRelease, evals, epoch, flushed>>
@@ -220,11 +199,13 @@ OngoingCallIds     == 1..Len(ongoingCalls)
 EvalLatchedPhases == {"latchedDone", "latchedFail", "latchedCancel"}
 EvalWakePhases == {"wakeDone", "wakeFail", "wakeCancel"}
 EvalPendingPhases == {"demand", "waiting"} \cup EvalLatchedPhases \cup EvalWakePhases
-EvalTerminalPhases == {"done", "failedCallback", "abandoned"}
-EvalPhaseDomain == EvalPendingPhases \cup EvalTerminalPhases
+EvalExitPhases == {"returnDone", "returnFailed", "returnAbandoned", "returnRefused"}
+EvalTerminalPhases == {"done", "failedCallback", "abandoned", "refused"}
+EvalPhaseDomain == EvalPendingPhases \cup EvalExitPhases \cup EvalTerminalPhases
 
 \* phase values in which an invocation has finished, one way or another.
 TerminalPhases == {"done", "failed", "canceled", "refused"}
+InvocationExitPhases == {"returning", "failing", "canceling", "refusing"}
 
 (***************************************************************************)
 (* Recounting ownership from scratch.                                      *)
@@ -259,7 +240,7 @@ DerivedOwn(r) ==
     SessEdgeCount(r) + DepParentCount(r)
       + HoldCount(r) + PersistedCount(r)
 
-\* All registered results whose call is in equivalence class k.
+\* All registered results whose semantic call is in equivalence class k.
 LiveInClass(k) ==
     {r \in ResultIds : res[r].registered /\ ClassOf[res[r].call] = k}
 
@@ -281,8 +262,10 @@ ProtectedReturn(s, r) ==
 (*                                                                         *)
 (* Mirrors collectUnownedResultsLocked (cache.go:979-1026), which runs     *)
 (* inside the same egraphMu critical section as whatever decrement         *)
-(* triggered it. released=TRUE here stands in for "the OnRelease hooks     *)
-(* have run" (in the code they run just after the lock drops).             *)
+(* triggered it. released=TRUE conservatively means cleanup hooks are now  *)
+(* eligible to have run; Go invokes them just after dropping egraphMu.     *)
+(* Making the result dead at collection is the earlier, dangerous side of  *)
+(* that small interval for every returned-live safety check.               *)
 (***************************************************************************)
 RECURSIVE Cascade(_)
 Cascade(rf) ==
@@ -311,8 +294,8 @@ DecAndCascade(rf, r) == Cascade([rf EXCEPT ![r].own = @ - 1])
 (* read barrier to decode on first use. The model can start from any       *)
 (* such graph of up to two results: every result must be retained          *)
 (* (persisted itself, or the dependency of a retained result), deps point  *)
-(* only at earlier IDs, and ownership counts are computed from the edges   *)
-(* exactly as import's increments do.                                      *)
+(* only at earlier record slots, and ownership counts are computed from    *)
+(* the edges exactly as import's increments do.                            *)
 (***************************************************************************)
 
 ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
@@ -324,7 +307,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag) ==
      imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
-     lazyWaiters |-> 0, lazyRunning |-> 0]
+     lazyWaiters |-> 0, lazyRunning |-> 0, lazyTokenSession |-> 0]
 
 \* A collected result's ID is never reused, so after a restart the slots of
 \* results that were not in the snapshot stay as dead husks - present in
@@ -339,7 +322,7 @@ DeadHusk ==
      imported |-> TRUE,
      lazyCb |-> "none", lazyComplete |-> FALSE, lazyPhase |-> "idle",
      lazyCancel |-> FALSE, lazySyncPending |-> FALSE,
-     lazyWaiters |-> 0, lazyRunning |-> 0]
+     lazyWaiters |-> 0, lazyRunning |-> 0, lazyTokenSession |-> 0]
 
 \* The candidate import rows for position pos: any call, persisted or not,
 \* at most one dependency and only on an earlier row, payload decoded or
@@ -374,6 +357,8 @@ InitialResStates ==
                     ImportGraphRetained(h)}}
     ELSE {<<>>}
 
+RegisteredResultIds == {r \in ResultIds : res[r].registered}
+
 Init ==
     /\ invocations = <<>>
     /\ res \in InitialResStates
@@ -381,57 +366,67 @@ Init ==
     /\ ongoingCallIndex = [k \in Calls \X Sessions |-> 0]
     /\ sessionEdges = {}
     /\ countedEdges = {}
-    /\ sessionRelease = [s \in Sessions |-> [phase |-> "live", snap |-> {}]]
+    /\ sessionRelease = [s \in Sessions |->
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
     /\ evals = <<>>
     /\ epoch = 1
-    /\ flushed = [done |-> FALSE, rows |-> <<>>]
+    /\ flushed = [closing |-> FALSE, done |-> FALSE, rows |-> <<>>]
 
 (***************************************************************************)
-(* Spawn: a client issues GetOrInitCall(session, call, persistable)        *)
-(* through a serveQuery handler. Under DrainOnRelease, released sessions   *)
-(* get no new handler calls (the dagqlClosing reject,                      *)
-(* session.go:1719-1725); without it, nothing in the cache itself          *)
-(* prevents a released session from issuing calls.                         *)
+(* Spawn: a client issues GetOrInitCall through a serveQuery handler. The  *)
+(* cache atomically refuses a released session or increments its active    *)
+(* operation count before entering lookup. The server drain additionally   *)
+(* prevents new handler calls after teardown begins.                       *)
 (*                                                                         *)
 (* SpawnNested: a call issued from INSIDE a call executor - a resolver's   *)
-(* nested Select (dagql/objects.go:684) running on the detached fn         *)
-(* goroutine (cache.go:3954). It carries the same session ID, it is not    *)
-(* counted by the drain, and it is not rejected after release; its only    *)
-(* precondition is that some executor of the session is still running or   *)
-(* winding down from cancellation. The model does not bind the nested      *)
-(* call to a specific executor - any live executor of the session          *)
-(* suffices.                                                               *)
+(* nested Select running on the detached fn goroutine. It carries the same *)
+(* session ID and is not counted by the server drain. It still enters at   *)
+(* the cache boundary, where the tombstone refuses it after release.        *)
 (***************************************************************************)
-NewInvocation(s, c, p, o) ==
-    [sess |-> s, call |-> c, persistable |-> p, phase |-> "lookup",
+NewInvocation(s, c, p, o, admitted) ==
+    [sess |-> s, call |-> c, persistable |-> p,
+     phase |-> IF admitted THEN "lookup" ELSE "refused",
      origin |-> o,
+     opActive |-> admitted,
      oc |-> 0, resId |-> 0, path |-> "none",
      \* Invocations survive a modeled restart for property checking even though
      \* their real goroutines and the cache's in-memory tombstones do not, so this
      \* field ties a refusal to the epoch whose lifecycle state produced it.
-     refusedEpoch |-> 0,
+     refusedEpoch |-> IF admitted THEN 0 ELSE epoch,
      lookupBarrierAtSelection |-> "none",
      retLive |-> TRUE, retOwned |-> TRUE,
      retBarrierOK |-> TRUE, retClean |-> TRUE]
 
 Spawn ==
     /\ Len(invocations) < MaxInvocations
+    /\ ~flushed.closing
     /\ \E s \in Sessions, c \in Calls, p \in BOOLEAN :
         /\ DrainOnRelease => sessionRelease[s].phase = "live"
-        /\ invocations' = Append(invocations, NewInvocation(s, c, p, "handler"))
+        /\ LET admitted == sessionRelease[s].phase = "live" IN
+           /\ invocations' = Append(invocations,
+                NewInvocation(s, c, p, "handler", admitted))
+           /\ sessionRelease' = IF admitted
+                THEN [sessionRelease EXCEPT ![s].active = @ + 1]
+                ELSE sessionRelease
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 SpawnNested ==
     /\ ModelNestedCalls
     /\ Len(invocations) < MaxInvocations
+    /\ ~flushed.closing
     /\ \E s \in Sessions, c \in Calls, p \in BOOLEAN :
         /\ \E o \in OngoingCallIds :
              /\ ongoingCalls[o].sess = s
              /\ ongoingCalls[o].fnState \in {"running", "canceled"}
-        /\ invocations' = Append(invocations, NewInvocation(s, c, p, "nested"))
+        /\ LET admitted == sessionRelease[s].phase = "live" IN
+           /\ invocations' = Append(invocations,
+                NewInvocation(s, c, p, "nested", admitted))
+           /\ sessionRelease' = IF admitted
+                THEN [sessionRelease EXCEPT ![s].active = @ + 1]
+                ELSE sessionRelease
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
-                   sessionRelease, evals, epoch, flushed>>
+                   evals, epoch, flushed>>
 
 (***************************************************************************)
 (* LookupHit: the lookup finds a live equivalent result whose attachment   *)
@@ -461,7 +456,7 @@ LookupHit(i) ==
                                         ![i].path = "hit",
                                         ![i].lookupBarrierAtSelection = res[r].barrier]
            ELSE /\ UNCHANGED res
-                /\ invocations' = [invocations EXCEPT ![i].phase = "refused",
+                /\ invocations' = [invocations EXCEPT ![i].phase = "refusing",
                                         ![i].resId = r,
                                         ![i].path = "hit",
                                         ![i].lookupBarrierAtSelection = res[r].barrier,
@@ -544,7 +539,7 @@ CreateOcLeaseFail(i) ==
     /\ LeaseCanFail
     /\ invocations[i].phase = "join"
     /\ ongoingCallIndex[<<invocations[i].call, invocations[i].sess>>] = 0
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed",
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failing",
                                            ![i].path = "leaseFailure"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -607,14 +602,14 @@ WaiterCancel(i) ==
                         THEN [ongoingCallIndex EXCEPT
                                 ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
                         ELSE ongoingCallIndex
-          /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
+          /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
 \* FnWindDown: the cancel-requested executor finally exits. Until it does,
 \* its resolver can still issue nested cache calls (SpawnNested) - that
-\* window is the drain escape. Gated by ModelNestedCalls so earlier
-\* configurations keep their exact state spaces.
+\* window is the drain escape. Gated by ModelNestedCalls so unrelated
+\* scenarios do not pay for nested-executor states.
 FnWindDown(o) ==
     /\ ModelNestedCalls
     /\ ongoingCalls[o].fnState = "canceled"
@@ -676,7 +671,7 @@ WaiterCancelLate(i) ==
                         ELSE ongoingCallIndex
           /\ invocations' = [invocations EXCEPT ![i].phase =
                 IF last /\ postOnce /\ ongoingCalls[o].hold
-                THEN "cancelDropHold" ELSE "canceled"]
+                THEN "cancelDropHold" ELSE "canceling"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -689,7 +684,7 @@ WaiterDropHoldCanceled(i) ==
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
-       /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
+       /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -707,7 +702,7 @@ WaiterObserveFnErr(i) ==
                         THEN [ongoingCallIndex EXCEPT
                                 ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
                         ELSE ongoingCallIndex
-          /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+          /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -780,7 +775,8 @@ PubIndexFresh(o) ==
                        lazyCancel |-> FALSE,     \* attempt cancel requested
                        lazySyncPending |-> FALSE, \* lazySyncPending
                        lazyWaiters |-> 0,        \* current attempt's waiters
-                       lazyRunning |-> 0]        \* callbacks actually running
+                       lazyRunning |-> 0,        \* callbacks actually running
+                       lazyTokenSession |-> 0]   \* active callback token owner
         IN /\ res' = Append(withDeps, newRes)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
@@ -964,7 +960,7 @@ WaiterObservePubErr(i) ==
                                \* WaiterClaim
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].waiters = @ - 1]
           /\ invocations' = [invocations EXCEPT
-               ![i].phase = IF dropHold THEN "pubErrDropHold" ELSE "failed"]
+               ![i].phase = IF dropHold THEN "pubErrDropHold" ELSE "failing"]
     /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -977,7 +973,7 @@ WaiterDropHoldPubErr(i) ==
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
-       /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+       /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -1028,7 +1024,7 @@ WaiterDepart(i) ==
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF last /\ ongoingCalls[o].hold
                          THEN IF refused THEN "refusedReleaseHold" ELSE "releaseHold"
-                         ELSE IF refused THEN "refused" ELSE "readBarrier"]
+                         ELSE IF refused THEN "refusing" ELSE "readBarrier"]
     /\ UNCHANGED <<res, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -1044,7 +1040,7 @@ WaiterReleaseHold(i) ==
        IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
        /\ res' = PersistThenDropHold(o)
-       /\ invocations' = [invocations EXCEPT ![i].phase = IF refused THEN "refused" ELSE "readBarrier"]
+       /\ invocations' = [invocations EXCEPT ![i].phase = IF refused THEN "refusing" ELSE "readBarrier"]
     /\ UNCHANGED <<ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -1071,11 +1067,7 @@ ReadBarrierOk(i) ==
           /\ invocations' = [invocations EXCEPT
                ![i].phase = IF invocations[i].path = "hit"
                                   /\ invocations[i].persistable
-                             THEN "persistHit" ELSE "done",
-               ![i].retLive = res[r].registered /\ ~res[r].released,
-               ![i].retOwned = ProtectedReturn(invocations[i].sess, r),
-               ![i].retBarrierOK = res[r].barrier \in {"none", "closedOk"},
-               ![i].retClean = ~res[r].laundered]
+                             THEN "persistHit" ELSE "returning"]
           /\ UNCHANGED res
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
@@ -1094,11 +1086,7 @@ PersistHit(i) ==
                         ELSE res
        IN /\ res' = persisted
           /\ invocations' = [invocations EXCEPT
-               ![i].phase = "done",
-               ![i].retLive = res[r].registered /\ ~res[r].released,
-               ![i].retOwned = ProtectedReturn(invocations[i].sess, r),
-               ![i].retBarrierOK = res[r].barrier \in {"none", "closedOk"},
-               ![i].retClean = ~res[r].laundered]
+               ![i].phase = "returning"]
     /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1106,7 +1094,7 @@ ReadBarrierErrHit(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
     /\ res[invocations[i].resId].barrier = "closedErr"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1114,7 +1102,7 @@ ReadBarrierErrWait(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "wait"
     /\ res[invocations[i].resId].barrier = "closedErr"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1131,7 +1119,7 @@ ReadBarrierCancelHit(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1141,7 +1129,7 @@ ReadBarrierCancelWait(i) ==
     /\ ReaderCanCancel
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "wait"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "canceled"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "canceling"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -1219,7 +1207,7 @@ DecodeWake(i) ==
 DecodeFailHit(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "hit"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -1228,47 +1216,95 @@ DecodeFailHit(i) ==
 DecodeFailWait(i) ==
     /\ invocations[i].phase = "decodeErr"
     /\ invocations[i].path = "wait"
-    /\ invocations' = [invocations EXCEPT ![i].phase = "failed"]
+    /\ invocations' = [invocations EXCEPT ![i].phase = "failing"]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* Decrement an admitted operation. When this is the last operation after a
+\* release plan was published, cleanup becomes irrevocably assigned to this
+\* operation before its goroutine returns.
+FinishSessionOperation(sr, s) ==
+    LET old == sr[s]
+        remaining == old.active - 1
+        nextPhase == IF remaining = 0 /\ old.phase = "deferred"
+                     THEN "collecting" ELSE old.phase
+    IN [sr EXCEPT ![s] = [old EXCEPT !.active = remaining,
+                                      !.phase = nextPhase]]
+
+\* Operation exit is the return boundary. A successful value is changed to a
+\* released-session refusal when release won before this atomic decrement.
+\* Cleanup cannot run before the decrement because the active count is still
+\* positive; if this is the last operation, the same transition assigns it.
+InvocationOperationExit(i) ==
+    /\ invocations[i].phase \in InvocationExitPhases
+    /\ invocations[i].opActive
+    /\ LET s == invocations[i].sess
+           r == invocations[i].resId
+           success == invocations[i].phase = "returning"
+           lateRefusal == success /\ sessionRelease[s].phase # "live"
+           terminal == CASE lateRefusal -> "refused"
+                         [] invocations[i].phase = "returning" -> "done"
+                         [] invocations[i].phase = "failing" -> "failed"
+                         [] invocations[i].phase = "canceling" -> "canceled"
+                         [] OTHER -> "refused"
+       IN /\ sessionRelease[s].active > 0
+          /\ sessionRelease' = FinishSessionOperation(sessionRelease, s)
+          /\ invocations' = [invocations EXCEPT
+               ![i].phase = terminal,
+               ![i].opActive = FALSE,
+               ![i].refusedEpoch = IF lateRefusal THEN epoch ELSE @,
+               ![i].retLive = IF success
+                    THEN res[r].registered /\ ~res[r].released ELSE @,
+               ![i].retOwned = IF success
+                    THEN ProtectedReturn(s, r) ELSE @,
+               ![i].retBarrierOK = IF success
+                    THEN res[r].barrier \in {"none", "closedOk"} ELSE @,
+               ![i].retClean = IF success THEN ~res[r].laundered ELSE @]
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, evals, epoch, flushed>>
+
 (***************************************************************************)
-(* ReleaseSession, in its two real critical sections.                      *)
-(*                                                                         *)
-(* Go: Cache.ReleaseSession. First a sessionMu section marks the session   *)
-(* released, snapshots its complete atomic edges, and deletes its records. *)
-(* Then an egraphMu section removes one ownership unit per registered      *)
-(* snapshotted result and collects whatever reaches zero.                  *)
-(*                                                                         *)
-(* Release can begin at ANY time unless DrainOnRelease is on - and the     *)
-(* drain, as implemented, only waits out HANDLER-origin calls              *)
-(* (dagqlInFlight counts serveQuery handlers, session.go:603-608);         *)
-(* executor-nested calls keep running through it. Once per session.        *)
+(* Release first sets the tombstone with an atomic compare-and-swap. It    *)
+(* then snapshots session edges while holding the session mutex and        *)
+(* publishes an immutable cleanup plan. If operations remain, release      *)
+(* returns with phase deferred. The last operation exit moves the plan to  *)
+(* collecting. Cleanup removes ownership under the e-graph mutex, runs     *)
+(* release hooks, and finally deletes session records under the session    *)
+(* mutex. Release can begin at any time permitted by DrainOnRelease.       *)
 (***************************************************************************)
 
-\* The sessionMu section: set the released tombstone, snapshot the session's
-\* records, and delete them. Counts are untouched here. A session with no records skips the
-\* decrement section entirely - the Go still takes egraphMu for an empty
-\* loop, but that hold changes nothing observable.
-ReleaseSessionRecord(s) ==
+\* Atomic lifecycle-word update: new operation admission and tombstoning are
+\* totally ordered even though neither takes the cache-wide session mutex.
+ReleaseSessionMark(s) ==
     /\ AllowRelease
     /\ sessionRelease[s].phase = "live"
     /\ DrainOnRelease =>
          \A i \in InvocationIds :
              (invocations[i].sess = s /\ invocations[i].origin = "handler")
                  => invocations[i].phase \in TerminalPhases
-    /\ LET snap == {r \in ResultIds : <<s, r>> \in sessionEdges}
-       IN /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
-                [phase |-> IF snap = {} THEN "released" ELSE "collecting",
-                 snap |-> snap]]
-          /\ sessionEdges' = {e \in sessionEdges : e[1] # s}
+    /\ sessionRelease' = [sessionRelease EXCEPT ![s].phase = "marking"]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   countedEdges, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
+
+\* The session-mutex section snapshots records. The release mutex prevents a
+\* last-operation cleanup from consuming the plan before it is published.
+ReleaseSessionSnapshot(s) ==
+    /\ sessionRelease[s].phase = "marking"
+    /\ LET snap == {r \in ResultIds : <<s, r>> \in sessionEdges}
+           old == sessionRelease[s]
+       IN /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
+                [old EXCEPT !.phase = IF old.active = 0
+                                     THEN "collecting" ELSE "deferred",
+                            !.snap = snap]]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 \* The egraphMu section: remove one unit per snapshotted, still-registered
-\* result, then collect.
+\* result, then collect. Session records remain until hooks and arbitrary
+\* value cleanup complete.
 ReleaseSessionCollect(s) ==
     /\ sessionRelease[s].phase = "collecting"
+    /\ sessionRelease[s].active = 0
     /\ LET snap == sessionRelease[s].snap
            live == {r \in snap : res[r].registered}
            rf0 == [r \in DOMAIN res |->
@@ -1277,10 +1313,19 @@ ReleaseSessionCollect(s) ==
                      ELSE res[r]]
        IN /\ res' = Cascade(rf0)
           /\ countedEdges' = countedEdges \ {<<s, r>> : r \in snap}
-          /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
-                [phase |-> "released", snap |-> {}]]
+          /\ sessionRelease' = [sessionRelease EXCEPT ![s].phase = "deleting"]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, evals, epoch, flushed>>
+
+\* Release hooks and arbitrary-value cleanup run before this final
+\* session-mutex section deletes every per-session record.
+ReleaseSessionDelete(s) ==
+    /\ sessionRelease[s].phase = "deleting"
+    /\ sessionEdges' = {e \in sessionEdges : e[1] # s}
+    /\ sessionRelease' = [sessionRelease EXCEPT ![s] =
+         [sessionRelease[s] EXCEPT !.phase = "released", !.snap = {}]]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   countedEdges, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
@@ -1300,16 +1345,12 @@ PruneCut(r) ==
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
-(* FLUSH AND RESTART. Graceful shutdown removes every                      *)
-(* session (each release preceded by the server's drain when the server    *)
-(* behaves), then Cache.Close snapshots the retained graph in one          *)
-(* egraphMu hold and writes it out (persistCurrentState ->                 *)
-(* snapshotPersistState, cache_persistence_worker.go:14/:27; ordering in   *)
-(* GracefulStop, engine/server/server.go:799). The model requires only     *)
-(* what GracefulStop's structure guarantees - all sessions released -      *)
-(* NOT that in-flight work has finished: the cache does not enforce        *)
-(* that, so a snapshot racing an unfinished publication is a reachable    *)
-(* capture and the FlushCleanCapture property judges it.                   *)
+(* FLUSH AND RESTART. Graceful shutdown calls ReleaseSession for every     *)
+(* session before Cache.Close begins. A returned release may still have a  *)
+(* deferred cleanup plan. Close atomically refuses new operations, waits   *)
+(* until all session and cache-wide operations and deferred cleanups are    *)
+(* quiescent, and only then snapshots the retained graph. If its context    *)
+(* expires first, no Flush action occurs and the store remains dirty.       *)
 (*                                                                         *)
 (* Snapshot selection starts at persisted roots. A root is kept only when  *)
 (* its entire transitive dependency closure is registered and cleanly      *)
@@ -1340,14 +1381,30 @@ KeptByPersistedRoot(r) ==
     \E root \in ResultIds :
         CleanPersistedRoot(root) /\ DepReachable(res, root, r)
 
+\* GracefulStop has called every ReleaseSession to its non-blocking return
+\* point. This atomic closing flag rejects every later cache admission.
+BeginClose ==
+    /\ ModelPersistence
+    /\ epoch = 1
+    /\ ~flushed.done
+    /\ ~flushed.closing
+    /\ \A s \in Sessions :
+         sessionRelease[s].phase \in {"deferred", "collecting", "deleting", "released"}
+    /\ flushed' = [flushed EXCEPT !.closing = TRUE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, sessionRelease, evals, epoch>>
+
 Flush ==
     /\ ModelPersistence
     /\ epoch = 1
     /\ ~flushed.done
-    \* GracefulStop runs each session's release to completion (both
-    \* critical sections) before Cache.Close snapshots.
+    /\ flushed.closing
+    \* Quiescence includes the operation counters and completed deferred
+    \* cleanup, not merely ReleaseSession's return.
+    /\ \A s \in Sessions : sessionRelease[s].active = 0
     /\ \A s \in Sessions : sessionRelease[s].phase = "released"
-    /\ flushed' = [done |-> TRUE, rows |-> [r \in 1..Len(res) |->
+    /\ flushed' = [flushed EXCEPT !.done = TRUE,
+         !.rows = [r \in 1..Len(res) |->
          [keep      |-> KeptByPersistedRoot(r),
           call      |-> res[r].call,
           persisted |-> res[r].persisted,
@@ -1367,7 +1424,8 @@ Flush ==
 (* row was dirty. Imported results come back with ownership recomputed     *)
 (* from their persisted + dependency edges (importPersistedState's         *)
 (* increments), payloads nondeterministically decoded-eagerly or left as   *)
-(* envelopes, and IDs preserved (collected slots stay as dead husks).      *)
+(* envelopes, and numeric IDs rebuilt from retained row IDs. Omitted       *)
+(* record slots stay as dead husks for property bookkeeping.               *)
 (* The laundered flag carries each row's dirty verdict forward so the      *)
 (* NoLaunderedServe property can see what the restarted engine cannot.     *)
 (***************************************************************************)
@@ -1388,9 +1446,7 @@ Restart ==
                     pm[x],
                     flushed.rows[x].dirty)
              ELSE DeadHusk]
-    /\ invocations' = [i \in InvocationIds |->
-         IF invocations[i].phase \in TerminalPhases THEN invocations[i]
-         ELSE [invocations[i] EXCEPT !.phase = "canceled"]]
+    /\ invocations' = invocations
     /\ ongoingCalls' = [o \in OngoingCallIds |->
          \* "exited", not "canceled": a restart kills the process, so no
          \* executor is winding down and no nested call can spawn from it
@@ -1411,8 +1467,9 @@ Restart ==
     /\ evals' = <<>>
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
-    /\ sessionRelease' = [s \in Sessions |-> [phase |-> "live", snap |-> {}]]
-    /\ UNCHANGED flushed
+    /\ sessionRelease' = [s \in Sessions |->
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
+    /\ flushed' = [flushed EXCEPT !.closing = FALSE]
 
 ---------------------------------------------------------------------------
 (***************************************************************************)
@@ -1443,12 +1500,12 @@ Restart ==
 (* intermediate retry outcome, not a returned error. Its own cancellation  *)
 (* remains terminal, and a genuine callback failure still propagates.      *)
 (*                                                                         *)
-(* Evaluators here are modeled independently of the GetOrInitCall          *)
-(* invocations: in the engine, Evaluate is called by code already          *)
-(* holding the result, at any later time. Configurations that enable       *)
-(* lazy evaluation keep ReleaseSession and PruneCut off: what happens      *)
-(* when a result is collected while its callback runs belongs with the     *)
-(* release-during-in-flight investigations, not here.                      *)
+(* Each Evaluate caller holds one session operation token. Starting a      *)
+(* callback takes a second token for the callback goroutine. Callback       *)
+(* completion retires the attempt and closes its done channel before that   *)
+(* second token exits, so exitingLazy represents the small but real tail.   *)
+(* It is a saturating 0/1 abstraction: several overlapping tails still     *)
+(* retain one release hold, and their final exit clears it.                 *)
 (*                                                                         *)
 (* One attempt has two stages, and evaluateOne consults them before any    *)
 (* object-side lazy state: callback bodies (Directory/File/Container)      *)
@@ -1481,26 +1538,35 @@ LatchEvalOutcomes(r, outcome) ==
                                   !.foreignCancel = (outcome = "latchedCancel")]
         ELSE evals[e]]
 
-\* A new Evaluate caller appears, demanding some registered result it
-\* holds. A caller can only hold a result whose attachment barrier is not
-\* open and not errored: every result-returning API waits at the barrier
-\* and returns errors instead of values. Lazy callbacks are registered at
-\* attachment completion (registerLazyEvaluation, immediately before the
-\* barrier closes) and again when a persisted hit's value is loaded; both
-\* sites run after the barrier settles. "none" covers results that never
-\* armed a fresh barrier, such as imported rows and adopted cache-backed
-\* values.
+\* A new Evaluate caller appears, demanding some registered result its
+\* session owns. A caller can only hold a result whose attachment barrier
+\* is not open and not errored: every result-returning API waits at the
+\* barrier and returns errors instead of values. Lazy callbacks are
+\* registered at attachment completion (registerLazyEvaluation,
+\* immediately before the barrier closes) and again when a persisted hit's
+\* value is loaded; both sites run after the barrier settles. "none"
+\* covers results that never armed a fresh barrier, such as imported rows
+\* and adopted cache-backed values. Admission is atomic with the session
+\* tombstone check: a caller reaching the cache after release is refused
+\* without increasing the count.
 EvalSpawn ==
     /\ ModelLazy
     /\ Len(evals) < MaxEvals
-    /\ \E r \in ResultIds :
+    /\ ~flushed.closing
+    /\ \E r \in ResultIds, s \in Sessions :
         /\ res[r].registered
         /\ res[r].barrier \notin {"open", "closedErr"}
-        /\ evals' = Append(evals,
-             [target |-> r, phase |-> "demand", foreignCancel |-> FALSE])
+        /\ <<s, r>> \in sessionEdges
+        /\ LET admitted == sessionRelease[s].phase = "live" IN
+           /\ evals' = Append(evals,
+                [target |-> r, sess |-> s,
+                 phase |-> IF admitted THEN "demand" ELSE "refused",
+                 opActive |-> admitted, foreignCancel |-> FALSE])
+           /\ sessionRelease' = IF admitted
+                THEN [sessionRelease EXCEPT ![s].active = @ + 1]
+                ELSE sessionRelease
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease,
-                   epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* A hit loads an imported result's value and registers its lazy work:
 \* ensurePersistedHitValueLoaded calls registerLazyEvaluation after the
@@ -1543,7 +1609,7 @@ EvalNoWork(e) ==
              /\ res[r].lazyCb = "none"
              /\ ~res[r].lazySyncPending
        /\ res' = [res EXCEPT ![r].lazyComplete = TRUE]
-    /\ evals' = [evals EXCEPT ![e].phase = "done",
+    /\ evals' = [evals EXCEPT ![e].phase = "returnDone",
                               ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
@@ -1561,19 +1627,39 @@ EvalNoWork(e) ==
 \* not depend on implementations clearing their callback.
 EvalStartAttempt(e) ==
     /\ evals[e].phase = "demand"
-    /\ LET r == evals[e].target IN
+    /\ LET r == evals[e].target
+           s == evals[e].sess
+       IN
        /\ ~res[r].lazyComplete
        /\ res[r].lazyPhase = "idle"
        /\ res[r].lazyCb = "armed" \/ res[r].lazySyncPending
+       /\ sessionRelease[s].phase = "live"
        /\ res' = [res EXCEPT
             ![r].lazyPhase = IF res[r].lazyCb = "armed"
                              THEN "running" ELSE "syncing",
             ![r].lazyCancel = FALSE,
             ![r].lazyWaiters = @ + 1,
-            ![r].lazyRunning = @ + 1]
+            ![r].lazyRunning = @ + 1,
+            ![r].lazyTokenSession = s]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting",
                                  ![e].foreignCancel = FALSE]
+       /\ sessionRelease' = [sessionRelease EXCEPT ![s].active = @ + 1]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, epoch, flushed>>
+
+\* Release may win after the Evaluate waiter entered but before it tries to
+\* create an attempt. Callback-token admission then refuses the start.
+EvalStartAttemptRefused(e) ==
+    /\ evals[e].phase = "demand"
+    /\ LET r == evals[e].target
+           s == evals[e].sess
+       IN /\ res[r].lazyCb = "armed" \/ res[r].lazySyncPending
+          /\ ~res[r].lazyComplete
+          /\ res[r].lazyPhase = "idle"
+          /\ sessionRelease[s].phase # "live"
+          /\ evals' = [evals EXCEPT ![e].phase = "returnRefused",
+                                    ![e].foreignCancel = FALSE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
 
@@ -1607,24 +1693,31 @@ EvalBodyFinish(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "running"
     /\ res[r].lazyRunning > 0
-    /\ \E outcome \in ({"bodyOk"}
+    /\ res[r].lazyTokenSession \in Sessions
+    /\ LET s == res[r].lazyTokenSession IN
+       \E outcome \in ({"bodyOk"}
             \cup (IF LazyCanFail THEN {"bodyFail"} ELSE {})
             \cup (IF res[r].lazyCancel THEN {"bodyCancel"} ELSE {})) :
         IF outcome = "bodyOk"
         THEN /\ res' = [res EXCEPT ![r].lazyCb = "none",
                                    ![r].lazyPhase = "syncing"]
-             /\ UNCHANGED evals
+             \* The same goroutine continues into bookkeeping, so the
+             \* callback token stays held and no exit is staged.
+             /\ UNCHANGED <<evals, sessionRelease>>
         ELSE /\ res' = [res EXCEPT
                   ![r].lazyRunning = @ - 1,
                   ![r].lazyPhase = "idle",
                   ![r].lazyCancel = FALSE,
-                  ![r].lazyWaiters = 0]
+                  ![r].lazyWaiters = 0,
+                  ![r].lazyTokenSession = 0]
              /\ evals' = LatchEvalOutcomes(r,
                   IF outcome = "bodyFail"
                   THEN "latchedFail" ELSE "latchedCancel")
+             /\ sessionRelease' = IF sessionRelease[s].exitingLazy = 0
+                  THEN [sessionRelease EXCEPT ![s].exitingLazy = 1]
+                  ELSE FinishSessionOperation(sessionRelease, s)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease,
-                   epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 \* The cache-side bookkeeping finishes and the attempt is retired under
 \* lazyMu. Success marks evaluation complete. Any failure here records
@@ -1639,7 +1732,9 @@ EvalSyncFinish(r) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase = "syncing"
     /\ res[r].lazyRunning > 0
-    /\ \E outcome \in ({"syncOk"}
+    /\ res[r].lazyTokenSession \in Sessions
+    /\ LET s == res[r].lazyTokenSession IN
+       \E outcome \in ({"syncOk"}
             \cup (IF LazyCanFail THEN {"syncFail"} ELSE {})
             \cup (IF res[r].lazyCancel THEN {"syncCancel"} ELSE {})) :
         /\ res' = [res EXCEPT
@@ -1648,14 +1743,28 @@ EvalSyncFinish(r) ==
              ![r].lazyCancel = FALSE,
              ![r].lazyWaiters = 0,
              ![r].lazyComplete = @ \/ outcome = "syncOk",
-             ![r].lazySyncPending = outcome # "syncOk"]
+             ![r].lazySyncPending = outcome # "syncOk",
+             ![r].lazyTokenSession = 0]
         /\ evals' = LatchEvalOutcomes(r,
              CASE outcome = "syncOk" -> "latchedDone"
                [] outcome = "syncFail" -> "latchedFail"
                [] OTHER -> "latchedCancel")
+        /\ sessionRelease' = IF sessionRelease[s].exitingLazy = 0
+             THEN [sessionRelease EXCEPT ![s].exitingLazy = 1]
+             ELSE FinishSessionOperation(sessionRelease, s)
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease,
-                   epoch, flushed>>
+                   sessionEdges, countedEdges, epoch, flushed>>
+
+\* The callback goroutine's deferred token release occurs after done closes.
+\* Multiple completed attempts may be in this tail at once. The saturating
+\* flag represents their shared release hold; this action is their final exit.
+EvalCallbackTokenExit(s) ==
+    /\ sessionRelease[s].exitingLazy > 0
+    /\ sessionRelease[s].active > 0
+    /\ LET finished == FinishSessionOperation(sessionRelease, s) IN
+       sessionRelease' = [finished EXCEPT ![s].exitingLazy = @ - 1]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
 
 \* Closing the retired attempt's done channel is the lock-free region after
 \* callback finish. Each transition below represents that broadcast becoming
@@ -1678,8 +1787,8 @@ EvalCallbackClose(e) ==
 EvalWake(e) ==
     /\ evals[e].phase \in EvalWakePhases
     /\ evals' = [evals EXCEPT
-         ![e].phase = CASE @ = "wakeDone" -> "done"
-                           [] @ = "wakeFail" -> "failedCallback"
+         ![e].phase = CASE @ = "wakeDone" -> "returnDone"
+                           [] @ = "wakeFail" -> "returnFailed"
                            [] OTHER -> "demand",
          ![e].foreignCancel = (evals[e].phase = "wakeCancel")]
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
@@ -1701,11 +1810,32 @@ EvalAbandon(e) ==
                          ![r].lazyWaiters = @ - 1,
                          ![r].lazyCancel = @ \/ last]
                     ELSE res
-          /\ evals' = [evals EXCEPT ![e].phase = "abandoned",
+          /\ evals' = [evals EXCEPT ![e].phase = "returnAbandoned",
                                      ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, sessionRelease,
                    epoch, flushed>>
+
+\* Evaluate's outer operation exits after its final return decision. A
+\* successful Evaluate is changed to a released-session refusal if release
+\* began while it was active.
+EvalOperationExit(e) ==
+    /\ evals[e].phase \in EvalExitPhases
+    /\ evals[e].opActive
+    /\ LET s == evals[e].sess
+           success == evals[e].phase = "returnDone"
+           lateRefusal == success /\ sessionRelease[s].phase # "live"
+           terminal == CASE lateRefusal -> "refused"
+                         [] evals[e].phase = "returnDone" -> "done"
+                         [] evals[e].phase = "returnFailed" -> "failedCallback"
+                         [] evals[e].phase = "returnAbandoned" -> "abandoned"
+                         [] OTHER -> "refused"
+       IN /\ sessionRelease[s].active > 0
+          /\ sessionRelease' = FinishSessionOperation(sessionRelease, s)
+          /\ evals' = [evals EXCEPT ![e].phase = terminal,
+                                    ![e].opActive = FALSE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, epoch, flushed>>
 
 ---------------------------------------------------------------------------
 \* Everything that can happen, from any state: some invocation takes its
@@ -1726,20 +1856,26 @@ Next ==
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
          \/ DecodeLead(i) \/ DecodeLeadFinish(i) \/ DecodeJoin(i)
          \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
+         \/ InvocationOperationExit(i)
     \/ \E o \in OngoingCallIds :
          \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
          \/ PubAttachFailDropHold(o) \/ PubAttachFailCloseBarrier(o)
          \/ PubUnregister(o) \/ FnWindDown(o)
-    \/ \E s \in Sessions : ReleaseSessionRecord(s) \/ ReleaseSessionCollect(s)
+    \/ \E s \in Sessions :
+         ReleaseSessionMark(s) \/ ReleaseSessionSnapshot(s)
+           \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
     \/ \E r \in 1..Len(res) : PruneCut(r)
     \/ EvalSpawn
     \/ \E e \in EvalIds :
-         \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e)
-         \/ EvalCallbackClose(e) \/ EvalWake(e) \/ EvalAbandon(e)
+         \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
+         \/ EvalJoin(e) \/ EvalCallbackClose(e) \/ EvalWake(e)
+         \/ EvalAbandon(e) \/ EvalOperationExit(e)
     \/ \E r \in 1..Len(res) :
          EvalBodyFinish(r) \/ EvalSyncFinish(r) \/ ImportedLazyArm(r)
+    \/ \E s \in Sessions : EvalCallbackTokenExit(s)
+    \/ BeginClose
     \/ Flush
     \/ Restart
 
@@ -1761,9 +1897,9 @@ Spec == Init /\ [][Next]_vars
 (*   - WaiterCancel, WaiterCancelLate, ReadBarrierCancelHit/Wait, and      *)
 (*     every failure-injection branch: possibilities, not obligations      *)
 (*   - ReleaseSession and PruneCut: external events                        *)
-(*   - FnWindDown: how long a canceled executor unwinds is external.       *)
-(*     (No liveness configuration enables ModelNestedCalls, so this        *)
-(*     cannot mask a wedge today.)                                         *)
+(*   - FnWindDown: how long a canceled executor unwinds is external. The   *)
+(*     deferred-release property is conditional on the cache operation     *)
+(*     count, so it does not assume a canceled executor itself unwinds.     *)
 (*                                                                         *)
 (* Two placement subtleties:                                               *)
 (*   - FnComplete's fairness guarantees SOME outcome, not a successful     *)
@@ -1790,11 +1926,13 @@ WaiterProgress(i) ==
     \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
     \/ DecodeLead(i) \/ DecodeLeadFinish(i) \/ DecodeJoin(i)
     \/ DecodeWake(i) \/ DecodeFailHit(i) \/ DecodeFailWait(i)
+    \/ InvocationOperationExit(i)
 
 \* An evaluator's own forward steps. Abandoning is deliberately NOT here:
 \* giving up is a caller's choice, never an obligation.
 EvalProgress(e) ==
-    \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalJoin(e) \/ EvalWake(e)
+    \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
+    \/ EvalJoin(e) \/ EvalWake(e) \/ EvalOperationExit(e)
 
 \* Callback completion always proceeds to close the retired attempt's done
 \* channel. This fairness covers the lock-free close becoming observable to
@@ -1807,6 +1945,14 @@ LazyCallbackCloseProgress(e) == EvalCallbackClose(e)
 \* alone would wrongly forbid persistent failure.
 LazyCallbackProgress(r) ==
     EvalBodyFinish(r) \/ EvalSyncFinish(r)
+
+\* Publishing a release plan and consuming assigned cleanup are system
+\* progress. ReleaseSessionMark itself remains an external event.
+ReleaseProgress(s) ==
+    ReleaseSessionSnapshot(s) \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
+
+\* The callback goroutine releases its attempt token after closing done.
+LazyCallbackTokenProgress(s) == EvalCallbackTokenExit(s)
 
 LiveSpec ==
     /\ Spec
@@ -1822,17 +1968,28 @@ LiveSpec ==
          WF_vars(e \in EvalIds /\ LazyCallbackCloseProgress(e))
     /\ \A r \in 1..MaxResults :
          WF_vars(r \in ResultIds /\ LazyCallbackProgress(r))
+    /\ \A s \in Sessions : WF_vars(ReleaseProgress(s))
+    /\ \A s \in Sessions : WF_vars(LazyCallbackTokenProgress(s))
 
 ---------------------------------------------------------------------------
 (***************************************************************************)
-(* PROPERTIES. All but the last are safety invariants: TLC checks them in  *)
-(* every reachable state. EventuallyTerminal is the one liveness           *)
-(* property, checked against LiveSpec. Each .cfg selects only the subset   *)
+(* PROPERTIES. The invariants below are checked in every reachable state.  *)
+(* EvalEventuallyTerminal, DeferredReleaseEventuallyCompletes, and         *)
+(* EventuallyTerminal are liveness properties checked against LiveSpec.    *)
+(* Each .cfg selects only the subset                                       *)
 (* that isolates its question - checking every property in every           *)
 (* configuration would conflate independent questions: a scenario that     *)
 (* exercises one failure could drown the property under test in violations *)
 (* of unrelated properties.                                                *)
 (***************************************************************************)
+
+DerivedSessionActive(s) ==
+    Cardinality({i \in InvocationIds :
+        invocations[i].sess = s /\ invocations[i].opActive})
+      + Cardinality({e \in EvalIds :
+        evals[e].sess = s /\ evals[e].opActive})
+      + Cardinality({r \in ResultIds : res[r].lazyTokenSession = s})
+      + sessionRelease[s].exitingLazy
 
 \* Basic shape sanity: bounds respected, counts non-negative, and no
 \* counted edge without its record.
@@ -1840,14 +1997,21 @@ TypeOK ==
     /\ Len(invocations) <= MaxInvocations
     /\ Len(res) <= MaxResults
     /\ Len(evals) <= MaxEvals
-    \* A counted edge's record can be gone only while its session's
-    \* release is between its two critical sections (records wiped,
-    \* decrements pending).
-    /\ \A e \in countedEdges :
-         e \in sessionEdges
-           \/ (sessionRelease[e[1]].phase = "collecting"
-                 /\ e[2] \in sessionRelease[e[1]].snap)
+    /\ countedEdges \subseteq sessionEdges
     /\ epoch \in {1, 2}
+    /\ flushed.closing \in BOOLEAN
+    /\ \A s \in Sessions :
+         /\ sessionRelease[s].phase \in
+              {"live", "marking", "deferred", "collecting", "deleting", "released"}
+         /\ sessionRelease[s].active \in Nat
+         /\ sessionRelease[s].exitingLazy \in 0..1
+         /\ sessionRelease[s].exitingLazy <= sessionRelease[s].active
+         /\ sessionRelease[s].active = DerivedSessionActive(s)
+         /\ sessionRelease[s].phase = "deferred" => sessionRelease[s].active > 0
+         /\ sessionRelease[s].phase \in {"collecting", "deleting", "released"}
+              => sessionRelease[s].active = 0
+         /\ sessionRelease[s].phase = "released"
+              => sessionRelease[s].snap = {}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
     /\ \A r \in ResultIds :
          /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
@@ -1856,18 +2020,22 @@ TypeOK ==
          /\ res[r].lazyCb \in {"none", "armed"}
          /\ res[r].lazyCancel \in BOOLEAN
          /\ res[r].lazySyncPending \in BOOLEAN
+         /\ res[r].lazyTokenSession \in Sessions \cup {0}
+         /\ (res[r].lazyRunning = 0) = (res[r].lazyTokenSession = 0)
          /\ res[r].lazyWaiters = Cardinality(
               {e \in EvalIds :
                   evals[e].target = r /\ evals[e].phase = "waiting"})
     /\ \A e \in EvalIds :
          /\ evals[e].phase \in EvalPhaseDomain
          /\ evals[e].foreignCancel \in BOOLEAN
+         /\ evals[e].sess \in Sessions
+         /\ evals[e].opActive \in BOOLEAN
     /\ \A i \in InvocationIds :
          /\ invocations[i].origin \in {"handler", "nested"}
+         /\ invocations[i].opActive \in BOOLEAN
          /\ invocations[i].refusedEpoch \in 0..epoch
          /\ invocations[i].lookupBarrierAtSelection
               \in {"none", "open", "closedOk", "closedErr"}
-
 \* Ownership accounting is exact: for every registered result, the
 \* incrementally-maintained counter equals the recount of its edges
 \* (counted session edges + dependency parents + handoff holds +
@@ -1920,7 +2088,7 @@ PersistableIntentDurable ==
 LeaseFailureClean ==
     \A i \in InvocationIds :
         invocations[i].path = "leaseFailure" =>
-            /\ invocations[i].phase = "failed"
+            /\ invocations[i].phase \in {"failing", "failed"}
             /\ invocations[i].oc = 0
             /\ invocations[i].resId = 0
 
@@ -2003,6 +2171,15 @@ LazyCompleteSettled ==
 LazySuccessPermanent ==
     \A r \in ResultIds : res[r].lazyComplete => res[r].lazyRunning = 0
 
+\* A running callback or its post-close token tail keeps its owner session
+\* out of collection. This is the attempt-lifetime guarantee: waiter exit
+\* alone cannot make release eligible while the callback goroutine remains.
+LazyAttemptDefersCollection ==
+    \A s \in Sessions :
+        (\/ sessionRelease[s].exitingLazy > 0
+         \/ \E r \in ResultIds : res[r].lazyTokenSession = s)
+            => sessionRelease[s].phase \notin {"collecting", "deleting", "released"}
+
 \* An Evaluate caller never returns a cancellation error caused by another
 \* waiter. foreignCancel becomes true when the canceled callback's outcome is
 \* latched on its retained waiters and remains true as a healthy waiter returns
@@ -2028,12 +2205,10 @@ DecodeMutualExclusion ==
             invocations[i].phase = "decoding"
               /\ invocations[i].resId = r}) <= 1
 
-\* The graceful-shutdown snapshot captures only clean, fully-retained
-\* state: every kept row had a cleanly-closed (or never-armed) attach
-\* barrier and ownership fully explained by persisted + dependency edges.
-\* Violated when the flush races an unfinished publication - reachable
-\* because the cache itself never waits for in-flight work; only the
-\* server's drain does.
+\* The graceful-shutdown snapshot captures only clean, fully-retained state:
+\* every kept row had a cleanly-closed (or never-armed) attach barrier and
+\* ownership fully explained by persisted and dependency edges. Flush is
+\* enabled only after operation and deferred-cleanup quiescence.
 FlushCleanCapture ==
     flushed.done =>
         \A r \in DOMAIN flushed.rows :
@@ -2069,6 +2244,15 @@ EvalEventuallyTerminal ==
     \A e \in 1..MaxEvals :
         (e \in EvalIds) ~>
             (e \in EvalIds /\ evals[e].phase \in EvalTerminalPhases)
+
+\* Once a release has a quiescent operation count, fair system progress
+\* eventually consumes its cleanup plan and deletes the session records.
+\* This is deliberately conditional: a genuinely wedged operation keeps
+\* active nonzero and causes shutdown-context failure instead of a snapshot.
+DeferredReleaseEventuallyCompletes ==
+    \A s \in Sessions :
+        (sessionRelease[s].phase # "live" /\ sessionRelease[s].active = 0)
+          ~> (sessionRelease[s].phase = "released")
 
 \* Liveness (against LiveSpec): every issued call eventually terminates -
 \* served, failed, or canceled, never wedged forever.

@@ -140,7 +140,247 @@ const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
+var ErrCacheClosed = errors.New("cache closed")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
+
+const cacheSessionReleasedBit uint64 = 1 << 63
+
+// cacheSessionLifecycle is retained for the engine lifetime, matching the
+// released-session tombstone lifetime. lifecycle packs the release bit and the
+// active operation count into one atomic word so operation admission does not
+// contend on the cache-wide session mutex. Release and admission are linearized
+// by compare-and-swap on this word.
+type cacheSessionLifecycle struct {
+	lifecycle atomic.Uint64
+
+	releaseMu      sync.Mutex
+	releasePlan    *cacheSessionReleasePlan
+	cleanupStarted bool
+}
+
+type cacheSessionReleasePlan struct {
+	ctx               context.Context
+	sessionID         string
+	resultIDs         map[sharedResultID]struct{}
+	arbitraryCallKeys map[string]struct{}
+}
+
+type cacheOperation struct {
+	cache     *Cache
+	session   *cacheSessionLifecycle
+	sessionID string
+	active    bool
+}
+
+func (c *Cache) beginCacheOperation() (cacheOperation, error) {
+	if c == nil {
+		return cacheOperation{}, errors.New("begin cache operation: nil cache")
+	}
+	if c.closing.Load() {
+		return cacheOperation{}, ErrCacheClosed
+	}
+	c.activeGlobalOperations.Add(1)
+	if c.closing.Load() {
+		c.endCacheOperation()
+		return cacheOperation{}, ErrCacheClosed
+	}
+	return cacheOperation{cache: c, active: true}, nil
+}
+
+func (c *Cache) sessionLifecycle(sessionID string) *cacheSessionLifecycle {
+	if sessionID == "" {
+		return nil
+	}
+	if state, ok := c.sessionLifecycles.Load(sessionID); ok {
+		return state.(*cacheSessionLifecycle)
+	}
+	state := new(cacheSessionLifecycle)
+	actual, _ := c.sessionLifecycles.LoadOrStore(sessionID, state)
+	return actual.(*cacheSessionLifecycle)
+}
+
+func (c *Cache) beginSessionOperation(sessionID string) (cacheOperation, error) {
+	if sessionID == "" {
+		return c.beginCacheOperation()
+	}
+	if c == nil {
+		return cacheOperation{}, errors.New("begin cache operation: nil cache")
+	}
+	if c.closing.Load() {
+		return cacheOperation{}, ErrCacheClosed
+	}
+
+	state := c.sessionLifecycle(sessionID)
+	for {
+		old := state.lifecycle.Load()
+		if old&cacheSessionReleasedBit != 0 {
+			return cacheOperation{}, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+		}
+		if old == cacheSessionReleasedBit-1 {
+			return cacheOperation{}, fmt.Errorf("begin cache operation for session %q: active operation count overflow", sessionID)
+		}
+		if state.lifecycle.CompareAndSwap(old, old+1) {
+			if c.closing.Load() {
+				rejected := cacheOperation{cache: c, session: state, sessionID: sessionID, active: true}
+				rejected.finish(false)
+				return cacheOperation{}, ErrCacheClosed
+			}
+			op := cacheOperation{cache: c, session: state, sessionID: sessionID, active: true}
+			if c.testAfterSessionOperationEnter != nil {
+				c.testAfterSessionOperationEnter(sessionID)
+			}
+			return op, nil
+		}
+	}
+}
+
+func (c *Cache) beginContextOperation(ctx context.Context) (cacheOperation, error) {
+	sessionID := ""
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		sessionID = clientMetadata.SessionID
+	}
+	return c.beginSessionOperation(sessionID)
+}
+
+// finish ends an operation. A value-bearing success is refused when release
+// won the atomic race with operation exit. The server drains handler-origin
+// calls before release, so this refusal is reserved for doomed detached work.
+func (op *cacheOperation) finish(valueBearingSuccess bool) bool {
+	if op == nil || !op.active {
+		return false
+	}
+	op.active = false
+
+	lateRefusal := false
+	if op.session != nil {
+		if op.cache.testBeforeSessionOperationExit != nil {
+			op.cache.testBeforeSessionOperationExit(op.sessionID)
+		}
+		for {
+			old := op.session.lifecycle.Load()
+			count := old &^ cacheSessionReleasedBit
+			if count == 0 {
+				panic(fmt.Sprintf("cache operation count underflow for session %q", op.sessionID))
+			}
+			lateRefusal = valueBearingSuccess && old&cacheSessionReleasedBit != 0
+			lastReleasedOperation := old == cacheSessionReleasedBit|1
+			if lastReleasedOperation {
+				// Once the session count reaches zero, this global-only token keeps
+				// Cache.Close from observing quiescence while cleanup hooks run.
+				op.cache.activeGlobalOperations.Add(1)
+			}
+			if op.session.lifecycle.CompareAndSwap(old, old-1) {
+				if lastReleasedOperation {
+					if err := op.cache.tryCleanupReleasedSession(op.session); err != nil {
+						op.cache.recordReleaseCleanupError(op.sessionID, true, err)
+					}
+					op.cache.endCacheOperation()
+				}
+				break
+			}
+			if lastReleasedOperation {
+				op.cache.endCacheOperation()
+			}
+		}
+		op.cache.signalQuiescenceWaiter()
+	} else {
+		op.cache.endCacheOperation()
+	}
+	return lateRefusal
+}
+
+func (c *Cache) endCacheOperation() {
+	if c.activeGlobalOperations.Add(-1) != 0 {
+		return
+	}
+	c.signalQuiescenceWaiter()
+}
+
+func (c *Cache) signalQuiescenceWaiter() {
+	if !c.closing.Load() {
+		return
+	}
+	c.operationWaitMu.Lock()
+	if c.operationWaitCh != nil {
+		close(c.operationWaitCh)
+		c.operationWaitCh = nil
+	}
+	c.operationWaitMu.Unlock()
+}
+
+func (c *Cache) operationsQuiescent() bool {
+	if c.activeGlobalOperations.Load() != 0 {
+		return false
+	}
+	quiescent := true
+	c.sessionLifecycles.Range(func(_, value any) bool {
+		state := value.(*cacheSessionLifecycle)
+		if state.lifecycle.Load()&^cacheSessionReleasedBit != 0 {
+			quiescent = false
+			return false
+		}
+		return true
+	})
+	return quiescent
+}
+
+func (c *Cache) waitForQuiescence(ctx context.Context) error {
+	c.closing.Store(true)
+	if c.testAfterCacheClosing != nil {
+		c.testAfterCacheClosing()
+	}
+	for !c.operationsQuiescent() {
+		c.operationWaitMu.Lock()
+		if c.operationsQuiescent() {
+			c.operationWaitMu.Unlock()
+			break
+		}
+		if c.operationWaitCh == nil {
+			c.operationWaitCh = make(chan struct{})
+		}
+		waitCh := c.operationWaitCh
+		c.operationWaitMu.Unlock()
+
+		select {
+		case <-waitCh:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	return nil
+}
+
+func (c *Cache) markSessionReleased(state *cacheSessionLifecycle) (uint64, bool) {
+	for {
+		old := state.lifecycle.Load()
+		if old&cacheSessionReleasedBit != 0 {
+			return old, false
+		}
+		if state.lifecycle.CompareAndSwap(old, old|cacheSessionReleasedBit) {
+			return old, true
+		}
+	}
+}
+
+func (c *Cache) recordReleaseCleanupError(sessionID string, deferred bool, err error) {
+	if err == nil {
+		return
+	}
+	mode := "synchronous"
+	if deferred {
+		mode = "deferred"
+	}
+	slog.Error("dagql cache session cleanup failed", "sessionID", sessionID, "mode", mode, "err", err)
+	c.releaseCleanupErrMu.Lock()
+	c.releaseCleanupErr = errors.Join(c.releaseCleanupErr, fmt.Errorf("%s release session %q: %w", mode, sessionID, err))
+	c.releaseCleanupErrMu.Unlock()
+}
+
+func (c *Cache) releaseCleanupError() error {
+	c.releaseCleanupErrMu.Lock()
+	defer c.releaseCleanupErrMu.Unlock()
+	return c.releaseCleanupErr
+}
 
 type CachePersistenceResetReason string
 
@@ -268,7 +508,7 @@ func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string
 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
-	if _, released := c.releasedSessionIDs[sessionID]; released {
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
 		return false, 0, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
 	}
 	if _, found := c.resultsByID[shared.id]; !found {
@@ -363,6 +603,10 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	}
 
 	c.sessionMu.Lock()
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		c.sessionMu.Unlock()
+		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
 	if c.sessionResourcesBySession == nil {
 		c.sessionResourcesBySession = make(map[string]map[SessionResourceHandle]*sessionResourceBindings)
 	}
@@ -391,9 +635,15 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	return nil
 }
 
-func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) {
+func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) error {
+	if sessionID == "" {
+		return errors.New("set volatile vars: empty session ID")
+	}
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
 
 	if c.sessionVolatileVarsBySession == nil {
 		c.sessionVolatileVarsBySession = make(map[string]map[string]string)
@@ -402,11 +652,18 @@ func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) {
 		c.sessionVolatileVarsBySession[sessionID] = make(map[string]string)
 	}
 	c.sessionVolatileVarsBySession[sessionID][k] = v
+	return nil
 }
 
 func (c *Cache) ResolveVolatileVars(_ context.Context, sessionID string) map[string]string {
+	if sessionID == "" {
+		return nil
+	}
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return nil
+	}
 
 	if c.sessionVolatileVarsBySession == nil {
 		return nil
@@ -450,6 +707,10 @@ func (c *Cache) ResolveSessionResourceCandidates(
 	}
 
 	c.sessionMu.Lock()
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		c.sessionMu.Unlock()
+		return nil, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
 	sessionBindings := c.sessionResourcesBySession[sessionID]
 	bindings := sessionBindings[handle]
 	if bindings == nil || len(bindings.byClientID) == 0 {
@@ -513,6 +774,13 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	}
 
 	c.sessionMu.Lock()
+	// A detached writer arriving after release must not recreate the session
+	// maps ReleaseSession deleted: session IDs are single-use, so nothing
+	// would ever delete the recreated entry again.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		c.sessionMu.Unlock()
+		return
+	}
 	if c.sessionLazySpansBySession == nil {
 		c.sessionLazySpansBySession = make(map[string]map[sharedResultID]trace.SpanContext)
 	}
@@ -587,6 +855,11 @@ type sessionResultInstallSpan struct {
 func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
+	// Same released-session refusal as the lazy-span writer: never recreate
+	// a single-use session's telemetry maps after release deleted them.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return
+	}
 	if c.sessionResultInstallSpans == nil {
 		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
 	}
@@ -762,7 +1035,7 @@ func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedAr
 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
-	if _, released := c.releasedSessionIDs[sessionID]; released {
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
 		return fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
 	}
 	if c.sessionArbitraryCallKeysBySession == nil {
@@ -782,6 +1055,11 @@ func (c *Cache) acquireSessionArbitraryLocked(sessionID string, shared *sharedAr
 	return nil
 }
 
+// ReleaseSession marks a session dead immediately. Its return means cleanup is
+// complete or irrevocably assigned to the last active cache operation; cleanup
+// hooks may therefore run later on that operation's goroutine. Every cleanup
+// error is accumulated for Cache.Close; deferred errors are also logged on the
+// goroutine that observes them because ReleaseSession has already returned.
 func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("release session: empty session ID")
@@ -789,44 +1067,89 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	if c == nil {
 		return nil
 	}
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return fmt.Errorf("release session %q: %w", sessionID, err)
+	}
+	defer op.finish(false)
+
+	state := c.sessionLifecycle(sessionID)
+	state.releaseMu.Lock()
+	oldLifecycle, newlyReleased := c.markSessionReleased(state)
+	if !newlyReleased {
+		state.releaseMu.Unlock()
+		return nil
+	}
 
 	c.sessionMu.Lock()
-	if c.releasedSessionIDs == nil {
-		c.releasedSessionIDs = make(map[string]struct{})
-	}
-	c.releasedSessionIDs[sessionID] = struct{}{}
-	resultIDs := c.sessionResultIDsBySession[sessionID]
-	arbitraryCallKeys := c.sessionArbitraryCallKeysBySession[sessionID]
-	delete(c.sessionResultIDsBySession, sessionID)
-	delete(c.sessionArbitraryCallKeysBySession, sessionID)
-	delete(c.sessionLazySpansBySession, sessionID)
-	delete(c.sessionResultInstallSpans, sessionID)
-	delete(c.sessionResourcesBySession, sessionID)
-	delete(c.sessionVolatileVarsBySession, sessionID)
-	delete(c.sessionHandlesBySession, sessionID)
+	resultIDs := maps.Clone(c.sessionResultIDsBySession[sessionID])
+	arbitraryCallKeys := maps.Clone(c.sessionArbitraryCallKeysBySession[sessionID])
 	c.sessionMu.Unlock()
+	state.releasePlan = &cacheSessionReleasePlan{
+		ctx:               context.WithoutCancel(ctx),
+		sessionID:         sessionID,
+		resultIDs:         resultIDs,
+		arbitraryCallKeys: arbitraryCallKeys,
+	}
+	state.releaseMu.Unlock()
 	if c.testAfterSessionReleaseRecord != nil {
 		c.testAfterSessionReleaseRecord()
 	}
 
+	if oldLifecycle&^cacheSessionReleasedBit != 0 {
+		return nil
+	}
+	cleanupErr := c.tryCleanupReleasedSession(state)
+	if cleanupErr != nil {
+		c.recordReleaseCleanupError(sessionID, false, cleanupErr)
+	}
+	return cleanupErr
+}
+
+func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
+	if state == nil || state.lifecycle.Load() != cacheSessionReleasedBit {
+		return nil
+	}
+	state.releaseMu.Lock()
+	if state.releasePlan == nil || state.cleanupStarted || state.lifecycle.Load() != cacheSessionReleasedBit {
+		state.releaseMu.Unlock()
+		return nil
+	}
+	state.cleanupStarted = true
+	plan := state.releasePlan
+	state.releaseMu.Unlock()
+
+	err := c.cleanupReleasedSession(plan)
+
+	state.releaseMu.Lock()
+	state.releasePlan = nil
+	state.releaseMu.Unlock()
+	return err
+}
+
+func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
+	if plan == nil {
+		return nil
+	}
+	ctx := plan.ctx
 	var (
 		rerr       error
 		onReleases []OnReleaseFunc
 	)
 	c.egraphMu.Lock()
-	queue := make([]*sharedResult, 0, len(resultIDs))
-	for resultID := range resultIDs {
+	queue := make([]*sharedResult, 0, len(plan.resultIDs))
+	for resultID := range plan.resultIDs {
 		var err error
-		queue, err = c.removeSessionResultLocked(ctx, sessionID, resultID, len(resultIDs), queue)
+		queue, err = c.removeSessionResultLocked(ctx, plan.sessionID, resultID, len(plan.resultIDs), queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
 
-	rerr = errors.Join(rerr, runOnReleaseFuncs(context.WithoutCancel(ctx), onReleases))
-	for callKey := range arbitraryCallKeys {
+	rerr = errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	for callKey := range plan.arbitraryCallKeys {
 		var onRelease OnReleaseFunc
 		c.callsMu.Lock()
 		res := c.completedArbitraryCalls[callKey]
@@ -850,9 +1173,19 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 		}
 		c.callsMu.Unlock()
 		if onRelease != nil {
-			rerr = errors.Join(rerr, onRelease(context.WithoutCancel(ctx)))
+			rerr = errors.Join(rerr, onRelease(ctx))
 		}
 	}
+
+	c.sessionMu.Lock()
+	delete(c.sessionResultIDsBySession, plan.sessionID)
+	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
+	delete(c.sessionLazySpansBySession, plan.sessionID)
+	delete(c.sessionResultInstallSpans, plan.sessionID)
+	delete(c.sessionResourcesBySession, plan.sessionID)
+	delete(c.sessionVolatileVarsBySession, plan.sessionID)
+	delete(c.sessionHandlesBySession, plan.sessionID)
+	c.sessionMu.Unlock()
 	return rerr
 }
 
@@ -1213,10 +1546,16 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	return nil
 }
 
-func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) error {
+func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
 	if c == nil || res == nil {
 		return nil
 	}
+	op, err := c.beginContextOperation(ctx)
+	if err != nil {
+		return fmt.Errorf("sync result snapshot owner leases: %w", err)
+	}
+	defer op.finish(false)
+
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
 		return nil
@@ -1332,10 +1671,25 @@ func wipeSQLiteFiles(dbPath string) error {
 type Cache struct {
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
-	// sessionMu protects per-session tracked cache-backed results and arbitrary values.
+	// sessionMu protects per-session tracked cache-backed results, arbitrary
+	// values, resources, and telemetry maps. Hot operation admission uses the
+	// per-session atomic lifecycle records below instead of this global mutex.
 	sessionMu sync.Mutex
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
+
+	closing                atomic.Bool
+	activeGlobalOperations atomic.Int64
+	operationWaitMu        sync.Mutex
+	operationWaitCh        chan struct{}
+
+	// sessionLifecycles retains one small atomic record per session for the
+	// engine lifetime. The packed release bit and operation count make admission
+	// linearizable without global lock traffic.
+	sessionLifecycles sync.Map
+
+	releaseCleanupErrMu sync.Mutex
+	releaseCleanupErr   error
 
 	persistenceResetReason CachePersistenceResetReason
 
@@ -1435,7 +1789,6 @@ type Cache struct {
 
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
-	releasedSessionIDs                map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
 	// sessionResultInstallSpans records which API spans returned/own which
 	// results in a session. Lazy resume spans cause-link the install spans of
@@ -1468,6 +1821,9 @@ type Cache struct {
 	testAfterSessionReleaseRecord   func()
 	testAfterHandoffHoldAcquired    func(*ongoingCall)
 	testAfterLazyEvalFinish         func(*lazyEvalAttempt)
+	testAfterSessionOperationEnter  func(string)
+	testBeforeSessionOperationExit  func(string)
+	testAfterCacheClosing           func()
 
 	closeOnce sync.Once
 	closeErr  error
@@ -2145,7 +2501,15 @@ func (c *Cache) AttachResult(ctx context.Context, sessionID string, resolver Typ
 	if sessionID == "" {
 		return nil, errors.New("attach result: empty session ID")
 	}
-	return c.attachResult(ctx, sessionID, resolver, res)
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("attach result: %w", err)
+	}
+	attached, attachErr := c.attachResult(ctx, sessionID, resolver, res)
+	if op.finish(attachErr == nil && attached != nil) {
+		return nil, fmt.Errorf("attach result: %w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	return attached, attachErr
 }
 
 func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
@@ -2249,6 +2613,9 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 }
 
 func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if parent == nil || dep == nil {
 		return nil
 	}
@@ -2261,22 +2628,18 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if depShared == nil || depShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
 	}
-	if parentShared.id == depShared.id {
-		return nil
-	}
-
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 
-	parentRes := c.resultsByID[parentShared.id]
-	if parentRes == nil {
-		return fmt.Errorf("add explicit dependency: parent result %d missing from cache", parentShared.id)
+	// Numeric result IDs are engine-lifetime unique, so registration under
+	// the ID means release has not collected the result in the meantime.
+	if _, found := c.resultsByID[parentShared.id]; !found {
+		return fmt.Errorf("add explicit dependency: parent result %d was already collected", parentShared.id)
 	}
-	depRes := c.resultsByID[depShared.id]
-	if depRes == nil {
-		return fmt.Errorf("add explicit dependency: dep result %d missing from cache", depShared.id)
+	if _, found := c.resultsByID[depShared.id]; !found {
+		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
 	}
-	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, reason)
+	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
 }
 
 func (c *Cache) addExplicitDependencyLocked(
@@ -2508,7 +2871,40 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	return r.resultWithDerefView(), true
 }
 
-func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
+func (r Result[T]) beginNthValueOperation(ctx context.Context, nth int) (cacheOperation, string, error) {
+	if r.shared == nil || r.shared.id == 0 {
+		return cacheOperation{}, "", nil
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, r.Self(), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: empty session ID", nth, r.Self())
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, r.Self(), err)
+	}
+	op, err := cache.beginSessionOperation(clientMetadata.SessionID)
+	if err != nil {
+		return cacheOperation{}, "", fmt.Errorf("load %dth value from %T: %w", nth, r.Self(), err)
+	}
+	return op, clientMetadata.SessionID, nil
+}
+
+func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr error) {
+	op, sessionID, err := r.beginNthValueOperation(ctx, nth)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if op.finish(rerr == nil && ret != nil) {
+			ret = nil
+			rerr = fmt.Errorf("load %dth value from %T: %w: %q", nth, r.Self(), ErrCacheSessionReleased, sessionID)
+		}
+	}()
+
 	self := r.Self()
 	enumerableSelf, ok := any(self).(Enumerable)
 	if !ok {
@@ -2704,6 +3100,9 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 }
 
 func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle SessionResourceHandle) (Result[T], error) {
+	if err := ctx.Err(); err != nil {
+		return r, err
+	}
 	if handle == "" {
 		return r, fmt.Errorf("set session resource handle on %T: empty handle", r.Self())
 	}
@@ -2718,12 +3117,13 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		cache.egraphMu.Lock()
 		defer cache.egraphMu.Unlock()
 
-		cached := cache.resultsByID[r.shared.id]
-		if cached == nil {
-			return r, fmt.Errorf("set session resource handle on %T: result %d missing from cache", r.Self(), r.shared.id)
+		// Numeric result IDs are engine-lifetime unique, so a registered ID
+		// still names this exact result.
+		if _, found := cache.resultsByID[r.shared.id]; !found {
+			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected", r.Self(), r.shared.id)
 		}
-		cached.sessionResourceHandle = handle
-		if err := cache.recomputeRequiredSessionResourcesLocked(cached); err != nil {
+		r.shared.sessionResourceHandle = handle
+		if err := cache.recomputeRequiredSessionResourcesLocked(r.shared); err != nil {
 			return r, err
 		}
 		return r, nil
@@ -3129,29 +3529,50 @@ func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	return eg.Wait()
 }
 
-func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
+func (c *Cache) beginEvaluateOne(ctx context.Context, res AnyResult) (cacheOperation, *sharedResult, context.Context, error) {
 	if c == nil {
-		return errors.New("evaluate: nil cache")
+		return cacheOperation{}, nil, nil, errors.New("evaluate: nil cache")
 	}
 	if res == nil {
-		return nil
+		return cacheOperation{}, nil, nil, nil
 	}
+	waiterOp, err := c.beginContextOperation(ctx)
+	if err != nil {
+		return cacheOperation{}, nil, nil, fmt.Errorf("evaluate: %w", err)
+	}
+
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		return fmt.Errorf("evaluate %T: detached result", res)
+		waiterOp.finish(false)
+		return cacheOperation{}, nil, nil, fmt.Errorf("evaluate %T: detached result", res)
 	}
 
 	stack := lazyEvalStackFromContext(ctx)
-	if stack != nil {
-		if lazyEvalStackContains(stack, shared.id) {
-			return fmt.Errorf("recursive lazy evaluation detected")
-		}
+	if stack != nil && lazyEvalStackContains(stack, shared.id) {
+		waiterOp.finish(false)
+		return cacheOperation{}, nil, nil, fmt.Errorf("recursive lazy evaluation detected")
 	}
 
 	stackCtx := context.WithValue(ctx, lazyEvalStackCtxKey{}, &lazyEvalStackNode{
 		id:     shared.id,
 		parent: stack,
 	})
+	return waiterOp, shared, stackCtx, nil
+}
+
+func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
+	waiterOp, shared, stackCtx, err := c.beginEvaluateOne(ctx, res)
+	if err != nil {
+		return err
+	}
+	if shared == nil {
+		return nil
+	}
+	defer func() {
+		if waiterOp.finish(rerr == nil) {
+			rerr = fmt.Errorf("evaluate: %w: %q", ErrCacheSessionReleased, waiterOp.sessionID)
+		}
+	}()
 
 	for {
 		shared.lazyMu.Lock()
@@ -3228,6 +3649,12 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		shared.lazyEval = currentLazyEval
 
 		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
+		attemptOp, err := c.beginContextOperation(attemptCtx)
+		if err != nil {
+			shared.lazyMu.Unlock()
+			cancel(err)
+			return fmt.Errorf("start lazy evaluation: %w", err)
+		}
 		evalCtx := attemptCtx
 		lazyEval := shared.lazyEval
 		resultCall := shared.loadResultCall()
@@ -3274,6 +3701,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		shared.lazyMu.Unlock()
 
 		go func() {
+			defer attemptOp.finish(false)
 			// The lazy op span and re-pointed callback context were minted under
 			// lazyMu before this attempt was published. A span created on one
 			// goroutine and ended on another is safe.
@@ -3365,9 +3793,19 @@ func (c *Cache) Close(ctx context.Context) error {
 			"hasSQLDB", c.sqlDB != nil,
 			"hasPersistDB", c.pdb != nil,
 		)
-		if err := c.persistCurrentState(ctx); err != nil {
-			slog.Error("failed to persist dagql cache during close", "err", err)
+		if err := c.waitForQuiescence(ctx); err != nil {
+			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
+			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
+		}
+		if err := c.releaseCleanupError(); err != nil {
+			slog.Error("dagql cache close found session cleanup errors; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
+		}
+		if c.closeErr == nil {
+			if err := c.persistCurrentState(ctx); err != nil {
+				slog.Error("failed to persist dagql cache during close", "err", err)
+				c.closeErr = errors.Join(c.closeErr, err)
+			}
 		}
 		if c.closeErr != nil {
 			if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
@@ -3399,6 +3837,7 @@ func (c *Cache) Close(ctx context.Context) error {
 
 func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
+		c.closing.Store(true)
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,
@@ -3827,7 +4266,15 @@ func (c *Cache) GetOrInitCall(
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
 	}
-	return c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+	op, err := c.beginSessionOperation(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get or init call: %w", err)
+	}
+	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+	if op.finish(callErr == nil && res != nil) {
+		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	return res, callErr
 }
 
 func (c *Cache) getOrInitCall(
