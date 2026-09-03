@@ -2,7 +2,7 @@
 
 author: shykes
 created: 2026-09-01
-status: design draft
+status: implemented
 related: https://github.com/dagger/dagger/issues/14024
 
 ## Context
@@ -11,12 +11,11 @@ The Dagger CLI defines many flags as root-persistent flags. Cobra therefore
 shows them in the help for every command, including commands for which the
 flags have no useful effect.
 
-This design separates the current global flags into four groups:
+This design separates the original global flags into four groups:
 
-1. Stable workspace settings move to `dagger.toml`. A generic configuration
-   override can change these settings for one invocation.
-2. Command-specific flags are available only when a command declares the
+1. Command-specific flags are available only when a command declares the
    required capability.
+2. Command-specific flags with one consumer move to that command.
 3. Bootstrap and framework flags stay global.
 4. Development controls stay available but hidden.
 
@@ -63,15 +62,15 @@ logs from the engine. Rendering commands expose internal trace details. No
 current command outside this capability union implements debug behavior.
 
 `--engine` selects the engine and requires `MayCallEngine`. The value `cloud`
-selects Dagger Cloud Engines. All other values use the existing runner-host URI
-syntax unchanged. The old `--cloud` flag is a hidden compatibility alias for
-`--engine=cloud`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` remains a deprecated
-fallback. The root command declares the capability locally because `dagger
-FILE` calls an engine, so `dagger --engine=cloud FILE` remains valid. Dynamic
-commands stop early global flag parsing at their first schema-owned token. For
-example, the first `--engine` in `dagger --engine=cloud api call deploy
---engine production` selects the engine, while the second is an argument of
-`deploy`.
+selects Dagger Cloud Engines. Other values use the supported engine URI
+schemes. The CLI passes these URIs through without a syntax change. The old
+`--cloud` flag is a hidden compatibility alias for `--engine=cloud`.
+
+The root command declares `MayCallEngine` locally because `dagger FILE` calls
+an engine. Thus, `dagger --engine=cloud FILE` remains valid. Dynamic commands
+stop early global flag parsing at their first schema-owned token. For example,
+the first `--engine` in `dagger --engine=cloud api call deploy --engine
+production` selects the engine. The second is an argument of `deploy`.
 
 The full list of engine URI schemes is too long for a usage message that 34
 commands print. Four surfaces teach the values, and all four read one catalog
@@ -143,38 +142,22 @@ command-local flag on function-call commands. It selects a local destination
 when the output handler supports saving the result. Other output-producing
 commands do not expose it until they define how an output path affects them.
 
-## Workspace Configuration
+## Deferred Configuration
 
-The proposed configuration shape is:
+Persisted engine selection, Cloud trace settings, and scale-out settings are
+not part of this change. This change does not add them to the workspace
+`dagger.toml` schema. A separate user-environment design will define their
+configuration shape and priority.
 
-```toml
-[cloud.traces]
-enabled = true
-org = "my-org"
-
-[cloud.engines]
-enabled = true
-scale-out = false
-```
-
-`cloud.<product>.enabled` enables client-side use for the current machine or
-workspace. It does not enable the product for the Cloud organization. The
-organization must enable and authorize the product separately.
-
-Cloud Checks configuration is not part of `dagger.toml`. It is server-side
-configuration managed through the Dagger Cloud API.
-
-`cloud.engines.scale-out` is independent of `cloud.engines.enabled`. A command
-can use a local primary engine and use Cloud Engines only for scale-out work.
-Until persisted configuration is implemented, the hidden `--scale-out` flag is
-local to `dagger check`, which is its only consumer.
+The hidden `--scale-out` flag is local to `dagger check`, which is its only
+consumer.
 
 ## Global Flag Disposition
 
-The table includes every current root-persistent flag. A dash in the `Change`
-column means that no change is proposed.
+The table includes every root-persistent flag from the initial design review. A
+dash in the `Change` column means that no change was proposed.
 
-| Change | Flag | Current | Capability or `dagger.toml` field |
+| Change | Flag | Original visibility | Capability or target |
 |---|---|---|---|
 | Scope to command and keep hidden | `--scale-out` | Hidden | `dagger check`; persisted configuration is deferred |
 | Scope by capability and rename | `--cloud` | Hidden | `--engine`; `MayCallEngine`; keep `--cloud` as a hidden deprecated alias |
@@ -201,11 +184,6 @@ column means that no change is proposed.
 
 ## Status
 
-`MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
-`MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
-capability scoping are implemented. All capability-scoped flag moves are
-implemented. The hide changes are also implemented. The configuration changes
-are planned. `--engine` and its hidden `--cloud` compatibility alias are scoped
-to `MayCallEngine`. The hidden `--scale-out` flag is local to `dagger check`.
-Persisted engine and scale-out settings remain part of the user configuration
-design.
+All changes in the table are implemented. `--engine` and its hidden `--cloud`
+compatibility alias require `MayCallEngine`. The hidden `--scale-out` flag is
+local to `dagger check`. Persisted settings remain outside this plan.
