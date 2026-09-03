@@ -3950,21 +3950,17 @@ export class Agent extends BaseClient {
    *
    * Never blocks, never drops; concurrent sends queue in order.
    *
-   * The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+   * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
    *
    * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
    * @param message The message text, appended to the agent's history as a prompt when a turn consumes it.
    */
-  send = async (message: string): Promise<ID> => {
-    if (this._send) {
-      return this._send
-    }
-
+  send = async (message: string): Promise<AgentMessage> => {
     const ctx = this._ctx.select("send", { message })
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return response
+    return new AgentMessage(ctx.copy().selectNode(response, "AgentMessage"))
   }
 
   /**
@@ -11638,19 +11634,15 @@ export class LLM extends BaseClient {
   /**
    * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
    *
-   * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+   * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
    * @param opts.name Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
    */
-  spawn = async (opts?: LLMSpawnOpts): Promise<ID> => {
-    if (this._spawn) {
-      return this._spawn
-    }
-
+  spawn = async (opts?: LLMSpawnOpts): Promise<Agent> => {
     const ctx = this._ctx.select("spawn", { ...opts })
 
     const response: Awaited<ID> = await ctx.execute()
 
-    return response
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
   }
 
   /**

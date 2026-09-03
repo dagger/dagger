@@ -237,9 +237,9 @@ type Agent implements Node {
 
   Never blocks, never drops; concurrent sends queue in order.
 
-  The returned message ID is pinned through the message lookup field, so the
-  handle it loads is re-addressable from any request in the session: cancel an
-  await and re-await freely.
+  The returned message is pinned through the message lookup field, so its handle
+  is re-addressable from any request in the session: cancel an await and
+  re-await freely.
 
   Sending to a never-started agent starts it (signal-with-start). Sending to a
   stopped agent restarts the same instance from its last committed snapshot.
@@ -4100,8 +4100,8 @@ type LLM implements Node & Syncer {
 
   Every spawn mints a unique agent instance — two spawns of an identical
   conversation are two distinct agents, like two calls to a process spawn. The
-  returned ID is pinned to the instance (via the agent lookup field), so
-  re-loading it re-addresses the same agent from any request in the session.
+  result is pinned to the instance (via the agent lookup field), so re-loading
+  its ID re-addresses the same agent from any request in the session.
   """
   spawn(
     """

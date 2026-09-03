@@ -654,20 +654,20 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 //
 // Never blocks, never drops; concurrent sends queue in order.
 //
-// The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
-func (r *Agent) Send(ctx context.Context, message string) (ID, error) {
-	if r.send != nil {
-		return *r.send, nil
-	}
+func (r *Agent) Send(ctx context.Context, message string) (*AgentMessage, error) {
 	q := r.query.Select("send")
 	q = q.Arg("message", message)
 
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &AgentMessage{
+		query: selectNode(q.Root(), id, "AgentMessage"),
+	}, nil
 }
 
 // The conversation as of the last committed step: immutable, branchable, persistable.
@@ -11271,11 +11271,8 @@ type LLMSpawnOpts struct {
 
 // Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
 //
-// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
-func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (ID, error) {
-	if r.spawn != nil {
-		return *r.spawn, nil
-	}
+// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	q := r.query.Select("spawn")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
@@ -11284,10 +11281,13 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (ID, error) {
 		}
 	}
 
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // LLMStepOpts contains options for LLM.Step

@@ -243,7 +243,7 @@ impl Node for NodeClient {
 /// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
 pub trait Syncer {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send;
 }
 #[derive(Clone)]
 pub struct SyncerClient {
@@ -263,9 +263,18 @@ impl SyncerClient {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn sync(&self) -> Result<Id, DaggerError> {
+    pub async fn sync(&self) -> Result<SyncerClient, DaggerError> {
         let query = self.selection.select("sync");
-        query.execute(self.graphql_client.clone()).await
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(SyncerClient {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Syncer"),
+            graphql_client: self.graphql_client.clone(),
+        })
     }
 }
 impl Loadable for SyncerClient {
@@ -290,10 +299,22 @@ impl Syncer for SyncerClient {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -727,16 +748,25 @@ impl Agent {
     }
     /// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
     /// Never blocks, never drops; concurrent sends queue in order.
-    /// The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+    /// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
     /// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
     ///
     /// # Arguments
     ///
     /// * `message` - The message text, appended to the agent's history as a prompt when a turn consumes it.
-    pub async fn send(&self, message: impl Into<String>) -> Result<Id, DaggerError> {
+    pub async fn send(&self, message: impl Into<String>) -> Result<AgentMessage, DaggerError> {
         let mut query = self.selection.select("send");
         query = query.arg("message", message.into());
-        query.execute(self.graphql_client.clone()).await
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(AgentMessage {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("AgentMessage"),
+            graphql_client: self.graphql_client.clone(),
+        })
     }
     /// The conversation as of the last committed step: immutable, branchable, persistable.
     /// The seed conversation if the agent never stepped.
@@ -1385,10 +1415,22 @@ impl Syncer for Changeset {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -4781,10 +4823,22 @@ impl Syncer for Container {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -6543,10 +6597,22 @@ impl Syncer for Directory {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -8054,10 +8120,22 @@ impl Syncer for File {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -10973,27 +11051,45 @@ impl Llm {
             .collect())
     }
     /// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
-    /// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+    /// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn spawn(&self) -> Result<Id, DaggerError> {
+    pub async fn spawn(&self) -> Result<Agent, DaggerError> {
         let query = self.selection.select("spawn");
-        query.execute(self.graphql_client.clone()).await
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
     }
     /// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
-    /// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+    /// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn spawn_opts<'a>(&self, opts: LlmSpawnOpts<'a>) -> Result<Id, DaggerError> {
+    pub async fn spawn_opts<'a>(&self, opts: LlmSpawnOpts<'a>) -> Result<Agent, DaggerError> {
         let mut query = self.selection.select("spawn");
         if let Some(name) = opts.name {
             query = query.arg("name", name);
         }
-        query.execute(self.graphql_client.clone()).await
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
     }
     /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
     ///
@@ -11390,10 +11486,22 @@ impl Syncer for Llm {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -12225,10 +12333,22 @@ impl Syncer for Module {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -12954,10 +13074,22 @@ impl Syncer for ModuleSource {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -14819,10 +14951,22 @@ impl Syncer for Service {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]
@@ -15063,10 +15207,22 @@ impl Syncer for Terminal {
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+    fn sync(&self) -> impl core::future::Future<Output = Result<SyncerClient, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let proc = self.proc.clone();
         let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        async move {
+            let id: Id = query.execute(graphql_client.clone()).await?;
+            Ok(SyncerClient {
+                proc,
+                selection: query
+                    .root()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Syncer"),
+                graphql_client,
+            })
+        }
     }
 }
 #[derive(Clone)]

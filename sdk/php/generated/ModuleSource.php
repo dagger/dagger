@@ -316,8 +316,8 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     public function sync(): ModuleSource
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
     }
 
     /**

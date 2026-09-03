@@ -222,8 +222,8 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     public function sync(): Module
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\Module::class, new \Dagger\Id((string)$id), 'Module');
     }
 
     /**

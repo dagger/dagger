@@ -18,22 +18,22 @@ const WorkerPrompt = "You are a worker hired by the hirer module."
 type Hirer struct{}
 
 // Hire extends the caller's seed here, spawns an agent from it, sends it one
-// message, and returns only the send's delivery evidence. The agent ID is
+// message, and returns only the send's delivery evidence. The agent handle is
 // deliberately NOT returned: the caller can reach the agent only through what
 // the trace advertises about it.
 func (m *Hirer) Hire(ctx context.Context, seed *dagger.LLM, name string, task string) (string, error) {
-	agentID, err := seed.WithSystemPrompt(WorkerPrompt).
+	agent, err := seed.WithSystemPrompt(WorkerPrompt).
 		Spawn(ctx, dagger.LLMSpawnOpts{Name: name})
 	if err != nil {
 		return "", err
 	}
-	msgID, err := dagger.Ref[*dagger.Agent](dag, agentID).Send(ctx, task)
+	message, err := agent.Send(ctx, task)
 	if err != nil {
 		return "", err
 	}
-	// Send returns the pinned message ID (the enqueue already happened);
-	// loading it replays the message(id:) lookup, not the send.
-	delivery, err := dagger.Ref[*dagger.AgentMessage](dag, msgID).Delivery(ctx)
+	// Send returns the pinned message handle (the enqueue already happened);
+	// reading it replays the message(id:) lookup, not the send.
+	delivery, err := message.Delivery(ctx)
 	if err != nil {
 		return "", err
 	}

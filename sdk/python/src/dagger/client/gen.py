@@ -998,16 +998,16 @@ class Agent(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "resume", _args)
 
-    async def send(self, message: str) -> str:
+    async def send(self, message: str) -> "AgentMessage":
         """Enqueue a message, on the record: it is consumed at a step boundary,
         appends to the agent's history, and steers the running turn or opens a
         new one.
 
         Never blocks, never drops; concurrent sends queue in order.
 
-        The returned message ID is pinned through the message lookup field, so
-        the handle it loads is re-addressable from any request in the session:
-        cancel an await and re-await freely.
+        The returned message is pinned through the message lookup field, so
+        its handle is re-addressable from any request in the session: cancel
+        an await and re-await freely.
 
         Sending to a never-started agent starts it (signal-with-start).
         Sending to a stopped agent restarts the same instance from its last
@@ -1020,16 +1020,6 @@ class Agent(Type):
             The message text, appended to the agent's history as a prompt when
             a turn consumes it.
 
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
         Raises
         ------
         ExecuteTimeoutError
@@ -1040,8 +1030,7 @@ class Agent(Type):
         _args = [
             Arg("message", message),
         ]
-        _ctx = self._select("send", _args)
-        return await _ctx.execute(str)
+        return await self._ctx.execute_sync(self, "send", _args, AgentMessage)
 
     def snapshot(self) -> "LLM":
         """The conversation as of the last committed step: immutable, branchable,
@@ -10846,16 +10835,16 @@ class LLM(Type):
         _ctx = self._select("skills", _args)
         return await _ctx.execute_object_list(LLMSkill)
 
-    async def spawn(self, *, name: str | None = None) -> str:
+    async def spawn(self, *, name: str | None = None) -> Agent:
         """Spawn the conversation as an agent: a startable, addressable
         evaluation loop seeded with this conversation's state, tools, and
         workspace.
 
         Every spawn mints a unique agent instance — two spawns of an identical
         conversation are two distinct agents, like two calls to a process
-        spawn. The returned ID is pinned to the instance (via the agent lookup
-        field), so re-loading it re-addresses the same agent from any request
-        in the session.
+        spawn. The result is pinned to the instance (via the agent lookup
+        field), so re-loading its ID re-addresses the same agent from any
+        request in the session.
 
         Parameters
         ----------
@@ -10863,16 +10852,6 @@ class LLM(Type):
             Display label for the agent — telemetry and error messages;
             carries no identity. Defaults to a short name derived from the
             conversation.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
 
         Raises
         ------
@@ -10884,8 +10863,7 @@ class LLM(Type):
         _args = [
             Arg("name", name, None),
         ]
-        _ctx = self._select("spawn", _args)
-        return await _ctx.execute(str)
+        return await self._ctx.execute_sync(self, "spawn", _args, Agent)
 
     def step(self, *, max_tokens: int | None = None) -> Self:
         """Advance the conversation by a single step: send the queued prompt or

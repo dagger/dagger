@@ -761,7 +761,11 @@ core/integration/agent_runtime_test.go), ratified here:
   `sync` fields. Lazy clients (Dang) force scalar-returning fields at the
   call site and re-hydrate the ID into an object via the annotation, so the
   side effect executes exactly once — eliminating the duplicate-send
-  hazard of re-forcing a lazy `DoNotCache` chain. Reads stay
+  hazard of re-forcing a lazy `DoNotCache` chain. Typed SDKs do the same
+  at codegen time: an `ID!` return with `@expectedType` is loaded as that
+  object (from schema `v1.0.0-beta.12`; older views keep the parent-only
+  rule), so `spawn` hands back an `Agent` and `send` an `AgentMessage`
+  rather than their IDs. Reads stay
   object-returning: `agent(id:)` and `message(id:)` (pure lookups), and
   `snapshot`. For `spawn` and `send` the returned ID is the pinned lookup
   chain (previous bullets), so re-hydrating it replays the lookup, not the
