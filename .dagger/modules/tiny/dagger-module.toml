@@ -3,4 +3,4 @@ name = "tiny"
 
 [entrypoint]
 kind = "dang"
-source = ".dagger/modules/tiny/entrypoint"
+source = "entrypoint"

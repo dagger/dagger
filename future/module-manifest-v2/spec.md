@@ -59,20 +59,28 @@ source = "./internal/dagger/entrypoint"
 | `manifestVersion` | The file format version. It must be `2`. |
 | `name` | The module name. |
 | `entrypoint.kind` | The entrypoint kind. It must be `dang` or `module`. |
-| `entrypoint.source` | An address that resolves to a `Directory`. |
+| `entrypoint.source` | A local path, or an address that resolves to a `Directory`. |
 
-The engine resolves the source with this operation:
+A local path is relative to the directory that contains `dagger-module.toml`.
+It must stay inside that directory. An absolute path is an error. It does not
+start at the host CWD, the workspace CWD, or the engine CWD. The engine reads
+the path from the module source context, so it resolves the same way for a
+local, Git, or directory module source.
+
+Any other value is an address. The engine resolves it with this operation:
 
 ```graphql
 address(source).directory()
 ```
 
-Any address accepted by `Address.directory` is valid. This includes a relative
-directory, a local directory, a remote Git directory, or a module function
-that returns a `Directory`.
+Any address accepted by `Address.directory` is valid. This includes a remote
+Git directory or a module function that returns a `Directory`.
 
-A relative address starts at the module workspace CWD. It does not start at
-the host CWD or the engine CWD.
+The engine classifies the value the same way as a module ref. A value that
+starts with `.` or `/` is a local path. A value with a `:`, such as a URL or a
+`module:function` address, is an address. A value with no `.` is a local path.
+Any other value is a local path when it exists under the module directory, and
+an address otherwise.
 
 The manifest name is the module name. The entrypoint cannot replace it.
 
@@ -304,7 +312,7 @@ All new GraphQL fields and types use the v1 schema view gate.
 | Area | Required behavior |
 | --- | --- |
 | Manifest | Read and write the four fields. Reject missing or invalid values. |
-| Source | Resolve local, workspace-relative, remote Git, and module-returned directories. |
+| Source | Resolve module-relative local paths, remote Git directories, and module-returned directories. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |
 | Constructors | Support zero or one constructor. Use the module name for one constructor. Reject more than one constructor. |

@@ -12,7 +12,6 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vito/dang/v2/pkg/dang"
 )
 
@@ -196,19 +195,7 @@ func resolveEntrypointSource(
 	}
 
 	address := src.Self().Entrypoint.Source
-	var directory dagql.ObjectResult[*core.Directory]
-	var err error
-	if isWorkspaceRelativeEntrypointSource(address) {
-		err = dag.Select(ctx, workspace, &directory, dagql.Selector{
-			Field: "directory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(address)}},
-		})
-	} else {
-		err = dag.Select(ctx, dag.Root(), &directory,
-			dagql.Selector{Field: "address", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(address)}}},
-			dagql.Selector{Field: "directory"},
-		)
-	}
+	directory, err := resolveEntrypointSourceDirectory(ctx, dag, src, address)
 	if err != nil {
 		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
 	}
@@ -237,12 +224,101 @@ func resolveEntrypointSource(
 	return entrySrcResult, workspace, nil
 }
 
-func isWorkspaceRelativeEntrypointSource(source string) bool {
-	if filepath.IsAbs(source) || strings.Contains(source, ":") {
-		return false
+// resolveEntrypointSourceDirectory loads the directory named by
+// entrypoint.source. A local path is relative to the directory that contains
+// dagger-module.toml and is read from the module's own context directory, so
+// it resolves the same way for local, git and directory module sources. Any
+// other value is an address that resolves to a Directory.
+func resolveEntrypointSourceDirectory(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+	address string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var directory dagql.ObjectResult[*core.Directory]
+
+	local, err := isLocalEntrypointSource(ctx, src, address)
+	if err != nil {
+		return directory, err
 	}
-	_, err := gitutil.ParseURL(source)
-	return err != nil
+	if !local {
+		err := dag.Select(ctx, dag.Root(), &directory,
+			dagql.Selector{Field: "address", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(address)}}},
+			dagql.Selector{Field: "directory"},
+		)
+		return directory, err
+	}
+
+	subpath, err := entrypointSourceSubpath(src.Self(), address)
+	if err != nil {
+		return directory, err
+	}
+	contextDir := src.Self().ContextDirectory
+	if contextDir.Self() == nil {
+		return directory, fmt.Errorf("module source has no context directory")
+	}
+	err = dag.Select(ctx, contextDir, &directory, dagql.Selector{
+		Field: "directory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}},
+	})
+	return directory, err
+}
+
+// isLocalEntrypointSource reports whether source is a path relative to the
+// module directory, as opposed to an address. It follows the same heuristic
+// as module refs: an explicit path prefix or a dot-free value is local, a value
+// with a ":" (a URL or a module:function address) is remote, and an ambiguous
+// value such as "example.com/repo" is local only when the path exists under
+// the module directory.
+func isLocalEntrypointSource(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	source string,
+) (bool, error) {
+	if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
+		return true, nil
+	}
+	if strings.Contains(source, ":") {
+		// URL, scp-like git URL, or a module:function address
+		return false, nil
+	}
+	switch core.FastModuleSourceKindCheck(source, "") {
+	case core.ModuleSourceKindLocal:
+		return true, nil
+	case core.ModuleSourceKindGit:
+		return false, nil
+	}
+	if src.Self() == nil || src.Self().ContextDirectory.Self() == nil {
+		return false, nil
+	}
+	subpath, err := entrypointSourceSubpath(src.Self(), source)
+	if err != nil {
+		// not a usable local path, so treat it as an address
+		return false, nil //nolint:nilerr
+	}
+	contextDir := src.Self().ContextDirectory
+	_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: contextDir}, subpath)
+	if err != nil {
+		return false, fmt.Errorf("stat %q in module directory: %w", source, err)
+	}
+	return exists, nil
+}
+
+// entrypointSourceSubpath converts a module-relative entrypoint path into a
+// path relative to the module source context directory.
+func entrypointSourceSubpath(src *core.ModuleSource, source string) (string, error) {
+	if filepath.IsAbs(source) {
+		return "", fmt.Errorf("entrypoint source path %q must be relative to the module directory", source)
+	}
+	cleaned := filepath.Clean(source)
+	if !filepath.IsLocal(cleaned) {
+		return "", fmt.Errorf("entrypoint source path %q escapes the module directory", source)
+	}
+	rootSubpath := src.SourceRootSubpath
+	if rootSubpath == "" {
+		rootSubpath = "."
+	}
+	return filepath.Join(rootSubpath, cleaned), nil
 }
 
 const moduleEntrypointInterface = `interface ModuleEntrypoint {
