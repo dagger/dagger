@@ -43,8 +43,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function interrupt(): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interrupt');
-        $this->queryLeaf($leafQueryBuilder, 'interrupt');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'interrupt');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -80,8 +80,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function pause(): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pause');
-        $this->queryLeaf($leafQueryBuilder, 'pause');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'pause');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -102,8 +102,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $error) {
         $leafQueryBuilder->setArgument('error', $error);
         }
-        $this->queryLeaf($leafQueryBuilder, 'rehydrate');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'rehydrate');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -119,8 +119,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reseed');
         $leafQueryBuilder->setArgument('conversation', $conversation);
-        $this->queryLeaf($leafQueryBuilder, 'reseed');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'reseed');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -133,8 +133,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function resume(): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resume');
-        $this->queryLeaf($leafQueryBuilder, 'resume');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'resume');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -142,15 +142,16 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Never blocks, never drops; concurrent sends queue in order.
      *
-     * The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
+     * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
      *
      * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
      */
-    public function send(string $message): Id
+    public function send(string $message): AgentMessage
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('send');
         $leafQueryBuilder->setArgument('message', $message);
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'send'));
+        $id = $this->queryLeaf($leafQueryBuilder, 'send');
+        return $this->client->loadObjectFromId(\Dagger\AgentMessage::class, new \Dagger\Id((string)$id), 'AgentMessage');
     }
 
     /**
@@ -174,8 +175,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function start(): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
-        $this->queryLeaf($leafQueryBuilder, 'start');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'start');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -198,8 +199,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
         }
-        $this->queryLeaf($leafQueryBuilder, 'stop');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'stop');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -213,7 +214,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $state) {
         $leafQueryBuilder->setArgument('state', $state);
         }
-        $this->queryLeaf($leafQueryBuilder, 'waitFor');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'waitFor');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 }

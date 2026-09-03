@@ -488,18 +488,18 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 
 	// spawn with an explicit display name, and with the name derived from
 	// the seed conversation's recipe digest. The typed SDK path: spawn
-	// executes eagerly (ID-returning), and the ID re-hydrates into the
-	// agent handle.
-	namedID, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
+	// executes eagerly (ID-returning in GraphQL), and the SDK loads the ID
+	// as the agent handle.
+	named, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
 		Spawn(ctx, dagger.LLMSpawnOpts{Name: "bob"})
 	require.NoError(t, err)
-	name, err := dagger.Ref[*dagger.Agent](c, namedID).Name(ctx)
+	name, err := named.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bob", name)
 
-	derivedID, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
+	derivedAgent, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
 	require.NoError(t, err)
-	derived, err := dagger.Ref[*dagger.Agent](c, derivedID).Name(ctx)
+	derived, err := derivedAgent.Name(ctx)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(derived, "agent-"), "derived name %q", derived)
 

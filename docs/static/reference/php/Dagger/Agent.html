@@ -233,7 +233,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_send">send</a>(string $message)
@@ -720,7 +720,7 @@
                     <div class="method-item">
                     <h3 id="method_send">
         <div class="location">at line 149</div>
-        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+        <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
     <strong>send</strong>(string $message)
         </code>
     </h3>
@@ -730,7 +730,7 @@
 
         <div class="method-description">
                             <p><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></p>                <p><p>Never blocks, never drops; concurrent sends queue in order.</p>
-<p>The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.</p>
+<p>The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.</p>
 <p>Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.</p></p>        
         </div>
         <div class="tags">
@@ -749,7 +749,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td><a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -763,7 +763,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_snapshot">
-        <div class="location">at line 163</div>
+        <div class="location">at line 164</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>snapshot</strong>()
         </code>
@@ -796,7 +796,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_start">
-        <div class="location">at line 174</div>
+        <div class="location">at line 175</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>start</strong>()
         </code>
@@ -828,7 +828,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_state">
-        <div class="location">at line 186</div>
+        <div class="location">at line 187</div>
         <code>                    <abbr title="Dagger\AgentState">AgentState</abbr>
     <strong>state</strong>()
         </code>
@@ -860,7 +860,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stop">
-        <div class="location">at line 195</div>
+        <div class="location">at line 196</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>stop</strong>(bool|null $kill = false)
         </code>
@@ -902,7 +902,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_waitFor">
-        <div class="location">at line 210</div>
+        <div class="location">at line 211</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>waitFor</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
         </code>
