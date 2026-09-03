@@ -329,7 +329,6 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
-		"dagger",
 		"dagger activity",
 		"dagger cloud check",
 		"dagger cloud rerun",
@@ -359,6 +358,7 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
 	for name, cmd := range map[string]*cobra.Command{
+		"root":          rootCmd,
 		"cloud login":   cloudLoginCmd,
 		"sdk installed": sdkInstalledCmd,
 		"sdk search":    sdkSearchCmd,
@@ -366,6 +366,38 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 	} {
 		require.False(t, commandHasCapability(cmd, maySelectWorkspace), name)
 	}
+}
+
+// The module selection flags are engine session parameters, so they require
+// MayCallEngine. Every command that installs them calls the engine except the
+// root command, which only carries them for the shell fallback.
+func TestModuleFlagsRequireMayCallEngine(t *testing.T) {
+	root := testRootCommand()
+
+	gated := []string{"load-module", "mod", "no-load-module", "no-mod", "allow-llm", "eager-runtime", "model"}
+	for _, name := range gated {
+		flag := root.Flags().Lookup(name)
+		require.NotNil(t, flag, name)
+		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
+		require.False(t, FlagAvailableForCommand(rootCmd, flag), name)
+		require.True(t, FlagAvailableForCommand(shellCmd, flag), name)
+		require.True(t, FlagAvailableForCommand(checksCmd, flag), name)
+	}
+
+	// -c is how a user reaches the shell from the root command, so it stays
+	// ungated and visible in the root usage message.
+	command := root.Flags().Lookup("command")
+	require.NotNil(t, command)
+	require.Empty(t, command.Annotations[flagCapabilitiesAnnotation])
+	require.True(t, FlagAvailableForCommand(rootCmd, command))
+
+	rootHelp := renderHelp(t, root)
+	for _, name := range gated {
+		require.NotContains(t, rootHelp, "--"+name, name)
+	}
+	require.Contains(t, rootHelp, "-c, --command")
+	require.Contains(t, renderHelp(t, shellCmd), "--model")
+	require.Contains(t, renderHelp(t, checksCmd), "--allow-llm")
 }
 
 func TestMayProduceOutputCommands(t *testing.T) {
@@ -482,12 +514,12 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	require.True(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
 	require.True(t, FlagAvailableForCommand(apiClientInitCmd, envFlag))
 	require.True(t, FlagAvailableForCommand(sdkInstalledCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(rootCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(setupCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(sdkInstallCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(workspaceRootCmd, envFlag))
 
 	readers := []string{
-		"dagger",
 		"dagger agent",
 		"dagger api call",
 		"dagger api client init",
@@ -535,7 +567,6 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
 
 	writers := []string{
-		"dagger",
 		"dagger api client init",
 		"dagger install",
 		"dagger module init",
@@ -562,7 +593,6 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 
 func TestMayRenderPipelineCommands(t *testing.T) {
 	expected := []string{
-		"dagger",
 		"dagger agent",
 		"dagger api call",
 		"dagger api listen",
@@ -587,6 +617,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayRenderPipeline))
 
 	for name, cmd := range map[string]*cobra.Command{
+		"root":      rootCmd,
 		"settings":  settingsCmd,
 		"setup":     setupCmd,
 		"installed": installedCmd,

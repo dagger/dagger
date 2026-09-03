@@ -250,11 +250,12 @@ func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {
 }
 
 func init() {
-	// The root command itself does not call the engine: bare `dagger` prints
-	// usage, and shell-style invocations (`dagger -c ...`) re-enter through
-	// `dagger shell`, which declares the capability. Keeping mayCallEngine off
-	// the root keeps engine flags out of the front-door usage message.
-	setLocalCommandCapabilities(rootCmd, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayRenderPipeline)
+	// The root command declares no capabilities. Bare `dagger` prints usage: it
+	// calls no engine, selects no workspace, reads no workspace configuration,
+	// and renders no pipeline, so its usage message stays free of those flags.
+	// Shell-style invocations (`dagger -c ...`, `dagger FILE`) do all of that,
+	// but they run `dagger shell`, which declares the capabilities;
+	// rootShellFallbackCommand routes the flag check there.
 	setLocalCommandCapabilities(workspaceCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	for _, cmd := range []*cobra.Command{

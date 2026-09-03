@@ -66,21 +66,6 @@ selects Dagger Cloud Engines. Other values use the supported engine URI
 schemes. The CLI passes these URIs through without a syntax change. The old
 `--cloud` flag is a hidden compatibility alias for `--engine=cloud`.
 
-The root command does not declare `MayCallEngine`. Bare `dagger` prints usage,
-so the front-door usage message stays free of the engine flags. Shell-style
-root invocations still call an engine: `dagger FILE` and `dagger -c COMMAND`
-run `dagger shell`, so the CLI checks their flags against the capabilities of
-`dagger shell`. Thus, `dagger --engine=cloud FILE` remains valid, and
-`dagger --engine=cloud` alone is an error. Dynamic commands stop early global
-flag parsing at their first schema-owned token. For example, the first
-`--engine` in `dagger --engine=cloud api call deploy --engine production`
-selects the engine. The second is an argument of `deploy`.
-
-A shell completion request (`__complete`) names the command that the user is
-completing, not the command that runs, so flag validation skips it. Completion
-hides the flags that the target command does not support, which gives the same
-result without an error.
-
 The full list of engine URI schemes is too long for a usage message that 34
 commands print. Four surfaces teach the values, and all four read one catalog
 in `engine/client/drivers`. A test asserts that the catalog covers the driver
@@ -109,6 +94,31 @@ Engine selection has this priority:
 
 The two environment variables remain silent compatibility inputs. Their
 replacement and removal plan belongs to the user-environment design.
+
+The root command declares no capabilities. Bare `dagger` prints usage: it calls
+no engine, selects no workspace, reads no workspace configuration, and renders
+no pipeline, so the front-door usage message stays free of those flags. It is
+left with `-c`, `--command` and `--verbose`. Shell-style root invocations still
+do all of that:
+`dagger FILE` and `dagger -c COMMAND` run `dagger shell`, so the CLI checks
+their flags against the capabilities of `dagger shell`. Thus,
+`dagger --engine=cloud FILE` remains valid, and `dagger --engine=cloud` alone
+is an error.
+
+The module selection flags follow the same rule. `-m`, `--load-module`,
+`-M`, `--no-load-module`, `--allow-llm`, `--eager-runtime`, and `--model` are
+engine session parameters, so they require `MayCallEngine`. Every command that
+installs them declares it except the root command, which carries them only for
+the shell fallback. `-c`, `--command` stays ungated: on the root command it is
+how a user reaches the shell, so the root usage message must keep naming it. Dynamic commands stop early global
+flag parsing at their first schema-owned token. For example, the first
+`--engine` in `dagger --engine=cloud api call deploy --engine production`
+selects the engine. The second is an argument of `deploy`.
+
+A shell completion request (`__complete`) names the command that the user is
+completing, not the command that runs, so flag validation skips it. Completion
+hides the flags that the target command does not support, which gives the same
+result without an error.
 
 `-i`, `--shell-on-error` asks the engine to open a shell in the failed
 container state when a non-internal container exec fails. It requires

@@ -36,29 +36,40 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 
 // moduleAddFlags adds common module-loading flags to a command.
 // If optional is true, it also adds the --no-load-module flag and marks --load-module and --no-load-module as mutually exclusive.
+// moduleAddFlags installs the module selection flags. Every consumer but the
+// root command calls the engine: loading a module, allowing an LLM, and eager
+// runtime loading are all engine session parameters. They therefore require
+// MayCallEngine, which keeps them out of the root command's usage message.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
-	flags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
+	moduleFlags := pflag.NewFlagSet("Module", pflag.ContinueOnError)
+	moduleFlags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
 	// --mod is the pre-1.0 name for --load-module; keep it as a deprecated
 	// alias so existing scripts and shebangs don't break.
-	flags.StringVar(&moduleURL, "mod", "", "")
-	_ = flags.MarkDeprecated("mod", "use --load-module (-m) instead")
+	moduleFlags.StringVar(&moduleURL, "mod", "", "")
+	_ = moduleFlags.MarkDeprecated("mod", "use --load-module (-m) instead")
 	if optional {
-		flags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
-		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
+		moduleFlags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
 		// --no-mod is the pre-1.0 name for --no-load-module; keep it as a
 		// deprecated alias so existing scripts and shebangs don't break.
-		flags.BoolVar(&moduleNoURL, "no-mod", false, "")
-		_ = flags.MarkDeprecated("no-mod", "use --no-load-module (-M) instead")
+		moduleFlags.BoolVar(&moduleNoURL, "no-mod", false, "")
+		_ = moduleFlags.MarkDeprecated("no-mod", "use --no-load-module (-M) instead")
 	}
 
 	var defaultAllowLLM []string
 	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
-	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
 
 	// Add the eager module loading flag to disable lazy load on runtime.
-	flags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+
+	setFlagSetCapabilities(moduleFlags, mayCallEngine)
+	flags.AddFlagSet(moduleFlags)
+
+	if optional {
+		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
+	}
 }
 
 func init() {
