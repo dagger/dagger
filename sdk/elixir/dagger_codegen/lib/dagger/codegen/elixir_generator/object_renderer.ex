@@ -171,29 +171,29 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         ]
 
       TypeRef.is_scalar?(field.type) ->
-        expected = Directive.expected_type(field.directives)
+        case id_handle_type(type, field) do
+          nil ->
+            "Client.execute(#{module_var}.client, query_builder)"
 
-        if expected != nil and expected == type.name and field.name != "id" do
-          output_type = Formatter.format_module(expected)
+          handle ->
+            output_type = Formatter.format_module(handle)
 
-          [
-            "with {:ok, id} <- Client.execute(#{module_var}.client, query_builder) do",
-            ?\n,
-            """
-              {:ok, %#{output_type}{
-                query_builder:
-                  QB.query()
-                  |> QB.select("node")
-                  |> QB.put_arg("id", id)
-                  |> QB.inline_fragment("#{expected}"),
-                client: #{module_var}.client
-              }}
-            """,
-            ?\n,
-            "end"
-          ]
-        else
-          "Client.execute(#{module_var}.client, query_builder)"
+            [
+              "with {:ok, id} <- Client.execute(#{module_var}.client, query_builder) do",
+              ?\n,
+              """
+                {:ok, %#{output_type}{
+                  query_builder:
+                    QB.query()
+                    |> QB.select("node")
+                    |> QB.put_arg("id", id)
+                    |> QB.inline_fragment("#{handle}"),
+                  client: #{module_var}.client
+                }}
+              """,
+              ?\n,
+              "end"
+            ]
         end
 
       TypeRef.is_list_of?(field.type, "SCALAR") ->
@@ -349,12 +349,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
           ":ok | {:error, term()}"
 
         TypeRef.is_scalar?(field.type) ->
-          expected = Directive.expected_type(field.directives)
-
-          if expected != nil and expected == type.name and field.name != "id" do
-            "{:ok, #{Formatter.format_module(expected)}.t()} | {:error, term()}"
-          else
-            Formatter.format_typespec_output_type(field.type)
+          case id_handle_type(type, field) do
+            nil -> Formatter.format_typespec_output_type(field.type)
+            handle -> "{:ok, #{Formatter.format_module(handle)}.t()} | {:error, term()}"
           end
 
         not type.supports_nullable_objects and field.type.kind in ["OBJECT", "INTERFACE"] ->
@@ -427,6 +424,22 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
       true ->
         ["optional_args[", key, ~c"]"]
+    end
+  end
+
+  # The type an ID-returning field loads, or nil when the ID is returned
+  # as-is (including the `id` field itself). The @expectedType directive names
+  # it: the parent's own ID (sync-likes) has always been loaded, and from the
+  # ID handle cutover on every expected type is, so `LLM.spawn` returns a
+  # `Dagger.Agent` rather than its ID. Older views keep the parent-only rule
+  # so their generated signatures don't move.
+  defp id_handle_type(_type, %Field{name: "id"}), do: nil
+
+  defp id_handle_type(type, %Field{directives: directives}) do
+    case Directive.expected_type(directives) do
+      nil -> nil
+      expected when expected == type.name -> expected
+      expected -> if type.supports_id_handles, do: expected
     end
   end
 

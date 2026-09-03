@@ -4,7 +4,7 @@ use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
 use crate::rust::functions::{
-    format_name, format_struct_comment, format_struct_name, render_required_args,
+    format_name, format_struct_comment, format_struct_name, id_handle_struct, render_required_args,
 };
 use crate::utility::OptionExt;
 
@@ -100,7 +100,12 @@ fn render_trait_method(
     // Build argument list (required args only for trait signatures)
     let args = render_trait_method_args(funcs, field);
 
-    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+    if let Some(handle) = id_handle_struct(funcs, field) {
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$handle, $dagger_error>> + Send;
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
         Some(quote! {
             $(field.description.pipe(|d| format_struct_comment(d)))
             fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<Option<$output_type>, $dagger_error>> + Send;
@@ -197,7 +202,26 @@ fn render_trait_impl_method(
 
     let (arg_sig, _arg_pass) = render_trait_impl_arg_parts(funcs, field);
 
-    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+    if let Some(graphql_name) = funcs.id_handle_type(field) {
+        // An ID handle: resolve the ID, then load the object it names.
+        let handle = id_handle_struct(funcs, field).unwrap_or_default();
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$(&handle), $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let proc = self.proc.clone();
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    let id: Id = query.execute(graphql_client.clone()).await?;
+                    Ok($(&handle) {
+                        proc,
+                        selection: query.root().select("node").arg("id", &id.0).inline_fragment($(genco::tokens::quoted(&graphql_name))),
+                        graphql_client,
+                    })
+                }
+            }
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
         let graphql_name = type_ref.get_non_null().name.clone().unwrap_or_default();
         Some(quote! {
             fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<Option<$(&output_type)>, $dagger_error>> + Send {

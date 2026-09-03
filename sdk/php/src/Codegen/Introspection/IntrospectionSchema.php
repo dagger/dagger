@@ -23,6 +23,26 @@ class IntrospectionSchema
 
     public function supportsNullableObjects(): bool
     {
+        return $this->schemaVersionAtLeast('1.0.0-beta.10');
+    }
+
+    /**
+     * Whether every ID-returning field carrying an @expectedType directive is
+     * loaded as the object it names. Older views only convert fields
+     * returning their parent's own ID (the sync-like shape).
+     */
+    public function supportsIdHandles(): bool
+    {
+        return $this->schemaVersionAtLeast('1.0.0-beta.12');
+    }
+
+    /**
+     * Compare the schema version against a feature cutover. Unknown or
+     * non-semver versions (development builds) get every feature; a beta
+     * prerelease is compared by its beta number, ignoring any dev suffix.
+     */
+    private function schemaVersionAtLeast(string $cutover): bool
+    {
         if ($this->version === null || $this->version === '') {
             return true;
         }
@@ -35,7 +55,7 @@ class IntrospectionSchema
             $version = $matches[1];
         }
 
-        return version_compare($version, '1.0.0-beta.10', '>=');
+        return version_compare($version, $cutover, '>=');
     }
 
     public function getType(string $name): ?IntrospectionType

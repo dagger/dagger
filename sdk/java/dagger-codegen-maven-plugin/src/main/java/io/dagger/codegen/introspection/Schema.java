@@ -15,6 +15,14 @@ public class Schema {
   private static final ComparableVersion NULLABLE_OBJECTS_VERSION =
       new ComparableVersion("1.0.0-beta.10");
 
+  /**
+   * The first schema version whose SDKs load every ID-returning field carrying an expectedType
+   * directive as the object it names. Older views only convert fields returning their parent's own
+   * ID (the sync-like shape).
+   */
+  private static final ComparableVersion ID_HANDLES_VERSION =
+      new ComparableVersion("1.0.0-beta.12");
+
   public static class SchemaContainer {
 
     @JsonbProperty("__schema")
@@ -80,6 +88,19 @@ public class Schema {
   }
 
   public boolean supportsNullableObjects() {
+    return schemaVersionAtLeast(NULLABLE_OBJECTS_VERSION);
+  }
+
+  /** Whether every expectedType-annotated ID return is loaded as its object. */
+  public boolean supportsIdHandles() {
+    return schemaVersionAtLeast(ID_HANDLES_VERSION);
+  }
+
+  /**
+   * Compares the schema version against a feature cutover. Unknown or non-semver versions
+   * (development builds) get every feature.
+   */
+  private boolean schemaVersionAtLeast(ComparableVersion cutover) {
     if (version == null || version.isBlank()) {
       return true;
     }
@@ -89,7 +110,7 @@ public class Schema {
     }
 
     String normalized = version.startsWith("v") ? version.substring(1) : version;
-    return new ComparableVersion(normalized).compareTo(NULLABLE_OBJECTS_VERSION) >= 0;
+    return new ComparableVersion(normalized).compareTo(cutover) >= 0;
   }
 
   public Type query() {

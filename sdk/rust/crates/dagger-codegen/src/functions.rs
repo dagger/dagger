@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc};
+use std::{collections::HashSet, ops::Deref, sync::Arc};
 
 use dagger_sdk::core::introspection::{
     DirectivesExt, FullType, FullTypeFields, InputValue, TypeRef, __TypeKind,
@@ -30,18 +30,32 @@ pub type DynFormatTypeFuncs = Arc<dyn FormatTypeFuncs + Send + Sync>;
 pub struct CommonFunctions {
     format_type_funcs: DynFormatTypeFuncs,
     supports_nullable_objects: bool,
+    supports_id_handles: bool,
+    interface_names: HashSet<String>,
 }
 
 impl CommonFunctions {
-    pub fn new(funcs: DynFormatTypeFuncs, schema_version: Option<&str>) -> Self {
+    pub fn new(
+        funcs: DynFormatTypeFuncs,
+        schema_version: Option<&str>,
+        interface_names: HashSet<String>,
+    ) -> Self {
         Self {
             format_type_funcs: funcs,
             supports_nullable_objects: supports_nullable_objects(schema_version),
+            supports_id_handles: supports_id_handles(schema_version),
+            interface_names,
         }
     }
 
     pub fn supports_nullable_objects(&self) -> bool {
         self.supports_nullable_objects
+    }
+
+    /// Whether the named schema type is an interface, whose handles load
+    /// into its `FooClient` struct.
+    pub fn is_interface(&self, name: &str) -> bool {
+        self.interface_names.contains(name)
     }
 
     pub fn format_input_type(&self, t: &TypeRef) -> String {
@@ -56,36 +70,41 @@ impl CommonFunctions {
         self.format_type(t, true, true)
     }
 
-    /// Returns true if a field returns an ID that should be converted back
-    /// to its parent object (i.e. a sync-like field). This mirrors Go's
-    /// `ConvertID`.
-    pub fn convert_id(field: &FullTypeFields) -> bool {
+    /// Returns true if the field returns an ID that should be converted into
+    /// an object: see `id_handle_type`. This mirrors Go's `ConvertID`.
+    pub fn convert_id(&self, field: &FullTypeFields) -> bool {
+        self.id_handle_type(field).is_some()
+    }
+
+    /// The GraphQL type an ID-returning field loads in the SDK, or `None`
+    /// when the ID is returned as-is (including the `id` field itself).
+    ///
+    /// The `@expectedType` directive names the object. Fields returning
+    /// their parent's own ID (sync-likes) have always been loaded as the
+    /// parent, and from the ID handle cutover on every expected type is
+    /// loaded, so `LLM.spawn` returns an `Agent` rather than its ID. Older
+    /// views keep the parent-only rule so their signatures don't move.
+    pub fn id_handle_type(&self, field: &FullTypeFields) -> Option<String> {
         // Never convert the `id` field itself.
         if field.name.as_deref() == Some("id") {
-            return false;
+            return None;
         }
-        let type_ref = match field.type_.as_ref() {
-            Some(t) => &t.type_ref,
-            None => return false,
-        };
-        // Must be a scalar (after unwrapping NON_NULL).
-        if !type_ref.is_scalar() {
-            return false;
+        let type_ref = &field.type_.as_ref()?.type_ref;
+        // Must be the ID scalar (after unwrapping NON_NULL).
+        if !type_ref.is_scalar() || !type_ref.is_id() {
+            return None;
         }
-        // Must actually be the ID scalar.
-        if !type_ref.is_id() {
-            return false;
+        let expected = field.directives.expected_type()?;
+        let parent_name = field
+            .parent_type
+            .as_ref()
+            .and_then(|p| p.name.as_deref())
+            .unwrap_or_default();
+        if expected == parent_name || self.supports_id_handles {
+            Some(expected)
+        } else {
+            None
         }
-        // Check @expectedType directive on the field.
-        if let Some(expected) = field.directives.expected_type() {
-            let parent_name = field
-                .parent_type
-                .as_ref()
-                .and_then(|p| p.name.as_deref())
-                .unwrap_or_default();
-            return expected == parent_name;
-        }
-        false
     }
 
     fn format_type(&self, t: &TypeRef, input: bool, immutable: bool) -> String {
@@ -167,18 +186,29 @@ impl CommonFunctions {
 }
 
 fn supports_nullable_objects(schema_version: Option<&str>) -> bool {
+    schema_version_at_least(schema_version, [1, 0, 0], ("beta", 10))
+}
+
+/// Whether every `@expectedType` ID return is loaded as its object.
+fn supports_id_handles(schema_version: Option<&str>) -> bool {
+    schema_version_at_least(schema_version, [1, 0, 0], ("beta", 12))
+}
+
+/// Compare a schema version against a feature's beta cutover. Unknown or
+/// non-semver versions (development builds) get every feature; a beta
+/// prerelease is compared by its beta number, ignoring any dev suffix.
+fn schema_version_at_least(
+    schema_version: Option<&str>,
+    cutover_core: [u64; 3],
+    cutover_prerelease: (&str, u64),
+) -> bool {
     let Some(version) = schema_version.filter(|version| !version.is_empty()) else {
         return true;
     };
     let version = version.trim_start_matches('v');
-    let Some((core, prerelease)) = version.split_once('-') else {
-        return version
-            .split('.')
-            .take(3)
-            .map(|part| part.parse::<u64>())
-            .collect::<Result<Vec<_>, _>>()
-            .map(|core| core.as_slice() >= &[1, 0, 0])
-            .unwrap_or(true);
+    let (core, prerelease) = match version.split_once('-') {
+        Some((core, prerelease)) => (core, Some(prerelease)),
+        None => (version, None),
     };
     let Ok(core) = core
         .split('.')
@@ -188,15 +218,21 @@ fn supports_nullable_objects(schema_version: Option<&str>) -> bool {
     else {
         return true;
     };
-    if core.as_slice() != [1, 0, 0] {
-        return core.as_slice() > &[1, 0, 0];
+    if core.as_slice() != cutover_core {
+        return core.as_slice() > &cutover_core;
     }
+    // A release of the cutover's core version has every feature.
+    let Some(prerelease) = prerelease else {
+        return true;
+    };
+    let (cutover_tag, cutover_number) = cutover_prerelease;
     prerelease
-        .strip_prefix("beta.")
+        .strip_prefix(cutover_tag)
+        .and_then(|rest| rest.strip_prefix('.'))
         .and_then(|number| number.split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|number| number.parse::<u64>().ok())
-        .map(|number| number >= 10)
-        .unwrap_or(prerelease > "beta")
+        .map(|number| number >= cutover_number)
+        .unwrap_or(prerelease > cutover_tag)
 }
 
 #[cfg(test)]

@@ -436,6 +436,135 @@ mod tests {
 }"#
     }
 
+    /// Minimal schema whose ID-returning fields name another object
+    /// (`LLM.spawn` -> `Agent`) and an interface (`LLM.syncer` -> `Syncer`).
+    fn id_handle_schema() -> &'static str {
+        r#"{
+  "__schema": {
+    "queryType": {"name": "Query"},
+    "mutationType": null,
+    "subscriptionType": null,
+    "types": [
+      {
+        "kind": "SCALAR", "name": "ID", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "INTERFACE", "name": "Syncer", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "Agent", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "LLM", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"LLM\""}]}]
+          },
+          {
+            "name": "spawn", "description": "Spawn an agent.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+          },
+          {
+            "name": "syncer", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "Query", "description": null,
+        "fields": [
+          {
+            "name": "llm", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "OBJECT", "name": "LLM", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }
+    ],
+    "directives": []
+  }
+}"#
+    }
+
+    #[test]
+    fn id_handles_load_their_expected_type() {
+        let code = generate_from_json(id_handle_schema());
+        // another object's ID loads that object
+        assert!(
+            code.contains("fn spawn") && code.contains("-> Result<Agent, DaggerError>"),
+            "spawn should return Agent:\n{}",
+            code.lines()
+                .filter(|l| l.contains("spawn"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(code.contains("inline_fragment(\"Agent\")"));
+        // an interface's ID loads through the interface's client struct
+        assert!(
+            code.contains("fn syncer") && code.contains("-> Result<SyncerClient, DaggerError>"),
+            "syncer should return SyncerClient:\n{}",
+            code.lines()
+                .filter(|l| l.contains("syncer"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(code.contains("inline_fragment(\"Syncer\")"));
+    }
+
+    #[test]
+    fn id_handles_keep_raw_ids_before_cutover() {
+        let code = generate_from_json_at_version(id_handle_schema(), "v1.0.0-beta.11");
+        assert!(
+            code.contains("fn spawn") && !code.contains("Result<Agent, DaggerError>"),
+            "spawn should return Id before the cutover:\n{}",
+            code.lines()
+                .filter(|l| l.contains("spawn"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(!code.contains("Result<SyncerClient, DaggerError>"));
+        assert!(!code.contains("inline_fragment(\"Agent\")"));
+    }
+
     #[test]
     fn convert_id_sync_returns_parent() {
         let code = generate_from_json(expected_type_schema());
