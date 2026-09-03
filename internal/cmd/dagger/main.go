@@ -76,7 +76,6 @@ var (
 	autoApply                 bool
 	engineFlag                string
 	_, useCloudEngine         = os.LookupEnv("DAGGER_CLOUD_ENGINE")
-	enableScaleOut            bool
 	profileFlag               bool
 
 	dotOutputFilePath string
@@ -446,10 +445,6 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 
 	installMayCallEngineFlags(flags)
 	installMayRenderPipelineFlags(flags)
-
-	// this flag enables scale-out for a few commands, e.g. checks
-	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
-	flags.Lookup("scale-out").Hidden = true
 
 	if err := flags.MarkHidden("workdir"); err != nil {
 		fmt.Fprintln(stdout, "Error hiding flag: workdir", err)

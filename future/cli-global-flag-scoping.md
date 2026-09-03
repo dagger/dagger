@@ -137,6 +137,8 @@ configuration managed through the Dagger Cloud API.
 
 `cloud.engines.scale-out` is independent of `cloud.engines.enabled`. A command
 can use a local primary engine and use Cloud Engines only for scale-out work.
+Until persisted configuration is implemented, the hidden `--scale-out` flag is
+local to `dagger check`, which is its only consumer.
 
 ## Global Flag Disposition
 
@@ -145,7 +147,7 @@ column means that no change is proposed.
 
 | Change | Flag | Current | Capability or `dagger.toml` field |
 |---|---|---|---|
-| Move to configuration | `--scale-out` | Hidden | `cloud.engines.scale-out` |
+| Scope to command and keep hidden | `--scale-out` | Hidden | `dagger check`; persisted configuration is deferred |
 | Scope by capability and rename | `--cloud` | Hidden | `--engine`; `MayCallEngine`; keep `--cloud` as a hidden deprecated alias |
 | Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
 | Scope by capability | `--env` | Visible | `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig` |
@@ -175,5 +177,6 @@ column means that no change is proposed.
 capability scoping are implemented. All capability-scoped flag moves are
 implemented. The hide changes are also implemented. The configuration changes
 are planned. `--engine` and its hidden `--cloud` compatibility alias are scoped
-to `MayCallEngine`. Persisted engine selection remains part of the user
-configuration design.
+to `MayCallEngine`. The hidden `--scale-out` flag is local to `dagger check`.
+Persisted engine and scale-out settings remain part of the user configuration
+design.
