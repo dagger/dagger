@@ -6,12 +6,11 @@ package vcs
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -169,56 +168,13 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "bitbucket.org/workspace/pkgname.git",
 			},
 		},
-		// GitLab public repo
-		{
-			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-			&RepoRoot{
-				VCS:  vcsGit,
-				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork",
-				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork",
-			},
-		},
+		// GitLab public repo with an explicit repository boundary.
 		{
 			"gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork",
 				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git",
-			},
-		},
-		{
-			"gitlab.com/dagger-modules/test/more/dagger-test-modules-public/../../..",
-			&RepoRoot{
-				VCS:  vcsGit,
-				Repo: "https://gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-				Root: "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-			},
-		},
-		// GitLab private repo
-		// behavior of private GitLab repos is different from public ones
-		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L114-126
-		// it relies on gitcredentials to authenticate
-		// todo(guillaume): rely on a dagger GitLab repo with a read-only PAT to test this
-		// {
-		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork/depth1/depth2", // private subgroup
-		// 	&RepoRoot{
-		// 		VCS:  vcsGit,
-		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup.git", // false positive returned by GitLab for privacy purpose
-		// 	},
-		// },
-		// {
-		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork.git/depth1/depth2", // private subgroup
-		// 	&RepoRoot{
-		// 		VCS:  vcsGit,
-		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup/mywork",
-		// 	},
-		// },
-		{ // vanity URL, TODO: improve test by changing dagger's redirection
-			"dagger.io/dagger",
-			&RepoRoot{
-				VCS:  vcsGit,
-				Repo: "https://github.com/dagger/dagger-go-sdk",
-				Root: "dagger.io/dagger",
 			},
 		},
 		{
@@ -414,210 +370,27 @@ func TestFromDir(t *testing.T) {
 	}
 }
 
-var parseMetaGoImportsTests = []struct {
-	in  string
-	out []metaImport
-}{
-	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
-	},
-	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		<meta name="go-import" content="baz/quux git http://github.com/rsc/baz/quux">`,
-		[]metaImport{
-			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
-			{"baz/quux", "git", "http://github.com/rsc/baz/quux"},
-		},
-	},
-	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		<meta name="go-import" content="foo/bar mod http://github.com/rsc/baz/quux">`,
-		[]metaImport{
-			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
-		},
-	},
-	{
-		`<meta name="go-import" content="foo/bar mod http://github.com/rsc/baz/quux">
-		<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{
-			{"foo/bar", "git", "https://github.com/rsc/foo/bar"},
-		},
-	},
-	{
-		`<head>
-		<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		</head>`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
-	},
-	{
-		`<meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">
-		<body>`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
-	},
-	{
-		`<!doctype html><meta name="go-import" content="foo/bar git https://github.com/rsc/foo/bar">`,
-		[]metaImport{{"foo/bar", "git", "https://github.com/rsc/foo/bar"}},
-	},
-	{
-		// XML doesn't like <div style=position:relative>.
-		`<!doctype html><title>Page Not Found</title><meta name=go-import content="chitin.io/chitin git https://github.com/chitin-io/chitin"><div style=position:relative>DRAFT</div>`,
-		[]metaImport{{"chitin.io/chitin", "git", "https://github.com/chitin-io/chitin"}},
-	},
-	{
-		`<meta name="go-import" content="myitcv.io git https://github.com/myitcv/x">
-	        <meta name="go-import" content="myitcv.io/blah2 mod https://raw.githubusercontent.com/myitcv/pubx/master">
-	        `,
-		[]metaImport{{"myitcv.io", "git", "https://github.com/myitcv/x"}},
-	},
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
-func TestParseMetaGoImports(t *testing.T) {
-	for i, tt := range parseMetaGoImportsTests {
-		out, err := parseMetaGoImports(strings.NewReader(tt.in))
-		if err != nil {
-			t.Errorf("test#%d: %v", i, err)
-			continue
-		}
-		if !reflect.DeepEqual(out, tt.out) {
-			t.Errorf("test#%d:\n\thave %q\n\twant %q", i, out, tt.out)
-		}
+func TestRepoRootForImportPathDoesNotRequestGoVanityMetadata(t *testing.T) {
+	originalHTTPClient := httpClient
+	t.Cleanup(func() { httpClient = originalHTTPClient })
+
+	requested := false
+	httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requested = true
+		return nil, errors.New("unexpected HTTP request")
+	})}
+
+	_, err := RepoRootForImportPath("vanity.example/foo", true)
+	if err == nil {
+		t.Fatal("expected an unrecognized import path error")
 	}
-}
-
-func TestValidateRepoRoot(t *testing.T) {
-	tests := []struct {
-		root string
-		ok   bool
-	}{
-		{
-			root: "",
-			ok:   false,
-		},
-		{
-			root: "http://",
-			ok:   true,
-		},
-		{
-			root: "git+ssh://",
-			ok:   true,
-		},
-		{
-			root: "http#://",
-			ok:   false,
-		},
-		{
-			root: "-config",
-			ok:   false,
-		},
-		{
-			root: "-config://",
-			ok:   false,
-		},
-	}
-
-	for _, test := range tests {
-		err := validateRepoRoot(test.root)
-		ok := err == nil
-		if ok != test.ok {
-			want := "error"
-			if test.ok {
-				want = "nil"
-			}
-			t.Errorf("validateRepoRoot(%q) = %q, want %s", test.root, err, want)
-		}
-	}
-}
-
-func TestMatchGoImport(t *testing.T) {
-	tests := []struct {
-		imports []metaImport
-		path    string
-		mi      metaImport
-		err     error
-	}{
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo/",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/fooa",
-			mi:   metaImport{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo/bar",
-			err:  errors.New("should not be allowed to create nested repo"),
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo/bar/baz",
-			err:  errors.New("should not be allowed to create nested repo"),
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo/bar/baz/qux",
-			err:  errors.New("should not be allowed to create nested repo"),
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com/user/foo/bar/baz/",
-			err:  errors.New("should not be allowed to create nested repo"),
-		},
-		{
-			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-			},
-			path: "example.com",
-			err:  errors.New("pathologically short path"),
-		},
-	}
-
-	for _, test := range tests {
-		mi, err := matchGoImport(test.imports, test.path)
-		if mi != test.mi {
-			t.Errorf("unexpected metaImport; got %v, want %v", mi, test.mi)
-		}
-
-		got := err
-		want := test.err
-		if (got == nil) != (want == nil) {
-			t.Errorf("unexpected error; got %v, want %v", got, want)
-		}
+	if requested {
+		t.Fatal("unexpected Go vanity metadata request")
 	}
 }
