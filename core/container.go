@@ -7163,6 +7163,9 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]engi
 	var eg errgroup.Group
 	var mu sync.Mutex
 	for _, variant := range variants {
+		if err := variant.evaluatePartsDirect(ctx, ContainerPartMetadata); err != nil {
+			return nil, err
+		}
 		platformString := variant.Platform.Format()
 		if _, ok := inputByPlatform[platformString]; ok {
 			return nil, fmt.Errorf("duplicate platform %q", platformString)
@@ -7171,7 +7174,7 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]engi
 		variant := variant
 		platformKey := platformString
 		eg.Go(func() error {
-			if err := variant.Evaluate(ctx); err != nil {
+			if err := variant.evaluatePartsDirect(ctx, ContainerPartMetadata, ContainerPartFS); err != nil {
 				return err
 			}
 			if variant.FS == nil {
