@@ -12024,38 +12024,39 @@ func (r *ModuleConfigClient) AsNode() Node {
 	}
 }
 
-// A Dagger module manifest in the current unversioned format.
-type ModuleManifestV1 struct {
+// A Dagger module manifest.
+type ModuleManifest struct {
 	query *querybuilder.Selection
 
-	id *ID
+	id       *ID
+	validate *Void
 }
-type WithModuleManifestV1Func func(r *ModuleManifestV1) *ModuleManifestV1
+type WithModuleManifestFunc func(r *ModuleManifest) *ModuleManifest
 
-// With calls the provided function with current ModuleManifestV1.
+// With calls the provided function with current ModuleManifest.
 //
 // This is useful for reusability and readability by not breaking the calling chain.
-func (r *ModuleManifestV1) With(f WithModuleManifestV1Func) *ModuleManifestV1 {
+func (r *ModuleManifest) With(f WithModuleManifestFunc) *ModuleManifest {
 	return f(r)
 }
 
-func (r *ModuleManifestV1) WithGraphQLQuery(q *querybuilder.Selection) *ModuleManifestV1 {
-	return &ModuleManifestV1{
+func (r *ModuleManifest) WithGraphQLQuery(q *querybuilder.Selection) *ModuleManifest {
+	return &ModuleManifest{
 		query: q,
 	}
 }
 
-// Serialize the manifest as dagger-module.toml.
-func (r *ModuleManifestV1) AsFile() *File {
-	q := r.query.Select("asFile")
+// Return a directory with all applicable manifest files.
+func (r *ModuleManifest) Directory() *Directory {
+	q := r.query.Select("directory")
 
-	return &File{
+	return &Directory{
 		query: q,
 	}
 }
 
-// A unique identifier for this ModuleManifestV1.
-func (r *ModuleManifestV1) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this ModuleManifest.
+func (r *ModuleManifest) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -12068,17 +12069,17 @@ func (r *ModuleManifestV1) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ModuleManifestV1) XXX_GraphQLType() string {
-	return "ModuleManifestV1"
+func (r *ModuleManifest) XXX_GraphQLType() string {
+	return "ModuleManifest"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ModuleManifestV1) XXX_GraphQLIDType() string {
+func (r *ModuleManifest) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ModuleManifestV1) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *ModuleManifest) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -12086,7 +12087,7 @@ func (r *ModuleManifestV1) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *ModuleManifestV1) MarshalJSON() ([]byte, error) {
+func (r *ModuleManifest) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -12094,236 +12095,167 @@ func (r *ModuleManifestV1) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Set the required engine API version.
-//
-// The default is the running engine version.
-func (r *ModuleManifestV1) WithEngineVersion(version string) *ModuleManifestV1 {
-	q := r.query.Select("withEngineVersion")
-	q = q.Arg("version", version)
-
-	return &ModuleManifestV1{
-		query: q,
-	}
-}
-
-// Add a path from the module context to the runtime input.
-//
-// This operation is additive.
-func (r *ModuleManifestV1) WithInclude(path string) *ModuleManifestV1 {
-	q := r.query.Select("withInclude")
-	q = q.Arg("path", path)
-
-	return &ModuleManifestV1{
-		query: q,
-	}
-}
-
-// Set the runtime that builds and executes the module.
-func (r *ModuleManifestV1) WithRuntime(source string) *ModuleManifestV1 {
-	q := r.query.Select("withRuntime")
-	q = q.Arg("source", source)
-
-	return &ModuleManifestV1{
-		query: q,
-	}
-}
-
-// Set the module implementation path relative to dagger-module.toml.
-//
-// The default is '.'.
-func (r *ModuleManifestV1) WithSource(path string) *ModuleManifestV1 {
-	q := r.query.Select("withSource")
-	q = q.Arg("path", path)
-
-	return &ModuleManifestV1{
-		query: q,
-	}
-}
-
-// AsNode returns this ModuleManifestV1 as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *ModuleManifestV1) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// A Dagger module manifest in format version 2.
-type ModuleManifestV2 struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithModuleManifestV2Func func(r *ModuleManifestV2) *ModuleManifestV2
-
-// With calls the provided function with current ModuleManifestV2.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *ModuleManifestV2) With(f WithModuleManifestV2Func) *ModuleManifestV2 {
-	return f(r)
-}
-
-func (r *ModuleManifestV2) WithGraphQLQuery(q *querybuilder.Selection) *ModuleManifestV2 {
-	return &ModuleManifestV2{
-		query: q,
-	}
-}
-
-// Serialize the manifest as dagger-module.toml.
-func (r *ModuleManifestV2) AsFile() *File {
-	q := r.query.Select("asFile")
+// Serialize the legacy fields as dagger.json.
+func (r *ModuleManifest) LegacyJSONFile() *File {
+	q := r.query.Select("legacyJSONFile")
 
 	return &File{
 		query: q,
 	}
 }
 
-// A unique identifier for this ModuleManifestV2.
-func (r *ModuleManifestV2) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
+// Serialize the manifest as dagger-module.toml.
+func (r *ModuleManifest) TomlFile() *File {
+	q := r.query.Select("tomlFile")
+
+	return &File{
+		query: q,
 	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ModuleManifestV2) XXX_GraphQLType() string {
-	return "ModuleManifestV2"
+// ModuleManifestValidateOpts contains options for ModuleManifest.Validate
+type ModuleManifestValidateOpts struct {
+	// Optional target engine version.
+	TargetEngineVersion string
 }
 
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ModuleManifestV2) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ModuleManifestV2) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
+// Validate the manifest.
+//
+// If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+func (r *ModuleManifest) Validate(ctx context.Context, opts ...ModuleManifestValidateOpts) error {
+	if r.validate != nil {
+		return nil
 	}
-	return string(id), nil
-}
-
-func (r *ModuleManifestV2) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
+	q := r.query.Select("validate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `targetEngineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetEngineVersion) {
+			q = q.Arg("targetEngineVersion", opts[i].TargetEngineVersion)
+		}
 	}
-	return json.Marshal(id)
+
+	return q.Execute(ctx)
 }
 
-// Use the built-in Dang entrypoint driver.
-func (r *ModuleManifestV2) WithDangEntrypoint(source string) *ModuleManifestV2 {
+// Use the built-in Dang entrypoint.
+func (r *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
 	q := r.query.Select("withDangEntrypoint")
 	q = q.Arg("source", source)
 
-	return &ModuleManifestV2{
+	return &ModuleManifest{
 		query: q,
 	}
 }
 
-// Use another module as the entrypoint driver.
-func (r *ModuleManifestV2) WithModuleEntrypoint(source string) *ModuleManifestV2 {
+// Add the legacy Dang runtime.
+func (r *ModuleManifest) WithLegacyDangRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyDangRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy Elixir runtime.
+func (r *ModuleManifest) WithLegacyElixirRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyElixirRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Set the engine version for the legacy runtime.
+//
+// The default is the running engine version.
+func (r *ModuleManifest) WithLegacyEngineVersion(version string) *ModuleManifest {
+	q := r.query.Select("withLegacyEngineVersion")
+	q = q.Arg("version", version)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy Go runtime.
+func (r *ModuleManifest) WithLegacyGoRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyGoRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add an include path for the legacy runtime.
+//
+// This operation is additive.
+func (r *ModuleManifest) WithLegacyInclude(path string) *ModuleManifest {
+	q := r.query.Select("withLegacyInclude")
+	q = q.Arg("path", path)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy Java runtime.
+func (r *ModuleManifest) WithLegacyJavaRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyJavaRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy PHP runtime.
+func (r *ModuleManifest) WithLegacyPHPRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyPHPRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy Python runtime.
+func (r *ModuleManifest) WithLegacyPythonRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyPythonRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Add the legacy TypeScript runtime.
+func (r *ModuleManifest) WithLegacyTypescriptRuntime() *ModuleManifest {
+	q := r.query.Select("withLegacyTypescriptRuntime")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Use another module as the entrypoint.
+func (r *ModuleManifest) WithModuleEntrypoint(source string) *ModuleManifest {
 	q := r.query.Select("withModuleEntrypoint")
 	q = q.Arg("source", source)
 
-	return &ModuleManifestV2{
+	return &ModuleManifest{
 		query: q,
 	}
 }
 
-// AsNode returns this ModuleManifestV2 as a Node.
+// Remove the legacy runtime, engine version, and include paths.
+func (r *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
+	q := r.query.Select("withoutLegacyFields")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// AsNode returns this ModuleManifest as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *ModuleManifestV2) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// Versioned Dagger module manifest builders.
-type ModuleManifestVersions struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-
-func (r *ModuleManifestVersions) WithGraphQLQuery(q *querybuilder.Selection) *ModuleManifestVersions {
-	return &ModuleManifestVersions{
-		query: q,
-	}
-}
-
-// A unique identifier for this ModuleManifestVersions.
-func (r *ModuleManifestVersions) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ModuleManifestVersions) XXX_GraphQLType() string {
-	return "ModuleManifestVersions"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ModuleManifestVersions) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ModuleManifestVersions) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ModuleManifestVersions) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Construct a manifest in the current unversioned format.
-//
-// The generated file does not contain manifestVersion = 1.
-func (r *ModuleManifestVersions) V1(name string) *ModuleManifestV1 {
-	q := r.query.Select("v1")
-	q = q.Arg("name", name)
-
-	return &ModuleManifestV1{
-		query: q,
-	}
-}
-
-// Construct a manifest in format version 2.
-func (r *ModuleManifestVersions) V2(name string) *ModuleManifestV2 {
-	q := r.query.Select("v2")
-	q = q.Arg("name", name)
-
-	return &ModuleManifestV2{
-		query: q,
-	}
-}
-
-// AsNode returns this ModuleManifestVersions as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *ModuleManifestVersions) AsNode() Node {
+func (r *ModuleManifest) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -13993,11 +13925,12 @@ func (r *Query) Module() *Module {
 	}
 }
 
-// Construct a versioned module manifest.
-func (r *Query) ModuleManifest() *ModuleManifestVersions {
+// Construct a module manifest.
+func (r *Query) ModuleManifest(name string) *ModuleManifest {
 	q := r.query.Select("moduleManifest")
+	q = q.Arg("name", name)
 
-	return &ModuleManifestVersions{
+	return &ModuleManifest{
 		query: q,
 	}
 }

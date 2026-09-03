@@ -515,14 +515,14 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Construct a versioned module manifest.
+  Construct a module manifest.
   """
-  @spec module_manifest(t()) :: Dagger.ModuleManifestVersions.t()
-  def module_manifest(%__MODULE__{} = client) do
+  @spec module_manifest(t(), String.t()) :: Dagger.ModuleManifest.t()
+  def module_manifest(%__MODULE__{} = client, name) do
     query_builder =
-      client.query_builder |> QB.select("moduleManifest")
+      client.query_builder |> QB.select("moduleManifest") |> QB.put_arg("name", name)
 
-    %Dagger.ModuleManifestVersions{
+    %Dagger.ModuleManifest{
       query_builder: query_builder,
       client: client.client
     }

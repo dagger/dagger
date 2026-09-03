@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A structured Dagger module manifest.</p></p>                    </div>
+            <p><p>A Dagger module manifest.</p></p>                    </div>
             
         
     
@@ -143,12 +143,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asFile">asFile</a>()
+                    <a href="#method_directory">directory</a>()
         
-                                            <p><p>Serialize the manifest as a dagger-module.toml file.</p></p>                </div>
+                                            <p><p>Return a directory with all applicable manifest files.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -159,6 +159,156 @@
                     <a href="#method_id">id</a>()
         
                                             <p><p>A unique identifier for this ModuleManifest.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_legacyJSONFile">legacyJSONFile</a>()
+        
+                                            <p><p>Serialize the legacy fields as dagger.json.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_tomlFile">tomlFile</a>()
+        
+                                            <p><p>Serialize the manifest as dagger-module.toml.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    void
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_validate">validate</a>(string|null $targetEngineVersion = null)
+        
+                                            <p><p>Validate the manifest.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withDangEntrypoint">withDangEntrypoint</a>(string $source)
+        
+                                            <p><p>Use the built-in Dang entrypoint.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyDangRuntime">withLegacyDangRuntime</a>()
+        
+                                            <p><p>Add the legacy Dang runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyElixirRuntime">withLegacyElixirRuntime</a>()
+        
+                                            <p><p>Add the legacy Elixir runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyEngineVersion">withLegacyEngineVersion</a>(string $version)
+        
+                                            <p><p>Set the engine version for the legacy runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyGoRuntime">withLegacyGoRuntime</a>()
+        
+                                            <p><p>Add the legacy Go runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyInclude">withLegacyInclude</a>(string $path)
+        
+                                            <p><p>Add an include path for the legacy runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyJavaRuntime">withLegacyJavaRuntime</a>()
+        
+                                            <p><p>Add the legacy Java runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyPHPRuntime">withLegacyPHPRuntime</a>()
+        
+                                            <p><p>Add the legacy PHP runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyPythonRuntime">withLegacyPythonRuntime</a>()
+        
+                                            <p><p>Add the legacy Python runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLegacyTypescriptRuntime">withLegacyTypescriptRuntime</a>()
+        
+                                            <p><p>Add the legacy TypeScript runtime.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withModuleEntrypoint">withModuleEntrypoint</a>(string $source)
+        
+                                            <p><p>Use another module as the entrypoint.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withoutLegacyFields">withoutLegacyFields</a>()
+        
+                                            <p><p>Remove the legacy runtime, engine version, and include paths.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -257,10 +407,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asFile">
+                    <h3 id="method_directory">
         <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>asFile</strong>()
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>directory</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -268,7 +418,7 @@
             
 
         <div class="method-description">
-                            <p><p>Serialize the manifest as a dagger-module.toml file.</p></p>                        
+                            <p><p>Return a directory with all applicable manifest files.</p></p>                        
         </div>
         <div class="tags">
             
@@ -276,7 +426,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -309,6 +459,536 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_legacyJSONFile">
+        <div class="location">at line 37</div>
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>legacyJSONFile</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Serialize the legacy fields as dagger.json.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_tomlFile">
+        <div class="location">at line 46</div>
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>tomlFile</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Serialize the manifest as dagger-module.toml.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_validate">
+        <div class="location">at line 57</div>
+        <code>                    void
+    <strong>validate</strong>(string|null $targetEngineVersion = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Validate the manifest.</p></p>                <p><p>If targetEngineVersion is set, also validate the legacy runtime against that engine version.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$targetEngineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>void</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withDangEntrypoint">
+        <div class="location">at line 69</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withDangEntrypoint</strong>(string $source)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Use the built-in Dang entrypoint.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$source</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyDangRuntime">
+        <div class="location">at line 79</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyDangRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy Dang runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyElixirRuntime">
+        <div class="location">at line 88</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyElixirRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy Elixir runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyEngineVersion">
+        <div class="location">at line 99</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyEngineVersion</strong>(string $version)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Set the engine version for the legacy runtime.</p></p>                <p><p>The default is the running engine version.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$version</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyGoRuntime">
+        <div class="location">at line 109</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyGoRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy Go runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyInclude">
+        <div class="location">at line 120</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyInclude</strong>(string $path)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add an include path for the legacy runtime.</p></p>                <p><p>This operation is additive.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$path</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyJavaRuntime">
+        <div class="location">at line 130</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyJavaRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy Java runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyPHPRuntime">
+        <div class="location">at line 139</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyPHPRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy PHP runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyPythonRuntime">
+        <div class="location">at line 148</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyPythonRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy Python runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLegacyTypescriptRuntime">
+        <div class="location">at line 157</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withLegacyTypescriptRuntime</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add the legacy TypeScript runtime.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withModuleEntrypoint">
+        <div class="location">at line 166</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withModuleEntrypoint</strong>(string $source)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Use another module as the entrypoint.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$source</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withoutLegacyFields">
+        <div class="location">at line 176</div>
+        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
+    <strong>withoutLegacyFields</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Remove the legacy runtime, engine version, and include paths.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
             <td></td>
         </tr>
     </table>

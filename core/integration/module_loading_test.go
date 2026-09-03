@@ -87,6 +87,30 @@ func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithConta
 	}
 }
 
+// TestFatModuleManifestUsesLegacyRuntime verifies that the current engine can
+// load a fat TOML manifest through its legacy runtime. The entrypoint source is
+// intentionally invalid because this engine does not support entrypoints yet.
+func (ModuleLoadingSuite) TestFatModuleManifestUsesLegacyRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	manifest := c.ModuleManifest("fat").
+		WithDangEntrypoint("./missing-entrypoint").
+		WithLegacyDangRuntime()
+
+	ctr := goGitBase(t, c).
+		WithDirectory(".", manifest.Directory().WithoutFile("dagger.json")).
+		WithNewFile("main.dang", `
+type Fat {
+  pub message: String! {
+    "loaded through the legacy runtime"
+  }
+}
+`)
+
+	out, err := ctr.With(daggerCallAt(".", "message")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "loaded through the legacy runtime", strings.TrimSpace(out))
+}
+
 // TestModuleSourceResolution should pin down how module loading behaves before
 // arbitration, including the cases where a path does not actually resolve to a
 // module source.
