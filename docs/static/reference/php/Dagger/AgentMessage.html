@@ -143,16 +143,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_await">await</a>()
-        
-                                            <p><p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <abbr title="Dagger\AgentMessageDelivery">AgentMessageDelivery</abbr>
                 </div>
                 <div class="col-md-8">
@@ -179,6 +169,16 @@
                     <a href="#method_ref">ref</a>()
         
                                             <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_response">response</a>()
+        
+                                            <p><p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -277,42 +277,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_await">
-        <div class="location">at line 25</div>
-        <code>                    string
-    <strong>await</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p></p>                <p><p>Idempotent: cancel and re-await freely; concurrent waiters share the result.</p>
-<p>Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.</p>
-<p>Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_delivery">
-        <div class="location">at line 36</div>
+        <div class="location">at line 21</div>
         <code>                    <abbr title="Dagger\AgentMessageDelivery">AgentMessageDelivery</abbr>
     <strong>delivery</strong>()
         </code>
@@ -344,7 +310,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 45</div>
+        <div class="location">at line 30</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -376,7 +342,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 56</div>
+        <div class="location">at line 41</div>
         <code>                    string
     <strong>ref</strong>()
         </code>
@@ -387,6 +353,40 @@
 
         <div class="method-description">
                             <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;.</p></p>                <p><p>This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_response">
+        <div class="location">at line 56</div>
+        <code>                    string
+    <strong>response</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p></p>                <p><p>Idempotent: cancel and request the response again freely; concurrent waiters share the result.</p>
+<p>Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.</p>
+<p>Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.</p></p>        
         </div>
         <div class="tags">
             

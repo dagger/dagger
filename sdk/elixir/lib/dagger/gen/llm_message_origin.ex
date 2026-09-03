@@ -16,18 +16,18 @@ defmodule Dagger.LLMMessageOrigin do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
+  The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
   """
-  @spec agent_id(t()) :: {:ok, String.t()} | {:error, term()}
-  def agent_id(%__MODULE__{} = llm_message_origin) do
+  @spec agent_handle(t()) :: {:ok, String.t()} | {:error, term()}
+  def agent_handle(%__MODULE__{} = llm_message_origin) do
     query_builder =
-      llm_message_origin.query_builder |> QB.select("agentId")
+      llm_message_origin.query_builder |> QB.select("agentHandle")
 
     Client.execute(llm_message_origin.client, query_builder)
   end
 
   @doc """
-  The display name of the agent behind agentId.
+  The display name of the agent behind agentHandle.
   """
   @spec agent_name(t()) :: {:ok, String.t()} | {:error, term()}
   def agent_name(%__MODULE__{} = llm_message_origin) do
@@ -63,7 +63,7 @@ defmodule Dagger.LLMMessageOrigin do
   end
 
   @doc """
-  The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+  The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
   """
   @spec ref(t()) :: {:ok, String.t()} | {:error, term()}
   def ref(%__MODULE__{} = llm_message_origin) do

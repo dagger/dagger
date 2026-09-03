@@ -16,23 +16,6 @@ defmodule Dagger.AgentMessage do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
-
-  Idempotent: cancel and re-await freely; concurrent waiters share the result.
-
-  Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
-
-  Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
-  """
-  @spec await(t()) :: {:ok, String.t()} | {:error, term()}
-  def await(%__MODULE__{} = agent_message) do
-    query_builder =
-      agent_message.query_builder |> QB.select("await")
-
-    Client.execute(agent_message.client, query_builder)
-  end
-
-  @doc """
   How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
 
   Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
@@ -68,6 +51,23 @@ defmodule Dagger.AgentMessage do
   def ref(%__MODULE__{} = agent_message) do
     query_builder =
       agent_message.query_builder |> QB.select("ref")
+
+    Client.execute(agent_message.client, query_builder)
+  end
+
+  @doc """
+  Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
+
+  Idempotent: cancel and request the response again freely; concurrent waiters share the result.
+
+  Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
+
+  Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+  """
+  @spec response(t()) :: {:ok, String.t()} | {:error, term()}
+  def response(%__MODULE__{} = agent_message) do
+    query_builder =
+      agent_message.query_builder |> QB.select("response")
 
     Client.execute(agent_message.client, query_builder)
   end

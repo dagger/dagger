@@ -2112,15 +2112,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::id",
-			"p": "Dagger/Agent.html#method_id",
-			"d": "<p>A unique identifier for this Agent.</p>"
+			"n": "Dagger\\Agent::handle",
+			"p": "Dagger/Agent.html#method_handle",
+			"d": "<p>The opaque runtime handle minted by the spawn that created this agent.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::instanceID",
-			"p": "Dagger/Agent.html#method_instanceID",
-			"d": "<p>The unique instance identity minted by the spawn that created this agent.</p>"
+			"n": "Dagger\\Agent::id",
+			"p": "Dagger/Agent.html#method_id",
+			"d": "<p>A unique identifier for this Agent.</p>"
 		},
 		{
 			"t": "M",
@@ -2132,13 +2132,13 @@
 			"t": "M",
 			"n": "Dagger\\Agent::message",
 			"p": "Dagger/Agent.html#method_message",
-			"d": "<p>Look up a previously sent message by its message ID, returning its handle.</p>"
+			"d": "<p>Look up a previously sent message by its opaque handle.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Agent::name",
 			"p": "Dagger/Agent.html#method_name",
-			"d": "<p>Display label and identity discriminator \u2014 not a session-wide address.</p>"
+			"d": "<p>Display label for the agent; carries no identity.</p>"
 		},
 		{
 			"t": "M",
@@ -2202,14 +2202,8 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::waitFor",
-			"p": "Dagger/Agent.html#method_waitFor",
-			"d": "<p>Block until the agent reaches the given state, returning immediately if it is already there.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Agent::waitSettled",
-			"p": "Dagger/Agent.html#method_waitSettled",
+			"n": "Dagger\\Agent::wait",
+			"p": "Dagger/Agent.html#method_wait",
 			"d": "<p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p>"
 		},
 		{
@@ -2232,12 +2226,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\AgentMessage::await",
-			"p": "Dagger/AgentMessage.html#method_await",
-			"d": "<p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\AgentMessage::delivery",
 			"p": "Dagger/AgentMessage.html#method_delivery",
 			"d": "<p>How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).</p>"
@@ -2253,6 +2241,12 @@
 			"n": "Dagger\\AgentMessage::ref",
 			"p": "Dagger/AgentMessage.html#method_ref",
 			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentMessage::response",
+			"p": "Dagger/AgentMessage.html#method_response",
+			"d": "<p>Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.</p>"
 		},
 		{
 			"t": "M",
@@ -6116,7 +6110,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::agent",
 			"p": "Dagger/LLM.html#method_agent",
-			"d": "<p>Rehydrate a spawned agent's handle from its instance ID.</p>"
+			"d": "<p>Reconstruct a spawned agent from its runtime handle.</p>"
 		},
 		{
 			"t": "M",
@@ -6420,15 +6414,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLMMessageOrigin::agentId",
-			"p": "Dagger/LLMMessageOrigin.html#method_agentId",
-			"d": "<p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p>"
+			"n": "Dagger\\LLMMessageOrigin::agentHandle",
+			"p": "Dagger/LLMMessageOrigin.html#method_agentHandle",
+			"d": "<p>The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\LLMMessageOrigin::agentName",
 			"p": "Dagger/LLMMessageOrigin.html#method_agentName",
-			"d": "<p>The display name of the agent behind agentId.</p>"
+			"d": "<p>The display name of the agent behind agentHandle.</p>"
 		},
 		{
 			"t": "M",
@@ -6446,7 +6440,7 @@
 			"t": "M",
 			"n": "Dagger\\LLMMessageOrigin::ref",
 			"p": "Dagger/LLMMessageOrigin.html#method_ref",
-			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p>"
+			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.</p>"
 		},
 		{
 			"t": "M",

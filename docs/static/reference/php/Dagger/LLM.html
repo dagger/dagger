@@ -146,9 +146,9 @@
                     <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_agent">agent</a>(string $id, string $name)
+                    <a href="#method_agent">agent</a>(string $handle, string $name)
         
-                                            <p><p>Rehydrate a spawned agent's handle from its instance ID.</p></p>                </div>
+                                            <p><p>Reconstruct a spawned agent from its runtime handle.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -610,7 +610,7 @@
                     <h3 id="method_agent">
         <div class="location">at line 21</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>agent</strong>(string $id, string $name)
+    <strong>agent</strong>(string $handle, string $name)
         </code>
     </h3>
     <div class="details">    
@@ -618,7 +618,7 @@
             
 
         <div class="method-description">
-                            <p><p>Rehydrate a spawned agent's handle from its instance ID.</p></p>                <p><p>This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.</p></p>        
+                            <p><p>Reconstruct a spawned agent from its runtime handle.</p></p>                <p><p>This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -626,7 +626,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$id</td>
+                <td>$handle</td>
                 <td></td>
             </tr>
                     <tr>

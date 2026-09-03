@@ -146,9 +146,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_agentId">agentId</a>()
+                    <a href="#method_agentHandle">agentHandle</a>()
         
-                                            <p><p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p></p>                </div>
+                                            <p><p>The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,7 +158,7 @@
                 <div class="col-md-8">
                     <a href="#method_agentName">agentName</a>()
         
-                                            <p><p>The display name of the agent behind agentId.</p></p>                </div>
+                                            <p><p>The display name of the agent behind agentHandle.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -188,7 +188,7 @@
                 <div class="col-md-8">
                     <a href="#method_ref">ref</a>()
         
-                                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p></p>                </div>
+                                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -297,10 +297,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_agentId">
+                    <h3 id="method_agentHandle">
         <div class="location">at line 19</div>
         <code>                    string
-    <strong>agentId</strong>()
+    <strong>agentHandle</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -308,7 +308,7 @@
             
 
         <div class="method-description">
-                            <p><p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p></p>                        
+                            <p><p>The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).</p></p>                        
         </div>
         <div class="tags">
             
@@ -340,7 +340,7 @@
             
 
         <div class="method-description">
-                            <p><p>The display name of the agent behind agentId.</p></p>                        
+                            <p><p>The display name of the agent behind agentHandle.</p></p>                        
         </div>
         <div class="tags">
             
@@ -436,7 +436,7 @@
             
 
         <div class="method-description">
-                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p></p>                        
+                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.</p></p>                        
         </div>
         <div class="tags">
             

@@ -29,25 +29,25 @@ defmodule Dagger.Agent do
   end
 
   @doc """
+  The opaque runtime handle minted by the spawn that created this agent.
+
+  It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+  """
+  @spec handle(t()) :: {:ok, String.t()} | {:error, term()}
+  def handle(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("handle")
+
+    Client.execute(agent.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Agent.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = agent) do
     query_builder =
       agent.query_builder |> QB.select("id")
-
-    Client.execute(agent.client, query_builder)
-  end
-
-  @doc """
-  The unique instance identity minted by the spawn that created this agent.
-
-  It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.
-  """
-  @spec instance_id(t()) :: {:ok, String.t()} | {:error, term()}
-  def instance_id(%__MODULE__{} = agent) do
-    query_builder =
-      agent.query_builder |> QB.select("instanceID")
 
     Client.execute(agent.client, query_builder)
   end
@@ -78,16 +78,16 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Look up a previously sent message by its message ID, returning its handle.
+  Look up a previously sent message by its opaque handle.
 
-  This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+  This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
 
-  Fails if the agent has no runtime entry in this session, or no record of the given ID.
+  Fails if the agent has no runtime entry in this session, or no record of the given handle.
   """
   @spec message(t(), String.t()) :: Dagger.AgentMessage.t()
-  def message(%__MODULE__{} = agent, id) do
+  def message(%__MODULE__{} = agent, handle) do
     query_builder =
-      agent.query_builder |> QB.select("message") |> QB.put_arg("id", id)
+      agent.query_builder |> QB.select("message") |> QB.put_arg("handle", handle)
 
     %Dagger.AgentMessage{
       query_builder: query_builder,
@@ -96,7 +96,7 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Display label and identity discriminator — not a session-wide address.
+  Display label for the agent; carries no identity.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = agent) do
@@ -252,7 +252,7 @@ defmodule Dagger.Agent do
 
   Never blocks, never drops; concurrent sends queue in order.
 
-  The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
+  The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
 
   Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
   """
@@ -357,40 +357,14 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Block until the agent reaches the given state, returning immediately if it is already there.
-
-  A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
-  """
-  @spec wait_for(t(), [{:state, Dagger.AgentState.t() | nil}]) ::
-          {:ok, Dagger.Agent.t()} | {:error, term()}
-  def wait_for(%__MODULE__{} = agent, optional_args \\ []) do
-    query_builder =
-      agent.query_builder
-      |> QB.select("waitFor")
-      |> QB.maybe_put_arg("state", optional_args[:state])
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
-  end
-
-  @doc """
   Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
 
-  The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
+  Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
   """
-  @spec wait_settled(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
-  def wait_settled(%__MODULE__{} = agent) do
+  @spec wait(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
+  def wait(%__MODULE__{} = agent) do
     query_builder =
-      agent.query_builder |> QB.select("waitSettled")
+      agent.query_builder |> QB.select("wait")
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,

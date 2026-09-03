@@ -188,10 +188,10 @@ type LLMContentBlockInput struct {
 
 // The provenance of a message delivered through an agent mailbox.
 type LLMMessageOriginInput struct {
-	// The sending or observed agent's instance ID.
-	AgentID string `json:"agentId,omitempty"`
+	// The sending or observed agent's runtime handle.
+	AgentHandle string `json:"agentHandle,omitempty"`
 
-	// The display name of the agent behind agentId.
+	// The display name of the agent behind agentHandle.
 	AgentName string `json:"agentName,omitempty"`
 
 	// Who put this message on the record.
@@ -452,22 +452,21 @@ func (r *Address) AsNode() Node {
 type Agent struct {
 	query *querybuilder.Selection
 
-	error       *string
-	id          *ID
-	instanceID  *string
-	interrupt   *ID
-	name        *string
-	notify      *ID
-	pause       *ID
-	rehydrate   *ID
-	reseed      *ID
-	resume      *ID
-	send        *ID
-	start       *ID
-	state       *AgentState
-	stop        *ID
-	waitFor     *ID
-	waitSettled *ID
+	error     *string
+	handle    *string
+	id        *ID
+	interrupt *ID
+	name      *string
+	notify    *ID
+	pause     *ID
+	rehydrate *ID
+	reseed    *ID
+	resume    *ID
+	send      *ID
+	start     *ID
+	state     *AgentState
+	stop      *ID
+	wait      *ID
 }
 
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
@@ -484,6 +483,21 @@ func (r *Agent) Error(ctx context.Context) (string, error) {
 		return *r.error, nil
 	}
 	q := r.query.Select("error")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The opaque runtime handle minted by the spawn that created this agent.
+//
+// It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+func (r *Agent) Handle(ctx context.Context) (string, error) {
+	if r.handle != nil {
+		return *r.handle, nil
+	}
+	q := r.query.Select("handle")
 
 	var response string
 
@@ -531,21 +545,6 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The unique instance identity minted by the spawn that created this agent.
-//
-// It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client holding a handle can match it against what it discovers in the trace. Two spawns of an identical composition have different instance IDs; a display name is shared freely.
-func (r *Agent) InstanceID(ctx context.Context) (string, error) {
-	if r.instanceID != nil {
-		return *r.instanceID, nil
-	}
-	q := r.query.Select("instanceID")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // Preempt the in-flight step, keeping all completed steps, and pause.
 //
 // The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
@@ -563,21 +562,21 @@ func (r *Agent) Interrupt(ctx context.Context) (*Agent, error) {
 	}, nil
 }
 
-// Look up a previously sent message by its message ID, returning its handle.
+// Look up a previously sent message by its opaque handle.
 //
-// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
 //
-// Fails if the agent has no runtime entry in this session, or no record of the given ID.
-func (r *Agent) Message(id string) *AgentMessage {
+// Fails if the agent has no runtime entry in this session, or no record of the given handle.
+func (r *Agent) Message(handle string) *AgentMessage {
 	q := r.query.Select("message")
-	q = q.Arg("id", id)
+	q = q.Arg("handle", handle)
 
 	return &AgentMessage{
 		query: q,
 	}
 }
 
-// Display label and identity discriminator — not a session-wide address.
+// Display label for the agent; carries no identity.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -731,7 +730,7 @@ type AgentSendOpts struct {
 //
 // Never blocks, never drops; concurrent sends queue in order.
 //
-// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel an await and re-await freely.
+// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
 func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts) (*AgentMessage, error) {
@@ -821,40 +820,11 @@ func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error)
 	}, nil
 }
 
-// AgentWaitForOpts contains options for Agent.WaitFor
-type AgentWaitForOpts struct {
-	// The lifecycle state to wait for.
-	//
-	// Default: IDLE
-	State AgentState
-}
-
-// Block until the agent reaches the given state, returning immediately if it is already there.
-//
-// A stopped or failed agent may be relaunched, so waiting for a later state remains valid until the caller cancels.
-func (r *Agent) WaitFor(ctx context.Context, opts ...AgentWaitForOpts) (*Agent, error) {
-	q := r.query.Select("waitFor")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `state` optional argument
-		if !querybuilder.IsZeroValue(opts[i].State) {
-			q = q.Arg("state", opts[i].State)
-		}
-	}
-
-	var id ID
-	if err := q.Bind(&id).Execute(ctx); err != nil {
-		return nil, err
-	}
-	return &Agent{
-		query: selectNode(q.Root(), id, "Agent"),
-	}, nil
-}
-
 // Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
 //
-// The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.
-func (r *Agent) WaitSettled(ctx context.Context) (*Agent, error) {
-	q := r.query.Select("waitSettled")
+// Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("wait")
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
@@ -877,35 +847,16 @@ func (r *Agent) AsNode() Node {
 type AgentMessage struct {
 	query *querybuilder.Selection
 
-	await    *string
 	delivery *AgentMessageDelivery
 	id       *ID
 	ref      *string
+	response *string
 }
 
 func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
 	return &AgentMessage{
 		query: q,
 	}
-}
-
-// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
-//
-// Idempotent: cancel and re-await freely; concurrent waiters share the result.
-//
-// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
-//
-// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
-func (r *AgentMessage) Await(ctx context.Context) (string, error) {
-	if r.await != nil {
-		return *r.await, nil
-	}
-	q := r.query.Select("await")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
@@ -971,6 +922,25 @@ func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
 		return *r.ref, nil
 	}
 	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
+//
+// Idempotent: cancel and request the response again freely; concurrent waiters share the result.
+//
+// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
+//
+// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+func (r *AgentMessage) Response(ctx context.Context) (string, error) {
+	if r.response != nil {
+		return *r.response, nil
+	}
+	q := r.query.Select("response")
 
 	var response string
 
@@ -11106,12 +11076,12 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	}
 }
 
-// Rehydrate a spawned agent's handle from its instance ID.
+// Reconstruct a spawned agent from its runtime handle.
 //
 // This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
-func (r *LLM) Agent(id string, name string) *Agent {
+func (r *LLM) Agent(handle string, name string) *Agent {
 	q := r.query.Select("agent")
-	q = q.Arg("id", id)
+	q = q.Arg("handle", handle)
 	q = q.Arg("name", name)
 
 	return &Agent{
@@ -12024,12 +11994,12 @@ func (r *LLMMessage) AsNode() Node {
 type LLMMessageOrigin struct {
 	query *querybuilder.Selection
 
-	agentId   *string
-	agentName *string
-	id        *ID
-	kind      *LLMMessageOriginKind
-	ref       *string
-	replyTo   *string
+	agentHandle *string
+	agentName   *string
+	id          *ID
+	kind        *LLMMessageOriginKind
+	ref         *string
+	replyTo     *string
 }
 
 func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessageOrigin {
@@ -12038,12 +12008,12 @@ func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessa
 	}
 }
 
-// The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).
-func (r *LLMMessageOrigin) AgentID(ctx context.Context) (string, error) {
-	if r.agentId != nil {
-		return *r.agentId, nil
+// The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
+func (r *LLMMessageOrigin) AgentHandle(ctx context.Context) (string, error) {
+	if r.agentHandle != nil {
+		return *r.agentHandle, nil
 	}
-	q := r.query.Select("agentId")
+	q := r.query.Select("agentHandle")
 
 	var response string
 
@@ -12051,7 +12021,7 @@ func (r *LLMMessageOrigin) AgentID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The display name of the agent behind agentId.
+// The display name of the agent behind agentHandle.
 func (r *LLMMessageOrigin) AgentName(ctx context.Context) (string, error) {
 	if r.agentName != nil {
 		return *r.agentName, nil
@@ -12117,7 +12087,7 @@ func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, erro
 	return response, q.Execute(ctx)
 }
 
-// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.
+// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
 func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
