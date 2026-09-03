@@ -3510,27 +3510,15 @@ func (s *workspaceSchema) terminals(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.TerminalGroup, error) {
-	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parentResult.Self()) {
 		return &core.TerminalGroup{}, nil
-	}
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
 	}
 
 	allTerminals, err := collectWorkspaceModuleTargets(
 		ctx,
-		mods,
-		include,
+		s,
+		parentResult,
+		args.Include,
 		"terminal targets",
 		"terminal target",
 		terminalTargetsFromModule,
@@ -3550,27 +3538,15 @@ func (s *workspaceSchema) agents(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.AgentGroup, error) {
-	parent := parentResult.Self()
-	if isSyntheticWorkspace(parent) {
+	if isSyntheticWorkspace(parentResult.Self()) {
 		return &core.AgentGroup{}, nil
-	}
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
 	}
 
 	allAgents, err := collectWorkspaceModuleTargets(
 		ctx,
-		mods,
-		include,
+		s,
+		parentResult,
+		args.Include,
 		"agents",
 		"agent",
 		agentTargetsFromModule,
@@ -3609,15 +3585,31 @@ func (s *workspaceSchema) workspaceTargetModules(
 	return mergeOverlayModules(mods, overlayMods), nil
 }
 
+// collectWorkspaceModuleTargets composes one kind of target (agents, terminal
+// targets) from every primary module in the workspace, as seen through its
+// pending overlay, keeping only those matching the include patterns.
 func collectWorkspaceModuleTargets[T any](
 	ctx context.Context,
-	mods []dagql.ObjectResult[*core.Module],
-	include []string,
+	s *workspaceSchema,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	includeArg dagql.Optional[dagql.ArrayInput[dagql.String]],
 	groupLabel string,
 	targetLabel string,
 	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
 	node func(T) *core.ModTreeNode,
 ) ([]T, error) {
+	include := workspaceIncludePatterns(includeArg)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parentResult.Self())
+	if err != nil {
+		return nil, err
+	}
+
+	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+
 	var all []T
 	for _, mod := range mods {
 		root, targets, err := collect(ctx, mod)
