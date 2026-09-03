@@ -147,8 +147,8 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function replay(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('replay');
-        $this->queryLeaf($leafQueryBuilder, 'replay');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'replay');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
     }
 
     /**
@@ -163,15 +163,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
      *
-     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
      */
-    public function spawn(?string $name = null): Id
+    public function spawn(?string $name = null): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
         if (null !== $name) {
         $leafQueryBuilder->setArgument('name', $name);
         }
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'spawn'));
+        $id = $this->queryLeaf($leafQueryBuilder, 'spawn');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -192,8 +193,8 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function sync(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
     }
 
     /**

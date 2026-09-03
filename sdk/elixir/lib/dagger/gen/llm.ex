@@ -232,14 +232,24 @@ defmodule Dagger.LLM do
   @doc """
   Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
 
-  Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+  Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
   """
-  @spec spawn(t(), [{:name, String.t() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  @spec spawn(t(), [{:name, String.t() | nil}]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
   def spawn(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
       llm.query_builder |> QB.select("spawn") |> QB.maybe_put_arg("name", optional_args[:name])
 
-    Client.execute(llm.client, query_builder)
+    with {:ok, id} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       %Dagger.Agent{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Agent"),
+         client: llm.client
+       }}
+    end
   end
 
   @doc """
