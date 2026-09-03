@@ -394,6 +394,11 @@ export type ContainerFileOpts = {
 
 export type ContainerFromOpts = {
   /**
+   * Version query used to select an image tag. The address must not contain a tag or digest.
+   */
+  version?: string
+
+  /**
    * Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -1860,6 +1865,13 @@ export type GitRepositoryBundleOpts = {
   base?: GitRef
 }
 
+export type GitRepositoryLatestOpts = {
+  /**
+   * Version query used to select the greatest matching release ref.
+   */
+  version?: string
+}
+
 export type GitRepositoryTagsOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -2653,6 +2665,11 @@ export type ClientLLMOpts = {
 }
 
 export type ClientModuleSourceOpts = {
+  /**
+   * Version query for a Git module source.
+   */
+  version?: string
+
   /**
    * The pinned version of the module source
    */
@@ -4712,6 +4729,7 @@ export class Container extends BaseClient {
    * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
    *
    * An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.
+   * @param opts.version Version query used to select an image tag. The address must not contain a tag or digest.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -10041,9 +10059,10 @@ export class GitRepository extends BaseClient {
    * Return the latest stable release tag, falling back to HEAD when no release exists.
    *
    * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+   * @param opts.version Version query used to select the greatest matching release ref.
    */
-  latest = (): GitRef => {
-    const ctx = this._ctx.select("latest")
+  latest = (opts?: GitRepositoryLatestOpts): GitRef => {
+    const ctx = this._ctx.select("latest", { ...opts })
     return new GitRef(ctx)
   }
 
@@ -13586,6 +13605,7 @@ export class Client extends BaseClient {
   /**
    * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
+   * @param opts.version Version query for a Git module source.
    * @param opts.refPin The pinned version of the module source
    * @param opts.disableFindUp If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.

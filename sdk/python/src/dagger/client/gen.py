@@ -1997,6 +1997,7 @@ class Container(Type):
         self,
         address: str,
         *,
+        version: str | None = "",
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
@@ -2012,6 +2013,9 @@ class Container(Type):
             An address without a tag or digest selects the greatest stable
             release tag, falling back to the literal "latest" tag when no
             eligible release exists.
+        version:
+            Version query used to select an image tag. The address must not
+            contain a tag or digest.
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
@@ -2024,6 +2028,7 @@ class Container(Type):
         """
         _args = [
             Arg("address", address),
+            Arg("version", version, ""),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
@@ -9030,14 +9035,21 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest(self) -> GitRef:
+    def latest(self, *, version: str | None = "") -> GitRef:
         """Return the latest stable release tag, falling back to HEAD when no
         release exists.
 
         Release selection accepts an optional "v" prefix, incomplete versions,
         and zero-padded numeric components. This operation is pinned.
+
+        Parameters
+        ----------
+        version:
+            Version query used to select the greatest matching release ref.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("version", version, ""),
+        ]
         _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
@@ -13335,6 +13347,7 @@ class Query(Root):
         self,
         ref_string: str,
         *,
+        version: str | None = "",
         ref_pin: str | None = "",
         disable_find_up: bool | None = False,
         allow_not_exists: bool | None = False,
@@ -13346,6 +13359,8 @@ class Query(Root):
         ----------
         ref_string:
             The string ref representation of the module source
+        version:
+            Version query for a Git module source.
         ref_pin:
             The pinned version of the module source
         disable_find_up:
@@ -13362,6 +13377,7 @@ class Query(Root):
         """
         _args = [
             Arg("refString", ref_string),
+            Arg("version", version, ""),
             Arg("refPin", ref_pin, ""),
             Arg("disableFindUp", disable_find_up, False),
             Arg("allowNotExists", allow_not_exists, False),

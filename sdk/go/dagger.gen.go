@@ -1954,6 +1954,8 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 
 // ContainerFromOpts contains options for Container.From
 type ContainerFromOpts struct {
+	// Version query used to select an image tag. The address must not contain a tag or digest.
+	Version string
 	// Service to use as the registry endpoint for the image address.
 	//
 	// The service will be started only for this pull.
@@ -1970,6 +1972,10 @@ type ContainerFromOpts struct {
 func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 	q := r.query.Select("from")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
@@ -9451,11 +9457,23 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// GitRepositoryLatestOpts contains options for GitRepository.Latest
+type GitRepositoryLatestOpts struct {
+	// Version query used to select the greatest matching release ref.
+	Version string
+}
+
 // Return the latest stable release tag, falling back to HEAD when no release exists.
 //
 // Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
-func (r *GitRepository) Latest() *GitRef {
+func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -14036,6 +14054,8 @@ func (r *Query) Module() *Module {
 
 // ModuleSourceOpts contains options for Query.ModuleSource
 type ModuleSourceOpts struct {
+	// Version query for a Git module source.
+	Version string
 	// The pinned version of the module source
 	RefPin string
 	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
@@ -14050,6 +14070,10 @@ type ModuleSourceOpts struct {
 func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `refPin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RefPin) {
 			q = q.Arg("refPin", opts[i].RefPin)
