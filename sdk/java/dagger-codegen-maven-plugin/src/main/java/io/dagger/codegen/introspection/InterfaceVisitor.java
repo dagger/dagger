@@ -197,14 +197,14 @@ class InterfaceVisitor extends AbstractVisitor {
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
           .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
-    } else if (Helpers.isIdToConvert(field, getSchema())) {
+    } else if (Helpers.isIdToConvert(field)) {
       // Resolve the ID, then address the object it names through node(id:)
       fieldMethodBuilder.addStatement(
           "$T objectID = nextQueryBuilder.executeQuery($T.class)",
           ClassName.bestGuess("ID"),
           ClassName.bestGuess("ID"));
       // Interfaces are instantiated through their client class, like object returns
-      String handleType = Helpers.idHandleType(field, getSchema());
+      String handleType = Helpers.idHandleType(field);
       String handleClass = getSchema().isInterface(handleType) ? handleType + "Client" : handleType;
       fieldMethodBuilder.addStatement(
           "return new $T(this.queryBuilder.chainNode($S, objectID))",
@@ -260,13 +260,9 @@ class InterfaceVisitor extends AbstractVisitor {
     if ("id".equals(field.getName())) {
       return field.getTypeRef().formatOutput();
     }
-    if (Helpers.isIdToConvert(field, getSchema())) {
+    if (Helpers.isIdToConvert(field)) {
       // ID handle: return the object the ID resolves to
-      return ClassName.bestGuess(Helpers.idHandleType(field, getSchema()));
-    }
-    if ("ID".equals(field.getTypeRef().getTypeName())) {
-      // An ID this schema view does not load as its expected type is returned as-is
-      return field.getTypeRef().formatOutput();
+      return ClassName.bestGuess(Helpers.idHandleType(field));
     }
     String expectedType = field.getExpectedType();
     return field.getTypeRef().formatInput(expectedType);
@@ -281,7 +277,7 @@ class InterfaceVisitor extends AbstractVisitor {
     if (field.getTypeRef().isListOfObject() || field.getTypeRef().isList()) {
       return true;
     }
-    if (Helpers.isIdToConvert(field, getSchema())) {
+    if (Helpers.isIdToConvert(field)) {
       return true;
     }
     if (field.getTypeRef().isObjectOrInterface()) {

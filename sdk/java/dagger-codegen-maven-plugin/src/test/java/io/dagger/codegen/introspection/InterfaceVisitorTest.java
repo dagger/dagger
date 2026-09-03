@@ -23,31 +23,11 @@ class InterfaceVisitorTest {
   }
 
   @Test
-  void idHandleVersionGateHandlesBoundariesAndDevelopmentVersions() throws Exception {
-    assertThat(schemaAtVersion(null).supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("").supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("development").supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("v0.21.0-dev").supportsIdHandles()).isFalse();
-    assertThat(schemaAtVersion("v1.0.0-beta.11").supportsIdHandles()).isFalse();
-    assertThat(schemaAtVersion("v1.0.0-beta.11-dev").supportsIdHandles()).isFalse();
-    assertThat(schemaAtVersion("v1.0.0-beta.12").supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("v1.0.0-beta.12-dev").supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("v1.0.0-rc.1").supportsIdHandles()).isTrue();
-    assertThat(schemaAtVersion("v1.0.0").supportsIdHandles()).isTrue();
-  }
+  void idHandlesLoadTheirExpectedType() throws Exception {
+    String generated = generateInterface(interfaceWithIdHandleFields(), "v1.0.0");
 
-  @Test
-  void idHandlesLoadTheirExpectedTypeFromTheCutoverOn() throws Exception {
-    Type type = interfaceWithIdHandleFields();
-    String legacyInterface = generateInterface(type, "v1.0.0-beta.11");
-    String handleInterface = generateInterface(type, "v1.0.0-beta.12");
-
-    // the parent's own ID has always been loaded as the parent
-    assertThat(legacyInterface).contains("Parent sync()");
-    assertThat(handleInterface).contains("Parent sync()");
-    // another object's ID is loaded from the cutover on
-    assertThat(legacyInterface).contains("ID spawn()");
-    assertThat(handleInterface).contains("Agent spawn()");
+    // the parent's own ID loads the parent, another object's ID loads that object
+    assertThat(generated).contains("Parent sync()").contains("Agent spawn()");
   }
 
   @Test

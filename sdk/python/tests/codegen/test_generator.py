@@ -57,7 +57,6 @@ from codegen.generator import (
     format_name,
     format_output_type,
     generate,
-    supports_id_handles,
     supports_nullable_objects,
 )
 from codegen.generator import (
@@ -294,10 +293,10 @@ def test_core_sync(ctx: Context):
     )
 
 
-def _llm_field(name: str, schema_version: str = "") -> _ObjectField:
+def _llm_field(name: str) -> _ObjectField:
     llm_type = _EXPECTED_TYPE_SCHEMA.type_map["LLM"]
     return _ObjectField(
-        Context(schema=_EXPECTED_TYPE_SCHEMA, schema_version=schema_version),
+        Context(schema=_EXPECTED_TYPE_SCHEMA),
         name,
         llm_type.fields[name],
         llm_type,
@@ -322,32 +321,6 @@ def test_core_id_handle_interface():
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "syncer", _args, _SyncerClient)'
     )
-
-
-def test_core_id_handle_older_engine():
-    # Older schema views keep returning the raw ID.
-    handler = _llm_field("spawn", schema_version="v1.0.0-beta.11")
-
-    assert handler.func_signature() == "async def spawn(self) -> str:"
-    assert str(handler.func_body()).endswith("return await _ctx.execute(str)")
-
-
-@pytest.mark.parametrize(
-    ("version", "expected"),
-    [
-        ("", True),
-        ("development", True),
-        ("v0.21.0-dev", False),
-        ("v1.0.0-beta.11", False),
-        ("v1.0.0-beta.11-dev", False),
-        ("v1.0.0-beta.12", True),
-        ("v1.0.0-beta.12-dev", True),
-        ("v1.0.0-rc.1", True),
-        ("v1.0.0", True),
-    ],
-)
-def test_id_handle_version_gate(version: str, expected: bool):
-    assert supports_id_handles(version) is expected
 
 
 def test_nullable_object_field():

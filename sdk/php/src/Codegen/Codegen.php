@@ -27,7 +27,6 @@ class Codegen
         $visitor = new NewCodegenVisitor(
             $this->writeDir,
             $this->schema->supportsNullableObjects(),
-            $this->schema->supportsIdHandles(),
             $interfaceNames,
         );
 
