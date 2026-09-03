@@ -395,6 +395,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return all terminal targets from modules loaded in the workspace.
+     */
+    public function terminals(?array $include = null): TerminalGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminals');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\TerminalGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a changeset applied, without mutating the source.
      */
     public function withChanges(Changeset $changes): Workspace

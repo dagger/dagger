@@ -5290,6 +5290,34 @@ type Terminal implements Node & Syncer {
   sync: ID! @expectedType(name: "Terminal")
 }
 
+type TerminalGroup implements Node {
+  """A unique identifier for this TerminalGroup."""
+  id: ID!
+
+  """Return the selected terminal targets and their details"""
+  list: [TerminalTarget!]!
+
+  """Open the selected terminal target"""
+  run: TerminalGroup!
+}
+
+type TerminalTarget implements Node {
+  """The description of the terminal target"""
+  description: String!
+
+  """A unique identifier for this TerminalTarget."""
+  id: ID!
+
+  """Return the fully qualified name of the terminal target"""
+  name: String!
+
+  """The module in which the terminal target is defined"""
+  originalModule: Module!
+
+  """The path of the terminal target within its module"""
+  path: [String!]!
+}
+
 """A definition of a parameter or return type in a Module."""
 type TypeDef implements Node {
   """
@@ -5906,6 +5934,12 @@ type Workspace implements Node {
     """Only include services matching the specified patterns"""
     include: [String!]
   ): UpGroup!
+
+  """Return all terminal targets from modules loaded in the workspace."""
+  terminals(
+    """Only include terminal targets matching the specified patterns"""
+    include: [String!]
+  ): TerminalGroup!
 
   """
   Return this workspace with a changeset applied, without mutating the source.

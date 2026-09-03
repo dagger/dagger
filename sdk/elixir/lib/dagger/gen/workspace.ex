@@ -489,6 +489,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return all terminal targets from modules loaded in the workspace.
+  """
+  @spec terminals(t(), [{:include, [String.t()]}]) :: Dagger.TerminalGroup.t()
+  def terminals(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("terminals")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.TerminalGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a changeset applied, without mutating the source.
   """
   @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Workspace.t()

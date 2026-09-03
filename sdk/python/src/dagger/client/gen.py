@@ -14437,6 +14437,158 @@ class Terminal(Type):
 
 
 @typecheck
+class TerminalGroup(Type):
+    async def id(self) -> str:
+        """A unique identifier for this TerminalGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def list_(self) -> list["TerminalTarget"]:
+        """Return the selected terminal targets and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(TerminalTarget)
+
+    def run(self) -> Self:
+        """Open the selected terminal target"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return TerminalGroup(_ctx)
+
+    def with_(
+        self, cb: Callable[["TerminalGroup"], "TerminalGroup"]
+    ) -> "TerminalGroup":
+        """Call the provided callable with current TerminalGroup.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class TerminalTarget(Type):
+    async def description(self) -> str:
+        """The description of the terminal target
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this TerminalTarget.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the terminal target
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> Module:
+        """The module in which the terminal target is defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the terminal target within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -15643,6 +15795,24 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    def terminals(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> TerminalGroup:
+        """Return all terminal targets from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include terminal targets matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("terminals", _args)
+        return TerminalGroup(_ctx)
+
     def with_changes(self, changes: Changeset) -> Self:
         """Return this workspace with a changeset applied, without mutating the
         source.
@@ -16753,6 +16923,8 @@ __all__ = [
     "Stat",
     "Syncer",
     "Terminal",
+    "TerminalGroup",
+    "TerminalTarget",
     "TypeDef",
     "TypeDefKind",
     "Up",

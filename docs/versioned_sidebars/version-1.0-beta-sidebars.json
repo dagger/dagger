@@ -206,6 +206,8 @@
                 "api/reference/stat",
                 "api/reference/syncer",
                 "api/reference/terminal",
+                "api/reference/terminal-group",
+                "api/reference/terminal-target",
                 "api/reference/type-def",
                 "api/reference/up",
                 "api/reference/up-group",

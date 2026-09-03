@@ -826,6 +826,11 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 	}, include, exclude)
 }
 
+// RollupTerminals walks the tree and returns non-null Container and Directory values.
+func (node *ModTreeNode) RollupTerminals(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, supportsTerminal, include, exclude)
+}
+
 // Walk the tree and return all up (service) nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupUp(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {

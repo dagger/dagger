@@ -167,6 +167,7 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
+	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
 	activityCmd.GroupID = "daily"
 
@@ -198,6 +199,7 @@ func init() {
 		settingsCmd,
 		checksCmd,
 		upCmd,
+		terminalCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,

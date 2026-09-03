@@ -1,0 +1,2 @@
+kind: Added
+body: Add `dagger terminal` and its `dagger tty` alias to list and open terminal targets from workspace modules.

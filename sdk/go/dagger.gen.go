@@ -15284,6 +15284,223 @@ func (r *Terminal) AsSyncer() Syncer {
 	}
 }
 
+type TerminalGroup struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithTerminalGroupFunc func(r *TerminalGroup) *TerminalGroup
+
+// With calls the provided function with current TerminalGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *TerminalGroup) With(f WithTerminalGroupFunc) *TerminalGroup {
+	return f(r)
+}
+
+func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGroup {
+	return &TerminalGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this TerminalGroup.
+func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TerminalGroup) XXX_GraphQLType() string {
+	return "TerminalGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TerminalGroup) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TerminalGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TerminalGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the selected terminal targets and their details
+func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []TerminalTarget {
+		out := []TerminalTarget{}
+
+		for i := range fields {
+			val := TerminalTarget{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TerminalTarget")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Open the selected terminal target
+func (r *TerminalGroup) Run() *TerminalGroup {
+	q := r.query.Select("run")
+
+	return &TerminalGroup{
+		query: q,
+	}
+}
+
+// AsNode returns this TerminalGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TerminalGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type TerminalTarget struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *TerminalTarget) WithGraphQLQuery(q *querybuilder.Selection) *TerminalTarget {
+	return &TerminalTarget{
+		query: q,
+	}
+}
+
+// The description of the terminal target
+func (r *TerminalTarget) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this TerminalTarget.
+func (r *TerminalTarget) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TerminalTarget) XXX_GraphQLType() string {
+	return "TerminalTarget"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TerminalTarget) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TerminalTarget) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TerminalTarget) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return the fully qualified name of the terminal target
+func (r *TerminalTarget) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module in which the terminal target is defined
+func (r *TerminalTarget) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the terminal target within its module
+func (r *TerminalTarget) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this TerminalTarget as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TerminalTarget) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
@@ -16721,6 +16938,27 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// WorkspaceTerminalsOpts contains options for Workspace.Terminals
+type WorkspaceTerminalsOpts struct {
+	// Only include terminal targets matching the specified patterns
+	Include []string
+}
+
+// Return all terminal targets from modules loaded in the workspace.
+func (r *Workspace) Terminals(opts ...WorkspaceTerminalsOpts) *TerminalGroup {
+	q := r.query.Select("terminals")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &TerminalGroup{
 		query: q,
 	}
 }
