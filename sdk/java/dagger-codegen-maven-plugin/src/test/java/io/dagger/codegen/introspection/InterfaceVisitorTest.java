@@ -23,6 +23,34 @@ class InterfaceVisitorTest {
   }
 
   @Test
+  void idHandleVersionGateHandlesBoundariesAndDevelopmentVersions() throws Exception {
+    assertThat(schemaAtVersion(null).supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("").supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("development").supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("v0.21.0-dev").supportsIdHandles()).isFalse();
+    assertThat(schemaAtVersion("v1.0.0-beta.11").supportsIdHandles()).isFalse();
+    assertThat(schemaAtVersion("v1.0.0-beta.11-dev").supportsIdHandles()).isFalse();
+    assertThat(schemaAtVersion("v1.0.0-beta.12").supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("v1.0.0-beta.12-dev").supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("v1.0.0-rc.1").supportsIdHandles()).isTrue();
+    assertThat(schemaAtVersion("v1.0.0").supportsIdHandles()).isTrue();
+  }
+
+  @Test
+  void idHandlesLoadTheirExpectedTypeFromTheCutoverOn() throws Exception {
+    Type type = interfaceWithIdHandleFields();
+    String legacyInterface = generateInterface(type, "v1.0.0-beta.11");
+    String handleInterface = generateInterface(type, "v1.0.0-beta.12");
+
+    // the parent's own ID has always been loaded as the parent
+    assertThat(legacyInterface).contains("Parent sync()");
+    assertThat(handleInterface).contains("Parent sync()");
+    // another object's ID is loaded from the cutover on
+    assertThat(legacyInterface).contains("ID spawn()");
+    assertThat(handleInterface).contains("Agent spawn()");
+  }
+
+  @Test
   void optionalObjectMethodsOnlyDeclareExceptionsWhenNullableObjectsAreSupported()
       throws Exception {
     Type type = interfaceWithOptionalObjectField();
@@ -48,6 +76,41 @@ class InterfaceVisitorTest {
   private static Schema schemaAtVersion(String version) throws Exception {
     byte[] introspection = "{\"__schema\":{\"types\":[]}}".getBytes(StandardCharsets.UTF_8);
     return Schema.initialize(new ByteArrayInputStream(introspection), version);
+  }
+
+  private static Type interfaceWithIdHandleFields() {
+    Type parent = new Type();
+    parent.setKind(TypeKind.INTERFACE);
+    parent.setName("Parent");
+    parent.setDescription("");
+    parent.setFields(
+        List.of(idHandleField(parent, "sync", "Parent"), idHandleField(parent, "spawn", "Agent")));
+    return parent;
+  }
+
+  private static Field idHandleField(Type parent, String name, String expectedType) {
+    TypeRef idType = new TypeRef();
+    idType.setKind(TypeKind.SCALAR);
+    idType.setName("ID");
+    TypeRef returnType = new TypeRef();
+    returnType.setKind(TypeKind.NON_NULL);
+    returnType.setOfType(idType);
+
+    DirectiveArg nameArg = new DirectiveArg();
+    nameArg.setName("name");
+    nameArg.setValue("\"" + expectedType + "\"");
+    Directive expected = new Directive();
+    expected.setName("expectedType");
+    expected.setArgs(List.of(nameArg));
+
+    Field field = new Field();
+    field.setName(name);
+    field.setDescription("");
+    field.setTypeRef(returnType);
+    field.setArgs(List.of());
+    field.setDirectives(List.of(expected));
+    field.setParentObject(parent);
+    return field;
   }
 
   private static Type interfaceWithOptionalObjectField() {

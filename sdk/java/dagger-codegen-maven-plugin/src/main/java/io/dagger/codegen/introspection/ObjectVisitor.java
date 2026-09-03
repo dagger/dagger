@@ -201,9 +201,13 @@ class ObjectVisitor extends AbstractVisitor {
       // id() field: with unified IDs, returns String
       return field.getTypeRef().formatOutput();
     }
-    if (Helpers.isIdToConvert(field)) {
+    if (Helpers.isIdToConvert(field, getSchema())) {
       // ID handle: return the object the ID resolves to
-      return ClassName.bestGuess(Helpers.idHandleType(field));
+      return ClassName.bestGuess(Helpers.idHandleType(field, getSchema()));
+    }
+    if ("ID".equals(field.getTypeRef().getTypeName())) {
+      // An ID this schema view does not load as its expected type is returned as-is
+      return field.getTypeRef().formatOutput();
     }
     String expectedType = field.getExpectedType();
     return field.getTypeRef().formatInput(expectedType);
@@ -241,7 +245,7 @@ class ObjectVisitor extends AbstractVisitor {
     fieldMethodBuilder.addJavadoc(Helpers.escapeJavadoc(field.getDescription()));
 
     if (field.getTypeRef().isScalar()
-        && !Helpers.isIdToConvert(field)
+        && !Helpers.isIdToConvert(field, getSchema())
         && !"Query".equals(field.getParentObject().getName())) {
       fieldMethodBuilder.beginControlFlow("if (this.$L != null)", Helpers.formatName(field));
       fieldMethodBuilder.addStatement("return $L", Helpers.formatName(field));
@@ -294,14 +298,14 @@ class ObjectVisitor extends AbstractVisitor {
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
           .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
-    } else if (Helpers.isIdToConvert(field)) {
+    } else if (Helpers.isIdToConvert(field, getSchema())) {
       // Resolve the ID, then address the object it names through node(id:)
       fieldMethodBuilder.addStatement(
           "$T objectID = nextQueryBuilder.executeQuery($T.class)",
           ClassName.bestGuess("ID"),
           ClassName.bestGuess("ID"));
       // Interfaces are instantiated through their client class, like object returns
-      String handleType = Helpers.idHandleType(field);
+      String handleType = Helpers.idHandleType(field, getSchema());
       String handleClass = getSchema().isInterface(handleType) ? handleType + "Client" : handleType;
       fieldMethodBuilder.addStatement(
           "return new $T(this.queryBuilder.chainNode($S, objectID))",

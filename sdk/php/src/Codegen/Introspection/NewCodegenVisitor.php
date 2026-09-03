@@ -22,9 +22,14 @@ use Nette\PhpGenerator\Method;
  */
 class NewCodegenVisitor extends CodeWriter
 {
+    /**
+     * @param string[] $interfaceNames names of the schema's interface types
+     */
     public function __construct(
         string $targetDirectory,
         private readonly bool $supportsNullableObjects = true,
+        private readonly bool $supportsIdHandles = true,
+        private readonly array $interfaceNames = [],
     ) {
         parent::__construct($targetDirectory);
     }
@@ -177,15 +182,13 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         $returnType = $field->type;
-        $isConvertID = $field->isConvertID();
+        $isConvertID = $field->isConvertID($this->supportsIdHandles);
 
         // Determine the PHP return type
         if ($isConvertID) {
-            // sync()-like: returns the parent object type
-            $returnTypeName = $this->formatPhpFqcn($this->formatPhpClassName(
-                $parentType->name === 'Query' ? 'Client' : $parentType->name
-            ));
-            $method->setReturnType($returnTypeName);
+            // ID handle: returns the object the ID names
+            [, $handleReturnType] = $this->resolveIdHandle($field, $parentType);
+            $method->setReturnType($handleReturnType);
             $method->setReturnNullable(false);
         } else {
             $phpReturnType = $this->resolveReturnType($returnType, $field);
@@ -205,14 +208,16 @@ class NewCodegenVisitor extends CodeWriter
 
         // Generate method body
         if ($isConvertID) {
-            // sync()-like: execute the query to force evaluation, return self
+            // ID handle: resolve the ID, then load the object it names
+            [$handleType, , $handleLoadClass] = $this->resolveIdHandle($field, $parentType);
             $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
             $this->generateMethodArgsBody($method, $sortedArgs, 'leafQueryBuilder');
+            $method->addBody('$id = $this->queryLeaf($leafQueryBuilder, ?);', [$field->name]);
             $method->addBody(
-                '$this->queryLeaf($leafQueryBuilder, ?);',
-                [$field->name]
+                'return $this->client->loadObjectFromId(' . $handleLoadClass
+                . '::class, new \Dagger\Id((string)$id), ?);',
+                [$handleType]
             );
-            $method->addBody('return $this;');
         } elseif (
             $this->supportsNullableObjects
             && !$returnType->isNonNull()
@@ -299,11 +304,11 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         $returnType = $field->type;
-        $isConvertID = $field->isConvertID();
+        $isConvertID = $field->isConvertID($this->supportsIdHandles);
 
         if ($isConvertID) {
-            $returnTypeName = $this->formatPhpFqcn($this->formatPhpClassName($parentType->name));
-            $method->setReturnType($returnTypeName);
+            [, $handleReturnType] = $this->resolveIdHandle($field, $parentType);
+            $method->setReturnType($handleReturnType);
             $method->setReturnNullable(false);
         } else {
             $phpReturnType = $this->resolveReturnType($returnType, $field);
@@ -322,6 +327,26 @@ class NewCodegenVisitor extends CodeWriter
     }
 
     // ---- Type resolution ----
+
+    /**
+     * Resolve an ID handle field: the GraphQL type it loads, the PHP return
+     * type (the object, or the interface it names), and the class to load
+     * it through (the interface's FooClient class for interface handles).
+     *
+     * @return array{0: string, 1: string, 2: string}
+     */
+    private function resolveIdHandle(IntrospectionField $field, IntrospectionType $parentType): array
+    {
+        $handleType = $field->idHandleType($this->supportsIdHandles);
+        $isInterface = $handleType === $parentType->name
+            ? $parentType->kind === 'INTERFACE'
+            : in_array($handleType, $this->interfaceNames, true);
+        $className = $this->formatPhpClassName($handleType === 'Query' ? 'Client' : $handleType);
+        $returnType = $this->formatPhpFqcn($className);
+        $loadClass = $isInterface ? $this->formatPhpFqcn($className . 'Client') : $returnType;
+
+        return [$handleType, $returnType, $loadClass];
+    }
 
     /**
      * Resolve the PHP return type for a field.

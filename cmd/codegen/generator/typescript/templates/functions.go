@@ -108,6 +108,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatDeprecation":         funcs.formatDeprecation,
 		"FormatExperimental":        funcs.formatExperimental,
 		"FormatReturnType":          commonFunc.FormatReturnType,
+		"IsInterfaceHandle":         funcs.isInterfaceHandle(commonFunc),
 		"FormatInputType":           funcs.formatInputType(commonFunc),
 		"FormatOutputType":          commonFunc.FormatOutputType,
 		"FormatEnum":                funcs.formatEnum,
@@ -188,6 +189,26 @@ func (funcs typescriptTemplateFuncs) supportsNullableObjects() bool {
 // isInterface checks if the type is a GraphQL interface.
 func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindInterface
+}
+
+// isInterfaceHandle reports whether an ID-handle field loads an interface
+// (through its _FooClient class) rather than an object. The parent is
+// consulted first so interface methods resolve even when the interface is
+// not registered in the schema being rendered.
+func (funcs typescriptTemplateFuncs) isInterfaceHandle(
+	commonFunc *generator.CommonFunctions,
+) func(field introspection.Field) bool {
+	return func(field introspection.Field) bool {
+		handle := commonFunc.IDHandleType(field)
+		if field.ParentObject != nil && handle == field.ParentObject.Name {
+			return field.ParentObject.Kind == introspection.TypeKindInterface
+		}
+		if funcs.fullSchema == nil {
+			return false
+		}
+		t := funcs.fullSchema.Types.Get(handle)
+		return t != nil && t.Kind == introspection.TypeKindInterface
+	}
 }
 
 // formatInputType returns a function that formats input values.

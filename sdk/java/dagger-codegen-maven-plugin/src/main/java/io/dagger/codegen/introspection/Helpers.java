@@ -84,15 +84,20 @@ public class Helpers {
    * expectedType directive (sync(), spawn(), ...) or a legacy FooID scalar. The generated method
    * loads that object from the returned ID rather than exposing the ID itself.
    */
-  static boolean isIdToConvert(Field field) {
-    return idHandleType(field) != null;
+  static boolean isIdToConvert(Field field, Schema schema) {
+    return idHandleType(field, schema) != null;
   }
 
   /**
    * Returns the name of the object type an ID-handle field resolves to, or null when the field does
    * not return an ID handle (see {@link #isIdToConvert}).
+   *
+   * <p>Fields returning their parent's own ID (sync-likes) have always been loaded as the parent;
+   * from {@link Schema#supportsIdHandles()} on every expected type is loaded, so LLM.spawn returns
+   * an Agent rather than its ID. Older views keep the parent-only rule so their generated
+   * signatures do not move.
    */
-  static String idHandleType(Field field) {
+  static String idHandleType(Field field, Schema schema) {
     if ("id".equals(field.getName())) {
       return null;
     }
@@ -103,7 +108,12 @@ public class Helpers {
     // Unified ID: the expectedType directive names the object
     if ("ID".equals(typeName)) {
       String expectedType = field.getExpectedType();
-      return expectedType == null || expectedType.isEmpty() ? null : expectedType;
+      if (expectedType == null || expectedType.isEmpty()) {
+        return null;
+      }
+      boolean parentsOwnId =
+          field.getParentObject() != null && expectedType.equals(field.getParentObject().getName());
+      return parentsOwnId || schema.supportsIdHandles() ? expectedType : null;
     }
     // Legacy: FooID scalar
     if (typeName != null && typeName.endsWith("ID") && typeName.length() > 2) {

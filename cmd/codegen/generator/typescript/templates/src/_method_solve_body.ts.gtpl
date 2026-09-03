@@ -80,7 +80,7 @@ The dot is an introspection.Field. */ -}}
     return new {{ $promiseRetType | FormatProtected | FormatName }}(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
       {{- end }}
     {{- else if $convertID -}}
-      {{- if IsInterface .ParentObject }}
+      {{- if IsInterfaceHandle . }}
     return new _{{ $promiseRetType | FormatProtected | FormatName }}Client(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
       {{- else }}
     return new {{ $promiseRetType | FormatProtected | FormatName }}(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))

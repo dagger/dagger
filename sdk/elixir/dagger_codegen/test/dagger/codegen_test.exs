@@ -10,6 +10,12 @@ defmodule Dagger.CodegenTest do
     def format(value), do: value
   end
 
+  defmodule IDHandleGenerator do
+    def generate_object(type), do: type.supports_id_handles
+    def filename(_type), do: "type"
+    def format(value), do: value
+  end
+
   test "reads the schema version" do
     schema =
       Schema.from_map(%{
@@ -45,6 +51,32 @@ defmodule Dagger.CodegenTest do
 
       assert [ok: {"type", ^expected}] =
                Dagger.Codegen.generate(VersionGenerator, schema) |> Enum.to_list()
+    end
+  end
+
+  test "id handle version gate handles boundaries and development versions" do
+    for {version, expected} <- [
+          {nil, true},
+          {"development", true},
+          {"v0.21.0-dev", false},
+          {"v1.0.0-beta.11", false},
+          {"v1.0.0-beta.11-dev", false},
+          {"v1.0.0-beta.12", true},
+          {"v1.0.0-beta.12-dev", true},
+          {"v1.0.0-rc.1", true},
+          {"v1.0.0", true}
+        ] do
+      schema =
+        Schema.from_map(%{
+          "__schemaVersion" => version,
+          "__schema" => %{
+            "queryType" => %{"name" => "Query"},
+            "types" => [%{"kind" => "OBJECT", "name" => "Query"}]
+          }
+        })
+
+      assert [ok: {"type", ^expected}] =
+               Dagger.Codegen.generate(IDHandleGenerator, schema) |> Enum.to_list()
     end
   end
 end

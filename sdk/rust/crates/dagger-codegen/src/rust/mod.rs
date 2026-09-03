@@ -4,7 +4,7 @@ pub mod templates;
 
 use std::sync::{Arc, Mutex};
 
-use dagger_sdk::core::introspection::Schema;
+use dagger_sdk::core::introspection::{Schema, __TypeKind};
 use eyre::Context;
 use genco::prelude::rust;
 
@@ -25,9 +25,18 @@ pub struct RustGenerator {}
 impl Generator for RustGenerator {
     fn generate(&self, schema: Schema) -> eyre::Result<String> {
         let render = Arc::new(Mutex::new(rust::Tokens::new()));
+        let interface_names = schema
+            .types
+            .iter()
+            .flatten()
+            .flatten()
+            .filter(|t| t.full_type.kind == Some(__TypeKind::INTERFACE))
+            .filter_map(|t| t.full_type.name.clone())
+            .collect();
         let common_funcs = Arc::new(CommonFunctions::new(
             Arc::new(FormatTypeFunc {}),
             schema.schema_version.as_deref(),
+            interface_names,
         ));
 
         tracing::info!("generating dagger for rust");

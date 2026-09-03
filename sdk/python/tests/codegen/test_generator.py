@@ -57,6 +57,7 @@ from codegen.generator import (
     format_name,
     format_output_type,
     generate,
+    supports_id_handles,
     supports_nullable_objects,
 )
 from codegen.generator import (
@@ -76,6 +77,12 @@ _EXPECTED_TYPE_SCHEMA = build_schema("""
         | ARGUMENT_DEFINITION
         | INPUT_FIELD_DEFINITION
     type Foo { sync: ID! @expectedType(name: "Foo") }
+    interface Syncer { sync: ID! @expectedType(name: "Syncer") }
+    type Agent { id: ID! @expectedType(name: "Agent") }
+    type LLM {
+        spawn: ID! @expectedType(name: "Agent")
+        syncer: ID! @expectedType(name: "Syncer")
+    }
     type Secret { plaintext: String! }
     type Query {
         fn(secret: ID! @expectedType(name: "Secret")): String
@@ -285,6 +292,62 @@ def test_core_sync(ctx: Context):
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "sync", _args)'
     )
+
+
+def _llm_field(name: str, schema_version: str = "") -> _ObjectField:
+    llm_type = _EXPECTED_TYPE_SCHEMA.type_map["LLM"]
+    return _ObjectField(
+        Context(schema=_EXPECTED_TYPE_SCHEMA, schema_version=schema_version),
+        name,
+        llm_type.fields[name],
+        llm_type,
+    )
+
+
+def test_core_id_handle():
+    # An ID naming another object is loaded as that object.
+    handler = _llm_field("spawn")
+
+    assert handler.func_signature() == "async def spawn(self) -> Agent:"
+    assert str(handler.func_body()).endswith(
+        'return await self._ctx.execute_sync(self, "spawn", _args, Agent)'
+    )
+
+
+def test_core_id_handle_interface():
+    # An ID naming an interface is loaded through the interface's client.
+    handler = _llm_field("syncer")
+
+    assert handler.func_signature() == "async def syncer(self) -> Syncer:"
+    assert str(handler.func_body()).endswith(
+        'return await self._ctx.execute_sync(self, "syncer", _args, _SyncerClient)'
+    )
+
+
+def test_core_id_handle_older_engine():
+    # Older schema views keep returning the raw ID.
+    handler = _llm_field("spawn", schema_version="v1.0.0-beta.11")
+
+    assert handler.func_signature() == "async def spawn(self) -> str:"
+    assert str(handler.func_body()).endswith("return await _ctx.execute(str)")
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("", True),
+        ("development", True),
+        ("v0.21.0-dev", False),
+        ("v1.0.0-beta.11", False),
+        ("v1.0.0-beta.11-dev", False),
+        ("v1.0.0-beta.12", True),
+        ("v1.0.0-beta.12-dev", True),
+        ("v1.0.0-rc.1", True),
+        ("v1.0.0", True),
+    ],
+)
+def test_id_handle_version_gate(version: str, expected: bool):
+    assert supports_id_handles(version) is expected
 
 
 def test_nullable_object_field():

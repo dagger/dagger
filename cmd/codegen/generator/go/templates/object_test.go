@@ -1,9 +1,15 @@
 package templates
 
 import (
+	"encoding/json"
+	"path/filepath"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 func TestObjectOptionalArgsDeprecatedNoDescription(t *testing.T) {
@@ -266,4 +272,88 @@ func TestInterfaceMethodOptionalArgDeprecated(t *testing.T) {
 	want := updateAndGetFixture(t, "testdata/interface_method_optional_arg_deprecated.golden", got)
 
 	require.Equal(t, want, got)
+}
+
+// idHandleSchemaJSON has an object whose ID-returning fields name its own
+// type (sync), another object (spawn), and an interface (syncer).
+const idHandleSchemaJSON = `
+[
+  {"kind": "SCALAR", "name": "ID"},
+  {"kind": "INTERFACE", "name": "Syncer", "description": "", "fields": []},
+  {"kind": "OBJECT", "name": "Agent", "description": "", "fields": []},
+  {
+    "kind": "OBJECT",
+    "name": "LLM",
+    "description": "",
+    "fields": [
+      {
+        "args": [],
+        "description": "",
+        "name": "sync",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"LLM\""}]}]
+      },
+      {
+        "args": [],
+        "description": "",
+        "name": "spawn",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+      },
+      {
+        "args": [],
+        "description": "",
+        "name": "syncer",
+        "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}},
+        "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+      }
+    ]
+  }
+]
+`
+
+func renderIDHandleObject(t *testing.T, schemaVersion string) string {
+	t.Helper()
+	var types introspection.Types
+	require.NoError(t, json.Unmarshal([]byte(idHandleSchemaJSON), &types))
+	schema := &introspection.Schema{Types: types}
+	generator.SetSchemaParents(schema)
+	generator.SetSchema(schema)
+	t.Cleanup(func() { generator.SetSchema(nil) })
+
+	funcs := GoTemplateFuncs(t.Context(), schema, nil, schemaVersion, generator.Config{}, nil, nil, 0)
+	path := filepath.Join("src", "_types", "object.go.tmpl")
+	tmpl, err := template.New("object.go.tmpl").Funcs(funcs).ParseFiles(path)
+	require.NoError(t, err)
+	return renderTemplate(t, tmpl.Lookup("object.go.tmpl"), schema.Types.Get("LLM"))
+}
+
+func TestObjectIDHandlesLoadTheirExpectedType(t *testing.T) {
+	got := renderIDHandleObject(t, "v1.0.0")
+
+	// the parent's own ID keeps loading the parent
+	require.Contains(t, got, "func (r *LLM) Sync(ctx context.Context) (*LLM, error) {")
+	require.Contains(t, got, `return &LLM{
+		query: selectNode(q.Root(), id, "LLM"),
+	}, nil`)
+	// another object's ID loads that object
+	require.Contains(t, got, "func (r *LLM) Spawn(ctx context.Context) (*Agent, error) {")
+	require.Contains(t, got, `return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil`)
+	// an interface's ID loads through the interface's client struct
+	require.Contains(t, got, "func (r *LLM) Syncer(ctx context.Context) (Syncer, error) {")
+	require.Contains(t, got, `return &SyncerClient{
+		query: selectNode(q.Root(), id, "Syncer"),
+	}, nil`)
+}
+
+func TestObjectIDHandlesKeepRawIDsBeforeCutover(t *testing.T) {
+	got := renderIDHandleObject(t, "v1.0.0-beta.11")
+
+	require.Contains(t, got, "func (r *LLM) Sync(ctx context.Context) (*LLM, error) {")
+	require.Contains(t, got, "func (r *LLM) Spawn(ctx context.Context) (ID, error) {")
+	require.Contains(t, got, "func (r *LLM) Syncer(ctx context.Context) (ID, error) {")
+	require.NotContains(t, got, "&Agent{")
+	require.NotContains(t, got, "&SyncerClient{")
 }

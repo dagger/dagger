@@ -18,7 +18,18 @@ class Codegen
 
     public function generate(): void
     {
-        $visitor = new NewCodegenVisitor($this->writeDir, $this->schema->supportsNullableObjects());
+        $interfaceNames = [];
+        foreach ($this->schema->types as $type) {
+            if ($type->kind === 'INTERFACE') {
+                $interfaceNames[] = $type->name;
+            }
+        }
+        $visitor = new NewCodegenVisitor(
+            $this->writeDir,
+            $this->schema->supportsNullableObjects(),
+            $this->schema->supportsIdHandles(),
+            $interfaceNames,
+        );
 
         $filteredTypes = array_filter($this->schema->types, function (IntrospectionType $type) {
             return !str_starts_with($type->name, '_')
