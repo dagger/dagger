@@ -42,9 +42,9 @@ const (
 	// the process fills fs, execMeta, and every writable mount part at
 	// once.
 	ContainerLazyGroupExecOutputs dagql.LazyGroupKey = "execOutputs"
-	// ContainerLazyGroupWrite is the single written part of a
-	// target-resolved writer; which part it covers is decided by the
-	// op's ContainerLazyGroups from settled metadata.
+	// ContainerLazyGroupWrite fills the snapshot parts produced by a
+	// non-exec writer; which parts it covers is decided by the op's
+	// ContainerLazyGroups from settled metadata.
 	ContainerLazyGroupWrite dagql.LazyGroupKey = "write"
 )
 
@@ -112,9 +112,10 @@ var (
 	_ LazyContainerParts = (*ContainerVolatileExecCacheHitLazy)(nil)
 
 	// Template B (snapshot writers): the exec's joint output group and
-	// the static rootfs writer.
+	// the static rootfs and image writers.
 	_ LazyContainerParts = (*ContainerExecLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithRootFSLazy)(nil)
+	_ LazyContainerParts = (*ContainerFromImageRefLazy)(nil)
 )
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
