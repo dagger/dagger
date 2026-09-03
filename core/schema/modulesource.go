@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -677,53 +676,14 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err != nil {
 			return inst, err
 		}
-	} else {
-		// we found a module config, load the module source using its values
-		configPath := filepath.Join(sourceRootPath, configFilename)
-		contents, err := bk.ReadCallerHostFile(ctx, configPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to read module config file: %w", err)
-		}
-		if err := s.initFromModConfig(contents, localSrc); err != nil {
-			return inst, err
-		}
-
-		// load this module source's context directory, ignore patterns, sdk and deps in parallel
-		var eg errgroup.Group
-		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
-				return fmt.Errorf("failed to load local module source context: %w", err)
-			}
-
-			if localSrc.SDK != nil {
-				localSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), localSrc.SDK, localSrc)
-				if err != nil {
-					return fmt.Errorf("failed to load sdk for local module source: %w", err)
-				}
-			}
-
-			return nil
-		})
-
-		localSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(localSrc.ConfigDependencies))
-		for i, depCfg := range localSrc.ConfigDependencies {
-			eg.Go(func() error {
-				var err error
-				localSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
-				if err != nil {
-					return fmt.Errorf("failed to resolve dep to source: %w", err)
-				}
-				return nil
-			})
-		}
-
-		if err := eg.Wait(); err != nil {
-			return inst, err
-		}
+	} else if err := s.loadConfiguredModuleSource(ctx, localSrc); err != nil {
+		return inst, fmt.Errorf("load local module source: %w", err)
 	}
 
-	if err := localSrc.LoadUserDefaults(ctx); err != nil {
-		return inst, fmt.Errorf("load user defaults: %w", err)
+	if !daggerCfgFound {
+		if err := localSrc.LoadUserDefaults(ctx); err != nil {
+			return inst, fmt.Errorf("load user defaults: %w", err)
+		}
 	}
 
 	return dagql.NewResultForCurrentCall(ctx, localSrc)
@@ -821,11 +781,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		},
 	}
 
-	bk, err := query.Self().Engine(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine client: %w", err)
-	}
-
 	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
 	// Related: https://github.com/dagger/dagger/issues/6292
 	err = dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
@@ -839,7 +794,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 	gitSrc.OriginalSubpath = gitSrc.SourceRootSubpath
 
-	configPath, configFound, err := s.findGitModuleConfig(ctx, gitSrc, doFindUp, allowNotExists)
+	_, configFound, err := s.findGitModuleConfig(ctx, gitSrc, doFindUp, allowNotExists)
 	if err != nil {
 		return inst, err
 	}
@@ -872,60 +827,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, nil
 	}
 
-	var configContents string
-	err = dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(configPath)},
-			},
-		},
-		dagql.Selector{Field: "contents"},
-	)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
-		}
-		return inst, fmt.Errorf("failed to load git module dagger config: %w", err)
-	}
-	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
-		return inst, err
-	}
-
-	// load this module source's context directory and deps in parallel
-	var eg errgroup.Group
-	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
-			return fmt.Errorf("failed to load git module source context: %w", err)
-		}
-
-		if gitSrc.SDK != nil {
-			gitSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), gitSrc.SDK, gitSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for git module source: %w", err)
-			}
-		}
-
-		return nil
-	})
-
-	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
-	for i, depCfg := range gitSrc.ConfigDependencies {
-		eg.Go(func() error {
-			var err error
-			gitSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dep to source: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return inst, err
-	}
-
-	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
-		return inst, fmt.Errorf("load user defaults: %w", err)
+	if err := s.loadConfiguredModuleSource(ctx, gitSrc); err != nil {
+		return inst, fmt.Errorf("load Git module source: %w", err)
 	}
 
 	inst, err = dagql.NewResultForCurrentCall(ctx, gitSrc)
@@ -969,15 +872,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
 	sourceRootSubpath := args.SourceRootPath
 	if sourceRootSubpath == "" {
 		sourceRootSubpath = "."
@@ -1006,61 +900,8 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("dir module source does not contain a dagger config file")
 	}
 	dirSrc.ConfigFilename = configFilename
-	configPath := filepath.Join(dirSrc.SourceRootSubpath, configFilename)
-	var configContents string
-	err = dag.Select(ctx, contextDir, &configContents,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(configPath)},
-			},
-		},
-		dagql.Selector{Field: "contents"},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load dir module dagger config: %w", err)
-	}
-	if err := s.initFromModConfig([]byte(configContents), dirSrc); err != nil {
-		return inst, err
-	}
-
-	// load this module source's deps in parallel
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine client: %w", err)
-	}
-
-	var eg errgroup.Group
-
-	if dirSrc.SDK != nil {
-		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, dirSrc); err != nil {
-				return err
-			}
-
-			var err error
-			dirSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, dirSrc.SDK, dirSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	dirSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(dirSrc.ConfigDependencies))
-	for i, depCfg := range dirSrc.ConfigDependencies {
-		eg.Go(func() error {
-			var err error
-			dirSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dep to source: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return inst, err
+	if err := s.loadConfiguredModuleSource(ctx, dirSrc); err != nil {
+		return inst, fmt.Errorf("load directory module source: %w", err)
 	}
 
 	inst, err = dagql.NewResultForCurrentCall(ctx, dirSrc)
@@ -1068,9 +909,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	if err := dirSrc.LoadUserDefaults(ctx); err != nil {
-		return inst, fmt.Errorf("load user defaults: %w", err)
-	}
 	return inst, nil
 }
 
@@ -1130,9 +968,7 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
 	}
 
-	configFilename, found, err := moduleConfigInDir(ctx, core.WorkspaceStatFS{
-		Workspace: workspaceResult,
-	}, filepath.Join("/", sourceRootPath))
+	configFilename, found, err := moduleConfigInDir(ctx, core.NewModuleSourceFS(nil, src), ".")
 	if err != nil {
 		return inst, fmt.Errorf("workspace module source %q: find module config: %w", sourceRootPath, err)
 	}
@@ -1140,58 +976,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
 	}
 	src.ConfigFilename = configFilename
-	configContents, err := core.WorkspaceReadFile(ctx, workspaceResult, filepath.Join(sourceRootPath, configFilename))
-	if err != nil {
-		return inst, fmt.Errorf("workspace module source %q: read module config: %w", sourceRootPath, err)
-	}
-	if err := s.initFromModConfig(configContents, src); err != nil {
-		return inst, err
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
+	if err := s.loadConfiguredModuleSource(ctx, src); err != nil {
+		return inst, fmt.Errorf("load workspace module source: %w", err)
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
-	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("workspace module source: engine client: %w", err)
-	}
-
-	var eg errgroup.Group
-	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, src); err != nil {
-			return fmt.Errorf("load workspace module source context: %w", err)
-		}
-		if src.SDK != nil {
-			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
-			if err != nil {
-				return fmt.Errorf("load SDK for workspace module source: %w", err)
-			}
-			src.SDKImpl = loaded
-		}
-		return nil
-	})
-
-	src.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigDependencies))
-	for i, depCfg := range src.ConfigDependencies {
-		eg.Go(func() error {
-			dep, err := core.ResolveDepToSource(ctx, bk, dag, src, depCfg.Source, depCfg.Pin, depCfg.Name)
-			if err != nil {
-				return fmt.Errorf("resolve workspace module dependency: %w", err)
-			}
-			src.Dependencies[i] = dep
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return inst, err
-	}
-	if err := src.LoadUserDefaults(ctx); err != nil {
-		return inst, fmt.Errorf("load workspace module user defaults: %w", err)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 }
@@ -1313,16 +1103,73 @@ func moduleSourceConfigFilename(src *core.ModuleSource) string {
 	return modules.Filename
 }
 
+// loadConfiguredModuleSource performs the source-independent half of module
+// loading after the source kind, root, and config filename have been resolved.
+// All filesystem access goes through ModuleSourceFS, so callers do not need to
+// know whether the source is backed by the host, Git, a Directory, or a
+// Workspace.
+func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src *core.ModuleSource) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return fmt.Errorf("module source engine client: %w", err)
+	}
+
+	configContents, err := core.NewModuleSourceFS(bk, src).ReadFile(ctx, moduleSourceConfigFilename(src))
+	if err != nil {
+		return fmt.Errorf("read module config: %w", err)
+	}
+	if err := s.initFromModConfig(configContents, src); err != nil {
+		return err
+	}
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		if err := s.loadModuleSourceContext(ctx, src); err != nil {
+			return fmt.Errorf("load module source context: %w", err)
+		}
+		if src.SDK != nil {
+			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+			if err != nil {
+				return fmt.Errorf("load module source SDK: %w", err)
+			}
+			src.SDKImpl = loaded
+		}
+		return nil
+	})
+
+	src.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigDependencies))
+	for i, depCfg := range src.ConfigDependencies {
+		eg.Go(func() error {
+			dep, err := core.ResolveDepToSource(ctx, bk, dag, src, depCfg.Source, depCfg.Pin, depCfg.Name)
+			if err != nil {
+				return fmt.Errorf("resolve module dependency: %w", err)
+			}
+			src.Dependencies[i] = dep
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return fmt.Errorf("load module source user defaults: %w", err)
+	}
+	return nil
+}
+
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) error {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get dag server: %w", err)
-	}
-
 	// we load the includes specified by the user in the module config (if any) plus a few
 	// prepended paths that are always loaded
 	fullIncludePaths := []string{
@@ -1342,69 +1189,20 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
 	}
 
-	if src.Workspace.Self() != nil {
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-		return dag.Select(ctx, src.Workspace, &src.ContextDirectory, dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("/")},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
-				{Name: "gitignore", Value: dagql.NewBoolean(true)},
-			},
-		})
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		// Directory sources already carry their complete in-engine context.
+		return nil
 	}
 
-	switch src.Kind {
-	case core.ModuleSourceKindLocal:
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
-		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
-			dagql.Selector{Field: "host"},
-			dagql.Selector{
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
-					{Name: "gitignore", Value: dagql.NewBoolean(true)},
-				},
-			},
-		)
-		if err != nil {
-			return err
-		}
-
-		// A worktree/submodule checkout has a dangling .git pointer file at
-		// the context root; the engine never interprets it (git-ness comes
-		// canonically via MaterializeHostGitCheckout), so drop it before it
-		// poisons git discovery near the synced tree.
-		src.ContextDirectory, err = core.DropRootGitPointerFile(ctx, dag, src.ContextDirectory)
-		if err != nil {
-			return err
-		}
-
-	case core.ModuleSourceKindGit:
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-		unfilteredContextDirID, err := src.Git.UnfilteredContextDir.ID()
-		if err != nil {
-			return fmt.Errorf("failed to get git unfiltered context directory ID: %w", err)
-		}
-
-		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
-			dagql.Selector{Field: "directory"},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "source", Value: dagql.NewID[*core.Directory](unfilteredContextDirID)},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
-				},
-			},
-		)
-		if err != nil {
-			return err
-		}
+	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
+		Include:   fullIncludePaths,
+		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
+	})
+	if err != nil {
+		return err
 	}
-
+	src.ContextDirectory = contextDir
 	return nil
 }
 

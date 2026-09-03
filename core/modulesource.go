@@ -1492,25 +1492,7 @@ func (src *ModuleSource) LoadContextDir(
 	path string,
 	filter CopyFilter,
 ) (inst dagql.ObjectResult[*Directory], err error) {
-	filterInputs := []dagql.NamedInput{}
-	if len(filter.Include) > 0 {
-		filterInputs = append(filterInputs, dagql.NamedInput{
-			Name:  "include",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
-		})
-	}
-	if len(filter.Exclude) > 0 {
-		filterInputs = append(filterInputs, dagql.NamedInput{
-			Name:  "exclude",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
-		})
-	}
-	if filter.Gitignore {
-		filterInputs = append(filterInputs, dagql.NamedInput{
-			Name:  "gitignore",
-			Value: dagql.NewBoolean(true),
-		})
-	}
+	filterInputs := copyFilterInputs(filter)
 
 	// Determine the context for defaultPath arguments, in priority order:
 	//
@@ -1523,10 +1505,8 @@ func (src *ModuleSource) LoadContextDir(
 	// Git, or a Directory.
 	if ws, ok := WorkspaceFromContext(ctx); ok {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
-	} else if src.Workspace.Self() != nil {
-		inst, err = src.loadContextFromWorkspace(ctx, dag, src.Workspace, path, filterInputs)
 	} else {
-		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
+		inst, err = NewModuleSourceFS(nil, src).directory(ctx, dag, path, filterInputs)
 	}
 	if err != nil {
 		return inst, err
@@ -1559,6 +1539,29 @@ func (src *ModuleSource) LoadContextDir(
 	}
 
 	return inst, nil
+}
+
+func copyFilterInputs(filter CopyFilter) []dagql.NamedInput {
+	var inputs []dagql.NamedInput
+	if len(filter.Include) > 0 {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
+		})
+	}
+	if len(filter.Exclude) > 0 {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
+		})
+	}
+	if filter.Gitignore {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "gitignore",
+			Value: dagql.NewBoolean(true),
+		})
+	}
+	return inputs
 }
 
 func (src *ModuleSource) loadContextFromWorkspace(
@@ -2099,7 +2102,7 @@ func ResolveDepToSource(
 
 	parsedDepRef, err := ParseRefString(
 		ctx,
-		ModuleSourceStatFS{bk, parentSrc},
+		NewModuleSourceFS(bk, parentSrc),
 		depSrcRef,
 		depPin,
 	)
@@ -2352,9 +2355,40 @@ func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool,
 	}
 }
 
-type ModuleSourceStatFS struct {
+// ModuleSourceFS provides filesystem access through a ModuleSource's backing
+// source, including a retained Workspace when present.
+type ModuleSourceFS struct {
 	bk  *engineutil.Client
 	src *ModuleSource
+}
+
+func NewModuleSourceFS(bk *engineutil.Client, src *ModuleSource) *ModuleSourceFS {
+	return &ModuleSourceFS{bk: bk, src: src}
+}
+
+// ContextDirectory loads the source's context root. Filter patterns are
+// context-root-relative, matching ModuleSource.ContextDirectory semantics.
+func (fs ModuleSourceFS) ContextDirectory(ctx context.Context, filter CopyFilter) (dagql.ObjectResult[*Directory], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	return fs.directory(ctx, dag, "/", copyFilterInputs(filter))
+}
+
+func (fs ModuleSourceFS) directory(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (dagql.ObjectResult[*Directory], error) {
+	if fs.src == nil {
+		return dagql.ObjectResult[*Directory]{}, os.ErrNotExist
+	}
+	if fs.src.Workspace.Self() != nil {
+		return fs.src.loadContextFromWorkspace(ctx, dag, fs.src.Workspace, path, filterInputs)
+	}
+	return fs.src.loadContextFromSource(ctx, dag, path, filterInputs)
 }
 
 func CallDirExists(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, bool, error) {
@@ -2429,15 +2463,16 @@ func DirectoryReadFile(ctx context.Context, dir dagql.ObjectResult[*Directory], 
 	return []byte(contents), nil
 }
 
-func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+func (fs ModuleSourceFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	if fs.src == nil {
 		return "", nil, os.ErrNotExist
 	}
 	if fs.src.Workspace.Self() != nil {
-		return WorkspaceStatFS{
-			Workspace: fs.src.Workspace,
-			Root:      fs.src.SourceRootSubpath,
-		}.Stat(ctx, path)
+		dir, basename, err := fs.workspaceEntry(ctx, path)
+		if err != nil {
+			return "", nil, err
+		}
+		return CallDirStat(ctx, dir, basename)
 	}
 
 	switch fs.src.Kind {
@@ -2455,15 +2490,19 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 	}
 }
 
-func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool, error) {
 	if fs.src == nil {
 		return "", false, nil
 	}
 	if fs.src.Workspace.Self() != nil {
-		return WorkspaceStatFS{
-			Workspace: fs.src.Workspace,
-			Root:      fs.src.SourceRootSubpath,
-		}.Exists(ctx, path)
+		dir, basename, err := fs.workspaceEntry(ctx, path)
+		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
+			return filepath.Dir(path), false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		return CallDirExists(ctx, dir, basename)
 	}
 
 	switch fs.src.Kind {
@@ -2481,74 +2520,38 @@ func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, b
 	}
 }
 
-// WorkspaceStatFS implements StatFS against a workspace without first
-// converting its complete tree to a Directory. Root is workspace-relative;
-// callers may use it to scope paths to a module within the workspace.
-type WorkspaceStatFS struct {
-	Workspace dagql.ObjectResult[*Workspace]
-	Root      string
-}
-
-func (fs WorkspaceStatFS) Stat(ctx context.Context, p string) (string, *Stat, error) {
+func (fs ModuleSourceFS) workspaceEntry(ctx context.Context, path string) (dagql.ObjectResult[*Directory], string, error) {
+	var dir dagql.ObjectResult[*Directory]
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return "", nil, err
+		return dir, "", err
 	}
-	workspacePath := filepath.Join("/", fs.Root, p)
+	workspacePath := filepath.Join("/", fs.src.SourceRootSubpath, path)
 	parentPath := filepath.Dir(workspacePath)
 	basename := filepath.Base(workspacePath)
-	var dir dagql.ObjectResult[*Directory]
-	if err := dag.Select(ctx, fs.Workspace, &dir, dagql.Selector{
+	if err := dag.Select(ctx, fs.src.Workspace, &dir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{Name: "path", Value: dagql.String(parentPath)},
 			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(basename)}},
 		},
 	}); err != nil {
-		return "", nil, err
+		return dir, "", err
 	}
-	return CallDirStat(ctx, dir, basename)
+	return dir, basename, nil
 }
 
-func (fs WorkspaceStatFS) Exists(ctx context.Context, p string) (string, bool, error) {
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	workspacePath := filepath.Join("/", fs.Root, p)
-	parentPath := filepath.Dir(workspacePath)
-	basename := filepath.Base(workspacePath)
-	var dir dagql.ObjectResult[*Directory]
-	if err := dag.Select(ctx, fs.Workspace, &dir, dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(parentPath)},
-			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(basename)}},
-		},
-	}); err != nil {
-		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
-			return filepath.Dir(p), false, nil
-		}
-		return "", false, err
-	}
-	return CallDirExists(ctx, dir, basename)
-}
-
-// WorkspaceReadFile reads one workspace file without materializing the
-// workspace's complete tree.
-func WorkspaceReadFile(ctx context.Context, workspace dagql.ObjectResult[*Workspace], p string) ([]byte, error) {
+func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
+	file, err := fs.src.LoadContextFile(ctx, dag, path)
+	if err != nil {
+		return nil, err
+	}
 	var contents dagql.String
-	if err := dag.Select(ctx, workspace, &contents,
-		dagql.Selector{
-			Field: "file",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(filepath.Join("/", p))}},
-		},
-		dagql.Selector{Field: "contents"},
-	); err != nil {
+	if err := dag.Select(ctx, file, &contents, dagql.Selector{Field: "contents"}); err != nil {
 		return nil, err
 	}
 	return []byte(contents), nil
