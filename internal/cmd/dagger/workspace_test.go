@@ -24,6 +24,12 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 	require.Nil(t, rootCmd.PersistentFlags().Lookup("lock"))
 
+	cmd, _, err = rootCmd.Find([]string{"install"})
+	require.NoError(t, err)
+	require.Same(t, installAliasCmd, cmd)
+	require.True(t, cmd.Hidden)
+	require.NotNil(t, cmd.Flags().Lookup("name"))
+
 	cmd, _, err = rootCmd.Find([]string{"module", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
@@ -127,10 +133,20 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, settingsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
+	cmd, _, err = rootCmd.Find([]string{"settings"})
+	require.NoError(t, err)
+	require.Same(t, settingsAliasCmd, cmd)
+	require.True(t, cmd.Hidden)
+
 	cmd, _, err = rootCmd.Find([]string{"module", "uninstall"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepUninstallCmd, cmd)
 	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"uninstall"})
+	require.NoError(t, err)
+	require.Same(t, uninstallAliasCmd, cmd)
+	require.True(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"module", "list"})
 	require.NoError(t, err)
