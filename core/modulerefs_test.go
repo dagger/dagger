@@ -52,6 +52,11 @@ func TestParsedGitRefStringSetVersion(t *testing.T) {
 	require.True(t, parsed.HasVersion)
 	require.Equal(t, "v1.2-beta", parsed.ModVersion)
 
+	require.EqualError(t,
+		parsed.SetVersion("v2"),
+		`version query "v2" cannot be used because the module source ref already has version "v1.2-beta"`,
+	)
+
 	invalid := &ParsedGitRefString{}
 	require.ErrorContains(t, invalid.SetVersion("main"), `invalid version query "main"`)
 }

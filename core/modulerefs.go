@@ -129,6 +129,13 @@ func (p *ParsedGitRefString) SetVersion(version string) error {
 	if version == "" {
 		return nil
 	}
+	if p.HasVersion {
+		return fmt.Errorf(
+			"version query %q cannot be used because the module source ref already has version %q",
+			version,
+			p.ModVersion,
+		)
+	}
 	if _, err := parseReleaseVersionQuery(version); err != nil {
 		return err
 	}

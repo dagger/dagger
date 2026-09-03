@@ -846,6 +846,22 @@ func (LockfileSuite) TestOCIVersionQueryCreatesPin(ctx context.Context, t *testc
 	require.NotEmpty(t, requireOCISHALockValue(t, lockBytes, "docker.io/library/alpine:"+selectedTag))
 }
 
+func (LockfileSuite) TestOCIVersionQueryRejectsTaggedAddress(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "oci-version-tag.graphql", `{
+  container {
+    from(address: "alpine:3.20", version: "3.20") {
+      imageRef
+    }
+  }
+}`)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err, `version query "3.20" cannot be used with image address "alpine:3.20" because it contains a tag or digest`)
+}
+
 func writeOCILatestLock(
 	t *testctx.T,
 	workdir,
