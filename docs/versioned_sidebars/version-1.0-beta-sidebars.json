@@ -175,6 +175,8 @@
                 "api/reference/generated-code",
                 "api/reference/generator",
                 "api/reference/generator-group",
+                "api/reference/git-bundle",
+                "api/reference/git-bundle-ref",
                 "api/reference/git-commit",
                 "api/reference/git-ref",
                 "api/reference/healthcheck-config",

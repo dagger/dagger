@@ -48,6 +48,56 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
+func TestGitBundleSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "git-bundle-schema-client",
+		SessionID: "git-bundle-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	schema := decodeSchemaResponse(t, fullJSON).Schema
+
+	bundleType := schema.Types.Get("GitBundle")
+	require.NotNil(t, bundleType)
+	for _, name := range []string{"version", "objectFormat", "refs", "prerequisiteSHAs", "validate", "asFile"} {
+		require.NotNil(t, schemaField(bundleType, name), name)
+	}
+	bundleRefType := schema.Types.Get("GitBundleRef")
+	require.NotNil(t, bundleRefType)
+	require.NotNil(t, schemaField(bundleRefType, "name"))
+	require.NotNil(t, schemaField(bundleRefType, "sha"))
+	require.NotNil(t, schemaField(schema.Types.Get("File"), "asGitBundle"))
+
+	repositoryType := schema.Types.Get("GitRepository")
+	bundleField := schemaField(repositoryType, "bundle")
+	require.NotNil(t, bundleField)
+	require.Equal(t, "GitRef", schemaArgument(t, bundleField, "base").Directives.ExpectedType())
+	withBundleField := schemaField(repositoryType, "withBundle")
+	require.NotNil(t, withBundleField)
+	require.Equal(t, "GitBundle", schemaArgument(t, withBundleField, "bundle").Directives.ExpectedType())
+}
+
+func schemaArgument(t *testing.T, field *codegenintrospection.Field, name string) *codegenintrospection.InputValue {
+	t.Helper()
+	for i := range field.Args {
+		if field.Args[i].Name == name {
+			return &field.Args[i]
+		}
+	}
+	require.Failf(t, "missing GraphQL argument", "expected argument %q on field %q", name, field.Name)
+	return nil
+}
+
 func TestSchemaJSONScrubbing(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)

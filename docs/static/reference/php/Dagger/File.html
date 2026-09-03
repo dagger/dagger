@@ -153,6 +153,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asGitBundle">asGitBundle</a>()
+        
+                                            <p><p>Interpret this file as a Git bundle by lazily parsing its header.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -429,8 +439,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asJSON">
+                    <h3 id="method_asGitBundle">
         <div class="location">at line 31</div>
+        <code>                    <a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a>
+    <strong>asGitBundle</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Interpret this file as a Git bundle by lazily parsing its header.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asJSON">
+        <div class="location">at line 40</div>
         <code>                    <a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a>
     <strong>asJSON</strong>()
         </code>
@@ -462,7 +504,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_chown">
-        <div class="location">at line 40</div>
+        <div class="location">at line 49</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>chown</strong>(string $owner)
         </code>
@@ -504,7 +546,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_contents">
-        <div class="location">at line 50</div>
+        <div class="location">at line 59</div>
         <code>                    string
     <strong>contents</strong>(int|null $offsetLines = null, int|null $limitLines = null)
         </code>
@@ -551,7 +593,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_digest">
-        <div class="location">at line 65</div>
+        <div class="location">at line 74</div>
         <code>                    string
     <strong>digest</strong>(bool|null $excludeMetadata = false)
         </code>
@@ -593,7 +635,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_export">
-        <div class="location">at line 77</div>
+        <div class="location">at line 86</div>
         <code>                    string
     <strong>export</strong>(string $path, bool|null $allowParentDirPath = false)
         </code>
@@ -640,7 +682,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 90</div>
+        <div class="location">at line 99</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -672,7 +714,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 99</div>
+        <div class="location">at line 108</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -704,7 +746,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_search">
-        <div class="location">at line 110</div>
+        <div class="location">at line 119</div>
         <code>                    array
     <strong>search</strong>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = [], array|null $globs = [])
         </code>
@@ -796,7 +838,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_size">
-        <div class="location">at line 161</div>
+        <div class="location">at line 170</div>
         <code>                    int
     <strong>size</strong>()
         </code>
@@ -828,7 +870,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stat">
-        <div class="location">at line 170</div>
+        <div class="location">at line 179</div>
         <code>                    <abbr title="Dagger\Dagger\Stat">Stat</abbr>|null
     <strong>stat</strong>()
         </code>
@@ -860,7 +902,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 184</div>
+        <div class="location">at line 193</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -892,7 +934,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 194</div>
+        <div class="location">at line 203</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -934,7 +976,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withReplaced">
-        <div class="location">at line 212</div>
+        <div class="location">at line 221</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withReplaced</strong>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
         </code>
@@ -994,7 +1036,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withTimestamps">
-        <div class="location">at line 233</div>
+        <div class="location">at line 242</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withTimestamps</strong>(int $timestamp)
         </code>

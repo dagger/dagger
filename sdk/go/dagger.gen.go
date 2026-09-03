@@ -6852,6 +6852,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Interpret this file as a Git bundle by lazily parsing its header.
+func (r *File) AsGitBundle() *GitBundle {
+	q := r.query.Select("asGitBundle")
+
+	return &GitBundle{
+		query: q,
+	}
+}
+
 // Parse the file contents as JSON.
 func (r *File) AsJSON() *JSONValue {
 	q := r.query.Select("asJSON")
@@ -8453,6 +8462,253 @@ func (r *GeneratorGroup) AsNode() Node {
 	}
 }
 
+// A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.
+type GitBundle struct {
+	query *querybuilder.Selection
+
+	id           *ID
+	objectFormat *string
+	version      *int
+}
+type WithGitBundleFunc func(r *GitBundle) *GitBundle
+
+// With calls the provided function with current GitBundle.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitBundle) With(f WithGitBundleFunc) *GitBundle {
+	return f(r)
+}
+
+func (r *GitBundle) WithGraphQLQuery(q *querybuilder.Selection) *GitBundle {
+	return &GitBundle{
+		query: q,
+	}
+}
+
+// Return the bundle bytes as a File.
+func (r *GitBundle) AsFile() *File {
+	q := r.query.Select("asFile")
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitBundle.
+func (r *GitBundle) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitBundle) XXX_GraphQLType() string {
+	return "GitBundle"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitBundle) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitBundle) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitBundle) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Object format capability: sha1 or sha256.
+func (r *GitBundle) ObjectFormat(ctx context.Context) (string, error) {
+	if r.objectFormat != nil {
+		return *r.objectFormat, nil
+	}
+	q := r.query.Select("objectFormat")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commits that must already exist wherever this bundle is applied.
+func (r *GitBundle) PrerequisiteSHAs(ctx context.Context) ([]string, error) {
+	q := r.query.Select("prerequisiteSHAs")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Refs advertised by the bundle and the object IDs they resolve to.
+func (r *GitBundle) Refs(ctx context.Context) ([]GitBundleRef, error) {
+	q := r.query.Select("refs")
+
+	q = q.Select("id")
+
+	type refs struct {
+		Id ID
+	}
+
+	convert := func(fields []refs) []GitBundleRef {
+		out := []GitBundleRef{}
+
+		for i := range fields {
+			val := GitBundleRef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitBundleRef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []refs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Perform full structural verification of the bundle and error if it is malformed.
+func (r *GitBundle) Validate() *GitBundle {
+	q := r.query.Select("validate")
+
+	return &GitBundle{
+		query: q,
+	}
+}
+
+// Bundle format version (2 or 3).
+func (r *GitBundle) Version(ctx context.Context) (int, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundle as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitBundle) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A ref advertised by a Git bundle.
+type GitBundleRef struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+	sha  *string
+}
+
+func (r *GitBundleRef) WithGraphQLQuery(q *querybuilder.Selection) *GitBundleRef {
+	return &GitBundleRef{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitBundleRef.
+func (r *GitBundleRef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitBundleRef) XXX_GraphQLType() string {
+	return "GitBundleRef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitBundleRef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitBundleRef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitBundleRef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The advertised ref name.
+func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID the advertised ref resolves to.
+func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundleRef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitBundleRef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An immutable git commit.
 type GitCommit struct {
 	query *querybuilder.Selection
@@ -9044,6 +9300,14 @@ type GitRepository struct {
 	id  *ID
 	url *string
 }
+type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
+
+// With calls the provided function with current GitRepository.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
+	return f(r)
+}
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
@@ -9104,6 +9368,28 @@ func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranc
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitRepositoryBundleOpts contains options for GitRepository.Bundle
+type GitRepositoryBundleOpts struct {
+	// A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+	Base *GitRef
+}
+
+// Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+func (r *GitRepository) Bundle(refs []string, opts ...GitRepositoryBundleOpts) *GitBundle {
+	q := r.query.Select("bundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
+	q = q.Arg("refs", refs)
+
+	return &GitBundle{
+		query: q,
+	}
 }
 
 // Returns details of a commit.
@@ -9238,6 +9524,29 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitRepositoryWithBundleOpts contains options for GitRepository.WithBundle
+type GitRepositoryWithBundleOpts struct {
+	// An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+	PrerequisiteRef string
+}
+
+// Import a Git bundle after fetching and verifying all of its prerequisites.
+func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithBundleOpts) *GitRepository {
+	assertNotNil("bundle", bundle)
+	q := r.query.Select("withBundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `prerequisiteRef` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PrerequisiteRef) {
+			q = q.Arg("prerequisiteRef", opts[i].PrerequisiteRef)
+		}
+	}
+	q = q.Arg("bundle", bundle)
+
+	return &GitRepository{
+		query: q,
+	}
 }
 
 // AsNode returns this GitRepository as a Node.

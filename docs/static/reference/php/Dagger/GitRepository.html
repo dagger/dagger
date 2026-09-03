@@ -173,6 +173,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_bundle">bundle</a>(array $refs, <abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null $base = null)
+        
+                                            <p><p>Pack the given refs and the objects needed to reconstruct them into a Git bundle.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -259,6 +269,16 @@
                     <a href="#method_url">url</a>()
         
                                             <p><p>The URL of the git repository.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withBundle">withBundle</a>(<a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> $bundle, string|null $prerequisiteRef = &#039;&#039;)
+        
+                                            <p><p>Import a Git bundle after fetching and verifying all of its prerequisites.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -483,8 +503,55 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_commit">
+                    <h3 id="method_bundle">
         <div class="location">at line 53</div>
+        <code>                    <a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a>
+    <strong>bundle</strong>(array $refs, <abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null $base = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Pack the given refs and the objects needed to reconstruct them into a Git bundle.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$refs</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null</td>
+                <td>$base</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_commit">
+        <div class="location">at line 66</div>
         <code>                    <a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a>
     <strong>commit</strong>(string $id)
         </code>
@@ -526,7 +593,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_head">
-        <div class="location">at line 63</div>
+        <div class="location">at line 76</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>head</strong>()
         </code>
@@ -558,7 +625,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 72</div>
+        <div class="location">at line 85</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -590,7 +657,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_latest">
-        <div class="location">at line 83</div>
+        <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>latest</strong>()
         </code>
@@ -622,7 +689,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 92</div>
+        <div class="location">at line 105</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>ref</strong>(string $name)
         </code>
@@ -664,7 +731,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tag">
-        <div class="location">at line 102</div>
+        <div class="location">at line 115</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>tag</strong>(string $name)
         </code>
@@ -706,7 +773,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tags">
-        <div class="location">at line 112</div>
+        <div class="location">at line 125</div>
         <code>                    array
     <strong>tags</strong>(array|null $patterns = null)
         </code>
@@ -748,7 +815,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uncommitted">
-        <div class="location">at line 124</div>
+        <div class="location">at line 137</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>uncommitted</strong>()
         </code>
@@ -780,7 +847,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_url">
-        <div class="location">at line 133</div>
+        <div class="location">at line 146</div>
         <code>                    string
     <strong>url</strong>()
         </code>
@@ -799,6 +866,53 @@
                     <table class="table table-condensed">
         <tr>
             <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withBundle">
+        <div class="location">at line 155</div>
+        <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+    <strong>withBundle</strong>(<a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> $bundle, string|null $prerequisiteRef = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Import a Git bundle after fetching and verifying all of its prerequisites.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></td>
+                <td>$bundle</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$prerequisiteRef</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></td>
             <td></td>
         </tr>
     </table>

@@ -6645,6 +6645,12 @@ class File(Type):
         _ctx = self._select("asEnvFile", _args)
         return EnvFile(_ctx)
 
+    def as_git_bundle(self) -> "GitBundle":
+        """Interpret this file as a Git bundle by lazily parsing its header."""
+        _args: list[Arg] = []
+        _ctx = self._select("asGitBundle", _args)
+        return GitBundle(_ctx)
+
     def as_json(self) -> "JSONValue":
         """Parse the file contents as JSON."""
         _args: list[Arg] = []
@@ -8109,6 +8115,206 @@ class GeneratorGroup(Type):
 
 
 @typecheck
+class GitBundle(Type):
+    """A Git bundle: a self-describing container of refs and the objects
+    needed to reconstruct them, optionally rooted at prerequisite
+    commits."""
+
+    def as_file(self) -> File:
+        """Return the bundle bytes as a File."""
+        _args: list[Arg] = []
+        _ctx = self._select("asFile", _args)
+        return File(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this GitBundle.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def object_format(self) -> str:
+        """Object format capability: sha1 or sha256.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("objectFormat", _args)
+        return await _ctx.execute(str)
+
+    async def prerequisite_sh_as(self) -> list[str]:
+        """Commits that must already exist wherever this bundle is applied.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("prerequisiteSHAs", _args)
+        return await _ctx.execute(list[str])
+
+    async def refs(self) -> list["GitBundleRef"]:
+        """Refs advertised by the bundle and the object IDs they resolve to."""
+        _args: list[Arg] = []
+        _ctx = self._select("refs", _args)
+        return await _ctx.execute_object_list(GitBundleRef)
+
+    def validate(self) -> Self:
+        """Perform full structural verification of the bundle and error if it is
+        malformed.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("validate", _args)
+        return GitBundle(_ctx)
+
+    async def version(self) -> int:
+        """Bundle format version (2 or 3).
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(int)
+
+    def with_(self, cb: Callable[["GitBundle"], "GitBundle"]) -> "GitBundle":
+        """Call the provided callable with current GitBundle.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class GitBundleRef(Type):
+    """A ref advertised by a Git bundle."""
+
+    async def id(self) -> str:
+        """A unique identifier for this GitBundleRef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The advertised ref name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def sha(self) -> str:
+        """The object ID the advertised ref resolves to.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class GitCommit(Type):
     """An immutable git commit."""
 
@@ -8750,6 +8956,31 @@ class GitRepository(Type):
         _ctx = self._select("branches", _args)
         return await _ctx.execute(list[str])
 
+    def bundle(
+        self,
+        refs: list[str],
+        *,
+        base: GitRef | None = None,
+    ) -> GitBundle:
+        """Pack the given refs and the objects needed to reconstruct them into a
+        Git bundle.
+
+        Parameters
+        ----------
+        refs:
+            Refs to advertise in the bundle. At least one named ref is
+            required.
+        base:
+            A Git ref whose reachable objects are omitted and recorded as a
+            prerequisite.
+        """
+        _args = [
+            Arg("refs", refs),
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("bundle", _args)
+        return GitBundle(_ctx)
+
     def commit(self, id: str) -> GitCommit:
         """Returns details of a commit.
 
@@ -8897,6 +9128,39 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
+
+    def with_bundle(
+        self,
+        bundle: GitBundle,
+        *,
+        prerequisite_ref: str | None = "",
+    ) -> Self:
+        """Import a Git bundle after fetching and verifying all of its
+        prerequisites.
+
+        Parameters
+        ----------
+        bundle:
+            The Git bundle to import.
+        prerequisite_ref:
+            An optional remote ref hint for fetching a prerequisite when the
+            remote does not allow fetches by object ID.
+        """
+        _args = [
+            Arg("bundle", bundle),
+            Arg("prerequisiteRef", prerequisite_ref, ""),
+        ]
+        _ctx = self._select("withBundle", _args)
+        return GitRepository(_ctx)
+
+    def with_(
+        self, cb: Callable[["GitRepository"], "GitRepository"]
+    ) -> "GitRepository":
+        """Call the provided callable with current GitRepository.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -16874,6 +17138,8 @@ __all__ = [
     "GeneratedCode",
     "Generator",
     "GeneratorGroup",
+    "GitBundle",
+    "GitBundleRef",
     "GitCommit",
     "GitRef",
     "GitRepository",
