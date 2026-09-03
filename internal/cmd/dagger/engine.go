@@ -185,8 +185,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.WithTerminal = withTerminal
 
-	params.Interactive = interactive
-	params.InteractiveCommand = interactiveCommandParsed
+	params.Interactive = shellOnError
+	params.InteractiveCommand = shellCommandOnErrorParsed
 
 	if hasTTY {
 		params.PromptHandler = Frontend

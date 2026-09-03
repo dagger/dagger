@@ -233,6 +233,11 @@ func TestShouldRegisterSDKInitCommands(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "global shell on error flag",
+			args: []string{"--shell-on-error", "module", "init", "go", "myapp"},
+			want: true,
+		},
+		{
 			name: "unrelated command",
 			args: []string{"sdk", "list"},
 			want: false,

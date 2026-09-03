@@ -95,14 +95,18 @@ func TestDebugFlags(t *testing.T) {
 
 func TestMayCallEngineFlags(t *testing.T) {
 	oldProfile := profileFlag
+	oldShellOnError := shellOnError
+	oldShellCommandOnError := shellCommandOnError
 	t.Cleanup(func() {
 		profileFlag = oldProfile
+		shellOnError = oldShellOnError
+		shellCommandOnError = oldShellCommandOnError
 	})
 
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
 	installMayCallEngineFlags(flags)
 
-	expected := []string{"profile"}
+	expected := []string{"interactive", "interactive-command", "profile", "shell-command-on-error", "shell-on-error"}
 	var count int
 	flags.VisitAll(func(*pflag.Flag) { count++ })
 	require.Equal(t, len(expected), count)
@@ -111,7 +115,43 @@ func TestMayCallEngineFlags(t *testing.T) {
 		require.NotNil(t, flag, name)
 		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
 	}
+	require.Equal(t, "i", flags.Lookup("shell-on-error").Shorthand)
+	require.False(t, flags.Lookup("shell-on-error").Hidden)
+	require.True(t, flags.Lookup("interactive").Hidden)
+	require.Contains(t, flags.Lookup("interactive").Deprecated, "--shell-on-error")
+	require.True(t, flags.Lookup("shell-command-on-error").Hidden)
+	require.True(t, flags.Lookup("interactive-command").Hidden)
+	require.Contains(t, flags.Lookup("interactive-command").Deprecated, "--shell-command-on-error")
 	require.True(t, flags.Lookup("profile").Hidden)
+
+	// Every deprecated alias still drives the same variables.
+	for _, name := range []string{"interactive", "shell-on-error"} {
+		shellOnError = false
+		require.NoError(t, flags.Set(name, "true"))
+		require.True(t, shellOnError, name)
+	}
+	for _, name := range []string{"interactive-command", "shell-command-on-error"} {
+		shellCommandOnError = ""
+		require.NoError(t, flags.Set(name, "/bin/bash"))
+		require.Equal(t, "/bin/bash", shellCommandOnError, name)
+	}
+
+	for _, name := range []string{"interactive", "interactive-command", "shell-command-on-error", "shell-on-error"} {
+		flag := flags.Lookup(name)
+		var visit func(*cobra.Command)
+		visit = func(cmd *cobra.Command) {
+			require.Equal(t, commandHasCapability(cmd, mayCallEngine), FlagAvailableForCommand(cmd, flag), "%s: --%s", cmd.CommandPath(), name)
+			for _, child := range cmd.Commands() {
+				visit(child)
+			}
+		}
+		visit(rootCmd)
+	}
+
+	require.True(t, FlagAvailableForCommand(settingsCmd, flags.Lookup("shell-on-error")))
+	require.False(t, FlagAvailableForCommand(traceCmd, flags.Lookup("shell-on-error")))
+	require.False(t, FlagAvailableForCommand(activityCmd, flags.Lookup("shell-on-error")))
+	require.False(t, FlagAvailableForCommand(sdkInstalledCmd, flags.Lookup("shell-on-error")))
 }
 
 func TestWorkspaceConfigFlags(t *testing.T) {

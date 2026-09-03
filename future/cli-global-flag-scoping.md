@@ -55,12 +55,20 @@ The capability does not depend on the current output type.
 `--verbose` remains global as a diagnostic escape hatch. When a command emits
 a trace, `--verbose` prints a final trace even if the command does not declare
 `MayRenderPipeline`. It does not enable the live TUI or make `--no-exit`,
-`--web`, or `--interactive` applicable.
+`--web`, or other pipeline rendering flags applicable.
 
 `--debug` enables engine and trace diagnostics. It is available when a command
 declares `MayCallEngine OR MayRenderPipeline`. Engine commands request debug
 logs from the engine. Rendering commands expose internal trace details. No
 current command outside this capability union implements debug behavior.
+
+`-i`, `--shell-on-error` asks the engine to open a shell in the failed
+container state when a non-internal container exec fails. It requires
+`MayCallEngine`; it does not require `MayRenderPipeline`. The old
+`--interactive` name remains as a hidden deprecated alias.
+`--shell-command-on-error` sets the command that shell runs. It is hidden
+and also requires `MayCallEngine`; `--interactive-command` remains as a
+hidden deprecated alias.
 
 ### Workspace environment selection
 
@@ -135,7 +143,6 @@ column means that no change is proposed.
 | Scope by capability | `-s`, `--silent` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-d`, `--debug` | Visible | `MayCallEngine OR MayRenderPipeline` |
 | Scope by capability | `--progress` | Visible | `MayRenderPipeline` |
-| Scope by capability | `-i`, `--interactive` | Visible | `MayCallEngine AND MayRenderPipeline` |
 | Scope by capability | `-w`, `--web` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-E`, `--no-exit` | Visible | `MayRenderPipeline` |
 | Scope by capability | `-y`, `--auto-apply` | Visible | `MayProduceOutput` |
@@ -143,7 +150,8 @@ column means that no change is proposed.
 | Scope by capability | `--dot-output` | Hidden | `MayRenderPipeline` |
 | Scope by capability | `--dot-focus-field` | Hidden | `MayRenderPipeline`; requires DOT output |
 | Scope by capability | `--dot-show-internal` | Hidden | `MayRenderPipeline`; requires DOT output |
-| Scope by capability and hide | `--interactive-command` | Visible | `MayCallEngine AND MayRenderPipeline`; only affects `--interactive` |
+| Scope by capability and rename | `-i`, `--interactive` | Visible | `-i`, `--shell-on-error`; `MayCallEngine`; keep `--interactive` as a hidden deprecated alias |
+| Scope by capability, rename and hide | `--interactive-command` | Visible | `--shell-command-on-error`; `MayCallEngine`; keep `--interactive-command` as a hidden deprecated alias |
 | Hide | `--x-release` | Visible | Bootstrap control; prefer `DAGGER_X_RELEASE` |
 | - | `--workdir` | Hidden | Bootstrap working directory |
 | - | `-v`, `--verbose` | Visible | Global diagnostic escape hatch |
@@ -154,5 +162,4 @@ column means that no change is proposed.
 `MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
 `MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
 capability scoping are implemented. All capability-scoped flag moves are
-implemented except `--interactive` and `--interactive-command`. The
-configuration and hide changes are planned.
+implemented. The configuration and remaining hide changes are planned.

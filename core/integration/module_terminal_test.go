@@ -515,7 +515,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "call", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--shell-on-error", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -572,8 +572,8 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = cmd.Wait()
 		require.Error(t, err)
 
-		// We try again with an invalid shell to confirm we replaced the default command
-		// We have to set a TTY though or else the error will just be that the --interactive flag doesn't work without a terminal
+		// Try again with an invalid shell to confirm that the command was replaced.
+		// Keep the old flag here to test the deprecated compatibility alias.
 		console, err = newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
 		defer console.Close()

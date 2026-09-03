@@ -60,23 +60,23 @@ var (
 	workspaceRef string
 	workspaceEnv string
 
-	silent                   = silentFromEnv()
-	verbose                  int
-	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
-	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
-	expandCompleted          = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
-	debugFlag                bool
-	progress                 string
-	interactive              bool
-	interactiveCommand       string
-	interactiveCommandParsed []string
-	web                      bool
-	noExit                   bool
-	xRelease                 string
-	autoApply                bool
-	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
-	enableScaleOut           bool
-	profileFlag              bool
+	silent                    = silentFromEnv()
+	verbose                   int
+	quiet, _                  = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	reveal                    = os.Getenv("DAGGER_REVEAL") != ""
+	expandCompleted           = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
+	debugFlag                 bool
+	progress                  string
+	shellOnError              bool
+	shellCommandOnError       string
+	shellCommandOnErrorParsed []string
+	web                       bool
+	noExit                    bool
+	xRelease                  string
+	autoApply                 bool
+	_, useCloudEngine         = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	enableScaleOut            bool
+	profileFlag               bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -428,8 +428,6 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
-	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
 
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
@@ -461,8 +459,19 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	}
 }
 
+// defaultShellCommandOnError is the command --shell-on-error runs in the
+// failed container.
+const defaultShellCommandOnError = "/bin/sh"
+
 func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
+	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails")
+	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
+	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
+	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
+	engineFlags.Lookup("shell-command-on-error").Hidden = true
+	engineFlags.StringVar(&shellCommandOnError, "interactive-command", defaultShellCommandOnError, "")
+	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
 	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	engineFlags.Lookup("profile").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)
@@ -945,13 +954,13 @@ func Main() {
 		exitWithCode(1)
 	}
 
-	// Parse the interactive command to support shell-like syntax
-	parsedCommand, err := shlex.Split(interactiveCommand)
+	// Parse the shell command to support shell-like syntax.
+	parsedCommand, err := shlex.Split(shellCommandOnError)
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot parse interactive command: %s", err)
+		fmt.Fprintf(stderr, "cannot parse --shell-command-on-error: %s", err)
 		exitWithCode(1)
 	}
-	interactiveCommandParsed = parsedCommand
+	shellCommandOnErrorParsed = parsedCommand
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)

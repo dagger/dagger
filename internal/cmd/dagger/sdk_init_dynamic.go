@@ -442,6 +442,7 @@ func sdkInitGlobalFlagTakesValue(name string) bool {
 		"env",
 		"progress",
 		"lock",
+		"shell-command-on-error",
 		"interactive-command",
 		"x-release",
 		"dot-output",
