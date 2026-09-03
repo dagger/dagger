@@ -19,7 +19,6 @@ dagger [options] [subcommand | file...]
   -c, --command string       Execute a dagger shell command
   -d, --debug                Enable engine and trace diagnostics
       --eager-runtime        load module runtime eagerly
-      --engine string        Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (run 'dagger help engine' for details)
       --env string           Apply a named env overlay; writes target it, creating it if missing
   -m, --load-module string   Use a one-off module (local path or git ref)
       --model string         LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
@@ -27,7 +26,6 @@ dagger [options] [subcommand | file...]
   -M, --no-load-module       Don't load any module for this command
       --progress string      Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count          Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error       Open a shell when a container exec fails
   -s, --silent               Do not show progress at all
   -v, --verbose count        Increase verbosity (use -vv or -vvv for more)
   -w, --web                  Open trace URL in a web browser

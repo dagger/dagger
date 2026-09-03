@@ -66,11 +66,15 @@ selects Dagger Cloud Engines. Other values use the supported engine URI
 schemes. The CLI passes these URIs through without a syntax change. The old
 `--cloud` flag is a hidden compatibility alias for `--engine=cloud`.
 
-The root command declares `MayCallEngine` locally because `dagger FILE` calls
-an engine. Thus, `dagger --engine=cloud FILE` remains valid. Dynamic commands
-stop early global flag parsing at their first schema-owned token. For example,
-the first `--engine` in `dagger --engine=cloud api call deploy --engine
-production` selects the engine. The second is an argument of `deploy`.
+The root command does not declare `MayCallEngine`. Bare `dagger` prints usage,
+so the front-door usage message stays free of the engine flags. Shell-style
+root invocations still call an engine: `dagger FILE` and `dagger -c COMMAND`
+run `dagger shell`, so the CLI checks their flags against the capabilities of
+`dagger shell`. Thus, `dagger --engine=cloud FILE` remains valid, and
+`dagger --engine=cloud` alone is an error. Dynamic commands stop early global
+flag parsing at their first schema-owned token. For example, the first
+`--engine` in `dagger --engine=cloud api call deploy --engine production`
+selects the engine. The second is an argument of `deploy`.
 
 The full list of engine URI schemes is too long for a usage message that 34
 commands print. Four surfaces teach the values, and all four read one catalog

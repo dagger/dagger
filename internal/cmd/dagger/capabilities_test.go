@@ -2,6 +2,8 @@ package daggercmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -204,6 +206,10 @@ func TestEngineFlagHelp(t *testing.T) {
 		require.NotContains(t, help, "tcp://HOST:PORT (no authentication)", name)
 	}
 
+	// The root command does not call the engine, so its usage message stays
+	// free of the engine flags.
+	require.NotContains(t, renderHelp(t, root), "--engine", "root")
+
 	version, _, err := root.Find([]string{"version"})
 	require.NoError(t, err)
 	require.NotContains(t, renderHelp(t, version), "--engine", "version")
@@ -235,7 +241,6 @@ func TestWorkspaceConfigFlags(t *testing.T) {
 
 func TestMayCallEngineCommands(t *testing.T) {
 	expected := []string{
-		"dagger",
 		"dagger agent",
 		"dagger api call",
 		"dagger api client init",
@@ -289,6 +294,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
 
 	for name, cmd := range map[string]*cobra.Command{
+		"root":             rootCmd,
 		"activity":         activityCmd,
 		"cloud rerun":      cloudRerunCmd,
 		"sdk installed":    sdkInstalledCmd,
@@ -299,8 +305,31 @@ func TestMayCallEngineCommands(t *testing.T) {
 	}
 }
 
+func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
+	root := testRootCommand()
+
+	// Bare `dagger` prints usage. It does not call the engine.
+	require.EqualError(t, validateFlagCapabilities(root, []string{"--engine=cloud"}),
+		`flag --engine is not supported by command "dagger"`)
+	require.EqualError(t, validateFlagCapabilities(root, []string{"--shell-on-error"}),
+		`flag --shell-on-error is not supported by command "dagger"`)
+	require.EqualError(t, validateFlagCapabilities(root, []string{"version", "--engine=cloud"}),
+		`flag --engine is not supported by command "dagger version"`)
+
+	// Shell-style root invocations run `dagger shell`, which calls the engine.
+	require.NoError(t, validateFlagCapabilities(root, []string{"--engine=cloud", "-c", "container"}))
+	require.NoError(t, validateFlagCapabilities(root, []string{"-i", "-c", "container"}))
+
+	script := filepath.Join(t.TempDir(), "main.dsh")
+	require.NoError(t, os.WriteFile(script, []byte("container\n"), 0o600))
+	require.NoError(t, validateFlagCapabilities(root, []string{"--engine=cloud", script}))
+
+	require.NoError(t, validateFlagCapabilities(root, []string{"shell", "--engine=cloud"}))
+}
+
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
+		"dagger",
 		"dagger activity",
 		"dagger cloud check",
 		"dagger cloud rerun",

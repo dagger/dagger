@@ -178,9 +178,13 @@ func validateFlagCapabilities(root *cobra.Command, args []string) error {
 	// the flags that it can parse without changing their values.
 	_ = parsed.Parse(commandArgs)
 
+	// Bare `dagger` prints usage, but shell-style root invocations run the
+	// shell command, so they get the shell command's capabilities.
+	effective := rootShellFallbackCommand(cmd, parsed)
+
 	var unsupported []string
 	parsed.Visit(func(flag *pflag.Flag) {
-		if !FlagAvailableForCommand(cmd, flag) {
+		if !FlagAvailableForCommand(effective, flag) {
 			unsupported = append(unsupported, "--"+flag.Name)
 		}
 	})
@@ -192,6 +196,31 @@ func validateFlagCapabilities(root *cobra.Command, args []string) error {
 		return fmt.Errorf("flag %s is not supported by command %q", unsupported[0], cmd.CommandPath())
 	}
 	return fmt.Errorf("flags %s are not supported by command %q", strings.Join(unsupported, ", "), cmd.CommandPath())
+}
+
+// rootShellFallbackCommand reports the command that a root invocation runs.
+// `dagger -c ...` and `dagger file.dsh` fall back to `dagger shell`, so their
+// flags are checked against the shell command instead of the root command.
+func rootShellFallbackCommand(cmd *cobra.Command, parsed *pflag.FlagSet) *cobra.Command {
+	if cmd != rootCmd {
+		return cmd
+	}
+	if args := parsed.Args(); len(args) > 0 && isFile(args[0]) {
+		return shellCmd
+	}
+	// Only root-local flags signal a shell-style invocation. Global flags are
+	// persistent, and they do not select the shell.
+	persistent := rootCmd.PersistentFlags()
+	shellStyle := false
+	parsed.Visit(func(flag *pflag.Flag) {
+		if persistent.Lookup(flag.Name) == nil {
+			shellStyle = true
+		}
+	})
+	if shellStyle {
+		return shellCmd
+	}
+	return cmd
 }
 
 func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {
@@ -209,7 +238,11 @@ func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {
 }
 
 func init() {
-	setLocalCommandCapabilities(rootCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayRenderPipeline)
+	// The root command itself does not call the engine: bare `dagger` prints
+	// usage, and shell-style invocations (`dagger -c ...`) re-enter through
+	// `dagger shell`, which declares the capability. Keeping mayCallEngine off
+	// the root keeps engine flags out of the front-door usage message.
+	setLocalCommandCapabilities(rootCmd, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayRenderPipeline)
 	setLocalCommandCapabilities(workspaceCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	for _, cmd := range []*cobra.Command{
