@@ -221,6 +221,7 @@ func init() {
 	)
 
 	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
+	rootCmd.PersistentFlags().Lookup("org").Hidden = true
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
@@ -429,6 +430,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
+	flags.Lookup("x-release").Hidden = true
 
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)

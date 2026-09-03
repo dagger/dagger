@@ -134,7 +134,6 @@ column means that no change is proposed.
 
 | Change | Flag | Current | Capability or `dagger.toml` field |
 |---|---|---|---|
-| Move to configuration | `--org` | Visible | `cloud.traces.org` |
 | Move to configuration | `--cloud` | Hidden | `cloud.engines.enabled` |
 | Move to configuration | `--scale-out` | Hidden | `cloud.engines.scale-out` |
 | Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
@@ -152,6 +151,7 @@ column means that no change is proposed.
 | Scope by capability | `--dot-show-internal` | Hidden | `MayRenderPipeline`; requires DOT output |
 | Scope by capability and rename | `-i`, `--interactive` | Visible | `-i`, `--shell-on-error`; `MayCallEngine`; keep `--interactive` as a hidden deprecated alias |
 | Scope by capability, rename and hide | `--interactive-command` | Visible | `--shell-command-on-error`; `MayCallEngine`; keep `--interactive-command` as a hidden deprecated alias |
+| Hide | `--org` | Visible | Existing Cloud organization selector; replacement design is unresolved |
 | Hide | `--x-release` | Visible | Bootstrap control; prefer `DAGGER_X_RELEASE` |
 | - | `--workdir` | Hidden | Bootstrap working directory |
 | - | `-v`, `--verbose` | Visible | Global diagnostic escape hatch |
@@ -162,4 +162,5 @@ column means that no change is proposed.
 `MayCallEngine`, `MaySelectWorkspace`, `MayReadWorkspaceConfig`,
 `MayWriteWorkspaceConfig`, `MayRenderPipeline`, and `MayProduceOutput`
 capability scoping are implemented. All capability-scoped flag moves are
-implemented. The configuration and remaining hide changes are planned.
+implemented. The hide changes are also implemented. The configuration changes
+are planned.

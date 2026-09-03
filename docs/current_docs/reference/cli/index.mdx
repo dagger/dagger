@@ -24,7 +24,6 @@ dagger [options] [subcommand | file...]
       --model string         LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit              Leave the TUI running after completion
   -M, --no-load-module       Don't load any module for this command
-      --org string           Dagger Cloud org name for Cloud-scoped commands
       --progress string      Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count          Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error       Open a shell when a container exec fails
@@ -32,7 +31,6 @@ dagger [options] [subcommand | file...]
   -v, --verbose count        Increase verbosity (use -vv or -vvv for more)
   -w, --web                  Open trace URL in a web browser
   -W, --workspace string     Select the workspace location to load from (local path or git ref)
-      --x-release string     Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -75,10 +73,8 @@ dagger activity
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -122,7 +118,6 @@ dagger agent [options] [name...]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -130,7 +125,6 @@ dagger agent [options] [name...]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -154,9 +148,7 @@ See https://docs.dagger.io/api for the full overview.
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -194,7 +186,6 @@ dagger api call [options] [function]...
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -202,7 +193,6 @@ dagger api call [options] [function]...
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -224,9 +214,7 @@ module that generates it.
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -279,11 +267,9 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -309,11 +295,9 @@ dagger api client list
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -356,11 +340,9 @@ dagger api functions [options] [function]...
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -420,7 +402,6 @@ EOF
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -428,7 +409,6 @@ EOF
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -482,7 +462,6 @@ dagger api with-session python main.py
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -490,7 +469,6 @@ dagger api with-session python main.py
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -536,7 +514,6 @@ dagger check [options] [pattern...]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -544,7 +521,6 @@ dagger check [options] [pattern...]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -558,9 +534,7 @@ Manage Dagger Cloud
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -592,9 +566,7 @@ dagger cloud billing
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -620,10 +592,8 @@ dagger cloud billing manage [org]
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -641,10 +611,8 @@ dagger cloud billing plans
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -662,10 +630,8 @@ dagger cloud check
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -693,10 +659,8 @@ dagger cloud check list [version]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -714,10 +678,8 @@ dagger cloud check off [name]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -735,10 +697,8 @@ dagger cloud check on [name]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -756,10 +716,8 @@ dagger cloud check status [name]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -783,9 +741,7 @@ dagger cloud integration
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -818,10 +774,8 @@ dagger cloud integration create github
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -839,10 +793,8 @@ dagger cloud integration list [type]
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -860,10 +812,8 @@ dagger cloud integration rm <id>
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -887,9 +837,7 @@ dagger cloud login [options] [org]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -907,9 +855,7 @@ dagger cloud logout
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -951,9 +897,7 @@ dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -977,9 +921,7 @@ dagger cloud org [flags]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1000,10 +942,8 @@ dagger cloud org info [org] [flags]
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1021,10 +961,8 @@ dagger cloud org list [flags]
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1042,10 +980,8 @@ dagger cloud org use <org> [flags]
 ### Options inherited from parent commands
 
 ```
-      --json               Print JSON output
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --json            Print JSON output
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1092,10 +1028,8 @@ dagger cloud rerun [--check NAME ...] [--failed | --all]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1137,7 +1071,6 @@ dagger generate [options] [pattern...]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -1145,7 +1078,6 @@ dagger generate [options] [pattern...]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1188,11 +1120,9 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1212,11 +1142,9 @@ dagger installed
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1234,9 +1162,7 @@ Manage LLM provider configuration, API keys, and default models.
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1272,9 +1198,7 @@ dagger llm add-key <provider>
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1292,9 +1216,7 @@ dagger llm config
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1312,9 +1234,7 @@ dagger llm remove-key <provider>
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1332,9 +1252,7 @@ dagger llm reset
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1352,9 +1270,7 @@ dagger llm set-default <provider> [model]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1372,9 +1288,7 @@ dagger llm setup
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1392,9 +1306,7 @@ dagger llm show-config
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1414,9 +1326,7 @@ Operates on the dagger-module.toml reachable from the current directory.
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1434,9 +1344,7 @@ Manage this module's dependencies
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1466,11 +1374,9 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1490,11 +1396,9 @@ dagger module deps list [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1520,11 +1424,9 @@ dagger module deps rm wolfi
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1556,11 +1458,9 @@ dagger module deps update wolfi@v0.20.2
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1574,9 +1474,7 @@ Manage this module's required engine version
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1606,11 +1504,9 @@ dagger module engine require v0.21.0
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1630,11 +1526,9 @@ dagger module engine require-current [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1654,11 +1548,9 @@ dagger module engine require-latest [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1678,11 +1570,9 @@ dagger module engine required [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1745,11 +1635,9 @@ dagger sdk install go && dagger module init go my-module
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1785,7 +1673,6 @@ dagger module sdk <subcommand> [args...] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -1793,7 +1680,6 @@ dagger module sdk <subcommand> [args...] [flags]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1812,9 +1698,7 @@ Use an installed SDK with `dagger module init` or `dagger api client init`.
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1863,11 +1747,9 @@ dagger sdk install typescript && dagger module init typescript --help && dagger 
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1890,10 +1772,8 @@ dagger sdk installed [flags]
 ### Options inherited from parent commands
 
 ```
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+      --env string      Apply a named env overlay; writes target it, creating it if missing
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1918,9 +1798,7 @@ dagger sdk search [query] [flags]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -1955,11 +1833,9 @@ dagger sdk uninstall [options] <name> [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -1989,9 +1865,7 @@ dagger search wolfi
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -2019,11 +1893,9 @@ dagger settings [module] [key] [value...]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2074,11 +1946,9 @@ dagger setup
 ```
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2115,7 +1985,6 @@ dagger terminal [options] [pattern]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -2123,7 +1992,6 @@ dagger terminal [options] [pattern]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2161,11 +2029,9 @@ dagger uninstall hello
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2202,7 +2068,6 @@ dagger up [options] [pattern...]
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
-      --org string         Dagger Cloud org name for Cloud-scoped commands
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails
@@ -2210,7 +2075,6 @@ dagger up [options] [pattern...]
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2242,11 +2106,9 @@ dagger update
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2271,9 +2133,7 @@ dagger version
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-      --x-release string   Run an experimental release from a Dagger git ref
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -2307,11 +2167,9 @@ dagger workspace
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2359,11 +2217,9 @@ dagger workspace config [key] [value] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --env string         Apply a named env overlay; writes target it, creating it if missing
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2382,11 +2238,9 @@ dagger workspace config-file [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2405,11 +2259,9 @@ dagger workspace cwd [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2427,10 +2279,8 @@ dagger workspace remote [flags]
 ### Options inherited from parent commands
 
 ```
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2449,11 +2299,9 @@ dagger workspace remotes [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO
@@ -2472,11 +2320,9 @@ dagger workspace root [flags]
 
 ```
   -d, --debug              Enable engine and trace diagnostics
-      --org string         Dagger Cloud org name for Cloud-scoped commands
   -i, --shell-on-error     Open a shell when a container exec fails
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
-      --x-release string   Run an experimental release from a Dagger git ref
 ```
 
 ### SEE ALSO

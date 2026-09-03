@@ -20,6 +20,12 @@ func TestCommandProgressDefault(t *testing.T) {
 	require.Empty(t, commandProgressDefault(nil))
 }
 
+func TestCloudOrgFlagHidden(t *testing.T) {
+	flag := rootCmd.PersistentFlags().Lookup("org")
+	require.NotNil(t, flag)
+	require.True(t, flag.Hidden)
+}
+
 func TestIsObviouslyRemoteWorkspaceRef(t *testing.T) {
 	require.True(t, isObviouslyRemoteWorkspaceRef("github.com/acme/mono"))
 	require.True(t, isObviouslyRemoteWorkspaceRef("git@github.com:acme/mono"))

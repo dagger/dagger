@@ -371,7 +371,7 @@ func commandIndex(names []string, name string) int {
 	return -1
 }
 
-func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
+func TestInstallGlobalFlags(t *testing.T) {
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	installGlobalFlags(flags)
 
@@ -388,6 +388,10 @@ func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
 	webFlag := flags.Lookup("web")
 	require.NotNil(t, webFlag)
 	require.Equal(t, "w", webFlag.Shorthand)
+
+	xReleaseFlag := flags.Lookup("x-release")
+	require.NotNil(t, xReleaseFlag)
+	require.True(t, xReleaseFlag.Hidden)
 }
 
 func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
