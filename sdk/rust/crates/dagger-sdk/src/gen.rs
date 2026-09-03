@@ -1399,7 +1399,7 @@ pub struct ContainerFileOpts {
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerFromOpts {
+pub struct ContainerFromOpts<'a> {
     /// Allow HTTPS registry communication without verifying the server certificate.
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
@@ -1411,6 +1411,9 @@ pub struct ContainerFromOpts {
     /// The service will be started only for this pull.
     #[builder(setter(into, strip_option), default)]
     pub registry_service: Option<Id>,
+    /// Version query used to select an image tag. The address must not contain a tag or digest.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerImportOpts<'a> {
@@ -2269,9 +2272,16 @@ impl Container {
     ///
     /// An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn from_opts(&self, address: impl Into<String>, opts: ContainerFromOpts) -> Container {
+    pub fn from_opts<'a>(
+        &self,
+        address: impl Into<String>,
+        opts: ContainerFromOpts<'a>,
+    ) -> Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
+        }
         if let Some(registry_service) = opts.registry_service {
             query = query.arg("registryService", registry_service);
         }
@@ -9226,6 +9236,12 @@ pub struct GitRepositoryBundleOpts {
     pub base: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryLatestOpts<'a> {
+    /// Version query used to select the greatest matching release ref.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
@@ -9401,8 +9417,29 @@ impl GitRepository {
     }
     /// Return the latest stable release tag, falling back to HEAD when no release exists.
     /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn latest(&self) -> GitRef {
         let query = self.selection.select("latest");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the latest stable release tag, falling back to HEAD when no release exists.
+    /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn latest_opts<'a>(&self, opts: GitRepositoryLatestOpts<'a>) -> GitRef {
+        let mut query = self.selection.select("latest");
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -12820,6 +12857,9 @@ pub struct QueryModuleSourceOpts<'a> {
     /// If set, error out if the ref string is not of the provided requireKind.
     #[builder(setter(into, strip_option), default)]
     pub require_kind: Option<ModuleSourceKind>,
+    /// Version query for a Git module source.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySecretOpts<'a> {
@@ -13474,6 +13514,9 @@ impl Query {
     ) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
+        }
         if let Some(ref_pin) = opts.ref_pin {
             query = query.arg("refPin", ref_pin);
         }

@@ -634,6 +634,11 @@ type Container implements Exportable & Node & Syncer {
     address: String!
 
     """
+    Version query used to select an image tag. The address must not contain a tag or digest.
+    """
+    version: String = ""
+
+    """
     Service to use as the registry endpoint for the image address.
 
     The service will be started only for this pull.
@@ -3401,7 +3406,10 @@ type GitRepository implements Node {
   Release selection accepts an optional "v" prefix, incomplete versions, and
   zero-padded numeric components. This operation is pinned.
   """
-  latest: GitRef!
+  latest(
+    """Version query used to select the greatest matching release ref."""
+    version: String = ""
+  ): GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -4969,6 +4977,9 @@ type Query implements Node {
   moduleSource(
     """The string ref representation of the module source"""
     refString: String!
+
+    """Version query for a Git module source."""
+    version: String = ""
 
     """The pinned version of the module source"""
     refPin: String = ""
