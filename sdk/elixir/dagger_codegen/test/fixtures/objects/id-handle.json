@@ -1,0 +1,45 @@
+{
+  "description": "A conversation with a model.",
+  "directives": [],
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Spawn the conversation as an agent.",
+      "directives": [
+        {
+          "args": [
+            {
+              "name": "name",
+              "value": "\"Agent\""
+            }
+          ],
+          "name": "expectedType"
+        }
+      ],
+      "isDeprecated": false,
+      "name": "spawn",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "ID",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
+  "kind": "OBJECT",
+  "name": "LLM",
+  "possibleTypes": []
+}
