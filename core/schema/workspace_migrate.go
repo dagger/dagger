@@ -1071,6 +1071,9 @@ func workspaceMigrationLegacyLockMoves(
 			if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
 				return nil, versionErr
 			}
+			if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+				return nil, conflictErr
+			}
 			slog.WarnContext(ctx, "invalid legacy workspace lockfile; deleting it", "path", sourcePath, "error", err)
 			data = nil
 		}

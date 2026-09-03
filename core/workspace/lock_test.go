@@ -77,6 +77,16 @@ func TestFutureLockfileVersionError(t *testing.T) {
 	require.NoError(t, FutureLockfileVersionError(err))
 }
 
+func TestLockfileMergeConflictError(t *testing.T) {
+	_, err := ParseLock([]byte("<<<<<<< HEAD\n=======\n>>>>>>> branch\n"))
+	require.EqualError(t, LockfileMergeConflictError(err),
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	_, err = ParseLock([]byte(`[["version","2"]]`))
+	require.NoError(t, LockfileMergeConflictError(err))
+}
+
 func TestEntries(t *testing.T) {
 	lock := NewLock()
 	inputs := []any{"alpine:latest", "linux/amd64"}

@@ -135,6 +135,33 @@ func (LockfileSuite) TestDefaultRejectsFutureLockfile(ctx context.Context, t *te
 	require.Equal(t, lockContents, string(lockBytes))
 }
 
+func (LockfileSuite) TestDefaultRejectsConflictedLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := strings.Join([]string{
+		`<<<<<<< HEAD`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"old"]`,
+		`=======`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"new"]`,
+		`>>>>>>> branch`,
+	}, "\n")
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err,
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
+}
+
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	lockContents := mustMarshalOCISHALock(t, "not-a-digest")
