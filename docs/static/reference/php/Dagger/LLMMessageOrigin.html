@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\LLMMessage | API</title>
+    <title>Dagger\LLMMessageOrigin | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_LLMMessage" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_LLMMessageOrigin" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>LLMMessage</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>LLMMessageOrigin</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>LLMMessage    
+        <h1>LLMMessageOrigin    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>LLMMessage</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>LLMMessageOrigin</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A single message in an LLM conversation.</p></p>                    </div>
+            <p><p>The recorded provenance of a message that arrived through an agent mailbox.</p></p>                    </div>
             
         
     
@@ -143,12 +143,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_content">content</a>()
+                    <a href="#method_agentId">agentId</a>()
         
-                                            <p><p>The message's content blocks, in the order the model produced them.</p></p>                </div>
+                                            <p><p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_agentName">agentName</a>()
+        
+                                            <p><p>The display name of the agent behind agentId.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,37 +168,37 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this LLMMessage.</p></p>                </div>
+                                            <p><p>A unique identifier for this LLMMessageOrigin.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <abbr title="Dagger\Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>|null
+                    <abbr title="Dagger\LLMMessageOriginKind">LLMMessageOriginKind</abbr>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_origin">origin</a>()
+                    <a href="#method_kind">kind</a>()
         
-                                            <p><p>Who put this message on the record, when it arrived through an agent mailbox.</p></p>                </div>
+                                            <p><p>Who put this message on the record.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <abbr title="Dagger\LLMMessageRole">LLMMessageRole</abbr>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_role">role</a>()
+                    <a href="#method_ref">ref</a>()
         
-                                            <p><p>The role that produced this message.</p></p>                </div>
+                                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_tokenUsage">tokenUsage</a>()
+                    <a href="#method_replyTo">replyTo</a>()
         
-                                            <p><p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p></p>                </div>
+                                            <p><p>The ref of the message this one answers, in the sender's own runtime, if any.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -287,10 +297,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_content">
+                    <h3 id="method_agentId">
         <div class="location">at line 19</div>
-        <code>                    array
-    <strong>content</strong>()
+        <code>                    string
+    <strong>agentId</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -298,7 +308,7 @@
             
 
         <div class="method-description">
-                            <p><p>The message's content blocks, in the order the model produced them.</p></p>                        
+                            <p><p>The sending agent's instance ID (for AGENT origins) or the observed agent's instance ID (for EVENT origins).</p></p>                        
         </div>
         <div class="tags">
             
@@ -306,7 +316,39 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_agentName">
+        <div class="location">at line 28</div>
+        <code>                    string
+    <strong>agentName</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The display name of the agent behind agentId.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -320,7 +362,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 28</div>
+        <div class="location">at line 37</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -330,7 +372,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this LLMMessage.</p></p>                        
+                            <p><p>A unique identifier for this LLMMessageOrigin.</p></p>                        
         </div>
         <div class="tags">
             
@@ -351,10 +393,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_origin">
-        <div class="location">at line 39</div>
-        <code>                    <abbr title="Dagger\Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>|null
-    <strong>origin</strong>()
+                    <h3 id="method_kind">
+        <div class="location">at line 46</div>
+        <code>                    <abbr title="Dagger\LLMMessageOriginKind">LLMMessageOriginKind</abbr>
+    <strong>kind</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -362,7 +404,7 @@
             
 
         <div class="method-description">
-                            <p><p>Who put this message on the record, when it arrived through an agent mailbox.</p></p>                <p><p>Null for the user's own prompts and for everything the model or tools produced.</p></p>        
+                            <p><p>Who put this message on the record.</p></p>                        
         </div>
         <div class="tags">
             
@@ -370,7 +412,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><abbr title="Dagger\Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>|null</td>
+            <td><abbr title="Dagger\LLMMessageOriginKind">LLMMessageOriginKind</abbr></td>
             <td></td>
         </tr>
     </table>
@@ -383,10 +425,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_role">
-        <div class="location">at line 53</div>
-        <code>                    <abbr title="Dagger\LLMMessageRole">LLMMessageRole</abbr>
-    <strong>role</strong>()
+                    <h3 id="method_ref">
+        <div class="location">at line 55</div>
+        <code>                    string
+    <strong>ref</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -394,7 +436,7 @@
             
 
         <div class="method-description">
-                            <p><p>The role that produced this message.</p></p>                        
+                            <p><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the AgentMessage handle's opaque message ID.</p></p>                        
         </div>
         <div class="tags">
             
@@ -402,7 +444,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><abbr title="Dagger\LLMMessageRole">LLMMessageRole</abbr></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -415,10 +457,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_tokenUsage">
-        <div class="location">at line 62</div>
-        <code>                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
-    <strong>tokenUsage</strong>()
+                    <h3 id="method_replyTo">
+        <div class="location">at line 64</div>
+        <code>                    string
+    <strong>replyTo</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -426,7 +468,7 @@
             
 
         <div class="method-description">
-                            <p><p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p></p>                        
+                            <p><p>The ref of the message this one answers, in the sender's own runtime, if any.</p></p>                        
         </div>
         <div class="tags">
             
@@ -434,7 +476,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>

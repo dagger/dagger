@@ -143,6 +143,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_error">error</a>()
+        
+                                            <p><p>Why the loop failed, for a FAILED agent; empty otherwise.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -196,6 +206,16 @@
                     <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_notify">notify</a>(<a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a> $subscriber, array|null $on = null)
+        
+                                            <p><p>Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_pause">pause</a>()
         
                                             <p><p>Stop draining the mailbox once the in-flight step completes.</p></p>                </div>
@@ -236,7 +256,7 @@
                     <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_send">send</a>(string $message)
+                    <a href="#method_send">send</a>(string $message, string|null $replyTo = &#039;&#039;)
         
                                             <p><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -289,6 +309,16 @@
                     <a href="#method_waitFor">waitFor</a>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
         
                                             <p><p>Block until the agent reaches the given state, returning immediately if it is already there.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_waitSettled">waitSettled</a>()
+        
+                                            <p><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -387,8 +417,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_error">
+        <div class="location">at line 21</div>
+        <code>                    string
+    <strong>error</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Why the loop failed, for a FAILED agent; empty otherwise.</p></p>                <p><p>The snapshot holds the completed prefix — send or resume retries from it.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 19</div>
+        <div class="location">at line 30</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -420,7 +482,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_instanceID">
-        <div class="location">at line 30</div>
+        <div class="location">at line 41</div>
         <code>                    string
     <strong>instanceID</strong>()
         </code>
@@ -452,7 +514,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_interrupt">
-        <div class="location">at line 43</div>
+        <div class="location">at line 54</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>interrupt</strong>()
         </code>
@@ -485,7 +547,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_message">
-        <div class="location">at line 57</div>
+        <div class="location">at line 68</div>
         <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
     <strong>message</strong>(string $id)
         </code>
@@ -528,7 +590,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 67</div>
+        <div class="location">at line 78</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -559,8 +621,57 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_notify">
+        <div class="location">at line 93</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>notify</strong>(<a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a> $subscriber, array|null $on = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.</p></p>                <p><p>This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.</p>
+<p>Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.</p>
+<p>Idempotent per subscriber; re-subscribing replaces the state set.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+                <td>$subscriber</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$on</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_pause">
-        <div class="location">at line 80</div>
+        <div class="location">at line 111</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>pause</strong>()
         </code>
@@ -593,7 +704,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_rehydrate">
-        <div class="location">at line 96</div>
+        <div class="location">at line 127</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>rehydrate</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null, string|null $error = &#039;&#039;)
         </code>
@@ -642,7 +753,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reseed">
-        <div class="location">at line 118</div>
+        <div class="location">at line 149</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>reseed</strong>(<a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> $conversation)
         </code>
@@ -686,7 +797,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_resume">
-        <div class="location">at line 133</div>
+        <div class="location">at line 164</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>resume</strong>()
         </code>
@@ -719,9 +830,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_send">
-        <div class="location">at line 149</div>
+        <div class="location">at line 180</div>
         <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
-    <strong>send</strong>(string $message)
+    <strong>send</strong>(string $message, string|null $replyTo = &#039;&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -740,6 +851,11 @@
                     <tr>
                 <td>string</td>
                 <td>$message</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$replyTo</td>
                 <td></td>
             </tr>
             </table>
@@ -763,7 +879,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_snapshot">
-        <div class="location">at line 164</div>
+        <div class="location">at line 198</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>snapshot</strong>()
         </code>
@@ -796,7 +912,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_start">
-        <div class="location">at line 175</div>
+        <div class="location">at line 209</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>start</strong>()
         </code>
@@ -828,7 +944,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_state">
-        <div class="location">at line 187</div>
+        <div class="location">at line 221</div>
         <code>                    <abbr title="Dagger\AgentState">AgentState</abbr>
     <strong>state</strong>()
         </code>
@@ -860,7 +976,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stop">
-        <div class="location">at line 196</div>
+        <div class="location">at line 230</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>stop</strong>(bool|null $kill = false)
         </code>
@@ -902,7 +1018,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_waitFor">
-        <div class="location">at line 211</div>
+        <div class="location">at line 245</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>waitFor</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null)
         </code>
@@ -925,6 +1041,38 @@
             </tr>
             </table>
 
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_waitSettled">
+        <div class="location">at line 260</div>
+        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
+    <strong>waitSettled</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.</p></p>                <p><p>The safe supervisor wait — waitFor(IDLE) hangs forever on an agent whose loop fails, while a settled wait cannot hang on an outcome.</p></p>        
+        </div>
+        <div class="tags">
             
                             <h4>Return Value</h4>
 
