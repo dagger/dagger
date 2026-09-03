@@ -171,6 +171,7 @@ func init() {
 	agentCmd.GroupID = "daily"
 
 	moduleCmd.GroupID = "workspace"
+	sdkCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
@@ -195,6 +196,7 @@ func init() {
 		generateCmd,
 		workspaceCmd,
 		moduleCmd,
+		sdkCmd,
 		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),

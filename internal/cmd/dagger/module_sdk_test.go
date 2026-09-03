@@ -20,11 +20,12 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	for _, name := range []string{"activity", "config", "config-file", "cwd", "remote", "remotes", "root", "update"} {
 		require.NotNil(t, findCommand(workspaceCmd, name), name)
 	}
-
-	cmd, args, err := rootCmd.Find([]string{"sdk"})
-	require.NoError(t, err)
-	require.Same(t, rootCmd, cmd)
-	require.Equal(t, []string{"sdk"}, args)
+	for _, name := range []string{"list", "scope"} {
+		require.NotNil(t, findCommand(sdkCmd, name), name)
+	}
+	for _, name := range []string{"is-module", "list", "name", "sdk"} {
+		require.NotNil(t, findCommand(sdkScopeCmd, name), name)
+	}
 
 	require.Nil(t, moduleInitCmd.Flags().Lookup("sdk"), "module init names its SDK positionally")
 

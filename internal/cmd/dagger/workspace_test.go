@@ -213,6 +213,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"version",
 		"api",
 		"cloud",
+		"sdk",
 		"workspace",
 	} {
 		require.Contains(t, names, name)
@@ -237,7 +238,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"query",
 		"run",
 		"session",
-		"sdk",
 		"install",
 		"installed",
 		"search",
