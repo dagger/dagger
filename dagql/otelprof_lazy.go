@@ -199,9 +199,14 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 // deferred-work vocabulary, so it keeps its error-origin-stamping role
 // (EndWithCause); the non-resume lazy op is pure profiling emission and must
 // never stamp (EndProfSpan).
-func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial bool, errPtr *error) {
+func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, errPtr *error) {
 	if isResume && partial {
 		span.SetAttributes(attribute.Bool(telemetryattrs.DagPartialAttr, true))
+	}
+	// An attempt abandoned by its waiters will be retried. Mark its resume
+	// span as blocked so the canceled attempt does not read as a call failure.
+	if isResume && abandoned {
+		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 	}
 	if isResume && *errPtr != nil && blockedOnPrerequisite(*errPtr, sharedID) {
 		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
