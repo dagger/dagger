@@ -207,6 +207,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.NotContains(t, help, "function, fn")
 	require.NotContains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
+	require.Contains(t, help, "terminal, tty")
 	require.NotContains(t, help, "exec, run")
 
 	names := rootHelpCommandNames(help)
