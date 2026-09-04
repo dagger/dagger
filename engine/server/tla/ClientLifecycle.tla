@@ -126,6 +126,18 @@ HasDelegatingWork(c) ==
       \/ ActiveWork(c, "shared-work") # {}
       \/ ActiveWork(c, "service") # {}
 
+\* A delegating owner is any executable lease holder represented in the model:
+\* an accepted request or a detached service/shared-work callback. Go allows
+\* any held ClientScope to register a child, not only request scopes.
+Owners == Requests \cup Works
+
+OwnerActive(o) ==
+    IF o \in Requests THEN requests[o].phase = "active"
+    ELSE work[o].phase = "active"
+
+OwnerClient(o) ==
+    IF o \in Requests THEN requests[o].client ELSE work[o].client
+
 NoActiveProducers ==
     /\ \A c \in Clients : ActiveRequests(c) = {}
     /\ AllActiveWork = {}
@@ -192,13 +204,17 @@ FinishBackgroundWork(w) ==
 (* CLIENT REACHABILITY, CHILD OWNERSHIP, AND RECLAMATION                   *)
 (***************************************************************************)
 
-\* Go: proxy registration atomically publishes the child's transport lease
-\* and the parent's child lease from a held request scope.
-RegisterChild(q, child) ==
+\* Go: RegisterNestedClientTransport delegates the parent's child lease and
+\* publishes the child's transport lease from any held scope (request,
+\* service, or shared-work), while the parent record may already be closing.
+\* Go performs the delegation and the publication under separate lock
+\* sections; the window between them is observable only through debug
+\* snapshots, so the model treats the pair as one step.
+RegisterChild(o, child) ==
     /\ ModelChildren
     /\ sessionPhase = "live"
-    /\ requests[q].phase = "active"
-    /\ LET parent == requests[q].client IN
+    /\ OwnerActive(o)
+    /\ LET parent == OwnerClient(o) IN
        /\ child # Root
        /\ ParentOf[child] = parent
        /\ ~clients[child].published
@@ -326,7 +342,7 @@ Next ==
     \/ \E q \in Requests : FinishRequest(q)
     \/ \E w \in Works, c \in Clients : StartBackgroundWork(w, c)
     \/ \E w \in Works : FinishBackgroundWork(w)
-    \/ \E q \in Requests, child \in Clients : RegisterChild(q, child)
+    \/ \E o \in Owners, child \in Clients : RegisterChild(o, child)
     \/ \E c \in Clients : CloseTransport(c)
     \/ \E c \in Clients : BeginClientMetricDrain(c)
     \/ \E c \in Clients : FinishClientReclamation(c)
