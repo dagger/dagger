@@ -1,0 +1,29 @@
+"""
+Services the project's tests need, and containers with those services
+already attached.
+"""
+type TestServices {
+  """
+  A Postgres database for development and tests.
+  """
+  pub postgres: Service! @up {
+    container
+      .from("postgres:17-alpine")
+      .withEnvVariable("POSTGRES_USER", "test")
+      .withEnvVariable("POSTGRES_PASSWORD", "test")
+      .withEnvVariable("POSTGRES_DB", "test")
+      .withExposedPort(5432)
+      .asService
+  }
+
+  """
+  The container the Go module runs tests in: a Go image with Postgres bound
+  as a service and DATABASE_URL pointing at it.
+  """
+  pub goTestBase: Container! {
+    container
+      .from("golang:1.26-alpine")
+      .withServiceBinding("db", postgres)
+      .withEnvVariable("DATABASE_URL", "postgres://test:test@db:5432/test?sslmode=disable")
+  }
+}

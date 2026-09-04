@@ -92,3 +92,7 @@ Reach for this module whenever the repo contains one or more Go modules,
 especially when they should share the same Go version and CI checks. To exclude a
 single module from a workflow, add a `!`-prefixed module path to the corresponding
 selector array rather than splitting the repo into separate check systems.
+
+When the tests need a service the module cannot start, such as a database, wire
+a container with that service bound into the `base` setting.
+[Daggerize a Go Project](../../guides/go/index.mdx) walks through it.

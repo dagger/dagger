@@ -60,6 +60,23 @@ module.exports = {
     },
 
     // ========================================
+    // GUIDES
+    // ========================================
+    {
+      type: "category",
+      label: "Guides",
+      link: {
+        type: "doc",
+        id: "guides/index",
+      },
+      collapsible: true,
+      collapsed: false,
+      items: [
+        { type: "doc", id: "guides/go/index", label: "Go" },
+      ],
+    },
+
+    // ========================================
     // USING DAGGER
     // ========================================
     {

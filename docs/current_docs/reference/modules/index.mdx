@@ -1,12 +1,12 @@
 ---
 title: "Modules"
 slug: /reference/modules
-description: "Guides for setting up official Dagger modules in your project."
+description: "Reference for the official Dagger modules: what each one does, its checks and generators, and its settings."
 ---
 
 # Modules
 
-These guides walk through setting up the official Dagger modules in your project. They are the standard library of tools that give a workspace useful work to do: test code, run a test runner, lint and format source, or validate Helm charts.
+These pages describe the official Dagger modules. They are the standard library of tools that give a workspace useful work to do: test code, run a test runner, lint and format source, or validate Helm charts.
 
 Reach for a module when you want a real tool that runs the same way locally, in CI, and in Dagger Cloud. Most expose checks, generators, or repair workflows, so the work stays consistent everywhere it runs.
 
@@ -16,9 +16,9 @@ Add any module to your project with `dagger install`:
 dagger install github.com/dagger/go
 ```
 
-Each guide explains what the module is for, which checks or generators to reach for first, the settings that tune it, and how it fits into your project.
+Each page explains what the module is for, which checks or generators to reach for first, the settings that tune it, and how it fits into your project. For an end-to-end walkthrough of a whole platform, see the [Guides](../../guides/index.mdx).
 
-| Guide | What it covers |
+| Module | What it covers |
 | --- | --- |
 | [Go](./go.mdx) | Test, lint, and run generators across every Go module in a workspace. |
 | [Deno](./deno.mdx) | Test, lint, format, and type-check every Deno project in a workspace. |

@@ -1,0 +1,17 @@
+---
+title: "Guides"
+slug: /guides
+description: "End-to-end guides for daggerizing a project, one per platform."
+---
+
+# Guides
+
+Each guide takes one kind of project from no Dagger configuration to Checks that run on every push. A guide installs the modules for its platform, configures them, extends them with a small module of your own where the platform needs it, and finishes with the project checking itself after each push.
+
+Pick the guide for your project:
+
+| Guide | What it covers |
+| --- | --- |
+| [Daggerize a Go Project](./go/index.mdx) | Run tests, lint, and generators with the Go module, and give end-to-end tests the services they need by wiring a small Dang module into it. |
+
+If there is no guide for your platform yet, the [Quickstart](../getting-started/quickstart.mdx) covers the first steps for any project, and the [module reference](../reference/modules/index.mdx) lists the official modules to install.
