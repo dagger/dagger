@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -215,6 +216,34 @@ func (c *Client) ConfigureSource(ctx context.Context, installationID, mode strin
 		return nil, err
 	}
 	return &data.ConfigureSource, nil
+}
+
+const createQuickstartOrgOperation = `
+mutation CreateQuickstartOrg($name: String!) {
+	createQuickstartOrg(name: $name) {
+		id
+		name
+	}
+}
+`
+
+// CreateQuickstartOrg creates a free "quickstart" org for the authenticated
+// user without any browser interaction, returning the new org's id and name.
+// The requested name may be adjusted server-side (e.g. to resolve collisions),
+// so callers must use the returned name rather than the requested one.
+func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in")
+	}
+	var data struct {
+		CreateQuickstartOrg OrgResponse `json:"createQuickstartOrg"`
+	}
+	if err := c.doGraphQL(ctx, "CreateQuickstartOrg", createQuickstartOrgOperation, map[string]any{
+		"name": name,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.CreateQuickstartOrg, nil
 }
 
 const getGithubOAuthURLOperation = `
