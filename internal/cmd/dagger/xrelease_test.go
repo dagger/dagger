@@ -53,26 +53,28 @@ func TestXReleaseReleaseRef(t *testing.T) {
 	}
 }
 
-func TestXReleaseProcessEnvPreservesRunnerHost(t *testing.T) {
-	env, hasRunnerHost := xReleaseProcessEnv([]string{
+func TestXReleaseProcessEnvPreservesEngineSelection(t *testing.T) {
+	env, engineEnvs := xReleaseProcessEnv([]string{
 		daggerXReleaseEnv + "=v0.20.8",
+		engineEnv + "=container://dagger-engine.dev",
 		RunnerHostEnv + "=docker-container://dagger-engine.dev",
 		RunnerImageLoaderEnv + "=docker",
 		"KEEP=1",
 	})
 
-	require.True(t, hasRunnerHost)
+	require.Equal(t, []string{engineEnv, RunnerHostEnv}, engineEnvs)
 	require.Equal(t, []string{
+		engineEnv + "=container://dagger-engine.dev",
 		RunnerHostEnv + "=docker-container://dagger-engine.dev",
 		"KEEP=1",
 		"DAGGER_LEAVE_OLD_ENGINE=1",
 	}, env)
 }
 
-func TestXReleaseProcessEnvWithoutRunnerHost(t *testing.T) {
-	env, hasRunnerHost := xReleaseProcessEnv([]string{"KEEP=1"})
+func TestXReleaseProcessEnvWithoutEngineSelection(t *testing.T) {
+	env, engineEnvs := xReleaseProcessEnv([]string{"KEEP=1"})
 
-	require.False(t, hasRunnerHost)
+	require.Empty(t, engineEnvs)
 	require.Equal(t, []string{
 		"KEEP=1",
 		"DAGGER_LEAVE_OLD_ENGINE=1",

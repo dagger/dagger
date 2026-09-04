@@ -75,8 +75,12 @@ var (
 	xRelease                  string
 	autoApply                 bool
 	engineFlag                string
-	_, useCloudEngine         = os.LookupEnv(cloudEngineEnv)
-	profileFlag               bool
+	// cloudFlag backs the deprecated --cloud flag, an alias for --engine=cloud.
+	cloudFlag bool
+	// cloudEngineEnvSet records the deprecated DAGGER_CLOUD_ENGINE variable.
+	// Any value selects Dagger Cloud.
+	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
+	profileFlag          bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -460,14 +464,14 @@ const defaultShellCommandOnError = "/bin/sh"
 // the help topic for the rest. The full catalog is too long to repeat in the
 // usage message of every command that can call the engine.
 var engineFlagUsage = fmt.Sprintf(
-	"Select the engine: %s (run 'dagger help engine' for details)",
-	drivers.SchemeSummary(),
+	"Select the engine: %s (or set %s; run 'dagger help engine' for details)",
+	drivers.SchemeSummary(), engineEnv,
 )
 
 func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
 	engineFlags.StringVar(&engineFlag, "engine", "", engineFlagUsage)
-	engineFlags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "")
+	engineFlags.BoolVar(&cloudFlag, "cloud", false, "")
 	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
 	engineFlags.Lookup("cloud").Hidden = true
 	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails")
@@ -553,12 +557,12 @@ func execXRelease(ctx context.Context) error {
 	}
 
 	args := xReleaseProcessArgs(os.Args[1:])
-	env, hasRunnerHost := xReleaseProcessEnv(os.Environ())
-	if hasRunnerHost {
+	env, engineEnvs := xReleaseProcessEnv(os.Environ())
+	if len(engineEnvs) > 0 {
 		fmt.Fprintln(stderr, xReleaseLogLine(fmt.Sprintf(
 			"warning: --x-release or %s is being used with %s",
 			daggerXReleaseEnv,
-			RunnerHostEnv,
+			strings.Join(engineEnvs, " and "),
 		)))
 	}
 	execArgs := append([]string{binPath}, args...)
@@ -627,18 +631,19 @@ func xReleaseProcessArgs(args []string) []string {
 	return rewritten
 }
 
-func xReleaseProcessEnv(environ []string) ([]string, bool) {
-	env := make([]string, 0, len(environ)+1)
+// xReleaseProcessEnv returns the environment for the downloaded CLI, and the
+// names of the variables in it that select an engine. That engine may not
+// match the downloaded version, so the caller warns about them.
+func xReleaseProcessEnv(environ []string) (env []string, engineEnvs []string) {
+	env = make([]string, 0, len(environ)+1)
 	hasLeaveOldEngine := false
-	hasRunnerHost := false
 	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
 		switch key {
 		case daggerXReleaseEnv, RunnerImageLoaderEnv:
 			continue
-		}
-		if key == RunnerHostEnv {
-			hasRunnerHost = true
+		case engineEnv, RunnerHostEnv:
+			engineEnvs = append(engineEnvs, key)
 		}
 		if key == "DAGGER_LEAVE_OLD_ENGINE" {
 			hasLeaveOldEngine = true
@@ -648,7 +653,7 @@ func xReleaseProcessEnv(environ []string) ([]string, bool) {
 	if !hasLeaveOldEngine {
 		env = append(env, "DAGGER_LEAVE_OLD_ENGINE=1")
 	}
-	return env, hasRunnerHost
+	return env, engineEnvs
 }
 
 func shouldCleanupOldEngines() bool {

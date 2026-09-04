@@ -98,19 +98,19 @@ func TestDebugFlags(t *testing.T) {
 }
 
 func TestMayCallEngineFlags(t *testing.T) {
-	oldCloud := useCloudEngine
+	oldCloud := cloudFlag
 	oldEngine := engineFlag
 	oldProfile := profileFlag
 	oldShellOnError := shellOnError
 	oldShellCommandOnError := shellCommandOnError
 	t.Cleanup(func() {
-		useCloudEngine = oldCloud
+		cloudFlag = oldCloud
 		engineFlag = oldEngine
 		profileFlag = oldProfile
 		shellOnError = oldShellOnError
 		shellCommandOnError = oldShellCommandOnError
 	})
-	useCloudEngine = false
+	cloudFlag = false
 	engineFlag = ""
 
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
@@ -138,6 +138,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.NotContains(t, usage, "\n")
 	require.Contains(t, usage, drivers.SchemeSummary())
 	require.Contains(t, usage, "dagger help engine")
+	require.Contains(t, usage, engineEnv)
 	for _, value := range []string{"cloud", "image://", "container://", "ssh://", "unix://"} {
 		require.Contains(t, usage, value)
 	}
@@ -153,7 +154,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.Contains(t, flags.Lookup("interactive-command").Deprecated, "--shell-command-on-error")
 	require.True(t, flags.Lookup("profile").Hidden)
 	require.NoError(t, flags.Set("cloud", "true"))
-	require.True(t, useCloudEngine)
+	require.True(t, cloudFlag)
 	require.NoError(t, flags.Set("engine", "tcp://engine.example.com:1234"))
 	require.Equal(t, "tcp://engine.example.com:1234", engineFlag)
 

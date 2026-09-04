@@ -41,6 +41,8 @@ func TestEngineHelpTopic(t *testing.T) {
 	require.Contains(t, help, "tcp://HOST:PORT (no authentication)")
 	require.Contains(t, help, RunnerHostEnv)
 	require.Contains(t, help, cloudEngineEnv)
+	require.Contains(t, help, engineEnv+" (takes the same values as --engine)")
+	require.Contains(t, help, "export "+engineEnv+"=cloud")
 	// Both environment variables are soft-deprecated in favour of --engine.
 	require.Contains(t, help, cloudEngineEnv+" (deprecated; any value selects Dagger Cloud)")
 	require.Contains(t, help, RunnerHostEnv+" (deprecated)")

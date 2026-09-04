@@ -83,22 +83,31 @@ one that does:
    legacy Docker schemes.
 4. An unknown scheme fails with the list of supported schemes.
 
+`DAGGER_ENGINE` is the environment form of `--engine`. It takes the same
+values, so a shell session can select an engine once for every command.
+
 Engine selection has this priority:
 
 1. `--engine`
 2. Hidden `--cloud`
-3. A future user-environment setting
-4. `DAGGER_CLOUD_ENGINE`
-5. `_EXPERIMENTAL_DAGGER_RUNNER_HOST`
-6. The built-in default
+3. `DAGGER_ENGINE`
+4. A future user-environment setting
+5. `DAGGER_CLOUD_ENGINE`
+6. `_EXPERIMENTAL_DAGGER_RUNNER_HOST`
+7. The built-in default
+
+Flags outrank the environment, and the current inputs outrank the deprecated
+ones. `--cloud` is a deprecated alias for `--engine=cloud`, so it keeps a
+flag's priority over `DAGGER_ENGINE`.
 
 `--cloud`, `DAGGER_CLOUD_ENGINE`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` are
-all soft-deprecated: `--engine` replaces them, but they still work as a
-fallback. `--engine=cloud` replaces `--cloud` and `DAGGER_CLOUD_ENGINE`.
-`--engine=URI` replaces `_EXPERIMENTAL_DAGGER_RUNNER_HOST`. Only `--cloud`
-warns today, because pflag prints the notice for a deprecated flag. The two
-environment variables stay silent; `dagger help engine` marks them deprecated.
-A warning for them, and their removal, belong to the user-environment design.
+all soft-deprecated: `--engine` and `DAGGER_ENGINE` replace them, but they
+still work as a fallback. `--engine=cloud` replaces `--cloud` and
+`DAGGER_CLOUD_ENGINE`. `--engine=URI` replaces
+`_EXPERIMENTAL_DAGGER_RUNNER_HOST`. Only `--cloud` warns today, because pflag
+prints the notice for a deprecated flag. The two environment variables stay
+silent; `dagger help engine` marks them deprecated. A warning for them, and
+their removal, belong to the user-environment design.
 
 The root command declares no capabilities. Bare `dagger` prints usage: it calls
 no engine, selects no workspace, reads no workspace configuration, and renders

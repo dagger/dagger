@@ -25,12 +25,14 @@ PRIORITY
   The CLI uses the first of these that is set:
 
     1. --engine
-    2. %s (deprecated; any value selects Dagger Cloud)
-    3. %s (deprecated)
-    4. The engine that this CLI version ships with
+    2. --cloud (deprecated; the same as --engine=cloud)
+    3. %s (takes the same values as --engine)
+    4. %s (deprecated; any value selects Dagger Cloud)
+    5. %s (deprecated)
+    6. The engine that this CLI version ships with
 
-  The two environment variables are soft-deprecated, like the --cloud flag.
-  They still work as a fallback, but --engine replaces them:
+  The two deprecated variables still work as a fallback, in the same way as
+  the deprecated --cloud flag. --engine and %s replace them:
 
     --engine=cloud  instead of %s
     --engine=URI    instead of %s
@@ -45,7 +47,10 @@ EXAMPLES
 
   Run on a remote host over SSH:
     dagger call --engine=ssh://user@host build
-`, drivers.SchemeHelp(), cloudEngineEnv, RunnerHostEnv, cloudEngineEnv, RunnerHostEnv),
+
+  Select an engine for every command in a shell session:
+    export DAGGER_ENGINE=cloud
+`, drivers.SchemeHelp(), engineEnv, cloudEngineEnv, RunnerHostEnv, engineEnv, cloudEngineEnv, RunnerHostEnv),
 }
 
 func init() {

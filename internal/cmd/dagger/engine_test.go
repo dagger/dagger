@@ -187,43 +187,97 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 
 func TestConfiguredRunnerHost(t *testing.T) {
 	oldEngine := engineFlag
-	oldCloud := useCloudEngine
+	oldCloud := cloudFlag
+	oldCloudEnv := cloudEngineEnvSet
 	oldRunnerHost := RunnerHost
 	t.Cleanup(func() {
 		engineFlag = oldEngine
-		useCloudEngine = oldCloud
+		cloudFlag = oldCloud
+		cloudEngineEnvSet = oldCloudEnv
 		RunnerHost = oldRunnerHost
 	})
+	t.Setenv(engineEnv, "")
 
 	RunnerHost = "image://registry.example.com/dagger-engine:latest"
 
-	t.Run("runner host fallback", func(t *testing.T) {
+	reset := func() {
 		engineFlag = ""
-		useCloudEngine = false
+		cloudFlag = false
+		cloudEngineEnvSet = false
+	}
+
+	t.Run("runner host fallback", func(t *testing.T) {
+		reset()
 		require.Equal(t, RunnerHost, configuredRunnerHost())
 	})
 
 	t.Run("cloud compatibility alias", func(t *testing.T) {
-		engineFlag = ""
-		useCloudEngine = true
+		reset()
+		cloudFlag = true
 		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
 	})
 
 	t.Run("cloud engine", func(t *testing.T) {
+		reset()
 		engineFlag = "cloud"
-		useCloudEngine = false
 		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
 	})
 
 	t.Run("runner host URI", func(t *testing.T) {
+		reset()
 		engineFlag = "tcp://engine.example.com:1234"
-		useCloudEngine = false
 		require.Equal(t, engineFlag, configuredRunnerHost())
 	})
 
 	t.Run("engine flag overrides cloud alias", func(t *testing.T) {
+		reset()
 		engineFlag = "tcp://engine.example.com:1234"
-		useCloudEngine = true
+		cloudFlag = true
 		require.Equal(t, engineFlag, configuredRunnerHost())
+	})
+
+	t.Run("engine env var", func(t *testing.T) {
+		reset()
+		t.Setenv(engineEnv, "tcp://env.example.com:1234")
+		require.Equal(t, "tcp://env.example.com:1234", configuredRunnerHost())
+	})
+
+	t.Run("engine env var selects cloud", func(t *testing.T) {
+		reset()
+		t.Setenv(engineEnv, "cloud")
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+	})
+
+	t.Run("engine flag overrides engine env var", func(t *testing.T) {
+		reset()
+		engineFlag = "tcp://flag.example.com:1234"
+		t.Setenv(engineEnv, "tcp://env.example.com:1234")
+		require.Equal(t, engineFlag, configuredRunnerHost())
+	})
+
+	// --cloud is a deprecated alias for --engine=cloud, so it keeps a flag's
+	// priority over the environment, even when DAGGER_CLOUD_ENGINE is set too.
+	t.Run("cloud flag overrides engine env var", func(t *testing.T) {
+		reset()
+		cloudFlag = true
+		t.Setenv(engineEnv, "tcp://env.example.com:1234")
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+
+		cloudEngineEnvSet = true
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
+	})
+
+	// DAGGER_CLOUD_ENGINE is deprecated, so DAGGER_ENGINE outranks it.
+	t.Run("engine env var overrides deprecated cloud env var", func(t *testing.T) {
+		reset()
+		cloudEngineEnvSet = true
+		t.Setenv(engineEnv, "tcp://env.example.com:1234")
+		require.Equal(t, "tcp://env.example.com:1234", configuredRunnerHost())
+	})
+
+	t.Run("deprecated cloud env var without engine env var", func(t *testing.T) {
+		reset()
+		cloudEngineEnvSet = true
+		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
 	})
 }

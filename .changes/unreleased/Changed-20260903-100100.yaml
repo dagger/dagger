@@ -1,8 +1,9 @@
 kind: Changed
 body: |
   `--engine` selects the engine that runs a command: `cloud` for Dagger Cloud,
-  or a runner host URI such as `container://NAME` or `ssh://HOST`. The `--cloud`
-  flag is deprecated: use `--engine=cloud`.
+  or a runner host URI such as `container://NAME` or `ssh://HOST`. The
+  `DAGGER_ENGINE` environment variable takes the same values. Run
+  `dagger help engine` for the full list.
 time: 2026-09-03T10:01:00Z
 custom:
   Author: shykes
