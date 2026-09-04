@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +11,54 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+type containerPartsTestFromImageOp struct {
+	*ContainerFromImageRefLazy
+}
+
+func (op *containerPartsTestFromImageOp) EvaluateContainerGroup(ctx context.Context, ctr *Container, group dagql.LazyGroupKey) error {
+	if group != ContainerLazyGroupWrite {
+		return op.ContainerFromImageRefLazy.EvaluateContainerGroup(ctx, ctr, group)
+	}
+	return op.LazyState.EvaluateGroup(ctx, "test.containerFrom", group, func(context.Context) error {
+		dir := &Directory{
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		}
+		dir.Dir.SetValue("/")
+		ctr.ensureFSAccessor().SetValue(dir)
+		return nil
+	})
+}
+
+func TestContainerFromSuccessfulFSConsumesFinalDelegations(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	parent := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+	}
+	parentRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "from-final-parent", parent)
+	lazy := &containerPartsTestFromImageOp{ContainerFromImageRefLazy: &ContainerFromImageRefLazy{
+		LazyState: NewLazyState(),
+		Parent:    parentRes,
+	}}
+	child := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         lazy,
+	}
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "from-final-child", child)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartFS))
+	require.Nil(t, child.lazyOpForRouting())
+	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
+	_, parentFSSet := parent.FS.Peek()
+	require.False(t, parentFSSet)
+	_, parentExecMetaSet := parent.MetaSnapshot.Peek()
+	require.False(t, parentExecMetaSet)
+}
 
 func TestContainerFromMetadataDoesNotPullImage(t *testing.T) {
 	t.Parallel()

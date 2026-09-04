@@ -60,6 +60,10 @@ func containerDelegationGroup(part dagql.PartKey) dagql.LazyGroupKey {
 type LazyContainerParts interface {
 	Lazy[*Container]
 
+	// ContainerLazyParent returns the result whose snapshot parts are
+	// copied by this op's delegation groups.
+	ContainerLazyParent() dagql.ObjectResult[*Container]
+
 	// ContainerLazyGroups maps parts to the groups that fill them, in
 	// evaluation order; nil parts means every group of the op, metadata
 	// first. The owning result's metadata part is already settled when
@@ -131,6 +135,193 @@ var (
 	_ LazyContainerParts = (*ContainerWithoutPathLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithSymlinkLazy)(nil)
 )
+
+func (lazy *ContainerWithEntrypointLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutEntrypointLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithDefaultArgsLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutDefaultArgsLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithUserLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutUserLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithWorkdirLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutWorkdirLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithEnvVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithEnvFileVariablesLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithSystemEnvVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutEnvVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithLabelLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutLabelLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithImageConfigMetadataLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithHealthcheckLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutHealthcheckLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerSetGPUsLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithAnnotationLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutAnnotationLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithSecretVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutSecretVariableLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithServiceBindingLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithExposedPortLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutExposedPortLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithDefaultTerminalCmdLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedCacheLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedTempLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedVolumeLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedSecretLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutMountLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithUnixSocketLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutUnixSocketLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerExecLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	if lazy == nil || lazy.State == nil {
+		return dagql.ObjectResult[*Container]{}
+	}
+	return lazy.State.Parent
+}
+
+func (lazy *ContainerWithRootFSLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerFromImageRefLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedDirectoryLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedFileLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithDirectoryLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithFileLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithoutPathLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithSymlinkLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
 
 // lazyOpForRouting reads the current Lazy op under lazyOpMu. One rule
 // covers every access: after construction, the op pointer is only ever
@@ -233,7 +424,74 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 	if err := op.EvaluateContainerGroup(ctx, container, group); err != nil {
 		return err
 	}
+	// Keep the sweep inside the attempt callback. It must finish before the
+	// cache decides whether the attempt's resume span is partial.
+	if err := container.consumeFinalParentDelegations(ctx, op); err != nil {
+		return err
+	}
 	return container.clearLazyWhenConsumed(ctx, op)
+}
+
+// consumeFinalParentDelegations copies every remaining delegated snapshot
+// part whose parent part is already final. These copies start no parent work:
+// an unrefined pending parent is never final, and a refined parent is final
+// for a part only after the group that fills that part has completed.
+func (container *Container) consumeFinalParentDelegations(ctx context.Context, op LazyContainerParts) error {
+	parent := op.ContainerLazyParent()
+	parentCtr := parent.Self()
+	if parentCtr == nil {
+		return nil
+	}
+
+	state := op.ContainerLazyState()
+	for _, part := range containerSnapshotParts(container) {
+		delegation := containerDelegationGroup(part)
+		// Delegation groups are exactly the snapshot groups whose key is the
+		// part key. Producer groups such as execOutputs and write never match.
+		groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
+		if err != nil {
+			return err
+		}
+		if len(groups) != 1 || groups[0] != delegation || state.GroupConsumed(delegation) {
+			continue
+		}
+
+		final, err := containerParentPartFinal(ctx, parentCtr, part)
+		if err != nil {
+			return err
+		}
+		if !final {
+			continue
+		}
+		if err := op.EvaluateContainerGroup(ctx, container, delegation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func containerParentPartFinal(ctx context.Context, parent *Container, part dagql.PartKey) (bool, error) {
+	lazy := parent.lazyOpForRouting()
+	if lazy == nil {
+		return true, nil
+	}
+	parentOp, ok := lazy.(LazyContainerParts)
+	if !ok {
+		return false, nil
+	}
+	// Every refined mapping reads settled metadata. Do not inspect a parent's
+	// part mapping until its metadata group is final.
+	if !parentOp.ContainerLazyState().GroupConsumed(ContainerLazyGroupMetadata) {
+		return false, nil
+	}
+	groups, err := parentOp.ContainerLazyGroups(ctx, parent, []dagql.PartKey{part})
+	if err != nil {
+		return false, err
+	}
+	if len(groups) != 1 {
+		return false, fmt.Errorf("container parent part %q maps to %d groups", part, len(groups))
+	}
+	return parentOp.ContainerLazyState().GroupConsumed(groups[0]), nil
 }
 
 // clearLazyWhenConsumed clears container.Lazy when every group of the op
