@@ -411,8 +411,54 @@ func (sess *daggerSession) releaseClientLifecycleLease(client *clientRuntime, le
 	sess.scopeMu.Lock()
 	delete(client.lifecycleLeases, leaseID)
 	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
+	sess.signalClientScopeWaiterLocked()
 	sess.scopeMu.Unlock()
 	sess.finishClientRuntimeReclamation(reclamation)
+}
+
+func (sess *daggerSession) signalClientScopeWaiterLocked() {
+	if sess.scopeWaitCh != nil {
+		close(sess.scopeWaitCh)
+		sess.scopeWaitCh = nil
+	}
+}
+
+// clientScopesDrainedLocked reports whether session teardown has observed the
+// terminal transition of every executable client scope. sess.scopeMu must be
+// held; the lock order matches maybeUnpublishClientRuntimeLocked.
+func (sess *daggerSession) clientScopesDrainedLocked() bool {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+	for _, client := range sess.clientRuntimes {
+		if len(client.lifecycleLeases) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// waitForClientScopeDrain is the session-level producer barrier. Teardown first
+// prevents acquisition, then services, requests, and cache callbacks release
+// their existing leases through normal terminal transitions.
+func (sess *daggerSession) waitForClientScopeDrain(ctx context.Context) error {
+	for {
+		sess.scopeMu.Lock()
+		if sess.clientScopesDrainedLocked() {
+			sess.scopeMu.Unlock()
+			return nil
+		}
+		if sess.scopeWaitCh == nil {
+			sess.scopeWaitCh = make(chan struct{})
+		}
+		waitCh := sess.scopeWaitCh
+		sess.scopeMu.Unlock()
+
+		select {
+		case <-waitCh:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
 }
 
 // closeClientScope closes root acquisition and releases reachability. Existing
