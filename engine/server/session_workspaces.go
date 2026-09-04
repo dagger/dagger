@@ -37,10 +37,9 @@ import (
 // Registered as core.SetWorkspaceInvalidator and triggered after a changeset
 // export writes workspace config files (e.g. a `dagger setup` migration that
 // creates dagger.toml / removes the legacy dagger.json). The per-client cache
-// would otherwise serve the pre-migration view for the client's whole lifetime;
-// under nested execution that lifetime spans multiple sessions in one process
-// (the client ID is pinned by DAGGER_SESSION_CLIENT_ID), so the post-migrate
-// recommended-module install would still see the legacy dagger.json and fail.
+// would otherwise serve the pre-migration view for the rest of that client's
+// lifetime, so subsequent work in the same session would still see the legacy
+// dagger.json and fail.
 func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {

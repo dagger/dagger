@@ -246,7 +246,11 @@ type clientRecord struct {
 	quiescentAt time.Time
 	shutdownAt  time.Time
 
-	// Host attachables and resources remain session-owned and keyed by clientID.
+	// Nested clients created by one exec route through its exact bootstrap
+	// attachables client; this is sealed at transport registration and never
+	// selected from request metadata.
+	attachablesClientID string
+
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
 
@@ -1309,14 +1313,18 @@ func (sess *daggerSession) resolveClientAttachableCaller(
 ) (engineutil.SessionCaller, bool, error) {
 	sess.scopeMu.Lock()
 	inertAttachables := record.inertAttachables
+	attachablesClientID := record.attachablesClientID
 	hostServiceProxyClientID := record.hostServiceProxyClientID
 	parentClientIDs := slices.Clone(record.parentClientIDs)
 	sess.scopeMu.Unlock()
 	if inertAttachables {
 		return nil, false, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
 	}
+	if attachablesClientID == "" {
+		attachablesClientID = record.clientID
+	}
 	if sess.attachables != nil {
-		if caller, ok := sess.attachables.Lookup(record.clientID); ok {
+		if caller, ok := sess.attachables.Lookup(attachablesClientID); ok {
 			return caller, true, nil
 		}
 	}
@@ -1343,7 +1351,7 @@ func (sess *daggerSession) resolveClientAttachableCaller(
 	if wait == nil {
 		return nil, false, fmt.Errorf("session client caller gateway is not initialized")
 	}
-	caller, err := wait(ctx, record.clientID)
+	caller, err := wait(ctx, attachablesClientID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1939,7 +1947,10 @@ func (srv *Server) ServeHTTPToNestedClient(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		http.Error(w, "nested client transport is closed", http.StatusServiceUnavailable)
+		// A registered nested transport has exactly one lifetime. Gone is
+		// deliberately non-retryable: in particular, SSE clients retry 503s
+		// forever while establishing their initial telemetry subscription.
+		http.Error(w, "nested client transport is closed", http.StatusGone)
 		return
 	}
 	if nestedClientMetadata == nil {
@@ -2175,6 +2186,13 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 			"clientID", record.clientID,
 		)
 	}()
+	if record.attachablesClientID != "" && record.attachablesClientID != record.clientID {
+		return httpErr(fmt.Errorf(
+			"client %q uses exec attachables %q and cannot register another channel",
+			record.clientID,
+			record.attachablesClientID,
+		), http.StatusBadRequest)
+	}
 
 	// verify this isn't overwriting an existing active session
 	if _, ok := record.daggerSession.attachables.Lookup(record.clientID); ok {
@@ -3187,11 +3205,15 @@ func (srv *Server) clientAttachableCaller(
 	if err != nil {
 		return nil, err
 	}
+	attachablesClientID := record.attachablesClientID
+	if attachablesClientID == "" {
+		attachablesClientID = record.clientID
+	}
 	if ifAvailable {
-		caller, _ := record.daggerSession.attachables.Lookup(record.clientID)
+		caller, _ := record.daggerSession.attachables.Lookup(attachablesClientID)
 		return caller, nil
 	}
-	caller, err := record.daggerSession.attachables.Wait(ctx, record.clientID)
+	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID)
 	if err != nil {
 		return nil, err
 	}

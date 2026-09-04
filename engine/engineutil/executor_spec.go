@@ -57,7 +57,6 @@ import (
 
 const (
 	DaggerSessionIDEnv       = "_DAGGER_SESSION_ID"
-	DaggerClientIDEnv        = "_DAGGER_NESTED_CLIENT_ID"
 	DaggerCallDigestEnv      = "_DAGGER_CALL_DIGEST"
 	DaggerEngineVersionEnv   = "_DAGGER_ENGINE_VERSION"
 	DaggerRedirectStdinEnv   = "_DAGGER_REDIRECT_STDIN"
@@ -1075,6 +1074,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	ctx = trace.ContextWithSpanContext(ctx, state.causeCtx)
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientIDEnv+"="+state.nestedClientMetadata.ClientID)
 
 	state.nestedClientMetadata.ClientStableID = randid.NewID()
 
@@ -1100,10 +1100,13 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata.ClientVersion = version
 	}
 
-	transport, err := c.registerNestedClientTransport(ctx, state)
-	if err != nil {
-		return err
-	}
+	transports := newNestedClientTransportManager(
+		ctx,
+		c.SessionHandler,
+		state.nestedClientMetadata,
+		state.callerClientID,
+	)
+	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
@@ -1135,7 +1138,12 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			transport, metadata, status, err := transports.transportForRequest(req)
+			if err != nil {
+				http.Error(resp, err.Error(), status)
+				return
+			}
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
@@ -1158,17 +1166,114 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	return nil
 }
 
-func (c *Client) registerNestedClientTransport(ctx context.Context, state *execState) (*engine.NestedClientTransport, error) {
-	transport, err := c.SessionHandler.RegisterNestedClientTransport(
-		ctx,
-		state.nestedClientMetadata,
-		state.callerClientID,
+// nestedClientTransportManager is the process-level proxy capability for one
+// exec. A nested process may create more than one sequential engine client, so
+// each exact header-aware client ID gets its own registered, one-shot transport;
+// headerless SDK calls use the exec's explicitly delegated base ID. Closed IDs
+// remain cached and can never be rebound to a new transport.
+type nestedClientTransportManager struct {
+	mu sync.Mutex
+
+	registrationCtx context.Context
+	sessionHandler  sessionHandler
+	baseMetadata    *engine.ClientMetadata
+	callerClientID  string
+
+	closed     bool
+	transports map[string]nestedClientTransport
+}
+
+type nestedClientTransport struct {
+	metadata  *engine.ClientMetadata
+	transport *engine.NestedClientTransport
+}
+
+func newNestedClientTransportManager(
+	ctx context.Context,
+	handler sessionHandler,
+	baseMetadata *engine.ClientMetadata,
+	callerClientID string,
+) *nestedClientTransportManager {
+	return &nestedClientTransportManager{
+		registrationCtx: ctx,
+		sessionHandler:  handler,
+		baseMetadata:    baseMetadata,
+		callerClientID:  callerClientID,
+		transports:      map[string]nestedClientTransport{},
+	}
+}
+
+func (manager *nestedClientTransportManager) transportForRequest(req *http.Request) (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
+	// Headerless SDK calls use the one identity explicitly delegated to this
+	// exec's proxy. Header-aware clients name their own logical lifetime. The
+	// distinction is syntactic: a malformed or explicitly empty identity never
+	// falls through to the proxy identity.
+	clientID := manager.baseMetadata.ClientID
+	if req.Header.Get(engine.ClientMetadataMetaKey) != "" {
+		requestMetadata, err := engine.ClientMetadataFromHTTPHeaders(req.Header)
+		if err != nil {
+			return nil, nil, http.StatusBadRequest, fmt.Errorf("invalid nested client metadata: %w", err)
+		}
+		if requestMetadata.ClientID == "" {
+			return nil, nil, http.StatusBadRequest, errors.New("nested client metadata is missing client ID")
+		}
+		clientID = requestMetadata.ClientID
+	}
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	if manager.closed {
+		return nil, nil, http.StatusGone, errors.New("nested client proxy is closed")
+	}
+	if client, ok := manager.transports[clientID]; ok {
+		return client.transport, client.metadata, 0, nil
+	}
+
+	// The request chooses only its fresh logical client ID. Session identity,
+	// authentication, ancestry, and inherited capabilities are all sealed by
+	// the exec-created proxy metadata.
+	metadata := *manager.baseMetadata
+	metadata.ClientID = clientID
+	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
+		manager.registrationCtx,
+		&metadata,
+		manager.callerClientID,
+		manager.baseMetadata.ClientID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("register nested client transport: %w", err)
+		// Registration is an exact, one-time binding. A failure must not send an
+		// SSE client into a retry loop or fall through to any other client.
+		return nil, nil, http.StatusConflict, fmt.Errorf("register nested client transport: %w", err)
 	}
-	state.cleanups.Add("close nested client transport", cleanups.Infallible(transport.Close))
-	return transport, nil
+	if wcprof.Enabled(manager.registrationCtx) {
+		// The analyzer stitches each logical nested client's ops under this exec.
+		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, 0, 0, metadata.ClientID, 0)
+	}
+	client := nestedClientTransport{
+		metadata:  &metadata,
+		transport: transport,
+	}
+	manager.transports[metadata.ClientID] = client
+	return client.transport, client.metadata, 0, nil
+}
+
+func (manager *nestedClientTransportManager) Close() {
+	manager.mu.Lock()
+	if manager.closed {
+		manager.mu.Unlock()
+		return
+	}
+	manager.closed = true
+	transports := make([]*engine.NestedClientTransport, 0, len(manager.transports))
+	for _, client := range manager.transports {
+		transports = append(transports, client.transport)
+	}
+	manager.mu.Unlock()
+
+	for _, transport := range transports {
+		transport.Close()
+	}
 }
 
 func (c *Client) installCACerts(ctx context.Context, state *execState) error {

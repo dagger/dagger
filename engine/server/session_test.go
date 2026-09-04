@@ -149,8 +149,21 @@ func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{version}"}`))
 	srv.ServeHTTPToNestedClient(recorder, req, transport, metadata, parent.clientID, false, nil, nil)
-	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, http.StatusGone, recorder.Code)
 	require.Equal(t, clientStateReclaimed, child.state, "close before first request must leave a permanent record tombstone")
+
+	telemetryRecorder := httptest.NewRecorder()
+	srv.ServeHTTPToNestedClient(
+		telemetryRecorder,
+		httptest.NewRequest(http.MethodGet, "/v1/traces", nil),
+		transport,
+		metadata,
+		parent.clientID,
+		false,
+		nil,
+		nil,
+	)
+	require.Equal(t, http.StatusGone, telemetryRecorder.Code, "a terminal transport must not make SSE clients retry")
 
 	// The child's serialized quiescent transition releases the exact child edge
 	// it cloned from the parent.
@@ -158,6 +171,47 @@ func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	for _, lease := range parentLeases {
 		require.NotEqual(t, engine.ClientLeaseChild, lease.kind)
 	}
+}
+
+func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+
+	bootstrapMetadata := nestedTransportTestMetadata("bootstrap")
+	bootstrap, err := srv.RegisterNestedClientTransport(ctx, bootstrapMetadata, parent.clientID)
+	require.NoError(t, err)
+	defer bootstrap.Close()
+
+	logicalMetadata := nestedTransportTestMetadata("logical")
+	logicalMetadata.ClientSecretToken = bootstrapMetadata.ClientSecretToken
+	logical, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID)
+	require.NoError(t, err)
+	defer logical.Close()
+
+	sess.clientMu.RLock()
+	logicalRecord := sess.clientRecords[logicalMetadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.Equal(t, bootstrapMetadata.ClientID, logicalRecord.attachablesClientID)
+
+	bootstrapCaller := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		supported: map[string]struct{}{},
+	}
+	sess.attachables = newSessionAttachableManager()
+	sess.attachables.callers[bootstrapMetadata.ClientID] = bootstrapCaller
+	caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, logicalMetadata.ClientID, true)
+	require.NoError(t, err)
+	require.Same(t, bootstrapCaller, caller)
+
+	missing := nestedTransportTestMetadata("missing-carrier")
+	_, err = srv.RegisterNestedClientTransportForExec(ctx, missing, parent.clientID, "absent")
+	require.ErrorContains(t, err, `attachables client "absent" not found`)
+
+	wrongSecret := nestedTransportTestMetadata("wrong-secret")
+	_, err = srv.RegisterNestedClientTransportForExec(ctx, wrongSecret, parent.clientID, bootstrapMetadata.ClientID)
+	require.ErrorContains(t, err, "different secret token")
 }
 
 func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
