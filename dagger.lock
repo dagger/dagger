@@ -14,6 +14,7 @@
 ["","oci-latest",["docker.io/tmknom/markdownlint"],"latest"]
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
 ["","oci-sha",["docker.io/library/docker:cli"],"sha256:000bb62ff495f986c9f5578eb67cc2cb98b91138eda81d7762d5371eb8a497fe"]
+["","oci-sha",["docker.io/library/eclipse-temurin:21-jre"],"sha256:7a65df4b22d2de92d4e04056e884f3b9122d70b21e2847fd66084278bd0ce037"]
 ["","oci-sha",["docker.io/library/golang:1.26-alpine"],"sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468"]
 ["","oci-sha",["docker.io/library/node:22.22.0-alpine"],"sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34"]
 ["","oci-sha",["docker.io/library/node:lts-alpine"],"sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43"]

@@ -367,7 +367,9 @@ Init ==
     /\ sessionEdges = {}
     /\ countedEdges = {}
     /\ sessionRelease = [s \in Sessions |->
-         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
+          releaseReturned |-> FALSE, waitRequested |-> FALSE,
+          waitReturned |-> FALSE]]
     /\ evals = <<>>
     /\ epoch = 1
     /\ flushed = [closing |-> FALSE, done |-> FALSE, rows |-> <<>>]
@@ -1327,6 +1329,39 @@ ReleaseSessionDelete(s) ==
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    countedEdges, evals, epoch, flushed>>
 
+\* ReleaseSession returns immediately once cleanup is assigned to an active
+\* operation, but a synchronous release does not return until cleanup is done.
+\* This action is the public API return boundary for those two cases.
+ReleaseSessionReturn(s) ==
+    /\ ~sessionRelease[s].releaseReturned
+    /\ sessionRelease[s].phase \in {"deferred", "released"}
+    /\ sessionRelease' = [sessionRelease EXCEPT
+         ![s].releaseReturned = TRUE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
+
+\* The engine may begin waiting only after ReleaseSession has returned. The
+\* wait itself is context-aware in Go; cancellation is an external outcome and
+\* does not alter the cache lifecycle, so only its successful return is modeled.
+ReleaseWaitBegin(s) ==
+    /\ sessionRelease[s].releaseReturned
+    /\ ~sessionRelease[s].waitRequested
+    /\ sessionRelease' = [sessionRelease EXCEPT
+         ![s].waitRequested = TRUE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
+
+\* WaitSessionRelease can return successfully only after release hooks and
+\* per-session record deletion have completed.
+ReleaseWaitReturn(s) ==
+    /\ sessionRelease[s].waitRequested
+    /\ ~sessionRelease[s].waitReturned
+    /\ sessionRelease[s].phase = "released"
+    /\ sessionRelease' = [sessionRelease EXCEPT
+         ![s].waitReturned = TRUE]
+    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
+
 (***************************************************************************)
 (* PruneCut: cut one persisted root edge and let the normal cascade        *)
 (* collect whatever that leaves unowned. Fireable at any time.             *)
@@ -1468,7 +1503,9 @@ Restart ==
     /\ sessionEdges' = {}
     /\ countedEdges' = {}
     /\ sessionRelease' = [s \in Sessions |->
-         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0]]
+         [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
+          releaseReturned |-> FALSE, waitRequested |-> FALSE,
+          waitReturned |-> FALSE]]
     /\ flushed' = [flushed EXCEPT !.closing = FALSE]
 
 ---------------------------------------------------------------------------
@@ -1866,6 +1903,8 @@ Next ==
     \/ \E s \in Sessions :
          ReleaseSessionMark(s) \/ ReleaseSessionSnapshot(s)
            \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
+           \/ ReleaseSessionReturn(s) \/ ReleaseWaitBegin(s)
+           \/ ReleaseWaitReturn(s)
     \/ \E r \in 1..Len(res) : PruneCut(r)
     \/ EvalSpawn
     \/ \E e \in EvalIds :
@@ -1950,6 +1989,11 @@ LazyCallbackProgress(r) ==
 \* progress. ReleaseSessionMark itself remains an external event.
 ReleaseProgress(s) ==
     ReleaseSessionSnapshot(s) \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
+      \/ ReleaseSessionReturn(s)
+
+\* Once requested, a successful release wait is normal system progress rather
+\* than another external choice.
+ReleaseWaitProgress(s) == ReleaseWaitReturn(s)
 
 \* The callback goroutine releases its attempt token after closing done.
 LazyCallbackTokenProgress(s) == EvalCallbackTokenExit(s)
@@ -1969,6 +2013,7 @@ LiveSpec ==
     /\ \A r \in 1..MaxResults :
          WF_vars(r \in ResultIds /\ LazyCallbackProgress(r))
     /\ \A s \in Sessions : WF_vars(ReleaseProgress(s))
+    /\ \A s \in Sessions : WF_vars(ReleaseWaitProgress(s))
     /\ \A s \in Sessions : WF_vars(LazyCallbackTokenProgress(s))
 
 ---------------------------------------------------------------------------
@@ -2005,6 +2050,13 @@ TypeOK ==
               {"live", "marking", "deferred", "collecting", "deleting", "released"}
          /\ sessionRelease[s].active \in Nat
          /\ sessionRelease[s].exitingLazy \in 0..1
+         /\ sessionRelease[s].releaseReturned \in BOOLEAN
+         /\ sessionRelease[s].waitRequested \in BOOLEAN
+         /\ sessionRelease[s].waitReturned \in BOOLEAN
+         /\ sessionRelease[s].waitRequested => sessionRelease[s].releaseReturned
+         /\ sessionRelease[s].waitReturned =>
+              /\ sessionRelease[s].waitRequested
+              /\ sessionRelease[s].phase = "released"
          /\ sessionRelease[s].exitingLazy <= sessionRelease[s].active
          /\ sessionRelease[s].active = DerivedSessionActive(s)
          /\ sessionRelease[s].phase = "deferred" => sessionRelease[s].active > 0
@@ -2253,6 +2305,19 @@ DeferredReleaseEventuallyCompletes ==
     \A s \in Sessions :
         (sessionRelease[s].phase # "live" /\ sessionRelease[s].active = 0)
           ~> (sessionRelease[s].phase = "released")
+
+\* A successful WaitSessionRelease return is a proof that cleanup hooks and
+\* per-session record deletion have completed.
+ReleaseWaitSafe ==
+    \A s \in Sessions :
+        sessionRelease[s].waitReturned => sessionRelease[s].phase = "released"
+
+\* Once a waiter exists and active operations have drained, fair cache cleanup
+\* and waiter progress eventually return it.
+ReleaseWaitEventuallyReturns ==
+    \A s \in Sessions :
+        (sessionRelease[s].waitRequested /\ sessionRelease[s].active = 0)
+          ~> sessionRelease[s].waitReturned
 
 \* Liveness (against LiveSpec): every issued call eventually terminates -
 \* served, failed, or canceled, never wedged forever.

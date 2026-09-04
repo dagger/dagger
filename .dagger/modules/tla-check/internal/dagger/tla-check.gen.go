@@ -22,9 +22,10 @@ func (r *Query) TlaCheck(ws *Workspace) *TlaCheck { // tla-check (../../../../..
 type TlaCheck struct { // tla-check (../../../../../:0:0)
 	query *querybuilder.Selection
 
-	cacheLifecycle *Void
-	id             *ID
-	one            *string
+	cacheLifecycle  *Void
+	clientLifecycle *Void
+	id              *ID
+	one             *string
 }
 
 func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
@@ -42,6 +43,26 @@ func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	q := r.query.Select("cacheLifecycle")
 
 	return q.Execute(ctx)
+}
+
+// ClientLifecycle model-checks client runtime reclamation, typed leases,
+// authoritative session teardown, and the final telemetry barrier.
+func (r *TlaCheck) ClientLifecycle(ctx context.Context) error {
+	if r.clientLifecycle != nil {
+		return nil
+	}
+	q := r.query.Select("clientLifecycle")
+
+	return q.Execute(ctx)
+}
+
+// The engine/server/tla spec directory.
+func (r *TlaCheck) ClientSource() *Directory {
+	q := r.query.Select("clientSource")
+
+	return &Directory{
+		query: q,
+	}
 }
 
 // A unique identifier for this TlaCheck.
