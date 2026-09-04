@@ -2418,6 +2418,83 @@ func sessionIDReleased(srv *Server, sessionID string) bool {
 	return ok
 }
 
+// newStrandedTeardownSession builds a teardown-capable session whose main
+// client holds one lease that the test controls, standing in for a producer
+// that never reaches its terminal transition.
+func newStrandedTeardownSession(t *testing.T, srv *Server, sessionID string) (*daggerSession, engine.ClientScope) {
+	t.Helper()
+	md := &engine.ClientMetadata{SessionID: sessionID, ClientID: "main"}
+	client := &clientRuntime{
+		clientRecord: &clientRecord{
+			clientID:       md.ClientID,
+			clientMetadata: md,
+			metadataSealed: true,
+			accepting:      true,
+			shutdownCh:     make(chan struct{}),
+		},
+		state:           clientStateInitialized,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord),
+	}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		containers:         map[bkgw.Container]struct{}{},
+		shutdownCh:         make(chan struct{}),
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.state.Store(sessionStateInitialized)
+	srv.initializeSessionTelemetry(sess)
+
+	stranded, err := sess.acquireRootClientScope(client, engine.ClientLeaseSharedWork, "stuck callback")
+	require.NoError(t, err)
+	return sess, stranded
+}
+
+func TestSessionTeardownHonorsCallerDeadlineForStrandedLease(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	// Engine graceful stop passes a deadline. A producer that never releases
+	// must not hold the engine past it.
+	bounded, stranded := newStrandedTeardownSession(t, srv, "bounded")
+	deadlineCtx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- srv.removeDaggerSession(deadlineCtx, bounded) }()
+	select {
+	case err := <-done:
+		require.ErrorContains(t, err, "wait for client scopes")
+	case <-time.After(10 * time.Second):
+		t.Fatal("teardown ignored the caller's deadline while a lease was stranded")
+	}
+	stranded.Lease().Release()
+
+	// A reap passes no deadline and must keep waiting for the producer.
+	unbounded, stranded := newStrandedTeardownSession(t, srv, "unbounded")
+	done = make(chan error, 1)
+	go func() { done <- srv.removeDaggerSession(context.Background(), unbounded) }()
+	select {
+	case err := <-done:
+		t.Fatalf("teardown returned before the stranded lease released: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	stranded.Lease().Release()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("teardown did not complete after the stranded lease released")
+	}
+}
+
 func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
 	t.Parallel()
 

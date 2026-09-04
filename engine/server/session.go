@@ -901,8 +901,18 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	var errs error
 
-	// in theory none of this should block very long, but add a safeguard just in case
+	// Teardown must not be cancelled by the request that triggered it, but it
+	// honors a deadline when the caller has one. Engine graceful stop bounds
+	// its whole shutdown with one, and a session whose producer ignores
+	// cancellation must not hold the engine up forever. Reaps pass no deadline
+	// and wait as long as the session's producers need.
 	teardownCtx := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancelDeadline context.CancelFunc
+		teardownCtx, cancelDeadline = context.WithDeadline(teardownCtx, deadline)
+		defer cancelDeadline()
+	}
+	// in theory none of this should block very long, but add a safeguard just in case
 	ctx, cancel := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancel()
 
