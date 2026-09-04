@@ -167,6 +167,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
+		dagql.NodeFunc("__withHead", s.withHead).
+			IsPersistable().
+			Doc(`(Internal-only) Return this repository with HEAD pinned to a selected ref.`).
+			Args(
+				dagql.Arg("ref"),
+			),
 		dagql.NodeFunc("uncommitted", s.uncommitted).
 			Doc("Returns the changeset of uncommitted changes in the git repository."),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
@@ -1567,6 +1573,33 @@ func (s *gitSchema) gitRefAsWorkspace(ctx context.Context, parent dagql.ObjectRe
 
 type withAuthTokenArgs struct {
 	Token core.SecretID
+}
+
+type withHeadArgs struct {
+	Ref core.GitRefID
+}
+
+func (s *gitSchema) withHead(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args withHeadArgs,
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.GitRepository]{}, err
+	}
+	ref, err := args.Ref.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.GitRepository]{}, fmt.Errorf("load git HEAD ref: %w", err)
+	}
+	if ref.Self().Ref == nil {
+		return dagql.ObjectResult[*core.GitRepository]{}, fmt.Errorf("git HEAD ref is unresolved")
+	}
+
+	repo := parent.Self().CloneWithBackend(parent.Self().Backend)
+	pinnedRef := *ref.Self().Ref
+	repo.Remote.Head = &pinnedRef
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
 func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
