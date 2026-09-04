@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/internal/cobradocs"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -125,6 +127,22 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.True(t, flags.Lookup("cloud").Hidden)
 	require.Contains(t, flags.Lookup("cloud").Deprecated, "--engine=cloud")
 	require.False(t, flags.Lookup("engine").Hidden)
+	require.Equal(t, engineFlagUsage, flags.Lookup("engine").Usage)
+	require.NotContains(t, flags.Lookup("engine").Usage, "runner host")
+
+	// The usage stays on one line: it names the value space and points at the
+	// help topic that carries the full catalog.
+	usage := flags.Lookup("engine").Usage
+	require.NotContains(t, usage, "\n")
+	require.Contains(t, usage, drivers.SchemeSummary())
+	require.Contains(t, usage, "dagger help engine")
+	for _, value := range []string{"cloud", "image://", "container://", "ssh://", "unix://"} {
+		require.Contains(t, usage, value)
+	}
+	// The variants and the legacy schemes belong to the help topic only.
+	for _, value := range []string{"image+nerdctl://", "docker-image://", "kube-pod://POD"} {
+		require.NotContains(t, usage, value)
+	}
 	require.False(t, flags.Lookup("shell-on-error").Hidden)
 	require.True(t, flags.Lookup("interactive").Hidden)
 	require.Contains(t, flags.Lookup("interactive").Deprecated, "--shell-on-error")
@@ -165,6 +183,30 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.False(t, FlagAvailableForCommand(traceCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(activityCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(sdkInstalledCmd, flags.Lookup("shell-on-error")))
+}
+
+// testRootCommand returns the real root command with the global flags
+// installed. RootCommand panics if it installs the flags twice, so every test
+// in this package shares one instance.
+var testRootCommand = sync.OnceValue(RootCommand)
+
+func TestEngineFlagHelp(t *testing.T) {
+	root := testRootCommand()
+	for name, cmd := range map[string]*cobra.Command{
+		"api call": apiCallCmd.Command(),
+		"shell":    shellCmd,
+	} {
+		help := renderHelp(t, cmd)
+		require.Contains(t, help, "--engine string", name)
+		require.Contains(t, help, "dagger help engine", name)
+		// The full catalog must not repeat in every command's usage message.
+		require.NotContains(t, help, "image+nerdctl://IMAGE", name)
+		require.NotContains(t, help, "tcp://HOST:PORT (no authentication)", name)
+	}
+
+	version, _, err := root.Find([]string{"version"})
+	require.NoError(t, err)
+	require.NotContains(t, renderHelp(t, version), "--engine", "version")
 }
 
 func TestWorkspaceConfigFlags(t *testing.T) {
@@ -626,17 +668,33 @@ func TestGlobalFlagParsingStopsAtDynamicArguments(t *testing.T) {
 	oldXRelease := xRelease
 	t.Cleanup(func() { xRelease = oldXRelease })
 
-	root := &cobra.Command{Use: "root"}
-	var cloud bool
-	root.PersistentFlags().BoolVar(&cloud, "cloud", false, "Use a Cloud Engine")
-	dynamic := &cobra.Command{Use: "dynamic", DisableFlagParsing: true}
-	root.AddCommand(dynamic)
+	t.Run("string flag", func(t *testing.T) {
+		root := &cobra.Command{Use: "root"}
+		var selectedEngine string
+		root.PersistentFlags().StringVar(&selectedEngine, "engine", "", "Select the engine")
+		dynamic := &cobra.Command{Use: "dynamic", DisableFlagParsing: true}
+		root.AddCommand(dynamic)
 
-	parseGlobalFlags(root, []string{"dynamic", "function", "--cloud"})
-	require.False(t, cloud)
+		parseGlobalFlags(root, []string{"dynamic", "function", "--engine", "production"})
+		require.Empty(t, selectedEngine)
 
-	parseGlobalFlags(root, []string{"--cloud", "dynamic", "function"})
-	require.True(t, cloud)
+		parseGlobalFlags(root, []string{"--engine=cloud", "dynamic", "function"})
+		require.Equal(t, "cloud", selectedEngine)
+	})
+
+	t.Run("boolean compatibility alias", func(t *testing.T) {
+		root := &cobra.Command{Use: "root"}
+		var cloud bool
+		root.PersistentFlags().BoolVar(&cloud, "cloud", false, "Use a Cloud Engine")
+		dynamic := &cobra.Command{Use: "dynamic", DisableFlagParsing: true}
+		root.AddCommand(dynamic)
+
+		parseGlobalFlags(root, []string{"dynamic", "function", "--cloud"})
+		require.False(t, cloud)
+
+		parseGlobalFlags(root, []string{"--cloud", "dynamic", "function"})
+		require.True(t, cloud)
+	})
 }
 
 func TestCapabilityScopedFlagCompletion(t *testing.T) {

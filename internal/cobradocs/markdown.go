@@ -51,7 +51,12 @@ func markdown(cmd *cobra.Command, w io.Writer, opts MarkdownOptions) error {
 	}
 
 	for _, c := range cmd.Commands() {
-		if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
+		if c.Hidden || len(c.Deprecated) > 0 {
+			continue
+		}
+		// Help topics have no Run, so Cobra does not call them available.
+		// They are reference content, so the generated docs include them.
+		if !c.IsAvailableCommand() && !c.IsAdditionalHelpTopicCommand() {
 			continue
 		}
 		if err := markdown(c, w, opts); err != nil {

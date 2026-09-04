@@ -44,7 +44,7 @@ func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn
 
 func TestCloudEngineUnauth(t *testing.T) {
 	env := []string{}
-	args := []string{"--cloud", "api", "functions"}
+	args := []string{"--engine=cloud", "api", "functions"}
 	daggerCloudWithEnv(t, env, args, func(t *testing.T, err error, stdout *bytes.Buffer, stderr *bytes.Buffer) {
 		require.Error(t, err, fmt.Sprintf(
 			"expected '%s dagger %s' to return an error, but instead: %s",

@@ -73,6 +73,35 @@ example, the first `--engine` in `dagger --engine=cloud api call deploy
 --engine production` selects the engine, while the second is an argument of
 `deploy`.
 
+The full list of engine URI schemes is too long for a usage message that 34
+commands print. Four surfaces teach the values, and all four read one catalog
+in `engine/client/drivers`. A test asserts that the catalog covers the driver
+registry exactly, so no surface can name a scheme that does not work, or hide
+one that does:
+
+1. The `--engine` usage names the main values on one line: `cloud`, `image://`,
+   `container://`, `tcp://`, `tls://`, `ssh://`, `kube-pod://`, `unix://`. It
+   then points at the help topic.
+2. `dagger help engine` is a Cobra help topic. It holds the full catalog, the
+   engine selection priority, and examples. It declares no capabilities, so its
+   own usage message stays free of the global flags. `dagger --help` lists it
+   under `ADDITIONAL HELP TOPICS`, and the CLI reference documents it once.
+3. Shell completion of `--engine` offers every scheme prefix, without the
+   legacy Docker schemes.
+4. An unknown scheme fails with the list of supported schemes.
+
+Engine selection has this priority:
+
+1. `--engine`
+2. Hidden `--cloud`
+3. A future user-environment setting
+4. `DAGGER_CLOUD_ENGINE`
+5. `_EXPERIMENTAL_DAGGER_RUNNER_HOST`
+6. The built-in default
+
+The two environment variables remain silent compatibility inputs. Their
+replacement and removal plan belongs to the user-environment design.
+
 `-i`, `--shell-on-error` asks the engine to open a shell in the failed
 container state when a non-internal container exec fails. It requires
 `MayCallEngine`; it does not require `MayRenderPipeline`. The old

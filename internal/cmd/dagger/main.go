@@ -456,9 +456,17 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 // failed container.
 const defaultShellCommandOnError = "/bin/sh"
 
+// engineFlagUsage names the value space on one line and sends the reader to
+// the help topic for the rest. The full catalog is too long to repeat in the
+// usage message of every command that can call the engine.
+var engineFlagUsage = fmt.Sprintf(
+	"Select the engine: %s (run 'dagger help engine' for details)",
+	drivers.SchemeSummary(),
+)
+
 func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
-	engineFlags.StringVar(&engineFlag, "engine", "", "Use the specified engine (cloud or a runner host URI)")
+	engineFlags.StringVar(&engineFlag, "engine", "", engineFlagUsage)
 	engineFlags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "")
 	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
 	engineFlags.Lookup("cloud").Hidden = true
@@ -859,7 +867,7 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 }
 
 func Main() {
-	installGlobalFlags(rootCmd.PersistentFlags())
+	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		os.Exit(1)
@@ -997,8 +1005,24 @@ func Main() {
 // documentation generation. It installs global flags so the reference includes
 // them, matching what Main does before Execute.
 func RootCommand() *cobra.Command {
-	installGlobalFlags(rootCmd.PersistentFlags())
+	installRootGlobalFlags()
 	return rootCmd
+}
+
+// installRootGlobalFlags installs the global flags on the root command and
+// registers the completions that need a command, not just a flag set.
+func installRootGlobalFlags() {
+	installGlobalFlags(rootCmd.PersistentFlags())
+	if err := rootCmd.RegisterFlagCompletionFunc("engine", completeEngineFlag); err != nil {
+		fmt.Fprintln(stderr, "Error registering completion: engine", err)
+		os.Exit(1)
+	}
+}
+
+// completeEngineFlag offers every non-deprecated engine selector prefix. The
+// values end in "://", so completion must not append a space after them.
+func completeEngineFlag(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return drivers.SchemeCompletions(), cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
 }
 
 // IsExperimental reports whether cmd (or any ancestor) is marked experimental.
