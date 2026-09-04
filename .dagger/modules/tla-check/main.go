@@ -64,12 +64,13 @@ var expectedOutcome = map[string]string{
 }
 
 var clientExpectedOutcome = map[string]string{
-	"core":        "",
-	"shared_work": "",
-	"child":       "",
-	"children":    "",
-	"grandchild":  "",
-	"teardown":    "",
+	"core":                  "",
+	"shared_work":           "",
+	"child":                 "",
+	"children":              "",
+	"grandchild":            "",
+	"teardown":              "",
+	"blocking_registration": temporalOutcome,
 }
 
 var nestedClientProxyExpectedOutcome = map[string]string{

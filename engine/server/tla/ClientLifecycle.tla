@@ -24,20 +24,25 @@ CONSTANTS
     Works,
     ModelBackground,
     ModelChildren,
-    ModelTeardown
+    ModelTeardown,
+    BlockingRegistration
 
 ASSUME /\ Root \in Clients
        /\ NoClient \notin Clients
        /\ DOMAIN ParentOf = Clients
        /\ ParentOf[Root] = NoClient
        /\ \A c \in Clients \ {Root} : ParentOf[c] \in Clients
+       /\ BlockingRegistration \in BOOLEAN
 
 LeaseKinds == {"transport", "request", "shared-work", "service", "child"}
 BackgroundKinds == {"shared-work", "service"}
 SessionPhases == {"live", "closing", "telemetryStopped", "removed"}
 CachePhases == {"live", "deferred", "cleaning", "done"}
 MetricPhases == {"live", "draining", "stopped"}
-ItemPhases == {"idle", "active", "done"}
+\* A blocked item still holds its lease but can never reach its terminal
+\* transition; only the BlockingRegistration mutation produces it.
+ItemPhases == {"idle", "active", "blocked", "done"}
+HeldPhases == {"active", "blocked"}
 
 \* Configuration helper: one root with every other client its direct child.
 RootParents == [c \in Clients |-> IF c = Root THEN NoClient ELSE Root]
@@ -88,24 +93,24 @@ Init ==
 
 ActiveRequests(c) ==
     {q \in Requests :
-        requests[q].phase = "active" /\ requests[q].client = c}
+        requests[q].phase \in HeldPhases /\ requests[q].client = c}
 
 ActiveWork(c, k) ==
     {w \in Works :
-        work[w].phase = "active"
+        work[w].phase \in HeldPhases
           /\ work[w].client = c
           /\ work[w].kind = k}
 
 AllActiveWork ==
-    {w \in Works : work[w].phase = "active"}
+    {w \in Works : work[w].phase \in HeldPhases}
 
 ActiveSharedWork ==
     {w \in Works :
-        work[w].phase = "active" /\ work[w].kind = "shared-work"}
+        work[w].phase \in HeldPhases /\ work[w].kind = "shared-work"}
 
 ActiveServiceWork ==
     {w \in Works :
-        work[w].phase = "active" /\ work[w].kind = "service"}
+        work[w].phase \in HeldPhases /\ work[w].kind = "service"}
 
 LiveChildren(c) ==
     {child \in Clients :
@@ -234,6 +239,27 @@ RegisterChild(o, child) ==
        /\ clientMetrics' = [clientMetrics EXCEPT ![child] = "live"]
     /\ UNCHANGED <<sessionPhase, requests, work, cachePhase, reclaimed>>
 
+\* Deliberate mutation of the registration boundary: instead of failing fast
+\* once teardown owns the session, registration blocks on a lock that teardown
+\* holds for its whole duration. The registering owner is an exec running
+\* inside a request or shared callback, so its lease can never release and
+\* teardown's uncancellable lease barrier never completes. The
+\* blocking_registration configuration must violate TeardownEventuallyCompletes.
+RegisterChildBlocks(o, child) ==
+    /\ BlockingRegistration
+    /\ ModelChildren
+    /\ sessionPhase # "live"
+    /\ OwnerActive(o)
+    /\ child # Root
+    /\ ParentOf[child] = OwnerClient(o)
+    /\ ~clients[child].published
+    /\ IF o \in Requests
+       THEN /\ requests' = [requests EXCEPT ![o].phase = "blocked"]
+            /\ UNCHANGED work
+       ELSE /\ work' = [work EXCEPT ![o].phase = "blocked"]
+            /\ UNCHANGED requests
+    /\ UNCHANGED <<sessionPhase, clients, leases, cachePhase, clientMetrics, reclaimed>>
+
 \* Go: transport.Close and closeClientScope serialize the monotonic admission
 \* stop with release of transport ownership.
 CloseTransport(c) ==
@@ -350,6 +376,7 @@ Next ==
     \/ \E w \in Works, c \in Clients : StartBackgroundWork(w, c)
     \/ \E w \in Works : FinishBackgroundWork(w)
     \/ \E o \in Owners, child \in Clients : RegisterChild(o, child)
+    \/ \E o \in Owners, child \in Clients : RegisterChildBlocks(o, child)
     \/ \E c \in Clients : CloseTransport(c)
     \/ \E c \in Clients : BeginClientMetricDrain(c)
     \/ \E c \in Clients : FinishClientReclamation(c)
