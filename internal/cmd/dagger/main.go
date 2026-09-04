@@ -86,6 +86,7 @@ var (
 	dotFocusField     string
 	dotShowInternal   bool
 
+	stdinIsTTY  = isatty.IsTerminal(os.Stdin.Fd())
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
@@ -474,7 +475,7 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags.BoolVar(&cloudFlag, "cloud", false, "")
 	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
 	engineFlags.Lookup("cloud").Hidden = true
-	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails")
+	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails (needs an interactive terminal)")
 	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
 	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
 	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
@@ -880,6 +881,15 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 	opts.Verbosity = verbosity
 }
 
+// canOpenShellOnError reports whether the CLI can hand the terminal to a shell
+// in a failed container: only the pretty TUI can run one, and it needs a
+// terminal to read keys from. The check runs before the command, so a
+// non-interactive caller -- a script, or an AI agent, which gets the report
+// frontend -- fails fast instead of hanging in a shell it cannot exit.
+func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
+	return progress == "tty" && stdinIsTTY
+}
+
 func Main() {
 	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
@@ -970,6 +980,12 @@ func Main() {
 		Frontend = idtui.NewReporter(stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
+		exitWithCode(1)
+	}
+
+	if shellOnError && !canOpenShellOnError(progress, stdinIsTTY) {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(),
+			"--shell-on-error needs an interactive terminal, but none is available")
 		exitWithCode(1)
 	}
 

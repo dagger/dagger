@@ -42,3 +42,16 @@ func TestIsObviouslyRemoteWorkspaceRef(t *testing.T) {
 	require.False(t, isObviouslyRemoteWorkspaceRef("common/.dagger/mymod"))
 	require.False(t, isObviouslyRemoteWorkspaceRef("my.dir"))
 }
+
+func TestCanOpenShellOnError(t *testing.T) {
+	// Only the pretty TUI can run the shell, and it needs a terminal to read
+	// keys from.
+	require.True(t, canOpenShellOnError("tty", true))
+
+	require.False(t, canOpenShellOnError("tty", false))
+	// The report frontend is what an AI agent gets.
+	require.False(t, canOpenShellOnError("report", true))
+	require.False(t, canOpenShellOnError("plain", true))
+	require.False(t, canOpenShellOnError("dots", true))
+	require.False(t, canOpenShellOnError("logs", true))
+}
