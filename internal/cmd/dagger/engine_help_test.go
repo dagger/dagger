@@ -59,3 +59,17 @@ func TestEngineFlagCompletion(t *testing.T) {
 	require.Contains(t, values, "container+podman://")
 	require.NotContains(t, values, "docker-container://")
 }
+
+// A completion request names the command being completed, not the command that
+// runs, so the capability gate must let it through. Completion still hides the
+// flags that the target command does not support.
+func TestShellCompletionSkipsCapabilityValidation(t *testing.T) {
+	root := testRootCommand()
+
+	for _, request := range []string{cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd} {
+		require.NoError(t, validateFlagCapabilities(root, []string{request, "check", "--engine", ""}), request)
+		require.NoError(t, validateFlagCapabilities(root, []string{request, "trace", "--engine", ""}), request)
+	}
+	require.False(t, isShellCompletionRequest(nil))
+	require.False(t, isShellCompletionRequest([]string{"check", "--engine", "cloud"}))
+}

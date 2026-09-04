@@ -165,6 +165,13 @@ func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 // changing flag values. It must run before parseGlobalFlags, because those
 // values configure the frontend and can terminate the process.
 func validateFlagCapabilities(root *cobra.Command, args []string) error {
+	if isShellCompletionRequest(args) {
+		// A completion request carries the flags of the command being
+		// completed, not of the command that runs. hideUnavailableCompletionFlags
+		// filters what completion offers.
+		return nil
+	}
+
 	cmd, commandArgs := resolveCommand(root, args)
 	if cmd == nil {
 		return nil
@@ -221,6 +228,11 @@ func rootShellFallbackCommand(cmd *cobra.Command, parsed *pflag.FlagSet) *cobra.
 		return shellCmd
 	}
 	return cmd
+}
+
+func isShellCompletionRequest(args []string) bool {
+	return len(args) > 0 &&
+		(args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
 }
 
 func hideUnavailableCompletionFlags(cmd *cobra.Command, args []string) func() {

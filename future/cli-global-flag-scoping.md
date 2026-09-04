@@ -76,6 +76,11 @@ flag parsing at their first schema-owned token. For example, the first
 `--engine` in `dagger --engine=cloud api call deploy --engine production`
 selects the engine. The second is an argument of `deploy`.
 
+A shell completion request (`__complete`) names the command that the user is
+completing, not the command that runs, so flag validation skips it. Completion
+hides the flags that the target command does not support, which gives the same
+result without an error.
+
 The full list of engine URI schemes is too long for a usage message that 34
 commands print. Four surfaces teach the values, and all four read one catalog
 in `engine/client/drivers`. A test asserts that the catalog covers the driver
