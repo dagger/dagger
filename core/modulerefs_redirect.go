@@ -53,7 +53,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 
 	sourceURL, version, err := splitSourceURLVersion(refString)
 	if err != nil {
-		return refString, nil
+		return refString, nil //nolint:nilerr // deliberate: unparseable refs fall back to the original ref
 	}
 
 	lock, lockOverridden := ctx.Value(vanityURLLookupLockKey{}).(*workspace.Lock)
@@ -97,7 +97,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
-		return refString, nil
+		return refString, nil //nolint:nilerr // deliberate: no session infrastructure means no probe, keep parsing network-free
 	}
 
 	res, err := cache.GetOrInitArbitrary(
