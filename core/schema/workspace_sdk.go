@@ -26,6 +26,10 @@ func (s *workspaceSchema) sdks(
 	if err != nil {
 		return nil, err
 	}
+	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+	if err != nil {
+		return nil, err
+	}
 	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
 		return nil, err
@@ -64,6 +68,10 @@ func (s *workspaceSchema) sdk(
 	if ws.ConfigFile != "" {
 		var err error
 		cfg, err = readWorkspaceConfig(ctx, ws)
+		if err != nil {
+			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
+		}
+		cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 		if err != nil {
 			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 		}

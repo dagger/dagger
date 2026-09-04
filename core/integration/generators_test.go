@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -734,6 +735,49 @@ func (GeneratorsSuite) TestAPIClientInitGeneratesForNewClientOnly(ctx context.Co
 		exists, err := initialized.Exists(ctx, "clients/one/generated-client.txt")
 		require.NoError(t, err)
 		require.False(t, exists)
+	})
+}
+
+func (GeneratorsSuite) TestInitWritesSelectedEnv(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := initGeneratorFixture(t, c)
+
+	t.Run("module", func(ctx context.Context, t *testctx.T) {
+		initialized := base.With(daggerExec(
+			"--env", "dev", "module", "init", "fixture", "envmod", "--auto-apply"))
+		out, err := initialized.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		config, err := initialized.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		cfg, err := workspace.ParseConfig([]byte(config))
+		require.NoError(t, err)
+		require.NotContains(t, cfg.Modules, "envmod")
+		require.Equal(t, ".dagger/modules/envmod", cfg.Env["dev"].Modules["envmod"].Source)
+		require.Len(t, cfg.Modules["init-fixture"].AsSDK.Modules, 1)
+		require.Len(t, cfg.Env["dev"].Modules["init-fixture"].AsSDK.Modules, 2)
+
+		generated, err := initialized.File(".dagger/modules/envmod/generated-module.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".dagger/modules/envmod\n", generated)
+	})
+
+	t.Run("client", func(ctx context.Context, t *testctx.T) {
+		initialized := base.With(daggerExec(
+			"--env", "dev", "api", "client", "init", "fixture", "clients/dev", "sdk/init-fixture", "--auto-apply"))
+		out, err := initialized.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		config, err := initialized.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		cfg, err := workspace.ParseConfig([]byte(config))
+		require.NoError(t, err)
+		require.Len(t, cfg.Modules["init-fixture"].AsSDK.Clients, 1)
+		require.Len(t, cfg.Env["dev"].Modules["init-fixture"].AsSDK.Clients, 2)
+
+		generated, err := initialized.File("clients/dev/generated-client.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sdk/init-fixture\n", generated)
 	})
 }
 

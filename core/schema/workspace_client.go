@@ -53,7 +53,10 @@ func (s *workspaceSchema) initClientChanges(
 	if err != nil {
 		return res, scope, err
 	}
-	cfg := staged.Config
+	cfg, envName, err := workspaceConfigForInit(ctx, ws, staged)
+	if err != nil {
+		return res, scope, err
+	}
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, scope, err
@@ -79,7 +82,8 @@ func (s *workspaceSchema) initClientChanges(
 		return res, scope, err
 	}
 
-	if err := removeClientEntryAtPath(cfg, staged.ConfigDir, clientPath); err != nil {
+	previousOwners, err := removeClientEntryAtPath(cfg, staged.ConfigDir, clientPath)
+	if err != nil {
 		return res, scope, err
 	}
 	sdkEntry = cfg.Modules[sdkName]
@@ -89,8 +93,16 @@ func (s *workspaceSchema) initClientChanges(
 		Pin:    modulePin,
 	})
 	cfg.Modules[sdkName] = sdkEntry
+	configToWrite := cfg
+	if envName != "" {
+		previousOwners = append(previousOwners, sdkName)
+		for _, moduleName := range previousOwners {
+			setEnvSDKRole(staged.Config, envName, moduleName, cfg.Modules[moduleName].AsSDK)
+		}
+		configToWrite = staged.Config
+	}
 
-	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
+	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, configToWrite)
 	if err != nil {
 		return res, scope, fmt.Errorf("update workspace config: %w", err)
 	}
@@ -277,11 +289,12 @@ func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector 
 // workspace-root-relative while the entries themselves are recorded against
 // configDir. An entry that cannot be resolved is a corruption every other
 // reader fails on, so it fails here too rather than being mistaken for a miss.
-func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string) error {
+func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string) ([]string, error) {
 	if cfg == nil {
-		return nil
+		return nil, nil
 	}
 	cleanPath := filepath.ToSlash(cleanWorkspaceRelPath(clientPath))
+	var removedFrom []string
 	for moduleName, entry := range cfg.Modules {
 		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
 			continue
@@ -290,9 +303,10 @@ func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string
 		for _, client := range entry.AsSDK.Clients {
 			resolved, err := workspace.ResolveSDKManagedPath(configDir, client.Path)
 			if err != nil {
-				return fmt.Errorf("client managed by %q: %w", moduleName, err)
+				return nil, fmt.Errorf("client managed by %q: %w", moduleName, err)
 			}
 			if resolved == cleanPath {
+				removedFrom = append(removedFrom, moduleName)
 				continue
 			}
 			kept = append(kept, client)
@@ -300,5 +314,5 @@ func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string
 		entry.AsSDK.Clients = kept
 		cfg.Modules[moduleName] = entry
 	}
-	return nil
+	return removedFrom, nil
 }

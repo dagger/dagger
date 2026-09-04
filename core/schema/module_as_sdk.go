@@ -46,6 +46,10 @@ func (s *moduleSchema) currentModuleAsSDK(
 	if err != nil {
 		return nil, err
 	}
+	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	var curName string
 	if mod := curMod.Module.Self(); mod != nil {

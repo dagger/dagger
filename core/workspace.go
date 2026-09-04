@@ -132,6 +132,12 @@ type Workspace struct {
 	// personal values that must not surface through GraphQL or IDs.
 	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
 
+	// selectedEnv is the dagger.toml environment selected when this workspace
+	// was loaded. It travels with the workspace when the workspace is passed to
+	// an SDK, whose nested client does not inherit the parent client's ambient
+	// workspace selection.
+	selectedEnv string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -510,6 +516,17 @@ func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOve
 	ws.userConfigOverlay = overlay
 }
 
+func (ws *Workspace) SelectedEnv() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.selectedEnv
+}
+
+func (ws *Workspace) SetSelectedEnv(name string) {
+	ws.selectedEnv = name
+}
+
 // MountsDir returns the read-only directory tree holding mounted content,
 // keyed by workspace-root-relative mount path, or false when the workspace has
 // no mounts.
@@ -604,6 +621,7 @@ type persistedWorkspacePayload struct {
 	LockFile        string                        `json:"lockFile,omitempty"`
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
+	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
@@ -755,6 +773,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		LockFile:         ws.LockFile,
 		ClientID:         ws.ClientID,
 		HostPath:         ws.hostPath,
+		SelectedEnv:      ws.selectedEnv,
 		StagedGeneration: ws.StagedGeneration,
 	}
 	if ws.rootfs.Self() != nil {
@@ -842,6 +861,7 @@ func (*Workspace) DecodePersistedObject(
 		LockFile:         lockFile,
 		ClientID:         persisted.ClientID,
 		hostPath:         persisted.HostPath,
+		selectedEnv:      persisted.SelectedEnv,
 		StagedGeneration: persisted.StagedGeneration,
 	}
 	if persisted.Source != nil {

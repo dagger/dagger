@@ -138,7 +138,9 @@ func TestRemoveClientEntryAtPathPreservesSDKMarker(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, removeClientEntryAtPath(cfg, ".", "./lib/client"))
+	owners, err := removeClientEntryAtPath(cfg, ".", "./lib/client")
+	require.NoError(t, err)
+	require.Equal(t, []string{"go"}, owners)
 
 	entry := cfg.Modules["go"]
 	require.NotNil(t, entry.AsSDK)
@@ -161,7 +163,8 @@ func TestRemoveClientEntryAtPathRejectsEscapingEntry(t *testing.T) {
 		},
 	}
 
-	require.ErrorContains(t, removeClientEntryAtPath(cfg, ".", "./lib/client"), "escapes the workspace root")
+	_, err := removeClientEntryAtPath(cfg, ".", "./lib/client")
+	require.ErrorContains(t, err, "escapes the workspace root")
 }
 
 // A client module ref is stored relative to the dagger.toml holding it, and has
@@ -226,7 +229,9 @@ func TestRootAnchoredAsSDKEntryIsMatched(t *testing.T) {
 
 	t.Run("client init replaces the entry at the same path", func(t *testing.T) {
 		c := cfg()
-		require.NoError(t, removeClientEntryAtPath(c, "common", "common/clients/one"))
+		owners, err := removeClientEntryAtPath(c, "common", "common/clients/one")
+		require.NoError(t, err)
+		require.Equal(t, []string{"go-sdk"}, owners)
 		require.Empty(t, c.Modules["go-sdk"].AsSDK.Clients)
 	})
 

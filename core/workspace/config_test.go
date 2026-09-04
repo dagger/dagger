@@ -530,6 +530,8 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.as-sdk.name", "go")
 		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "env.dev.modules.greeter.as-sdk.name", "go-dev")
+		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
@@ -537,6 +539,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
 		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
 		require.Equal(t, &ModuleAsSDK{Name: "go"}, cfg.Modules["greeter"].AsSDK)
+		require.Equal(t, &ModuleAsSDK{Name: "go-dev"}, cfg.Env["dev"].Modules["greeter"].AsSDK)
 	})
 
 	t.Run("writes quoted path segments", func(t *testing.T) {
@@ -576,7 +579,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
 
 		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: pin, settings, source")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: as-sdk, pin, settings, source")
 	})
 
 	t.Run("preserves comments and section layout", func(t *testing.T) {
@@ -913,6 +916,39 @@ func TestApplyEnvOverlay(t *testing.T) {
 			Pin:      "", // pin travels with the source it pinned
 			Settings: map[string]any{"theme": "dark"},
 		}, applied.Modules["editor"])
+	})
+
+	t.Run("env SDK role replaces the base role", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"go-sdk": {
+					Source: "github.com/dagger/go-sdk",
+					AsSDK: &ModuleAsSDK{
+						Name:    "go",
+						Modules: []SDKManagedModule{{Path: ".dagger/modules/base"}},
+					},
+				},
+			},
+			Env: map[string]EnvOverlay{
+				"dev": {
+					Modules: map[string]EnvModuleOverlay{
+						"go-sdk": {
+							AsSDK: &ModuleAsSDK{
+								Name:    "go",
+								Modules: []SDKManagedModule{{Path: ".dagger/modules/dev"}},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "dev")
+		require.NoError(t, err)
+		require.Equal(t, []SDKManagedModule{{Path: ".dagger/modules/dev"}}, applied.Modules["go-sdk"].AsSDK.Modules)
+		require.Equal(t, []SDKManagedModule{{Path: ".dagger/modules/base"}}, base.Modules["go-sdk"].AsSDK.Modules)
 	})
 }
 

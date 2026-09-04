@@ -783,6 +783,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return fmt.Errorf("building workspace: %w", err)
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
+	if hasWorkspaceEnv {
+		coreWS.SetSelectedEnv(workspaceEnv)
+	}
 	if err := attachUserWorkspaceOverlay(ctx, clientMD, readFile, hostReadFile, ws, coreWS, remoteKey, isLocal); err != nil {
 		return err
 	}

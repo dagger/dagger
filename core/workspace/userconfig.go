@@ -63,14 +63,14 @@ func (c *UserConfig) MatchWorkspaceOverlay(workspaceKey string) *UserWorkspaceOv
 // merged over it.
 //
 // Module overlays follow the same value semantics as environment overlays:
-// settings shadow the base values key by key, and a source (with its pin) adds
-// or replaces a module. Unlike environment overlays, an entry naming a module
-// that is neither installed nor given a source is skipped rather than an
-// error: the same workspace key spans every checkout and branch of a repo, so
-// an always-on user entry must not break checkouts where the module does not
-// exist. Environments are added to the config's env set; a user env that
-// shares a name with a repository env is merged over it with user values
-// winning.
+// settings shadow the base values key by key, a source (with its pin) adds or
+// replaces a module, and an as-sdk value replaces the base SDK role. Unlike
+// environment overlays, an entry naming a module that is neither installed nor
+// given a source is skipped rather than an error: the same workspace key spans
+// every checkout and branch of a repo, so an always-on user entry must not
+// break checkouts where the module does not exist. Environments are added to
+// the config's env set; a user env that shares a name with a repository env is
+// merged over it with user values winning.
 func ApplyUserOverlay(cfg *Config, overlay *UserWorkspaceOverlay) (*Config, error) {
 	if cfg == nil || overlay == nil {
 		return cfg, nil
@@ -112,6 +112,7 @@ func mergeEnvOverlay(base, over EnvOverlay) EnvOverlay {
 			Source:   overlay.Source,
 			Pin:      overlay.Pin,
 			Settings: cloneConfigMap(overlay.Settings),
+			AsSDK:    cloneModuleAsSDK(overlay.AsSDK),
 		}
 	}
 	for name, overlay := range over.Modules {
@@ -129,6 +130,9 @@ func mergeEnvOverlay(base, over EnvOverlay) EnvOverlay {
 			for key, value := range overlay.Settings {
 				entry.Settings[key] = value
 			}
+		}
+		if overlay.AsSDK != nil {
+			entry.AsSDK = cloneModuleAsSDK(overlay.AsSDK)
 		}
 		merged.Modules[name] = entry
 	}
