@@ -2,8 +2,8 @@
 //
 // Runs every TLC configuration of CacheLifecycle.tla. Green configurations
 // are regression gates: any violation fails the check. A configuration may
-// name an expected invariant only while it deliberately tracks an accepted
-// model finding.
+// name an expected invariant only when it deliberately mutates behavior to
+// prove that the gate detects the bug, or tracks an accepted model finding.
 package main
 
 import (
@@ -63,6 +63,17 @@ var clientExpectedOutcome = map[string]string{
 	"child":       "",
 	"children":    "",
 	"teardown":    "",
+}
+
+var nestedClientProxyExpectedOutcome = map[string]string{
+	"core":               "",
+	"close_all":          "IndependentClose",
+	"cross_carrier":      "CarrierBindingExact",
+	"malformed_fallback": "MalformedRejected",
+	"metadata_parent":    "ParentUsesScope",
+	"rebind":             "NoClosedIDRebind",
+	"retry_closed":       "ClosedIsTerminal",
+	"substitute":         "ExactRouting",
 }
 
 type TlaCheck struct {
@@ -127,36 +138,50 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
-// authoritative session teardown, and the final telemetry barrier.
+// authoritative session teardown, the final telemetry barrier, and exact
+// nested process-proxy routing.
 // +check
 func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	base := m.base(m.ClientSource)
-
-	names := make([]string, 0, len(clientExpectedOutcome))
-	for name := range clientExpectedOutcome {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 
 	var (
 		mu       sync.Mutex
 		failures []runFailure
 		wg       sync.WaitGroup
 	)
-	for _, name := range names {
+	run := func(group, specName, configPrefix, name, expect string) {
 		wg.Add(1)
-		go func(name string) {
+		go func() {
 			defer wg.Done()
-			if failure := runOne(ctx, base, "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name]); failure != nil {
+			if failure := runOne(ctx, base, specName, configPrefix, name, expect); failure != nil {
+				failure.name = group + "/" + failure.name
 				mu.Lock()
 				failures = append(failures, *failure)
 				mu.Unlock()
 			}
-		}(name)
+		}()
+	}
+
+	clientNames := make([]string, 0, len(clientExpectedOutcome))
+	for name := range clientExpectedOutcome {
+		clientNames = append(clientNames, name)
+	}
+	sort.Strings(clientNames)
+	for _, name := range clientNames {
+		run("lifecycle", "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name])
+	}
+
+	proxyNames := make([]string, 0, len(nestedClientProxyExpectedOutcome))
+	for name := range nestedClientProxyExpectedOutcome {
+		proxyNames = append(proxyNames, name)
+	}
+	sort.Strings(proxyNames)
+	for _, name := range proxyNames {
+		run("proxy", "NestedClientProxy", "NestedClientProxy_", name, nestedClientProxyExpectedOutcome[name])
 	}
 	wg.Wait()
 
-	return reportFailures("client lifecycle", failures, len(names))
+	return reportFailures("client lifecycle", failures, len(clientNames)+len(proxyNames))
 }
 
 // One runs a single TLC configuration and returns the raw TLC output,
@@ -302,7 +327,7 @@ func runOne(
 	case expect == "" && violated != "":
 		return &runFailure{
 			name:    name,
-			summary: fmt.Sprintf("expected a clean pass, but invariant %s was violated — a regression in the modeled cache behavior or the spec", violated),
+			summary: fmt.Sprintf("expected a clean pass, but invariant %s was violated — a regression in the modeled behavior or the spec", violated),
 			detail:  out,
 		}
 	case expect != "" && violated == expect:

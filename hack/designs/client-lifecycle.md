@@ -31,16 +31,19 @@ Completed, in dependency order:
    transitions. Agent lease kinds remain reserved for a future engine-owned
    detached agent runtime; current agent composition executes through request
    and shared-work scopes.
-5. Engine-owned container proxies and in-engine Dang proxies explicitly register
-   one unique nested transport from the creating context's held `ClientScope`
-   before serving. Registration validates the exact session authority, parent
-   identity, and immutable ancestry while atomically cloning the parent's
-   `child` lease and publishing the child's `transport` lease. The opaque handle
-   closes idempotently from proxy exit or `/shutdown`; close before or during the
-   first request leaves a permanent closed record, and closed or duplicate IDs
-   cannot reconnect. A held scope may still delegate while its parent record is
-   closing; the child's later serialized quiescent transition releases the
-   delegated parent lease.
+5. Engine-owned execs expose one process-level proxy capability. In-engine Dang
+   proxies register one unique transport eagerly; a container proxy registers
+   one independent, one-shot transport for each exact logical client ID it sees.
+   Headerless SDK calls use only the exec's explicitly delegated bootstrap ID.
+   Header-aware clients use only their declared ID, while session authority,
+   parent identity, ancestry, secret, capabilities, and the bootstrap attachables
+   carrier remain sealed by the creating context's held `ClientScope`.
+   Registration atomically clones the parent's `child` lease and publishes the
+   child's `transport` lease. Each opaque handle closes idempotently from logical
+   client `/shutdown` or process-proxy exit; closed IDs remain permanent records
+   and cannot reconnect or be substituted. A held scope may still delegate while
+   its parent record is closing; the child's later serialized quiescent transition
+   releases the delegated parent lease.
 6. Registration and every initialization request reconcile deeply cloned client
    metadata under the session lifecycle serialization point. Missing fields may
    be completed until the first runtime initialization seals one immutable
@@ -214,14 +217,17 @@ accepted, while a conflicting lifecycle-relevant update is rejected. A
 `ClientScope` therefore never depends on metadata that might arrive after the work
 starts.
 
-The runtime is the capability to execute as that client. Nested reachability is
-registered explicitly when the engine-owned container or Dang proxy is created,
-not inferred from the first HTTP request. Registration returns one opaque transport
-handle whose idempotent close marks the record closed and releases the transport
-lease. Register-before-serve closes the race where proxy cleanup observes no
-published client and an in-flight first request publishes one afterward. A unique
-nested client ID has one owner transport; `/shutdown` is only an additional,
-idempotent close signal.
+The runtime is the capability to execute as that client. A Dang proxy registers
+nested reachability when it is created. A container's process-level proxy instead
+registers each exact logical ID atomically before serving that ID's first request;
+its manager serializes registration against process cleanup and permanently caches
+closed handles. Registration returns one opaque transport handle whose idempotent
+close marks the record closed and releases the transport lease. A unique nested
+client ID has one owner transport; `/shutdown` is only an additional, idempotent
+close signal. The injected `/.init` helper explicitly stamps the exec bootstrap ID
+on its attachables connection. Other logical IDs are bound to that exact carrier
+by internal proxy state, after the server validates the same secret and ancestry;
+request metadata cannot select a carrier or parent.
 
 The runtime has explicit leases:
 
@@ -414,6 +420,7 @@ Two TLA+ modules divide ownership at the same boundary as the Go code:
 |---|---|---|
 | `dagql/tla/CacheLifecycle.tla` | Cache operation admission, release handoff, cleanup completion, and the release waiter | `dagger check tla-check:cache-lifecycle` |
 | `engine/server/tla/ClientLifecycle.tla` | Requests, typed client leases, nested-client ownership, runtime reclamation, session teardown, and final telemetry shutdown | `dagger check tla-check:client-lifecycle` |
+| `engine/server/tla/NestedClientProxy.tla` | Process-proxy identity selection, bootstrap attachables binding, independent one-shot transports, and terminal routing | `dagger check tla-check:client-lifecycle` |
 
 The client model treats cache cleanup as the abstract phases `live`, `deferred`,
 `cleaning`, and `done`; the cache model proves the detailed implementation of
@@ -426,6 +433,7 @@ The modeled actions correspond to concrete serialization points:
 |---|---|
 | Admit or finish a request | `acquireRootClientScope` and request cleanup |
 | Start or finish detached work | `DetachClientScope` and `ClientLifecycleLease.Release` |
+| Select and bind a process-proxy route | `nestedClientTransportManager.transportForRequest` and `RegisterNestedClientTransportForExec` |
 | Register or close a child transport | `RegisterNestedClientTransport` and `NestedClientTransport.Close` |
 | Begin metric drain for a runtime | `maybeBeginClientRuntimeReclamationLocked` |
 | Finish metric drain and reclaim | `shutdownMetrics` and `finishClientRuntimeReclamation` |
@@ -474,11 +482,13 @@ record collection remains the only optional unchecked optimization.
 4. [x] **Introduce `ClientScope` and typed leases.** Request entry, service
    runtimes, DagQL shared/lazy work, and explicit detachment now carry auditable
    lifecycle ownership.
-5. [x] **Register nested transports through strict scope delegation.** Container
-   and Dang proxies register before serving, own one opaque idempotent handle,
-   reject stale/duplicate/reused identities, and delegate one parent `child`
+5. [x] **Register nested transports through strict scope delegation.** Dang
+   proxies own one opaque idempotent handle. Container process proxies own an
+   exact handle per logical client ID and register each before its first request.
+   Both reject stale/duplicate/reused identities and delegate one parent `child`
    lease that only the child's quiescent transition (or authoritative teardown)
-   releases.
+   releases. Context metadata may name a workspace ancestor, but only the held
+   executable scope selects the parent.
 6. [x] **Seal client metadata after monotonic bootstrap.** Registration and
    initialization requests reconcile deeply cloned declarations under lifecycle
    serialization, reject conflicts and post-seal completion, and seal the
@@ -541,6 +551,10 @@ proof. Runtime reclamation therefore does not require or imply record collection
   pass under `-race` and every cleanup hook runs once.
 - A closed client ID cannot reconnect or be initialized again in the same
   session, even while its record remains.
+- A container process may host multiple sequential logical client IDs. Closing
+  one cannot close or substitute a sibling, malformed metadata cannot fall back
+  to the bootstrap ID, and a workspace-owner metadata ID cannot replace the held
+  executable scope as parent authority.
 
 ### Telemetry tests
 
