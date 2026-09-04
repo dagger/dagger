@@ -347,6 +347,45 @@ func TestEvaluatePartsSiblingGroupsRunConcurrently(t *testing.T) {
 	})
 }
 
+func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, c := newPartsTestCache(t, nil)
+
+		metaEntered := make(chan struct{})
+		metaRelease := make(chan struct{})
+		outEntered := make(chan struct{})
+		outRelease := make(chan struct{})
+		obj := &cacheTestPartsObject{Value: 1}
+		obj.resolveFn = partsTestDirectResolve
+		obj.groupEval = map[LazyGroupKey]LazyEvalFunc{
+			partsTestGroupMeta: func(context.Context) error {
+				close(metaEntered)
+				<-metaRelease
+				return nil
+			},
+			partsTestGroupOut: func(context.Context) error {
+				close(outEntered)
+				<-outRelease
+				return nil
+			},
+		}
+		res := newPartsTestResult(t, c, ctx, obj)
+
+		eval := make(chan error, 1)
+		go func() {
+			eval <- c.EvaluateParts(ctx, res, partsTestPartMeta, partsTestPartFS)
+		}()
+
+		waitLazyRetrySignal(t, metaEntered, "metadata body entry")
+		waitLazyRetrySignal(t, outEntered, "output body entry")
+		close(metaRelease)
+		close(outRelease)
+		if err := waitLazyRetryError(t, eval, "parts evaluation"); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 // A group body failure leaves that group retryable and other groups
 // untouched: per-group failure isolation.
 func TestEvaluatePartsFailureIsolatedPerGroup(t *testing.T) {
