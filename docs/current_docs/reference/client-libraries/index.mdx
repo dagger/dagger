@@ -18,10 +18,10 @@ Install the SDK for the required language. Run the client command from a project
 
 ```shell
 dagger module install typescript
-dagger module client add .dagger/modules/api --sdk typescript
+dagger module client add typescript .dagger/modules/api
 ```
 
-The module argument can be a local module path, a module address, or an installed module name. The SDK detects the generation scope from the current workspace location. The engine records the client target under that scope in `dagger.toml`, and the SDK writes the bindings. Use `--sdk` when more than one installed SDK can manage the location.
+The module argument can be a local module path, a module address, or an installed module name. The selected SDK detects the generation scope from the current workspace location. The engine records the client target under that scope in `dagger.toml`, and the SDK writes the bindings.
 
 ```shell
 dagger module client list       # clients in the current scope

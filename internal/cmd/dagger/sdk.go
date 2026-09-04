@@ -180,11 +180,12 @@ func printSDKList(out io.Writer, cfg *workspace.Config) error {
 	sort.Strings(names)
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tMODULE"); err != nil {
+	if _, err := fmt.Fprintln(w, "SDK\tSOURCE"); err != nil {
 		return err
 	}
 	for _, name := range names {
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", name, cfg.SDKs[name].Module); err != nil {
+		provider := cfg.Modules[cfg.SDKs[name].Module]
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", name, sdkModuleEntrySource(provider)); err != nil {
 			return err
 		}
 	}

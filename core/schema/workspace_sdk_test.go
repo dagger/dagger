@@ -211,6 +211,19 @@ func TestInstalledSDKSourceRejectsMultipleNamesForProvider(t *testing.T) {
 	require.Empty(t, source)
 }
 
+func TestSelectSDKModuleRequiresName(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk": {Source: "github.com/dagger/go-sdk"},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go": {Module: "go-sdk"},
+		},
+	}
+	_, err := selectSDKModule(cfg, "")
+	require.EqualError(t, err, "SDK name is required")
+}
+
 func TestWorkspaceSDKEntryPaths(t *testing.T) {
 	t.Parallel()
 

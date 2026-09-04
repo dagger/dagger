@@ -256,16 +256,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Detect the most specific SDK-module scope that contains the current location.").
+			Doc("Detect the selected SDK module's scope that contains the current location.").
 			Args(
-				dagql.Arg("sdk").Doc("Optional SDK name to probe. All installed SDK modules are probed when omitted."),
+				dagql.Arg("sdk").Doc("SDK name to probe. Required."),
 			),
 		dagql.NodeFunc("withClient", s.withSDKModuleClient).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a generated module client added to its detected scope.").
 			Args(
 				dagql.Arg("module").Doc("Installed module name, local path, or module address to generate a client for."),
-				dagql.Arg("sdk").Doc("Optional SDK name. Scope detection selects the SDK when omitted."),
+				dagql.Arg("sdk").Doc("SDK name to use. Required."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
 		dagql.NodeFunc("withoutClient", s.withoutSDKModuleClient).

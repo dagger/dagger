@@ -21,7 +21,6 @@ const sdkModuleSettingAnnotation = "sdk-module-setting"
 var (
 	moduleInitName        string
 	moduleInitPath        string
-	moduleClientAddSDK    string
 	moduleClientScopeSDK  string
 	moduleClientListAll   bool
 	moduleClientListSDK   string
@@ -30,14 +29,12 @@ var (
 )
 
 var moduleInitCmd = &cobra.Command{
-	Use:                   "init <sdk>",
-	Short:                 "Initialize a module in the workspace",
-	Long:                  "Initialize a module in the workspace, using the named SDK.",
-	Example:               "dagger module init go",
-	Args:                  cobra.ExactArgs(1),
-	DisableFlagsInUseLine: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSDKModuleInit(cmd, args[0])
+	Use:   "init",
+	Short: "Initialize a module in the workspace",
+	Long:  "Initialize a module in the workspace with an installed SDK.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
 	},
 }
 
@@ -51,12 +48,11 @@ var moduleClientCmd = &cobra.Command{
 }
 
 var moduleClientAddCmd = &cobra.Command{
-	Use:                   "add <module>",
-	Short:                 "Add and generate a module client",
-	Args:                  cobra.ExactArgs(1),
-	DisableFlagsInUseLine: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSDKModuleClientAdd(cmd, args[0])
+	Use:   "add",
+	Short: "Add and generate a module client",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
 	},
 }
 
@@ -100,10 +96,10 @@ var moduleClientListCmd = &cobra.Command{
 }
 
 func init() {
-	moduleInitCmd.Flags().StringVarP(&moduleInitName, "name", "n", "", "Module name (inferred when omitted)")
-	moduleInitCmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path (default: .dagger/modules/<name> beside dagger.toml)")
-	moduleClientAddCmd.Flags().StringVar(&moduleClientAddSDK, "sdk", "", "SDK module to use")
+	moduleInitCmd.PersistentFlags().StringVarP(&moduleInitName, "name", "n", "", "Module name (inferred when omitted)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path (default: .dagger/modules/<name> beside dagger.toml)")
 	moduleClientScopeCmd.Flags().StringVar(&moduleClientScopeSDK, "sdk", "", "SDK module to query")
+	_ = moduleClientScopeCmd.MarkFlagRequired("sdk")
 	moduleClientListCmd.Flags().BoolVar(&moduleClientListAll, "all", false, "List clients in all scopes")
 	moduleClientListCmd.Flags().StringVar(&moduleClientListSDK, "sdk", "", "Filter by SDK module")
 	moduleClientUpdateCmd.Flags().BoolVar(&moduleClientUpdateAll, "all", false, "Update clients in all scopes")
@@ -152,22 +148,22 @@ func moduleInitCustomPathMessage(modulePath string) string {
 	)
 }
 
-func runSDKModuleClientAdd(cmd *cobra.Command, module string) error {
+func runSDKModuleClientAdd(cmd *cobra.Command, sdk, module string) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module client add does not support --env; SDK scopes live in the base workspace config")
 	}
-	settings, err := sdkModuleSettingsJSON(cmd, moduleClientAddSDK)
+	settings, err := sdkModuleSettingsJSON(cmd, sdk)
 	if err != nil {
 		return err
 	}
 	return mutateSDKModuleWorkspace(cmd, `
-query ModuleClientAdd($module: String!, $sdk: String, $settings: JSON) {
+query ModuleClientAdd($module: String!, $sdk: String!, $settings: JSON) {
   currentWorkspace {
     result: withClient(module: $module, sdk: $sdk, settings: $settings) { id }
   }
 }`, map[string]any{
 		"module":   module,
-		"sdk":      moduleClientAddSDK,
+		"sdk":      sdk,
 		"settings": dagger.JSON(settings),
 	}, nil)
 }
@@ -246,7 +242,7 @@ func runSDKModuleClientScope(cmd *cobra.Command) error {
 			}
 		}
 		if err := ec.Dagger().Do(ctx, &dagger.Request{
-			Query:     `query ModuleClientScope($sdk: String) { currentWorkspace { detectScope(sdk: $sdk) } }`,
+			Query:     `query ModuleClientScope($sdk: String!) { currentWorkspace { detectScope(sdk: $sdk) } }`,
 			Variables: map[string]any{"sdk": moduleClientScopeSDK},
 		}, &dagger.Response{Data: &result}); err != nil {
 			return err
@@ -331,10 +327,6 @@ func sdkModuleSettingsJSON(cmd *cobra.Command, selectedSDK string) (string, erro
 			return
 		}
 		flagSDK, setting := annotation[0], annotation[1]
-		if selectedSDK == "" {
-			visitErr = fmt.Errorf("--%s does not select SDK %q; also pass --sdk=%s", flag.Name, flagSDK, flagSDK)
-			return
-		}
 		if flagSDK != selectedSDK {
 			visitErr = fmt.Errorf("--%s belongs to SDK %q, not selected SDK %q", flag.Name, flagSDK, selectedSDK)
 			return

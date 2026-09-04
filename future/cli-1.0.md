@@ -74,7 +74,7 @@ The design in this document is locked unless an item below says that a decision 
 ### Merge readiness
 
 - [x] Update the PR description after the interface work is complete.
-- [x] Refresh generated APIs and schema fixtures.
+- [ ] Refresh generated APIs and schema fixtures.
 - [ ] Resolve all remaining CI failures.
 - [x] Rebase on the current base branch.
 - [x] Run the final focused and full validation sets.
@@ -105,11 +105,11 @@ dagger
 │   │            [--global] [--here] [--unset]
 │   ├── init <SDK> [--name=NAME] [--path=PATH] [SDK SETTINGS]
 │   └── client
-│       ├── add <MODULE> [--sdk=SDK] [SDK SETTINGS]
+│       ├── add <SDK> <MODULE> [SDK SETTINGS]
 │       ├── update [MODULE...] [--all] [--sdk=SDK]
 │       ├── rm <MODULE>
 │       ├── list [--all] [--sdk=SDK]
-│       └── scope [--sdk=SDK]
+│       └── scope --sdk=SDK
 │
 ├── sdk
 │   ├── list
@@ -160,6 +160,10 @@ The command replaces the old top-level `dagger uninstall` command.
 ### `dagger module list`
 
 This command lists installed modules.
+
+### `dagger module search`
+
+This command searches registered modules and SDK modules. The `--sdk` flag filters the results to SDK modules.
 
 ### `dagger module update`
 
@@ -277,15 +281,9 @@ dagger module init typescript --runtime=bun
 
 This command prints the client-generation scope for the current workspace location.
 
-The `--sdk` flag calls `detectScope` on one installed SDK module.
+The required `--sdk` flag selects one installed SDK module. The engine calls that SDK's `detectScope` function.
 
-Without `--sdk`, the engine calls `detectScope` on all installed SDK modules.
-
-The most specific scope wins. The most specific scope has the longest valid parent path.
-
-The command prints no output when no SDK module finds a scope.
-
-The command reports an error when two SDK modules return the same most specific scope.
+The command prints no output when the selected SDK does not find a scope.
 
 ### `dagger module client add`
 
@@ -299,15 +297,15 @@ The module argument accepts these values:
 
 The engine resolves the argument to a pinned `ModuleSource`.
 
-The `--sdk` flag is optional. With the flag, the engine calls `detectScope` on the selected SDK module. Without the flag, the engine calls it on all installed SDK modules and selects the most specific result.
+The required SDK subcommand selects one installed SDK module. The engine calls only that SDK's `detectScope` function.
 
-The command accepts namespaced SDK-setting flags. These flags update settings for the selected scope.
+The command accepts the selected SDK's setting flags. These flags have no SDK prefix and update settings for the selected scope.
 
 For example:
 
 ```console
-dagger module client add database --sdk=go
-dagger module client add github.com/acme/payments
+dagger module client add go database
+dagger module client add go github.com/acme/payments
 ```
 
 ### `dagger module client rm`
@@ -341,8 +339,10 @@ This command lists the SDKs recorded in the current `dagger.toml`.
 The command prints these columns:
 
 ```text
-NAME  MODULE
+SDK  SOURCE
 ```
+
+`SOURCE` is the configured provider module source, including its pin when present.
 
 The command sorts rows by SDK name.
 
@@ -563,12 +563,9 @@ The engine uses `detectScope` in these cases:
 | Command | SDK calls | Use of returned path |
 | --- | --- | --- |
 | `module init` | None | Not applicable |
-| `module client add --sdk=SDK` | The selected SDK module | Persist the client scope |
-| `module client add` | All installed SDK modules | Select the SDK and persist the client scope |
-| `module client scope` | One or all SDK modules | Print the selected scope |
+| `module client add SDK` | The selected SDK module | Persist the client scope |
+| `module client scope --sdk=SDK` | The selected SDK module | Print the selected scope |
 | `dagger generate` | None | Use persisted scopes |
-
-The most specific valid result has the longest path. The engine reports an error when the most specific result is tied.
 
 ### `defaultModulePath`
 
@@ -621,10 +618,18 @@ The engine exposes one module manifest builder. An SDK constructs a manifest wit
 
 ```graphql
 extend type Query {
-  moduleManifest(name: String!): ModuleManifest!
+  moduleManifest(
+    loadTOML: FileID
+    loadJSON: FileID
+  ): ModuleManifest!
 }
 
 type ModuleManifest {
+  withName(name: String!): ModuleManifest!
+  withDependency(source: String!, name: String, pin: String): ModuleManifest!
+  withoutDependency(name: String!): ModuleManifest!
+  withoutDependencies: ModuleManifest!
+
   withDangEntrypoint(source: String!): ModuleManifest!
   withModuleEntrypoint(source: String!): ModuleManifest!
 
@@ -670,7 +675,8 @@ For example, a Dang SDK can generate the current manifest and its legacy fallbac
 ```dang
 ws.withDirectory(
   ".",
-  moduleManifest(name: name)
+  moduleManifest
+    .withName(name: name)
     .withDangEntrypoint(source: "main.dang")
     .withLegacyDangRuntime
     .directory,
@@ -694,20 +700,18 @@ dagger module init go --legacy-module-compat=false
 dagger module init typescript --runtime=bun
 ```
 
-`dagger module client add` selects its SDK from the detected scope, so every installed SDK contributes flags and each flag carries its SDK name:
+`dagger module client add` selects its SDK as a subcommand. Only that SDK contributes flags, so the flags carry no prefix:
 
 ```text
-dagger module client add database --go-legacy-module-compat=false
-dagger module client add database --typescript-runtime=bun
+dagger module client add go database --legacy-module-compat=false
+dagger module client add typescript database --runtime=bun
 ```
 
-`dagger module init <SDK> --help` must list the settings of the named SDK. `dagger module client add --help` must list prefixed settings for all installed SDK modules.
+`dagger module init --help` and `dagger module client add --help` must list one subcommand for each installed SDK. Each SDK subcommand's help must list that SDK's settings.
 
 Help must work for local and remote workspaces selected with `-W`.
 
 The CLI must reject a setting flag that does not belong to the selected SDK module.
-
-A prefixed setting flag does not select an SDK module by itself.
 
 The engine must persist explicit setting flags before generation. The engine must construct the provider with the effective scope settings.
 
@@ -923,7 +927,6 @@ The engine must report these errors before export:
 
 - The SDK provider is not installed.
 - The provider does not implement the complete SDK-module interface.
-- SDK selection is ambiguous.
 - Scope selection is ambiguous.
 - `detectScope` returns an invalid path.
 - `defaultModulePath` returns an invalid path.
@@ -968,7 +971,7 @@ The scope settings must contain `runtime = "bun"`. The generated module config m
 
 ```console
 cd services/payments/cmd/server
-dagger module client add database
+dagger module client add go database
 cd ../../..
 dagger generate
 ```

@@ -489,7 +489,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 	require.NoError(t, err)
 	require.False(t, exists)
 
-	added := removed.With(daggerNonNestedExec("module", "client", "add", "target-alias", "-y"))
+	added := removed.With(daggerNonNestedExec("module", "client", "add", "go", "target-alias", "-y"))
 	config, err := added.File("dagger.toml").Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, config, `clients = ["target-alias"]`)
@@ -583,20 +583,68 @@ func (GeneratorsSuite) TestSDKModuleInitDefaults(ctx context.Context, t *testctx
 		WithNewFile("/work/apps/shop/dagger.toml", `[modules.go-sdk]
 source = ".dagger/modules/module-max-lifecycle"
 
+[modules.target-alias]
+source = "target"
+
 [sdks.go]
 module = "go-sdk"
+`).
+		WithNewFile("/work/apps/shop/target/dagger-module.toml", `name = "target"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile("/work/apps/shop/target/main.dang", `type Target {
+  hello: String! { "hello" }
+}
 `).
 		WithNewFile("/work/apps/shop/internal/.keep", "").
 		WithWorkdir("/work/apps/shop/internal").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c))
 
+	t.Run("lists installed SDK subcommands", func(ctx context.Context, t *testctx.T) {
+		for _, args := range [][]string{
+			{"module", "init", "--help"},
+			{"module", "client", "add", "--help"},
+		} {
+			out, err := base.With(daggerNonNestedExec(args...)).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.Contains(t, out, "AVAILABLE COMMANDS")
+			require.Contains(t, out, "go")
+			require.NotContains(t, out, "EXAMPLES")
+		}
+	})
+
+	t.Run("lists SDK sources", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("sdk", "list")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "SDK")
+		require.Contains(t, out, "SOURCE")
+		require.Contains(t, out, ".dagger/modules/module-max-lifecycle")
+		require.NotContains(t, out, "MODULE")
+	})
+
+	t.Run("adds a client with an SDK subcommand", func(ctx context.Context, t *testctx.T) {
+		added := base.
+			WithNewFile("/work/apps/shop/go.mod", "module example.com/shop\n\ngo 1.25\n").
+			With(daggerNonNestedExec("module", "client", "add", "go", "target-alias", "-y"))
+		out, err := added.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		config, err := added.File("/work/apps/shop/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `[sdks.go.scopes."."]`)
+		require.Contains(t, config, `"target-alias"`)
+	})
+
 	t.Run("requires an installed SDK", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerNonNestedExecFail("module", "init", "missing", "-y")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `"missing" is not installed as an SDK`)
+		require.Contains(t, out, `unknown command "missing" for "dagger module init"`)
 	})
 
 	t.Run("infers name and path", func(ctx context.Context, t *testctx.T) {

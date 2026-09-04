@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
@@ -14,72 +13,32 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// moduleInitSDKArgName is the SDK named on the current module init command
-// line. Only that SDK contributes setting flags to module init.
-var moduleInitSDKArgName string
-
-// moduleInitSDKArg returns the SDK named on a `dagger module init <SDK>`
-// command line, or "" when the command is not module init or names no SDK.
-//
-// It reads the output of parseGlobalFlags, which has already removed flags and
-// their values, so the first remaining token after init is the SDK.
-func moduleInitSDKArg(args []string) string {
-	if len(args) > 0 && args[0] == "help" {
-		args = args[1:]
-	}
-	if len(args) < 3 || (args[0] != "module" && args[0] != "mod") || args[1] != "init" {
-		return ""
-	}
-	for _, arg := range args[2:] {
-		if !strings.HasPrefix(arg, "-") {
-			return arg
-		}
-	}
-	return ""
-}
-
-func moduleSDKSettingsRegistrationArgs(args, rawArgs []string) bool {
+func moduleSDKCommandSelection(args []string) (string, bool) {
 	if len(args) == 0 {
-		return false
+		return "", false
 	}
-	help := false
 	if args[0] == "help" {
-		help = true
 		args = args[1:]
 	}
 	if len(args) < 2 || (args[0] != "module" && args[0] != "mod") {
-		return false
+		return "", false
 	}
-	cmd := moduleInitCmd
-	if args[1] == "client" {
-		if len(args) < 3 || args[2] != "add" {
-			return false
+	if args[1] == "init" {
+		if len(args) >= 3 {
+			return args[2], true
 		}
-		cmd = moduleClientAddCmd
-	} else if args[1] != "init" {
-		return false
+		return "", true
 	}
-	for _, arg := range rawArgs {
-		if arg == "--help" || arg == "-h" {
-			help = true
-			continue
+	if len(args) >= 3 && args[1] == "client" && args[2] == "add" {
+		if len(args) >= 4 {
+			return args[3], true
 		}
-		if !strings.HasPrefix(arg, "--") {
-			continue
-		}
-		name := strings.TrimPrefix(arg, "--")
-		if before, _, found := strings.Cut(name, "="); found {
-			name = before
-		}
-		if cmd.Flags().Lookup(name) == nil && rootCmd.PersistentFlags().Lookup(name) == nil {
-			return true
-		}
+		return "", true
 	}
-	return help
+	return "", false
 }
 
-func registerModuleSDKSettingFlags(ctx context.Context, initSDK string) error {
-	moduleInitSDKArgName = initSDK
+func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
 	cfg, cfgPath, err := readWorkspaceConfigForSDKInitRegistration()
 	if err != nil {
 		return err
@@ -93,25 +52,29 @@ func registerModuleSDKSettingFlags(ctx context.Context, initSDK string) error {
 			if err != nil {
 				return err
 			}
-			return registerModuleSDKSettingFlagsFromConfig(ctx, cfg, cfgPath, ec.Dagger())
+			return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, ec.Dagger(), selectedSDK)
 		})
 	}
 	if cfg == nil {
 		return nil
 	}
+	if selectedSDK == "" {
+		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, "")
+	}
 	return withEngineSilent(ctx, client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return registerModuleSDKSettingFlagsFromConfig(ctx, cfg, cfgPath, ec.Dagger())
+		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, ec.Dagger(), selectedSDK)
 	})
 }
 
-func registerModuleSDKSettingFlagsFromConfig(
+func registerModuleSDKCommandsFromConfig(
 	ctx context.Context,
 	cfg *workspace.Config,
 	cfgPath string,
 	dag *dagger.Client,
+	selectedSDK string,
 ) error {
 	if cfg == nil {
 		return nil
@@ -122,41 +85,75 @@ func registerModuleSDKSettingFlagsFromConfig(
 	}
 	cfgDir := filepath.Dir(cfgPath)
 	for _, sdk := range sdks {
-		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
-		if err != nil {
-			return err
-		}
-		modSrc := dag.ModuleSource(sdkRef)
-		if workspace.IsLocalRef(sdk.entry.Source, sdk.entry.Pin) {
-			currentWorkspace := dag.CurrentWorkspace().Reloaded()
-			workspaceConfigFile, err := currentWorkspace.ConfigFile(ctx)
+		var args []*modFunctionArg
+		if sdk.commandName == selectedSDK {
+			sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
 			if err != nil {
-				return fmt.Errorf("find SDK module %q workspace config: %w", sdk.commandName, err)
+				return err
 			}
-			if workspaceConfigFile == "" {
-				return fmt.Errorf("find SDK module %q workspace config: no active config file", sdk.commandName)
+			modSrc := dag.ModuleSource(sdkRef)
+			if workspace.IsLocalRef(sdk.entry.Source, sdk.entry.Pin) {
+				currentWorkspace := dag.CurrentWorkspace().Reloaded()
+				workspaceConfigFile, err := currentWorkspace.ConfigFile(ctx)
+				if err != nil {
+					return fmt.Errorf("find SDK module %q workspace config: %w", sdk.commandName, err)
+				}
+				if workspaceConfigFile == "" {
+					return fmt.Errorf("find SDK module %q workspace config: no active config file", sdk.commandName)
+				}
+				workspacePath := filepath.Join(filepath.Dir(workspaceConfigFile), sdk.entry.Source)
+				modSrc = currentWorkspace.ModuleSource(filepath.ToSlash(workspacePath))
 			}
-			workspacePath := filepath.Join(filepath.Dir(workspaceConfigFile), sdk.entry.Source)
-			modSrc = currentWorkspace.ModuleSource(filepath.ToSlash(workspacePath))
-		}
 
-		args, err := inspectSDKModuleConstructorArgs(ctx, dag, sdkRef, modSrc)
-		if err != nil {
-			return err
-		}
-		// module init names its SDK positionally, so its setting flags drop the
-		// SDK prefix and only the named SDK contributes them. module client add
-		// selects its SDK later, so it keeps every SDK's prefixed flags.
-		if sdk.commandName == moduleInitSDKArgName {
-			if err := addSDKModuleSettingFlags(moduleInitCmd, sdk, args, false); err != nil {
+			args, err = inspectSDKModuleConstructorArgs(ctx, dag, sdkRef, modSrc)
+			if err != nil {
 				return err
 			}
 		}
-		if err := addSDKModuleSettingFlags(moduleClientAddCmd, sdk, args, true); err != nil {
+		initCmd, err := newSDKModuleInitCommand(sdk, args)
+		if err != nil {
 			return err
 		}
+		clientAddCmd, err := newSDKModuleClientAddCommand(sdk, args)
+		if err != nil {
+			return err
+		}
+		moduleInitCmd.AddCommand(initCmd)
+		moduleClientAddCmd.AddCommand(clientAddCmd)
 	}
 	return nil
+}
+
+func newSDKModuleInitCommand(sdk configuredSDK, args []*modFunctionArg) (*cobra.Command, error) {
+	cmd := &cobra.Command{
+		Use:                   sdk.commandName,
+		Short:                 fmt.Sprintf("Initialize a module with the %s SDK", sdk.commandName),
+		Args:                  cobra.NoArgs,
+		DisableFlagsInUseLine: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSDKModuleInit(cmd, sdk.commandName)
+		},
+	}
+	if err := addSDKModuleSettingFlags(cmd, sdk, args); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func newSDKModuleClientAddCommand(sdk configuredSDK, args []*modFunctionArg) (*cobra.Command, error) {
+	cmd := &cobra.Command{
+		Use:                   sdk.commandName + " <module>",
+		Short:                 fmt.Sprintf("Add a module client with the %s SDK", sdk.commandName),
+		Args:                  cobra.ExactArgs(1),
+		DisableFlagsInUseLine: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSDKModuleClientAdd(cmd, sdk.commandName, args[0])
+		},
+	}
+	if err := addSDKModuleSettingFlags(cmd, sdk, args); err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 func inspectSDKModuleConstructorArgs(
@@ -179,17 +176,13 @@ func inspectSDKModuleConstructorArgs(
 	return constructor.Args, nil
 }
 
-func addSDKModuleSettingFlags(cmd *cobra.Command, sdk configuredSDK, args []*modFunctionArg, prefixed bool) error {
+func addSDKModuleSettingFlags(cmd *cobra.Command, sdk configuredSDK, args []*modFunctionArg) error {
 	for _, arg := range args {
 		if arg.IsWorkspace() {
 			continue
 		}
-		settingName := arg.Name
-		if prefixed {
-			settingName = sdk.commandName + "-" + arg.Name
-		}
 		flagArg := &modFunctionArg{
-			Name:         settingName,
+			Name:         arg.Name,
 			Description:  arg.Description,
 			TypeDef:      arg.TypeDef,
 			DefaultValue: arg.DefaultValue,

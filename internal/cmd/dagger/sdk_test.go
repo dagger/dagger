@@ -10,16 +10,22 @@ import (
 )
 
 func TestPrintSDKList(t *testing.T) {
-	cfg := &workspace.Config{SDKs: map[string]workspace.SDKEntry{
-		"python": {Module: "python-sdk"},
-		"go":     {Module: "go-sdk"},
-	}}
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"python-sdk": {Source: "github.com/dagger/python-sdk", Pin: "v1.2.3"},
+			"go-sdk":     {Source: "./tools/go-sdk"},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"python": {Module: "python-sdk"},
+			"go":     {Module: "go-sdk"},
+		},
+	}
 	var out bytes.Buffer
 	require.NoError(t, printSDKList(&out, cfg))
 	require.Equal(t, []string{
-		"NAME", "MODULE",
-		"go", "go-sdk",
-		"python", "python-sdk",
+		"SDK", "SOURCE",
+		"go", "./tools/go-sdk",
+		"python", "github.com/dagger/python-sdk@v1.2.3",
 	}, strings.Fields(out.String()))
 }
 

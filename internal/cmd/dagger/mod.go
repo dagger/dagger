@@ -20,7 +20,7 @@ var searchCmd = &cobra.Command{
 	Short: "Search for modules you can install",
 	Long: `Search the module registry by name or description.
 
-With no query, lists all known modules.`,
+With no query, lists all known modules and SDK modules.`,
 	Example: "dagger module search wolfi",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,13 +28,7 @@ With no query, lists all known modules.`,
 		if len(args) == 1 {
 			query = args[0]
 		}
-		var mods []registryModule
-		var err error
-		if searchSDKOnly {
-			mods, err = loadSDKSearchRegistry()
-		} else {
-			mods, err = loadModuleRegistry()
-		}
+		mods, err := loadSearchRegistry(searchSDKOnly)
 		if err != nil {
 			return err
 		}
@@ -57,6 +51,21 @@ type registryModule struct {
 	// The module is recommended when any pattern matches at least one file.
 	// An empty list means never recommended.
 	Recommend []string `json:"recommend,omitempty"`
+}
+
+func loadSearchRegistry(sdkOnly bool) ([]registryModule, error) {
+	sdks, err := loadSDKSearchRegistry()
+	if err != nil {
+		return nil, err
+	}
+	if sdkOnly {
+		return sdks, nil
+	}
+	mods, err := loadModuleRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return append(mods, sdks...), nil
 }
 
 func loadSDKSearchRegistry() ([]registryModule, error) {
@@ -110,7 +119,12 @@ func searchModuleRegistry(mods []registryModule, query string) []registryModule 
 			out = append(out, m)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Repo < out[j].Repo
+	})
 	return out
 }
 

@@ -15,13 +15,10 @@ import (
 )
 
 // configuredSDK is the CLI view of one SDK module installed in a workspace.
-// It contains no SDK-first command state. Module commands use it only to load
-// providers and to add namespaced constructor-setting flags.
+// Module commands use it to add SDK subcommands and their setting flags.
 type configuredSDK struct {
-	moduleName  string
 	commandName string
 	entry       workspace.ModuleEntry
-	sdk         workspace.SDKEntry
 }
 
 func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
@@ -34,18 +31,11 @@ func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
 	sdks := make([]configuredSDK, 0, len(cfg.SDKs))
 	for commandName, sdk := range cfg.SDKs {
 		sdks = append(sdks, configuredSDK{
-			moduleName:  sdk.Module,
 			commandName: commandName,
 			entry:       cfg.Modules[sdk.Module],
-			sdk:         sdk,
 		})
 	}
-	sort.Slice(sdks, func(i, j int) bool {
-		if sdks[i].commandName != sdks[j].commandName {
-			return sdks[i].commandName < sdks[j].commandName
-		}
-		return sdks[i].moduleName < sdks[j].moduleName
-	})
+	sort.Slice(sdks, func(i, j int) bool { return sdks[i].commandName < sdks[j].commandName })
 	return sdks, nil
 }
 

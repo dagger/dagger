@@ -1,6 +1,9 @@
 package daggercmd
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -28,11 +31,13 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	}
 
 	require.Nil(t, moduleInitCmd.Flags().Lookup("sdk"), "module init names its SDK positionally")
+	require.Nil(t, moduleClientAddCmd.Flags().Lookup("sdk"), "module client add names its SDK as a subcommand")
+	require.Empty(t, moduleInitCmd.Example)
 
-	nameFlag := moduleInitCmd.Flags().Lookup("name")
+	nameFlag := moduleInitCmd.PersistentFlags().Lookup("name")
 	require.NotNil(t, nameFlag)
 	require.Equal(t, "n", nameFlag.Shorthand)
-	require.NotNil(t, moduleInitCmd.Flags().Lookup("path"))
+	require.NotNil(t, moduleInitCmd.PersistentFlags().Lookup("path"))
 
 	workspaceUpdate := findCommand(workspaceCmd, "update")
 	require.NotNil(t, workspaceUpdate.Flags().Lookup("no-generate"))
@@ -45,26 +50,42 @@ Custom path; module was not installed.
 `, moduleInitCustomPathMessage("foo/bar/baz"))
 }
 
-func TestModuleSDKSettingsRegistrationArgs(t *testing.T) {
+func TestModuleSDKCommandSelection(t *testing.T) {
 	for _, test := range []struct {
 		args    []string
-		rawArgs []string
+		wantSDK string
 		want    bool
 	}{
-		{args: []string{"module", "init"}, rawArgs: []string{"module", "init", "--help"}, want: true},
-		{args: []string{"mod", "init"}, want: false},
-		{args: []string{"module", "init", "go"}, rawArgs: []string{"module", "init", "go", "--starter=empty"}, want: true},
-		{args: []string{"module", "client", "add", "database"}, want: false},
-		{args: []string{"module", "client", "add", "database"}, rawArgs: []string{"module", "client", "add", "database", "--typescript-runtime=bun"}, want: true},
+		{args: []string{"module", "init"}, want: true},
+		{args: []string{"mod", "init"}, want: true},
+		{args: []string{"module", "init", "go"}, wantSDK: "go", want: true},
+		{args: []string{"module", "client", "add", "go", "database"}, wantSDK: "go", want: true},
 		{args: []string{"help", "module", "client", "add"}, want: true},
 		{args: []string{"module", "client", "list"}, want: false},
 		{args: []string{"workspace", "update"}, want: false},
 	} {
-		require.Equal(t, test.want, moduleSDKSettingsRegistrationArgs(test.args, test.rawArgs), test.args)
+		gotSDK, got := moduleSDKCommandSelection(test.args)
+		require.Equal(t, test.want, got, test.args)
+		require.Equal(t, test.wantSDK, gotSDK, test.args)
 	}
 }
 
-func TestSDKModuleSettingFlagsAreNamespaced(t *testing.T) {
+func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
+	for _, test := range []struct {
+		args    []string
+		wantSDK string
+	}{
+		{args: []string{"module", "init", "--name", "demo", "go"}, wantSDK: "go"},
+		{args: []string{"module", "init", "go", "--starter", "empty"}, wantSDK: "go"},
+		{args: []string{"module", "client", "add", "go", "database", "--runtime", "bun"}, wantSDK: "go"},
+	} {
+		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(test.args))
+		require.True(t, ok, test.args)
+		require.Equal(t, test.wantSDK, sdk, test.args)
+	}
+}
+
+func TestSDKModuleSettingFlagsAreBare(t *testing.T) {
 	cmd := &cobra.Command{Use: "init"}
 	sdk := configuredSDK{
 		commandName: "typescript",
@@ -79,19 +100,19 @@ func TestSDKModuleSettingFlagsAreNamespaced(t *testing.T) {
 			Kind: dagger.TypeDefKindStringKind,
 		},
 	}}
-	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args, true))
-	flag := cmd.Flags().Lookup("typescript-runtime")
+	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
+	flag := cmd.Flags().Lookup("runtime")
 	require.NotNil(t, flag)
 	require.Equal(t, "node", flag.DefValue)
 	require.Equal(t, []string{"typescript", "runtime"}, flag.Annotations[sdkModuleSettingAnnotation])
 
-	require.NoError(t, cmd.Flags().Set("typescript-runtime", "bun"))
+	require.NoError(t, cmd.Flags().Set("runtime", "bun"))
 	raw, err := sdkModuleSettingsJSON(cmd, "typescript")
 	require.NoError(t, err)
 	require.JSONEq(t, `{"runtime":"bun"}`, raw)
 }
 
-func TestSDKModuleSettingFlagDoesNotSelectSDK(t *testing.T) {
+func TestSDKModuleSettingFlagRejectsAnotherSDK(t *testing.T) {
 	cmd := &cobra.Command{Use: "init"}
 	sdk := configuredSDK{commandName: "go"}
 	args := []*modFunctionArg{{
@@ -100,10 +121,10 @@ func TestSDKModuleSettingFlagDoesNotSelectSDK(t *testing.T) {
 			Kind: dagger.TypeDefKindBooleanKind,
 		},
 	}}
-	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args, true))
-	require.NoError(t, cmd.Flags().Set("go-compat", "true"))
-	_, err := sdkModuleSettingsJSON(cmd, "")
-	require.ErrorContains(t, err, "also pass --sdk=go")
+	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
+	require.NoError(t, cmd.Flags().Set("compat", "true"))
+	_, err := sdkModuleSettingsJSON(cmd, "python")
+	require.ErrorContains(t, err, `belongs to SDK "go"`)
 }
 
 func findCommand(parent *cobra.Command, name string) *cobra.Command {
@@ -130,9 +151,9 @@ func TestSDKModuleSettingFlagsAreBareForModuleInit(t *testing.T) {
 			Kind: dagger.TypeDefKindStringKind,
 		},
 	}}
-	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args, false))
+	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
 
-	// The SDK is positional, so the flag carries no SDK prefix.
+	// The SDK is a subcommand, so the flag carries no SDK prefix.
 	require.Nil(t, cmd.Flags().Lookup("go-starter"))
 	flag := cmd.Flags().Lookup("starter")
 	require.NotNil(t, flag)
@@ -145,36 +166,49 @@ func TestSDKModuleSettingFlagsAreBareForModuleInit(t *testing.T) {
 	require.JSONEq(t, `{"starter":"empty"}`, raw)
 }
 
-func TestModuleInitSDKArg(t *testing.T) {
-	// These are parseGlobalFlags results, so flags and their values are already
-	// stripped. TestModuleInitSDKArgReadsStrippedArgs covers that contract.
-	for _, test := range []struct {
-		args []string
-		want string
-	}{
-		{args: []string{"module", "init", "go"}, want: "go"},
-		{args: []string{"mod", "init", "go"}, want: "go"},
-		{args: []string{"help", "module", "init", "go"}, want: "go"},
-		{args: []string{"module", "init", "-x", "go"}, want: "go"},
-		{args: []string{"module", "init"}, want: ""},
-		{args: []string{"module", "client", "add", "db"}, want: ""},
-		{args: []string{"workspace", "update"}, want: ""},
-	} {
-		require.Equal(t, test.want, moduleInitSDKArg(test.args), test.args)
+func TestModuleInitHelpListsInstalledSDKs(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk":     {Source: "github.com/dagger/go-sdk"},
+			"python-sdk": {Source: "github.com/dagger/python-sdk"},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go":     {Module: "go-sdk"},
+			"python": {Module: "python-sdk"},
+		},
 	}
-}
+	require.NoError(t, registerModuleSDKCommandsFromConfig(context.Background(), cfg, "dagger.toml", nil, ""))
+	goInit := findCommand(moduleInitCmd, "go")
+	pythonInit := findCommand(moduleInitCmd, "python")
+	goAdd := findCommand(moduleClientAddCmd, "go")
+	pythonAdd := findCommand(moduleClientAddCmd, "python")
+	t.Cleanup(func() {
+		for _, cmd := range []*cobra.Command{goInit, pythonInit} {
+			if cmd != nil {
+				moduleInitCmd.RemoveCommand(cmd)
+			}
+		}
+		for _, cmd := range []*cobra.Command{goAdd, pythonAdd} {
+			if cmd != nil {
+				moduleClientAddCmd.RemoveCommand(cmd)
+			}
+		}
+	})
+	require.NotNil(t, goInit)
+	require.NotNil(t, pythonInit)
+	require.NotNil(t, goAdd)
+	require.NotNil(t, pythonAdd)
+	require.Equal(t, "go <module>", goAdd.Use)
 
-// moduleInitSDKArg relies on parseGlobalFlags having removed every flag and
-// flag value, including space-separated values for flags it does not know.
-func TestModuleInitSDKArgReadsStrippedArgs(t *testing.T) {
-	for _, rawArgs := range [][]string{
-		{"module", "init", "go"},
-		{"module", "init", "--name", "x", "go"},
-		{"module", "init", "--name=x", "go"},
-		{"module", "init", "-n", "x", "go"},
-		{"module", "init", "go", "--starter=empty"},
-		{"module", "init", "go", "--starter", "empty"},
-	} {
-		require.Equal(t, "go", moduleInitSDKArg(parseGlobalFlags(rawArgs)), rawArgs)
+	for _, parent := range []*cobra.Command{moduleInitCmd, moduleClientAddCmd} {
+		var out bytes.Buffer
+		parent.SetOut(&out)
+		require.NoError(t, parent.Help())
+		parent.SetOut(nil)
+		help := out.String()
+		require.Contains(t, help, "AVAILABLE COMMANDS")
+		require.Contains(t, strings.Fields(help), "go")
+		require.Contains(t, strings.Fields(help), "python")
+		require.NotContains(t, help, "Examples")
 	}
 }

@@ -986,8 +986,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if moduleSDKSettingsRegistrationArgs(commandArgs, os.Args[1:]) {
-		if err := registerModuleSDKSettingFlags(ctx, moduleInitSDKArg(commandArgs)); err != nil {
+	if selectedSDK, ok := moduleSDKCommandSelection(commandArgs); ok {
+		if err := registerModuleSDKCommands(ctx, selectedSDK); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}

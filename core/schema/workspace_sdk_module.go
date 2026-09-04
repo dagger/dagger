@@ -26,12 +26,12 @@ type sdkModuleInitArgs struct {
 }
 
 type sdkModuleDetectScopeArgs struct {
-	SDK string `default:""`
+	SDK string
 }
 
 type sdkModuleClientAddArgs struct {
 	Module   string
-	SDK      string    `default:""`
+	SDK      string
 	Settings core.JSON `default:""`
 }
 
@@ -231,8 +231,8 @@ func workspaceRootDirectoryName(ws *core.Workspace) string {
 	return workspaceDirectoryName(address)
 }
 
-// sdkModuleDetectScope returns the most specific scope from one or all SDK
-// modules for the current Workspace.cwd.
+// sdkModuleDetectScope returns the selected SDK module's scope for the current
+// Workspace.cwd.
 func (s *workspaceSchema) sdkModuleDetectScope(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -661,63 +661,27 @@ func (s *workspaceSchema) detectSDKModuleScope(
 	staged *stagedWorkspaceConfig,
 	requestedSDK string,
 ) (detectedSDKModuleScope, error) {
-	var candidates []selectedSDKModule
-	if requestedSDK != "" {
-		selected, err := selectSDKModule(staged.Config, requestedSDK)
-		if err != nil {
-			return detectedSDKModuleScope{}, err
-		}
-		candidates = append(candidates, selected)
-	} else {
-		names := make([]string, 0, len(staged.Config.SDKs))
-		for name := range staged.Config.SDKs {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			selected, err := selectSDKModule(staged.Config, name)
-			if err != nil {
-				return detectedSDKModuleScope{}, err
-			}
-			candidates = append(candidates, selected)
-		}
+	selected, err := selectSDKModule(staged.Config, requestedSDK)
+	if err != nil {
+		return detectedSDKModuleScope{}, err
 	}
-
-	var available []detectedSDKModuleScope
-	for _, candidate := range candidates {
-		settings, err := effectiveSDKModuleSettings(ctx, parent.Self(), staged.Config, candidate.name, "")
-		if err != nil {
-			return detectedSDKModuleScope{}, err
-		}
-		provider, err := s.loadWorkspaceSDKModule(ctx, parent.Self(), staged.ConfigDir, candidate.ref, settings)
-		if err != nil {
-			return detectedSDKModuleScope{}, err
-		}
-		rawScope, err := provider.DetectScope(ctx, parent)
-		if err != nil {
-			return detectedSDKModuleScope{}, err
-		}
-		scope, err := validateDetectedSDKModuleScope(rawScope, parent.Self().Cwd)
-		if err != nil {
-			return detectedSDKModuleScope{}, fmt.Errorf("SDK %q scope: %w", candidate.name, err)
-		}
-		if scope != "" {
-			available = append(available, detectedSDKModuleScope{sdk: candidate, scope: scope})
-		}
+	settings, err := effectiveSDKModuleSettings(ctx, parent.Self(), staged.Config, selected.name, "")
+	if err != nil {
+		return detectedSDKModuleScope{}, err
 	}
-	if len(available) == 0 {
-		return detectedSDKModuleScope{}, nil
+	provider, err := s.loadWorkspaceSDKModule(ctx, parent.Self(), staged.ConfigDir, selected.ref, settings)
+	if err != nil {
+		return detectedSDKModuleScope{}, err
 	}
-	sort.Slice(available, func(i, j int) bool { return len(available[i].scope) > len(available[j].scope) })
-	if len(available) > 1 && len(available[0].scope) == len(available[1].scope) {
-		return detectedSDKModuleScope{}, fmt.Errorf(
-			"SDKs %q and %q detect the same scope %q; specify --sdk",
-			available[0].sdk.name,
-			available[1].sdk.name,
-			available[0].scope,
-		)
+	rawScope, err := provider.DetectScope(ctx, parent)
+	if err != nil {
+		return detectedSDKModuleScope{}, err
 	}
-	return available[0], nil
+	scope, err := validateDetectedSDKModuleScope(rawScope, parent.Self().Cwd)
+	if err != nil {
+		return detectedSDKModuleScope{}, fmt.Errorf("SDK %q scope: %w", selected.name, err)
+	}
+	return detectedSDKModuleScope{sdk: selected, scope: scope}, nil
 }
 
 func selectSDKModule(cfg *workspace.Config, requested string) (selectedSDKModule, error) {
@@ -725,17 +689,7 @@ func selectSDKModule(cfg *workspace.Config, requested string) (selectedSDKModule
 		return selectedSDKModule{}, fmt.Errorf("no SDK modules are installed in this workspace")
 	}
 	if requested == "" {
-		if len(cfg.SDKs) != 1 {
-			names := make([]string, 0, len(cfg.SDKs))
-			for name := range cfg.SDKs {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			return selectedSDKModule{}, fmt.Errorf("SDK selection is ambiguous; specify one of: %s", strings.Join(names, ", "))
-		}
-		for name := range cfg.SDKs {
-			requested = name
-		}
+		return selectedSDKModule{}, fmt.Errorf("SDK name is required")
 	}
 	name, provider, ref, err := installedSDKSource(cfg, requested)
 	if err != nil {
