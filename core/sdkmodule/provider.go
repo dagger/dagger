@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	detectScopeFunction       = "detectScope"
+	findClientRootFunction    = "findClientRoot"
 	generateScopeFunction     = "generateScope"
 	defaultModulePathFunction = "defaultModulePath"
 )
@@ -112,9 +112,9 @@ func Load(
 	return provider, nil
 }
 
-// DetectScope detects the SDK scope that contains ws.Cwd. An empty result means
-// this provider found no usable scope.
-func (provider *Provider) DetectScope(
+// FindClientRoot finds the SDK client root that contains ws.Cwd. An empty
+// result means this provider found no usable root.
+func (provider *Provider) FindClientRoot(
 	ctx context.Context,
 	ws dagql.ObjectResult[*core.Workspace],
 ) (string, error) {
@@ -124,16 +124,16 @@ func (provider *Provider) DetectScope(
 	}
 	wsID, err := ws.ID()
 	if err != nil {
-		return "", fmt.Errorf("SDK module detectScope workspace ID: %w", err)
+		return "", fmt.Errorf("SDK module findClientRoot workspace ID: %w", err)
 	}
 	var result dagql.String
 	if err := inst.dag.Select(ctx, inst.object, &result, dagql.Selector{
-		Field: detectScopeFunction,
+		Field: findClientRootFunction,
 		Args: []dagql.NamedInput{
 			{Name: "ws", Value: dagql.NewID[*core.Workspace](wsID)},
 		},
 	}); err != nil {
-		return "", fmt.Errorf("call SDK module detectScope: %w", err)
+		return "", fmt.Errorf("call SDK module findClientRoot: %w", err)
 	}
 	return result.String(), nil
 }
@@ -269,7 +269,7 @@ func (provider *Provider) validate() error {
 		optional bool
 	}{
 		{
-			name:   detectScopeFunction,
+			name:   findClientRootFunction,
 			result: "String!",
 			args:   []argumentShape{{name: "ws", typ: "Workspace!"}},
 		},
@@ -335,7 +335,7 @@ func implementedFunctions(mod *core.Module) map[string]*core.Function {
 	for _, fn := range main.Functions {
 		name := strcase.ToLowerCamel(fn.Self().Name)
 		switch name {
-		case detectScopeFunction, generateScopeFunction, defaultModulePathFunction:
+		case findClientRootFunction, generateScopeFunction, defaultModulePathFunction:
 			functions[name] = fn.Self()
 		}
 	}

@@ -679,7 +679,7 @@ func (s *workspaceSchema) resolveCurrentSDKModuleScope(
 	if err != nil {
 		return resolvedSDKModuleScope{}, err
 	}
-	rawScope, err := provider.DetectScope(ctx, parent)
+	rawScope, err := provider.FindClientRoot(ctx, parent)
 	if err != nil {
 		return resolvedSDKModuleScope{}, err
 	}

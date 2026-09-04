@@ -2,7 +2,7 @@
 Test SDK that runs a module's built-in code generator from a module call.
 """
 type ModuleMaxCodegen {
-  detectScope(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String! {
     ""
   }
 

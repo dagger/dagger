@@ -54,7 +54,7 @@ The design in this document is locked unless an item below says that a decision 
 
 ### Final SDK-module interface
 
-- [x] Replace `clientScope(ws)` with `detectScope(ws)` in the provider loader, engine, demo SDK, and tests.
+- [x] Replace `clientScope(ws)` with `findClientRoot(ws)` in the provider loader, engine, demo SDK, and tests.
 - [x] Add optional `defaultModulePath(ws, name)` detection and validation.
 - [x] Apply the scope and module-path lifecycles in this document.
 - [x] Integration-test an SDK that implements `defaultModulePath`. Both in-tree SDKs omit it, so only the engine-default branch runs end to end.
@@ -251,7 +251,7 @@ The engine then resolves the name one time and stores it with the module scope. 
 5. If no local workspace root name exists, use the remote Git repository name and append `-dev`.
 6. If no valid name is available, report an error that tells the user to set `--name`.
 
-The SDK is a required argument. The command does not call `detectScope`, and it reports an error when the named SDK is not installed.
+The SDK is a required argument. The command does not call `findClientRoot`, and it reports an error when the named SDK is not installed.
 
 The engine then resolves the final module path:
 
@@ -490,13 +490,13 @@ The engine must use this new interface for an installed SDK provider.
 ```graphql
 interface Sdk {
   """
-  Detect the SDK scope that contains Workspace.cwd.
+  Find the SDK client root that contains Workspace.cwd.
 
   Return a workspace-root-relative parent path of Workspace.cwd.
   Return "." for the workspace root.
   Return "" when this SDK does not find a usable scope.
   """
-  detectScope(
+  findClientRoot(
     """The input workspace."""
     ws: Workspace!
   ): String!
@@ -546,15 +546,15 @@ The engine must validate the complete names, arguments, and result types of requ
 
 The engine must not detect this interface from legacy runtime functions.
 
-### `detectScope`
+### `findClientRoot`
 
-The engine calls `detectScope` with the command invocation Workspace.
+The engine calls `findClientRoot` with the command invocation Workspace.
 
 The method can inspect files such as `go.mod`, `package.json`, or `pyproject.toml`.
 
 The engine validates the returned path. The path must contain the input `Workspace.cwd`.
 
-The engine calls `detectScope` on a provider instance with global settings only. Scope settings are not available until the scope is known.
+The engine calls `findClientRoot` on a provider instance with global settings only. Scope settings are not available until the scope is known.
 
 The method must not modify the workspace.
 
@@ -563,7 +563,7 @@ The method must not modify the workspace.
 The lookup always applies to one selected SDK:
 
 1. Find the deepest recorded scope for that SDK that contains `Workspace.cwd`.
-2. Call that SDK's `detectScope` with the command invocation Workspace.
+2. Call that SDK's `findClientRoot` with the command invocation Workspace.
 3. Return the deeper non-empty path.
 
 The engine uses this lookup in these cases:
@@ -862,7 +862,7 @@ The engine must use one atomic workspace change:
 6. Validate each SDK result.
 7. Export the combined workspace change.
 
-The engine does not call `detectScope` or `defaultModulePath` during this flow.
+The engine does not call `findClientRoot` or `defaultModulePath` during this flow.
 
 ### Client removal flow
 
@@ -938,7 +938,7 @@ The engine must report these errors before export:
 - The SDK provider is not installed.
 - The provider does not implement the complete SDK-module interface.
 - Scope selection is ambiguous.
-- `detectScope` returns an invalid path.
+- `findClientRoot` returns an invalid path.
 - `defaultModulePath` returns an invalid path.
 - A target reference cannot resolve.
 - A local generation graph has a cycle.

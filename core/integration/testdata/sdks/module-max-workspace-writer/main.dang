@@ -2,7 +2,7 @@
 Test SDK for the module-max Workspace output boundary.
 """
 type ModuleMaxWorkspaceWriter {
-  detectScope(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String! {
     ""
   }
 

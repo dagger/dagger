@@ -203,7 +203,7 @@ import "dagger/init-fixture/internal/dagger"
 
 type InitFixture struct{}
 
-func (m *InitFixture) DetectScope(ws *dagger.Workspace) string {
+func (m *InitFixture) FindClientRoot(ws *dagger.Workspace) string {
 	_ = ws
 	return ""
 }

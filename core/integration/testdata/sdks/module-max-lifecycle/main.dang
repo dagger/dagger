@@ -18,7 +18,7 @@ type ModuleMaxLifecycle {
     ws.directory(".", include: [path]).exists(path)
   }
 
-  detectScope(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String! {
     let goMod = ws.findUp("go.mod")
     if (goMod == null) {
       ""
