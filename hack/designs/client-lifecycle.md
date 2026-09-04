@@ -420,7 +420,12 @@ Two TLA+ modules divide ownership at the same boundary as the Go code:
 |---|---|---|
 | `dagql/tla/CacheLifecycle.tla` | Cache operation admission, release handoff, cleanup completion, and the release waiter | `dagger check tla-check:cache-lifecycle` |
 | `engine/server/tla/ClientLifecycle.tla` | Requests, typed client leases, nested-client ownership, runtime reclamation, session teardown, and final telemetry shutdown | `dagger check tla-check:client-lifecycle` |
-| `engine/server/tla/NestedClientProxy.tla` | Process-proxy identity selection, bootstrap attachables binding, independent one-shot transports, and terminal routing | `dagger check tla-check:client-lifecycle` |
+
+Process-proxy identity selection, bootstrap attachables binding, independent
+one-shot transports, and terminal routing are a sequential decision made under
+the proxy's mutex, so they are covered by Go unit tests instead of a model. The
+model's `blocking_registration` mutation checks the one rule that decision must
+respect: registration may never block behind session teardown.
 
 The client model treats cache cleanup as the abstract phases `live`, `deferred`,
 `cleaning`, and `done`; the cache model proves the detailed implementation of
@@ -433,7 +438,6 @@ The modeled actions correspond to concrete serialization points:
 |---|---|
 | Admit or finish a request | `acquireRootClientScope` and request cleanup |
 | Start or finish detached work | `DetachClientScope` and `ClientLifecycleLease.Release` |
-| Select and bind a process-proxy route | `nestedClientTransportManager.transportForRequest` and `RegisterNestedClientTransportForExec` |
 | Register or close a child transport | `RegisterNestedClientTransport` and `NestedClientTransport.Close` |
 | Begin metric drain for a runtime | `maybeBeginClientRuntimeReclamationLocked` |
 | Finish metric drain and reclaim | `shutdownMetrics` and `finishClientRuntimeReclamation` |
