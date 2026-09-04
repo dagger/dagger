@@ -590,6 +590,7 @@ func (sess *daggerSession) beginClientScopeTeardown() {
 
 	var transports []*engine.ClientLifecycleLease
 	var parentScopes []*engine.ClientLifecycleLease
+	var nestedHandles []*engine.NestedClientTransport
 	sess.scopeMu.Lock()
 	for _, client := range clients {
 		sess.markClientClosedLocked(client.clientRecord)
@@ -601,10 +602,21 @@ func (sess *daggerSession) beginClientScopeTeardown() {
 			parentScopes = append(parentScopes, client.parentClientScopeLease)
 			client.parentClientScopeLease = nil
 		}
+		if client.nestedTransport != nil {
+			nestedHandles = append(nestedHandles, client.nestedTransport)
+		}
 	}
 	sess.scopeMu.Unlock()
 	for _, transport := range transports {
 		transport.Release()
+	}
+	// Close the proxy-owned handles too, so a nested process that outlives
+	// teardown observes a terminal closed transport (410, or 204 for its own
+	// /shutdown) rather than a retryable admission failure. The handle's close
+	// callback re-enters the scope lock, so it runs after the lock is released;
+	// every step it performs is idempotent against the work done above.
+	for _, handle := range nestedHandles {
+		handle.Close()
 	}
 	// Session teardown is authoritative and disables independent reclamation by
 	// publishing sessionStateRemoved first. Release any remaining child edges

@@ -308,6 +308,7 @@ func TestNestedTransportRegistrationRacesSessionTeardown(t *testing.T) {
 			// A registration that won the race was published before teardown
 			// snapshotted the runtimes, so teardown must have observed it.
 			require.NotNil(t, registered)
+			require.True(t, registered.Closed(), "teardown must close the proxy-owned handle of a registered child")
 			sess.scopeMu.Lock()
 			child := sess.clientRuntimes["child"]
 			require.NotNil(t, child)
