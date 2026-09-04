@@ -12,9 +12,10 @@ import (
 )
 
 var cloudCheckCmd = &cobra.Command{
-	Use:   "check",
-	Short: "Manage Cloud-side automated checks for this workspace",
-	Args:  cobra.NoArgs,
+	Use:     "checks",
+	Aliases: []string{"check"},
+	Short:   "Manage Cloud-side automated checks for this workspace",
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},

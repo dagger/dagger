@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	cloud "github.com/dagger/dagger/internal/cloud"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
@@ -249,7 +250,7 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 		} else {
 			ui.setLoginComplete("Already logged in.")
 		}
-		return nil
+		return setupFinishLogin(ctx, cmd, ui, auth)
 	}
 	if !autoApply {
 		disabled, err := setupCloudLoginPromptDisabled()
@@ -304,7 +305,72 @@ func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(c
 	} else {
 		ui.setLoginComplete("Logged in.")
 	}
+	// Re-read auth so the org step sees the freshly saved credentials.
+	auth, _ := getCloudAuth(ctx)
+	return setupFinishLogin(ctx, cmd, ui, auth)
+}
+
+// setupFinishLogin runs the post-authentication work shared by the "already
+// logged in" and "just logged in" paths: ensure the account has a current org,
+// creating a free one when it has none. Org setup is best-effort — a failure is
+// surfaced but does not fail the login step — except for interruption.
+func setupFinishLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI, auth *cloudauth.Cloud) error {
+	if err := setupEnsureOrg(ctx, cmd, ui, auth); err != nil {
+		if errors.Is(err, idtui.ErrInterrupted) || errors.Is(err, context.Canceled) {
+			return err
+		}
+		msg := fmt.Sprintf("Could not set up organization: %v", err)
+		if ui == nil {
+			fmt.Fprintln(cmd.OutOrStdout(), "  "+msg)
+		} else {
+			ui.appendLoginDetail(msg + "\n")
+		}
+	}
 	return nil
+}
+
+// setupEnsureOrg makes sure the authenticated account has a current Dagger Cloud
+// org selected. When the account has no org it creates a free one from the CLI
+// (no browser); when it has orgs but none is selected yet it adopts the first.
+// It is a no-op for token-based auth (DAGGER_CLOUD_TOKEN / OIDC), where the org
+// is implied by the token, when a current org is already set, and when there is
+// no usable credential (e.g. login was skipped).
+func setupEnsureOrg(ctx context.Context, cmd *cobra.Command, ui *setupUI, auth *cloudauth.Cloud) error {
+	if os.Getenv("DAGGER_CLOUD_TOKEN") != "" {
+		return nil
+	}
+	if auth == nil || auth.Token == nil {
+		// No usable credential to talk to Cloud with; nothing to do.
+		return nil
+	}
+	if auth.Org != nil && auth.Org.ID != "" {
+		// A current org is already selected.
+		return nil
+	}
+
+	client, err := cloud.NewClient(ctx, auth)
+	if err != nil {
+		return err
+	}
+	user, err := client.User(ctx)
+	if err != nil {
+		return err
+	}
+
+	var w io.Writer = cmd.ErrOrStderr()
+	if ui != nil && ui.live {
+		w = setupLoginWriter{ui: ui}
+	}
+	if len(user.Orgs) == 0 {
+		org, err := createNewOrg(ctx, client, user, cloudOrgFlag, w)
+		if err != nil {
+			return err
+		}
+		return cloudauth.SetCurrentOrg(org)
+	}
+	// Has org(s) but none selected yet: adopt the first so subsequent Cloud
+	// commands have a default without another prompt.
+	return cloudauth.SetCurrentOrg(&user.Orgs[0])
 }
 
 type setupLoginChoice string
