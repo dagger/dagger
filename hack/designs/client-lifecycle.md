@@ -382,6 +382,12 @@ after it returns, the last operation and every per-session cleanup hook have
 finished. Only then may the session stamp telemetry completeness and shut down
 its providers.
 
+Teardown also waits for `waitForClientScopeDrain`. This second barrier covers
+detached shared and arbitrary callbacks whose client-runtime lease can outlive
+their last request waiter even when they no longer hold a cache operation. The
+two waits jointly establish the model's `cachePhase = "done"` and
+`NoActiveProducers` preconditions.
+
 This separation preserves both useful contracts: ordinary release does not
 deadlock behind detached cache work, while authoritative teardown has a precise
 point after which no cache cleanup can emit more telemetry.
@@ -410,6 +416,7 @@ The modeled actions correspond to concrete serialization points:
 | Reclaim a runtime | `maybeUnpublishClientRuntimeLocked` |
 | Begin authoritative teardown | `markSessionRemoved` and `beginClientScopeTeardown` |
 | Complete cache cleanup | `ReleaseSession` followed by `WaitSessionRelease` |
+| Drain accepted producers | `waitForClientScopeDrain` |
 | Stop telemetry | `shutdownTelemetry` |
 
 Changes to these transitions should update the appropriate TLA+ action and

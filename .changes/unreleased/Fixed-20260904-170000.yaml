@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Long-lived sessions now reclaim closed nested-client runtimes after their
+  requests and detached work finish. Telemetry is owned by the session and
+  receives a final flush only after deferred cache cleanup completes, preventing
+  memory growth and lost cleanup telemetry across repeated SDK invocations.
+time: 2026-09-04T17:00:00Z
+custom:
+  Author: vito
+  PR: 0
