@@ -11502,37 +11502,72 @@ class ModuleManifest(Type):
         _ctx = self._select("withDangEntrypoint", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_dang_runtime(self) -> Self:
-        """Add the legacy Dang runtime."""
-        _args: list[Arg] = []
-        _ctx = self._select("withLegacyDangRuntime", _args)
-        return ModuleManifest(_ctx)
-
-    def with_legacy_elixir_runtime(self) -> Self:
-        """Add the legacy Elixir runtime."""
-        _args: list[Arg] = []
-        _ctx = self._select("withLegacyElixirRuntime", _args)
-        return ModuleManifest(_ctx)
-
-    def with_legacy_engine_version(self, version: str) -> Self:
-        """Set the engine version for the legacy runtime.
-
-        The default is the running engine version.
+    def with_legacy_dang_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Dang runtime.
 
         Parameters
         ----------
-        version:
-            Required engine API version.
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
         """
         _args = [
-            Arg("version", version),
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
         ]
-        _ctx = self._select("withLegacyEngineVersion", _args)
+        _ctx = self._select("withLegacyDangRuntime", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_go_runtime(self) -> Self:
-        """Add the legacy Go runtime."""
-        _args: list[Arg] = []
+    def with_legacy_elixir_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Elixir runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyElixirRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_go_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Go runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("withLegacyGoRuntime", _args)
         return ModuleManifest(_ctx)
 
@@ -11552,27 +11587,95 @@ class ModuleManifest(Type):
         _ctx = self._select("withLegacyInclude", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_java_runtime(self) -> Self:
-        """Add the legacy Java runtime."""
-        _args: list[Arg] = []
+    def with_legacy_java_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Java runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("withLegacyJavaRuntime", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_php_runtime(self) -> Self:
-        """Add the legacy PHP runtime."""
-        _args: list[Arg] = []
+    def with_legacy_php_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy PHP runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("withLegacyPHPRuntime", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_python_runtime(self) -> Self:
-        """Add the legacy Python runtime."""
-        _args: list[Arg] = []
+    def with_legacy_python_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Python runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("withLegacyPythonRuntime", _args)
         return ModuleManifest(_ctx)
 
-    def with_legacy_typescript_runtime(self) -> Self:
-        """Add the legacy TypeScript runtime."""
-        _args: list[Arg] = []
+    def with_legacy_typescript_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy TypeScript runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("withLegacyTypescriptRuntime", _args)
         return ModuleManifest(_ctx)
 
@@ -11591,7 +11694,9 @@ class ModuleManifest(Type):
         return ModuleManifest(_ctx)
 
     def without_legacy_fields(self) -> Self:
-        """Remove the legacy runtime, engine version, and include paths."""
+        """Remove the legacy runtime, module source, engine version, and include
+        paths.
+        """
         _args: list[Arg] = []
         _ctx = self._select("withoutLegacyFields", _args)
         return ModuleManifest(_ctx)

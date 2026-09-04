@@ -105,10 +105,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy Dang runtime.
   """
-  @spec with_legacy_dang_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_dang_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_dang_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_dang_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyDangRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyDangRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -119,28 +125,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy Elixir runtime.
   """
-  @spec with_legacy_elixir_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_elixir_runtime(%__MODULE__{} = module_manifest) do
-    query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyElixirRuntime")
-
-    %Dagger.ModuleManifest{
-      query_builder: query_builder,
-      client: module_manifest.client
-    }
-  end
-
-  @doc """
-  Set the engine version for the legacy runtime.
-
-  The default is the running engine version.
-  """
-  @spec with_legacy_engine_version(t(), String.t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_engine_version(%__MODULE__{} = module_manifest, version) do
+  @spec with_legacy_elixir_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_elixir_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
       module_manifest.query_builder
-      |> QB.select("withLegacyEngineVersion")
-      |> QB.put_arg("version", version)
+      |> QB.select("withLegacyElixirRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -151,10 +145,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy Go runtime.
   """
-  @spec with_legacy_go_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_go_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_go_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_go_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyGoRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyGoRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -181,10 +181,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy Java runtime.
   """
-  @spec with_legacy_java_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_java_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_java_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_java_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyJavaRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyJavaRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -195,10 +201,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy PHP runtime.
   """
-  @spec with_legacy_php_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_php_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_php_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_php_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyPHPRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyPHPRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -209,10 +221,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy Python runtime.
   """
-  @spec with_legacy_python_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_python_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_python_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_python_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyPythonRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyPythonRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -223,10 +241,16 @@ defmodule Dagger.ModuleManifest do
   @doc """
   Add the legacy TypeScript runtime.
   """
-  @spec with_legacy_typescript_runtime(t()) :: Dagger.ModuleManifest.t()
-  def with_legacy_typescript_runtime(%__MODULE__{} = module_manifest) do
+  @spec with_legacy_typescript_runtime(t(), [
+          {:module_source, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_typescript_runtime(%__MODULE__{} = module_manifest, optional_args \\ []) do
     query_builder =
-      module_manifest.query_builder |> QB.select("withLegacyTypescriptRuntime")
+      module_manifest.query_builder
+      |> QB.select("withLegacyTypescriptRuntime")
+      |> QB.maybe_put_arg("moduleSource", optional_args[:module_source])
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
@@ -251,7 +275,7 @@ defmodule Dagger.ModuleManifest do
   end
 
   @doc """
-  Remove the legacy runtime, engine version, and include paths.
+  Remove the legacy runtime, module source, engine version, and include paths.
   """
   @spec without_legacy_fields(t()) :: Dagger.ModuleManifest.t()
   def without_legacy_fields(%__MODULE__{} = module_manifest) do

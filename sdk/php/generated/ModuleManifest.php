@@ -76,39 +76,47 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     /**
      * Add the legacy Dang runtime.
      */
-    public function withLegacyDangRuntime(): ModuleManifest
+    public function withLegacyDangRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyDangRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Add the legacy Elixir runtime.
      */
-    public function withLegacyElixirRuntime(): ModuleManifest
-    {
+    public function withLegacyElixirRuntime(
+        ?string $moduleSource = null,
+        ?string $engineVersion = null,
+    ): ModuleManifest {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyElixirRuntime');
-        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set the engine version for the legacy runtime.
-     *
-     * The default is the running engine version.
-     */
-    public function withLegacyEngineVersion(string $version): ModuleManifest
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyEngineVersion');
-        $innerQueryBuilder->setArgument('version', $version);
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Add the legacy Go runtime.
      */
-    public function withLegacyGoRuntime(): ModuleManifest
+    public function withLegacyGoRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyGoRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -127,36 +135,64 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     /**
      * Add the legacy Java runtime.
      */
-    public function withLegacyJavaRuntime(): ModuleManifest
+    public function withLegacyJavaRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyJavaRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Add the legacy PHP runtime.
      */
-    public function withLegacyPHPRuntime(): ModuleManifest
+    public function withLegacyPHPRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyPHPRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Add the legacy Python runtime.
      */
-    public function withLegacyPythonRuntime(): ModuleManifest
-    {
+    public function withLegacyPythonRuntime(
+        ?string $moduleSource = null,
+        ?string $engineVersion = null,
+    ): ModuleManifest {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyPythonRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Add the legacy TypeScript runtime.
      */
-    public function withLegacyTypescriptRuntime(): ModuleManifest
-    {
+    public function withLegacyTypescriptRuntime(
+        ?string $moduleSource = null,
+        ?string $engineVersion = null,
+    ): ModuleManifest {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyTypescriptRuntime');
+        if (null !== $moduleSource) {
+        $innerQueryBuilder->setArgument('moduleSource', $moduleSource);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -171,7 +207,7 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * Remove the legacy runtime, engine version, and include paths.
+     * Remove the legacy runtime, module source, engine version, and include paths.
      */
     public function withoutLegacyFields(): ModuleManifest
     {

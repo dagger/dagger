@@ -27,29 +27,32 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 			Doc("Use another module as the entrypoint.").
 			Args(dagql.Arg("source").Doc("Entrypoint module address.")),
 		dagql.Func("withLegacyGoRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyGoRuntime)).
-			Doc("Add the legacy Go runtime."),
+			Doc("Add the legacy Go runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyDangRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyDangRuntime)).
-			Doc("Add the legacy Dang runtime."),
+			Doc("Add the legacy Dang runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyPythonRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyPythonRuntime)).
-			Doc("Add the legacy Python runtime."),
+			Doc("Add the legacy Python runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyTypescriptRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyTypescriptRuntime)).
-			Doc("Add the legacy TypeScript runtime."),
+			Doc("Add the legacy TypeScript runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyPHPRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyPHPRuntime)).
-			Doc("Add the legacy PHP runtime."),
+			Doc("Add the legacy PHP runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyElixirRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyElixirRuntime)).
-			Doc("Add the legacy Elixir runtime."),
+			Doc("Add the legacy Elixir runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyJavaRuntime", legacyRuntimeResolver((*core.ModuleManifest).WithLegacyJavaRuntime)).
-			Doc("Add the legacy Java runtime."),
-		dagql.Func("withLegacyEngineVersion", s.withLegacyEngineVersion).
-			Doc("Set the engine version for the legacy runtime.",
-				"The default is the running engine version.").
-			Args(dagql.Arg("version").Doc("Required engine API version.")),
+			Doc("Add the legacy Java runtime.").
+			Args(legacyRuntimeArgs()...),
 		dagql.Func("withLegacyInclude", s.withLegacyInclude).
 			Doc("Add an include path for the legacy runtime.",
 				"This operation is additive.").
 			Args(dagql.Arg("path").Doc("Path to include.")),
 		dagql.Func("withoutLegacyFields", s.withoutLegacyFields).
-			Doc("Remove the legacy runtime, engine version, and include paths."),
+			Doc("Remove the legacy runtime, module source, engine version, and include paths."),
 		dagql.Func("validate", s.validate).
 			Doc("Validate the manifest.",
 				"If targetEngineVersion is set, also validate the legacy runtime against that engine version.").
@@ -87,18 +90,22 @@ func (s *moduleManifestSchema) withModuleEntrypoint(
 	return manifest.WithModuleEntrypoint(args.Source), nil
 }
 
-func legacyRuntimeResolver(configure func(*core.ModuleManifest) *core.ModuleManifest) func(context.Context, *core.ModuleManifest, struct{}) (*core.ModuleManifest, error) {
-	return func(ctx context.Context, manifest *core.ModuleManifest, args struct{}) (*core.ModuleManifest, error) {
-		return configure(manifest), nil
+type legacyRuntimeOpts struct {
+	ModuleSource  dagql.Optional[dagql.String]
+	EngineVersion dagql.Optional[dagql.String]
+}
+
+func legacyRuntimeArgs() []dagql.Argument {
+	return []dagql.Argument{
+		dagql.Arg("moduleSource").Doc("Module source path. The default is the manifest directory."),
+		dagql.Arg("engineVersion").Doc("Required engine API version. The default is the running engine version."),
 	}
 }
 
-func (s *moduleManifestSchema) withLegacyEngineVersion(
-	ctx context.Context,
-	manifest *core.ModuleManifest,
-	args struct{ Version string },
-) (*core.ModuleManifest, error) {
-	return manifest.WithLegacyEngineVersion(args.Version), nil
+func legacyRuntimeResolver(configure func(*core.ModuleManifest, string, string) *core.ModuleManifest) func(context.Context, *core.ModuleManifest, legacyRuntimeOpts) (*core.ModuleManifest, error) {
+	return func(ctx context.Context, manifest *core.ModuleManifest, opts legacyRuntimeOpts) (*core.ModuleManifest, error) {
+		return configure(manifest, opts.ModuleSource.Value.String(), opts.EngineVersion.Value.String()), nil
+	}
 }
 
 func (s *moduleManifestSchema) withLegacyInclude(

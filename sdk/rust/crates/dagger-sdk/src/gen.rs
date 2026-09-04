@@ -11629,6 +11629,69 @@ pub struct ModuleManifestValidateOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub target_engine_version: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyDangRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyElixirRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyGoRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyJavaRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyPhpRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyPythonRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyTypescriptRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
 impl IntoID<Id> for ModuleManifest {
     fn into_id(
         self,
@@ -11726,6 +11789,10 @@ impl ModuleManifest {
         }
     }
     /// Add the legacy Dang runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_dang_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyDangRuntime");
         ModuleManifest {
@@ -11734,7 +11801,33 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add the legacy Dang runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_dang_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyDangRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyDangRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add the legacy Elixir runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_elixir_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyElixirRuntime");
         ModuleManifest {
@@ -11743,15 +11836,22 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set the engine version for the legacy runtime.
-    /// The default is the running engine version.
+    /// Add the legacy Elixir runtime.
     ///
     /// # Arguments
     ///
-    /// * `version` - Required engine API version.
-    pub fn with_legacy_engine_version(&self, version: impl Into<String>) -> ModuleManifest {
-        let mut query = self.selection.select("withLegacyEngineVersion");
-        query = query.arg("version", version.into());
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_elixir_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyElixirRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyElixirRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -11759,8 +11859,34 @@ impl ModuleManifest {
         }
     }
     /// Add the legacy Go runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_go_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyGoRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Go runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_go_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyGoRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyGoRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -11783,6 +11909,10 @@ impl ModuleManifest {
         }
     }
     /// Add the legacy Java runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_java_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyJavaRuntime");
         ModuleManifest {
@@ -11791,7 +11921,33 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add the legacy Java runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_java_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyJavaRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyJavaRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add the legacy PHP runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_php_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyPHPRuntime");
         ModuleManifest {
@@ -11800,7 +11956,33 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add the legacy PHP runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_php_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyPhpRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyPHPRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add the legacy Python runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_python_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyPythonRuntime");
         ModuleManifest {
@@ -11809,9 +11991,57 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add the legacy Python runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_python_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyPythonRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyPythonRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add the legacy TypeScript runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_legacy_typescript_runtime(&self) -> ModuleManifest {
         let query = self.selection.select("withLegacyTypescriptRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy TypeScript runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_typescript_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyTypescriptRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyTypescriptRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -11832,7 +12062,7 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Remove the legacy runtime, engine version, and include paths.
+    /// Remove the legacy runtime, module source, engine version, and include paths.
     pub fn without_legacy_fields(&self) -> ModuleManifest {
         let query = self.selection.select("withoutLegacyFields");
         ModuleManifest {

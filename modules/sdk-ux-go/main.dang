@@ -55,7 +55,7 @@ type SdkUxGo {
         ws.withDirectory(
           ".",
           moduleManifest(name: name)
-            .withLegacyGoRuntime
+            .withLegacyGoRuntime(moduleSource: runtimeSource)
             .directory,
         )
       }

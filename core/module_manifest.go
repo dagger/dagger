@@ -22,6 +22,7 @@ type ModuleManifest struct {
 	EntrypointSource string
 
 	LegacyRuntime       string
+	LegacyModuleSource  string
 	LegacyEngineVersion string
 	LegacyInclude       []string
 }
@@ -55,46 +56,42 @@ func (manifest *ModuleManifest) withEntrypoint(kind, source string) *ModuleManif
 	return manifest
 }
 
-func (manifest *ModuleManifest) WithLegacyGoRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Go)
+func (manifest *ModuleManifest) WithLegacyGoRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Go, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyDangRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Dang)
+func (manifest *ModuleManifest) WithLegacyDangRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Dang, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyPythonRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Python)
+func (manifest *ModuleManifest) WithLegacyPythonRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Python, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyTypescriptRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Typescript)
+func (manifest *ModuleManifest) WithLegacyTypescriptRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Typescript, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyPHPRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.PHP)
+func (manifest *ModuleManifest) WithLegacyPHPRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.PHP, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyElixirRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Elixir)
+func (manifest *ModuleManifest) WithLegacyElixirRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Elixir, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) WithLegacyJavaRuntime() *ModuleManifest {
-	return manifest.withLegacyRuntime(sdkmeta.Java)
+func (manifest *ModuleManifest) WithLegacyJavaRuntime(moduleSource, engineVersion string) *ModuleManifest {
+	return manifest.withLegacyRuntime(sdkmeta.Java, moduleSource, engineVersion)
 }
 
-func (manifest *ModuleManifest) withLegacyRuntime(runtime string) *ModuleManifest {
+func (manifest *ModuleManifest) withLegacyRuntime(runtime, moduleSource, engineVersion string) *ModuleManifest {
 	manifest = manifest.Clone()
 	manifest.LegacyRuntime = runtime
-	if manifest.LegacyEngineVersion == "" {
-		manifest.LegacyEngineVersion = engine.NormalizeVersion(engine.Version)
+	manifest.LegacyModuleSource = moduleSource
+	if engineVersion == "" {
+		engineVersion = engine.Version
 	}
-	return manifest
-}
-
-func (manifest *ModuleManifest) WithLegacyEngineVersion(version string) *ModuleManifest {
-	manifest = manifest.Clone()
-	manifest.LegacyEngineVersion = normalizeManifestEngineVersion(version)
+	manifest.LegacyEngineVersion = normalizeManifestEngineVersion(engineVersion)
 	return manifest
 }
 
@@ -107,6 +104,7 @@ func (manifest *ModuleManifest) WithLegacyInclude(path string) *ModuleManifest {
 func (manifest *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
 	manifest = manifest.Clone()
 	manifest.LegacyRuntime = ""
+	manifest.LegacyModuleSource = ""
 	manifest.LegacyEngineVersion = ""
 	manifest.LegacyInclude = nil
 	return manifest
@@ -129,7 +127,7 @@ func (manifest *ModuleManifest) Validate(targetEngineVersion string) error {
 		return fmt.Errorf("module manifest entrypoint kind must be dang or module")
 	}
 
-	hasLegacyFields := manifest.LegacyEngineVersion != "" || len(manifest.LegacyInclude) > 0
+	hasLegacyFields := manifest.LegacyModuleSource != "" || manifest.LegacyEngineVersion != "" || len(manifest.LegacyInclude) > 0
 	if manifest.LegacyRuntime == "" && hasLegacyFields {
 		return fmt.Errorf("module manifest legacy runtime is required when legacy fields are set")
 	}
@@ -162,6 +160,7 @@ func (manifest *ModuleManifest) Validate(targetEngineVersion string) error {
 
 type moduleManifestTOMLDocument struct {
 	Name          string                    `toml:"name"`
+	Source        string                    `toml:"source,omitempty"`
 	EngineVersion string                    `toml:"engineVersion,omitempty"`
 	Include       []string                  `toml:"include,omitempty"`
 	Runtime       *modules.SDK              `toml:"runtime,omitempty"`
@@ -180,6 +179,7 @@ func (manifest *ModuleManifest) TOMLContents() ([]byte, error) {
 
 	document := moduleManifestTOMLDocument{
 		Name:          manifest.Name,
+		Source:        manifest.LegacyModuleSource,
 		EngineVersion: manifest.LegacyEngineVersion,
 		Include:       slices.Clone(manifest.LegacyInclude),
 	}
@@ -211,6 +211,7 @@ func (manifest *ModuleManifest) LegacyJSONContents() ([]byte, error) {
 	return modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
 		ModuleConfig: modules.ModuleConfig{
 			Name:          manifest.Name,
+			Source:        manifest.LegacyModuleSource,
 			EngineVersion: manifest.LegacyEngineVersion,
 			Include:       slices.Clone(manifest.LegacyInclude),
 			SDK:           &modules.SDK{Source: manifest.LegacyRuntime},
