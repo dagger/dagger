@@ -106,29 +106,23 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 
 	var (
 		mu       sync.Mutex
-		failures []string
+		failures []runFailure
 		wg       sync.WaitGroup
 	)
 	for _, name := range names {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			if msg := runOne(ctx, base, "CacheLifecycle", "CacheLifecycle_", name, expectedOutcome[name]); msg != "" {
+			if failure := runOne(ctx, base, "CacheLifecycle", "CacheLifecycle_", name, expectedOutcome[name]); failure != nil {
 				mu.Lock()
-				failures = append(failures, msg)
+				failures = append(failures, *failure)
 				mu.Unlock()
 			}
 		}(name)
 	}
 	wg.Wait()
 
-	if len(failures) > 0 {
-		sort.Strings(failures)
-		return fmt.Errorf(
-			"TLA+ cache model check failed (%d of %d configurations):\n%s\n\nEach configuration's comment in dagql/tla/ describes its scenario and expected outcome.",
-			len(failures), len(names), strings.Join(failures, "\n"))
-	}
-	return nil
+	return reportFailures("cache", failures, len(names))
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
@@ -145,29 +139,23 @@ func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 
 	var (
 		mu       sync.Mutex
-		failures []string
+		failures []runFailure
 		wg       sync.WaitGroup
 	)
 	for _, name := range names {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			if msg := runOne(ctx, base, "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name]); msg != "" {
+			if failure := runOne(ctx, base, "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name]); failure != nil {
 				mu.Lock()
-				failures = append(failures, msg)
+				failures = append(failures, *failure)
 				mu.Unlock()
 			}
 		}(name)
 	}
 	wg.Wait()
 
-	if len(failures) > 0 {
-		sort.Strings(failures)
-		return fmt.Errorf(
-			"TLA+ client lifecycle model check failed (%d of %d configurations):\n%s\n\nEach configuration's comment in engine/server/tla/ describes its scenario and expected outcome.",
-			len(failures), len(names), strings.Join(failures, "\n"))
-	}
-	return nil
+	return reportFailures("client lifecycle", failures, len(names))
 }
 
 // One runs a single TLC configuration and returns the raw TLC output,
@@ -242,10 +230,45 @@ func (m *TlaCheck) One(
 	return ctr.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 }
 
-// runOne executes one TLC configuration and returns "" on the expected
-// outcome, or a human-readable failure line. TLC exits nonzero on
-// violations, so the exec swallows the exit code and the output is parsed
-// instead.
+type runFailure struct {
+	name    string
+	summary string
+	detail  string
+}
+
+// reportFailures prints the detailed diagnostics and returns a short error
+// suitable for propagation through the check API.
+func reportFailures(model string, failures []runFailure, total int) error {
+	if len(failures) == 0 {
+		return nil
+	}
+
+	sort.Slice(failures, func(i, j int) bool {
+		return failures[i].name < failures[j].name
+	})
+
+	fmt.Printf("TLA+ %s model check failures:\n", model)
+	for _, failure := range failures {
+		fmt.Printf("- %s: %s\n", failure.name, failure.summary)
+	}
+	for _, failure := range failures {
+		if failure.detail == "" {
+			continue
+		}
+		fmt.Printf("\n--- details for %s ---\n%s", failure.name, failure.detail)
+		if !strings.HasSuffix(failure.detail, "\n") {
+			fmt.Println()
+		}
+		fmt.Printf("--- end details for %s ---\n\n", failure.name)
+	}
+
+	return fmt.Errorf("TLA+ %s model check failed: %d of %d configurations failed", model, len(failures), total)
+}
+
+// runOne executes one TLC configuration and returns nil on the expected
+// outcome, or detailed diagnostics for reportFailures to print. TLC exits
+// nonzero on violations, so the exec swallows the exit code and the output is
+// parsed instead.
 func runOne(
 	ctx context.Context,
 	base *dagger.Container,
@@ -253,13 +276,13 @@ func runOne(
 	configPrefix,
 	name,
 	expect string,
-) string {
+) *runFailure {
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1 | tee /tmp/out.txt; true",
+		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
 		configPrefix, name, specName)
 	out, err := base.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 	if err != nil {
-		return fmt.Sprintf("- %s: could not run TLC: %v", name, err)
+		return &runFailure{name: name, summary: "could not run TLC", detail: err.Error()}
 	}
 
 	clean := strings.Contains(out, "No error has been found")
@@ -274,20 +297,32 @@ func runOne(
 
 	switch {
 	case expect == "" && clean:
-		return ""
+		return nil
 	case expect == "" && violated != "":
-		return fmt.Sprintf("- %s: expected a clean pass, but invariant %s was violated — a regression in the modeled cache behavior or the spec", name, violated)
-	case expect != "" && violated == expect:
-		return ""
-	case expect != "" && clean:
-		return fmt.Sprintf("- %s: expected invariant %s to be violated (this configuration reproduces a known bug or finding), but the run came up clean — the model or config no longer reproduces it", name, expect)
-	case expect != "" && violated != "":
-		return fmt.Sprintf("- %s: expected invariant %s to be violated, but %s was violated instead — the configuration drifted", name, expect, violated)
-	default:
-		tail := out
-		if len(tail) > 4000 {
-			tail = tail[len(tail)-4000:]
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected a clean pass, but invariant %s was violated — a regression in the modeled cache behavior or the spec", violated),
+			detail:  out,
 		}
-		return fmt.Sprintf("- %s: unrecognized TLC outcome (no clean pass, no invariant violation); output tail:\n%s", name, tail)
+	case expect != "" && violated == expect:
+		return nil
+	case expect != "" && clean:
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected invariant %s to be violated, but the run came up clean — the model or config no longer reproduces it", expect),
+			detail:  out,
+		}
+	case expect != "" && violated != "":
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected invariant %s to be violated, but %s was violated instead — the configuration drifted", expect, violated),
+			detail:  out,
+		}
+	default:
+		return &runFailure{
+			name:    name,
+			summary: "unrecognized TLC outcome (no clean pass or invariant violation)",
+			detail:  out,
+		}
 	}
 }
