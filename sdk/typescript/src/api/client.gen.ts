@@ -2308,6 +2308,90 @@ export type ModuleManifestValidateOpts = {
   targetEngineVersion?: string
 }
 
+export type ModuleManifestWithLegacyDangRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyElixirRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyGoRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyJavaRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyPhpRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyPythonRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyTypescriptRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
 /**
  * Experimental features of a module
  */
@@ -12091,36 +12175,37 @@ export class ModuleManifest extends BaseClient {
 
   /**
    * Add the legacy Dang runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyDangRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyDangRuntime")
+  withLegacyDangRuntime = (
+    opts?: ModuleManifestWithLegacyDangRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyDangRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
   /**
    * Add the legacy Elixir runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyElixirRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyElixirRuntime")
-    return new ModuleManifest(ctx)
-  }
-
-  /**
-   * Set the engine version for the legacy runtime.
-   *
-   * The default is the running engine version.
-   * @param version Required engine API version.
-   */
-  withLegacyEngineVersion = (version: string): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyEngineVersion", { version })
+  withLegacyElixirRuntime = (
+    opts?: ModuleManifestWithLegacyElixirRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyElixirRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
   /**
    * Add the legacy Go runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyGoRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyGoRuntime")
+  withLegacyGoRuntime = (
+    opts?: ModuleManifestWithLegacyGoRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyGoRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
@@ -12137,33 +12222,49 @@ export class ModuleManifest extends BaseClient {
 
   /**
    * Add the legacy Java runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyJavaRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyJavaRuntime")
+  withLegacyJavaRuntime = (
+    opts?: ModuleManifestWithLegacyJavaRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyJavaRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
   /**
    * Add the legacy PHP runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyPHPRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyPHPRuntime")
+  withLegacyPHPRuntime = (
+    opts?: ModuleManifestWithLegacyPhpRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPHPRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
   /**
    * Add the legacy Python runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyPythonRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyPythonRuntime")
+  withLegacyPythonRuntime = (
+    opts?: ModuleManifestWithLegacyPythonRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPythonRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
   /**
    * Add the legacy TypeScript runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
    */
-  withLegacyTypescriptRuntime = (): ModuleManifest => {
-    const ctx = this._ctx.select("withLegacyTypescriptRuntime")
+  withLegacyTypescriptRuntime = (
+    opts?: ModuleManifestWithLegacyTypescriptRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyTypescriptRuntime", { ...opts })
     return new ModuleManifest(ctx)
   }
 
@@ -12177,7 +12278,7 @@ export class ModuleManifest extends BaseClient {
   }
 
   /**
-   * Remove the legacy runtime, engine version, and include paths.
+   * Remove the legacy runtime, module source, engine version, and include paths.
    */
   withoutLegacyFields = (): ModuleManifest => {
     const ctx = this._ctx.select("withoutLegacyFields")

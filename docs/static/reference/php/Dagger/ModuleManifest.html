@@ -206,7 +206,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyDangRuntime">withLegacyDangRuntime</a>()
+                    <a href="#method_withLegacyDangRuntime">withLegacyDangRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy Dang runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -216,7 +216,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyElixirRuntime">withLegacyElixirRuntime</a>()
+                    <a href="#method_withLegacyElixirRuntime">withLegacyElixirRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy Elixir runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -226,17 +226,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyEngineVersion">withLegacyEngineVersion</a>(string $version)
-        
-                                            <p><p>Set the engine version for the legacy runtime.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withLegacyGoRuntime">withLegacyGoRuntime</a>()
+                    <a href="#method_withLegacyGoRuntime">withLegacyGoRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy Go runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -256,7 +246,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyJavaRuntime">withLegacyJavaRuntime</a>()
+                    <a href="#method_withLegacyJavaRuntime">withLegacyJavaRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy Java runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -266,7 +256,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyPHPRuntime">withLegacyPHPRuntime</a>()
+                    <a href="#method_withLegacyPHPRuntime">withLegacyPHPRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy PHP runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -276,7 +266,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyPythonRuntime">withLegacyPythonRuntime</a>()
+                    <a href="#method_withLegacyPythonRuntime">withLegacyPythonRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy Python runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -286,7 +276,7 @@
                     <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLegacyTypescriptRuntime">withLegacyTypescriptRuntime</a>()
+                    <a href="#method_withLegacyTypescriptRuntime">withLegacyTypescriptRuntime</a>(string|null $moduleSource = null, string|null $engineVersion = null)
         
                                             <p><p>Add the legacy TypeScript runtime.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -308,7 +298,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutLegacyFields">withoutLegacyFields</a>()
         
-                                            <p><p>Remove the legacy runtime, engine version, and include paths.</p></p>                </div>
+                                            <p><p>Remove the legacy runtime, module source, engine version, and include paths.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -622,7 +612,7 @@
                     <h3 id="method_withLegacyDangRuntime">
         <div class="location">at line 79</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyDangRuntime</strong>()
+    <strong>withLegacyDangRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -633,6 +623,21 @@
                             <p><p>Add the legacy Dang runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -652,9 +657,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyElixirRuntime">
-        <div class="location">at line 88</div>
+        <div class="location">at line 94</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyElixirRuntime</strong>()
+    <strong>withLegacyElixirRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -665,44 +670,17 @@
                             <p><p>Add the legacy Elixir runtime.</p></p>                        
         </div>
         <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withLegacyEngineVersion">
-        <div class="location">at line 99</div>
-        <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyEngineVersion</strong>(string $version)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Set the engine version for the legacy runtime.</p></p>                <p><p>The default is the running engine version.</p></p>        
-        </div>
-        <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>string</td>
-                <td>$version</td>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
                 <td></td>
             </tr>
             </table>
@@ -726,9 +704,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyGoRuntime">
-        <div class="location">at line 109</div>
+        <div class="location">at line 111</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyGoRuntime</strong>()
+    <strong>withLegacyGoRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -739,6 +717,21 @@
                             <p><p>Add the legacy Go runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -758,7 +751,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyInclude">
-        <div class="location">at line 120</div>
+        <div class="location">at line 128</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
     <strong>withLegacyInclude</strong>(string $path)
         </code>
@@ -800,9 +793,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyJavaRuntime">
-        <div class="location">at line 130</div>
+        <div class="location">at line 138</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyJavaRuntime</strong>()
+    <strong>withLegacyJavaRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -813,6 +806,21 @@
                             <p><p>Add the legacy Java runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -832,9 +840,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyPHPRuntime">
-        <div class="location">at line 139</div>
+        <div class="location">at line 153</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyPHPRuntime</strong>()
+    <strong>withLegacyPHPRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -845,6 +853,21 @@
                             <p><p>Add the legacy PHP runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -864,9 +887,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyPythonRuntime">
-        <div class="location">at line 148</div>
+        <div class="location">at line 168</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyPythonRuntime</strong>()
+    <strong>withLegacyPythonRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -877,6 +900,21 @@
                             <p><p>Add the legacy Python runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -896,9 +934,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withLegacyTypescriptRuntime">
-        <div class="location">at line 157</div>
+        <div class="location">at line 185</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
-    <strong>withLegacyTypescriptRuntime</strong>()
+    <strong>withLegacyTypescriptRuntime</strong>(string|null $moduleSource = null, string|null $engineVersion = null)
         </code>
     </h3>
     <div class="details">    
@@ -909,6 +947,21 @@
                             <p><p>Add the legacy TypeScript runtime.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$moduleSource</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$engineVersion</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -928,7 +981,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModuleEntrypoint">
-        <div class="location">at line 166</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
     <strong>withModuleEntrypoint</strong>(string $source)
         </code>
@@ -970,7 +1023,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutLegacyFields">
-        <div class="location">at line 176</div>
+        <div class="location">at line 212</div>
         <code>                    <a href="../Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a>
     <strong>withoutLegacyFields</strong>()
         </code>
@@ -980,7 +1033,7 @@
             
 
         <div class="method-description">
-                            <p><p>Remove the legacy runtime, engine version, and include paths.</p></p>                        
+                            <p><p>Remove the legacy runtime, module source, engine version, and include paths.</p></p>                        
         </div>
         <div class="tags">
             

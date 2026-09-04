@@ -628,14 +628,13 @@ type ModuleManifest {
   withDangEntrypoint(source: String!): ModuleManifest!
   withModuleEntrypoint(source: String!): ModuleManifest!
 
-  withLegacyGoRuntime: ModuleManifest!
-  withLegacyDangRuntime: ModuleManifest!
-  withLegacyPythonRuntime: ModuleManifest!
-  withLegacyTypescriptRuntime: ModuleManifest!
-  withLegacyPHPRuntime: ModuleManifest!
-  withLegacyElixirRuntime: ModuleManifest!
-  withLegacyJavaRuntime: ModuleManifest!
-  withLegacyEngineVersion(version: String!): ModuleManifest!
+  withLegacyGoRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyDangRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyPythonRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyTypescriptRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyPHPRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyElixirRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
+  withLegacyJavaRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
   withLegacyInclude(path: String!): ModuleManifest!
   withoutLegacyFields: ModuleManifest!
 
@@ -656,7 +655,7 @@ extend type Workspace {
 
 `withDangEntrypoint` sets an embedded Dang entrypoint. `withModuleEntrypoint` sets a module entrypoint. If both functions are called, the last call replaces the earlier entrypoint.
 
-The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. A legacy runtime defaults its engine version to the running engine version. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, engine version, and include paths.
+The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. Each function sets the legacy runtime, module source, and engine version as one unit. A null module source omits `source`; the legacy loader then uses the manifest directory. A null engine version uses the running engine version. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, module source, engine version, and include paths.
 
 `tomlFile` returns `dagger-module.toml`. It contains the entrypoint and any legacy fallback fields. `legacyJSONFile` returns `dagger.json`. It contains only the legacy fields and returns an error if no legacy runtime is set.
 
@@ -940,7 +939,7 @@ All state-changing commands must be atomic. A failed SDK call must leave the hos
 
 ## Implementation status
 
-The branch implements the locked design, including update-time client generation and versioned module-manifest builders. Generated SDK clients and schema fixtures include the current schema.
+The branch implements the locked design, including update-time client generation and the unified module-manifest builder. Generated SDK clients and schema fixtures include the current schema.
 
 The [Outstanding work](#outstanding-work) section is the source of truth for incomplete work.
 

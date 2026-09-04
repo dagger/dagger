@@ -3570,23 +3570,37 @@ type ModuleManifest implements Node {
   ): ModuleManifest!
 
   """Add the legacy Dang runtime."""
-  withLegacyDangRuntime: ModuleManifest!
+  withLegacyDangRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """Add the legacy Elixir runtime."""
-  withLegacyElixirRuntime: ModuleManifest!
+  withLegacyElixirRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
 
-  """
-  Set the engine version for the legacy runtime.
-
-  The default is the running engine version.
-  """
-  withLegacyEngineVersion(
-    """Required engine API version."""
-    version: String!
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
   ): ModuleManifest!
 
   """Add the legacy Go runtime."""
-  withLegacyGoRuntime: ModuleManifest!
+  withLegacyGoRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """
   Add an include path for the legacy runtime.
@@ -3599,16 +3613,48 @@ type ModuleManifest implements Node {
   ): ModuleManifest!
 
   """Add the legacy Java runtime."""
-  withLegacyJavaRuntime: ModuleManifest!
+  withLegacyJavaRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """Add the legacy PHP runtime."""
-  withLegacyPHPRuntime: ModuleManifest!
+  withLegacyPHPRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """Add the legacy Python runtime."""
-  withLegacyPythonRuntime: ModuleManifest!
+  withLegacyPythonRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """Add the legacy TypeScript runtime."""
-  withLegacyTypescriptRuntime: ModuleManifest!
+  withLegacyTypescriptRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
 
   """Use another module as the entrypoint."""
   withModuleEntrypoint(
@@ -3616,7 +3662,9 @@ type ModuleManifest implements Node {
     source: String!
   ): ModuleManifest!
 
-  """Remove the legacy runtime, engine version, and include paths."""
+  """
+  Remove the legacy runtime, module source, engine version, and include paths.
+  """
   withoutLegacyFields: ModuleManifest!
 }
 

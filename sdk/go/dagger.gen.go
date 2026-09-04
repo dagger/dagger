@@ -12147,39 +12147,81 @@ func (r *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
 	}
 }
 
+// ModuleManifestWithLegacyDangRuntimeOpts contains options for ModuleManifest.WithLegacyDangRuntime
+type ModuleManifestWithLegacyDangRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
+}
+
 // Add the legacy Dang runtime.
-func (r *ModuleManifest) WithLegacyDangRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyDangRuntime(opts ...ModuleManifestWithLegacyDangRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyDangRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
 	}
+}
+
+// ModuleManifestWithLegacyElixirRuntimeOpts contains options for ModuleManifest.WithLegacyElixirRuntime
+type ModuleManifestWithLegacyElixirRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
 }
 
 // Add the legacy Elixir runtime.
-func (r *ModuleManifest) WithLegacyElixirRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyElixirRuntime(opts ...ModuleManifestWithLegacyElixirRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyElixirRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
 	}
 }
 
-// Set the engine version for the legacy runtime.
-//
-// The default is the running engine version.
-func (r *ModuleManifest) WithLegacyEngineVersion(version string) *ModuleManifest {
-	q := r.query.Select("withLegacyEngineVersion")
-	q = q.Arg("version", version)
-
-	return &ModuleManifest{
-		query: q,
-	}
+// ModuleManifestWithLegacyGoRuntimeOpts contains options for ModuleManifest.WithLegacyGoRuntime
+type ModuleManifestWithLegacyGoRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
 }
 
 // Add the legacy Go runtime.
-func (r *ModuleManifest) WithLegacyGoRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyGoRuntime(opts ...ModuleManifestWithLegacyGoRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyGoRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
@@ -12198,36 +12240,108 @@ func (r *ModuleManifest) WithLegacyInclude(path string) *ModuleManifest {
 	}
 }
 
+// ModuleManifestWithLegacyJavaRuntimeOpts contains options for ModuleManifest.WithLegacyJavaRuntime
+type ModuleManifestWithLegacyJavaRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
+}
+
 // Add the legacy Java runtime.
-func (r *ModuleManifest) WithLegacyJavaRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyJavaRuntime(opts ...ModuleManifestWithLegacyJavaRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyJavaRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
 	}
+}
+
+// ModuleManifestWithLegacyPHPRuntimeOpts contains options for ModuleManifest.WithLegacyPHPRuntime
+type ModuleManifestWithLegacyPHPRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
 }
 
 // Add the legacy PHP runtime.
-func (r *ModuleManifest) WithLegacyPHPRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyPHPRuntime(opts ...ModuleManifestWithLegacyPHPRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyPHPRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
 	}
+}
+
+// ModuleManifestWithLegacyPythonRuntimeOpts contains options for ModuleManifest.WithLegacyPythonRuntime
+type ModuleManifestWithLegacyPythonRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
 }
 
 // Add the legacy Python runtime.
-func (r *ModuleManifest) WithLegacyPythonRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyPythonRuntime(opts ...ModuleManifestWithLegacyPythonRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyPythonRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
 	}
 }
 
+// ModuleManifestWithLegacyTypescriptRuntimeOpts contains options for ModuleManifest.WithLegacyTypescriptRuntime
+type ModuleManifestWithLegacyTypescriptRuntimeOpts struct {
+	// Module source path. The default is the manifest directory.
+	ModuleSource string
+	// Required engine API version. The default is the running engine version.
+	EngineVersion string
+}
+
 // Add the legacy TypeScript runtime.
-func (r *ModuleManifest) WithLegacyTypescriptRuntime() *ModuleManifest {
+func (r *ModuleManifest) WithLegacyTypescriptRuntime(opts ...ModuleManifestWithLegacyTypescriptRuntimeOpts) *ModuleManifest {
 	q := r.query.Select("withLegacyTypescriptRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleSource` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleSource) {
+			q = q.Arg("moduleSource", opts[i].ModuleSource)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
@@ -12244,7 +12358,7 @@ func (r *ModuleManifest) WithModuleEntrypoint(source string) *ModuleManifest {
 	}
 }
 
-// Remove the legacy runtime, engine version, and include paths.
+// Remove the legacy runtime, module source, engine version, and include paths.
 func (r *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
 	q := r.query.Select("withoutLegacyFields")
 

@@ -13,14 +13,14 @@ func TestModuleManifestTOMLContents(t *testing.T) {
 
 	manifest := (&ModuleManifest{Name: "payments"}).
 		WithDangEntrypoint("./internal/dagger/main.dang").
-		WithLegacyGoRuntime().
-		WithLegacyEngineVersion("v0.20.3").
+		WithLegacyGoRuntime("./src", "v0.20.3").
 		WithLegacyInclude("**/*.go").
 		WithLegacyInclude("go.mod")
 
 	contents, err := manifest.TOMLContents()
 	require.NoError(t, err)
 	require.Equal(t, `name = "payments"
+source = "./src"
 engineVersion = "v0.20.3"
 include = ["**/*.go", "go.mod"]
 
@@ -39,8 +39,7 @@ func TestModuleManifestLegacyJSONContents(t *testing.T) {
 
 	manifest := (&ModuleManifest{Name: "payments"}).
 		WithModuleEntrypoint("./entrypoint").
-		WithLegacyPythonRuntime().
-		WithLegacyEngineVersion("v0.20.3").
+		WithLegacyPythonRuntime("./src", "v0.20.3").
 		WithLegacyInclude("src/**")
 
 	contents, err := manifest.LegacyJSONContents()
@@ -51,6 +50,7 @@ func TestModuleManifestLegacyJSONContents(t *testing.T) {
 	require.Equal(t, "payments", cfg.Name)
 	require.Equal(t, "v0.20.3", cfg.EngineVersion)
 	require.Equal(t, "python", cfg.SDK.Source)
+	require.Equal(t, "./src", cfg.Source)
 	require.Equal(t, []string{"src/**"}, cfg.Include)
 	require.NotContains(t, string(contents), "entrypoint")
 }
@@ -60,7 +60,7 @@ func TestModuleManifestLegacyRuntimes(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		configure func(*ModuleManifest) *ModuleManifest
+		configure func(*ModuleManifest, string, string) *ModuleManifest
 		runtime   string
 	}{
 		{name: "go", configure: (*ModuleManifest).WithLegacyGoRuntime, runtime: "go"},
@@ -81,8 +81,9 @@ func TestModuleManifestLegacyRuntimes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			manifest := test.configure(&ModuleManifest{Name: "payments"})
+			manifest := test.configure(&ModuleManifest{Name: "payments"}, "", "")
 			require.Equal(t, test.runtime, manifest.LegacyRuntime)
+			require.Empty(t, manifest.LegacyModuleSource)
 			require.NotEmpty(t, manifest.LegacyEngineVersion)
 			require.NoError(t, manifest.Validate(""))
 		})
@@ -94,7 +95,7 @@ func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 
 	base := &ModuleManifest{Name: "payments"}
 	entrypoint := base.WithDangEntrypoint("./main.dang")
-	fat := entrypoint.WithLegacyGoRuntime().WithLegacyInclude("go.mod")
+	fat := entrypoint.WithLegacyGoRuntime("./src", "v0.20.3").WithLegacyInclude("go.mod")
 	current := fat.WithoutLegacyFields()
 
 	require.Empty(t, base.EntrypointKind)
@@ -102,9 +103,28 @@ func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 	require.Equal(t, "go", fat.LegacyRuntime)
 	require.Equal(t, []string{"go.mod"}, fat.LegacyInclude)
 	require.Empty(t, current.LegacyRuntime)
+	require.Empty(t, current.LegacyModuleSource)
 	require.Empty(t, current.LegacyEngineVersion)
 	require.Empty(t, current.LegacyInclude)
 	require.Equal(t, "dang", current.EntrypointKind)
+}
+
+func TestModuleManifestLegacyRuntimeSetterReplacesPreviousValues(t *testing.T) {
+	t.Parallel()
+
+	goRuntime := (&ModuleManifest{Name: "hello"}).WithLegacyGoRuntime("./go", "v0.20.3")
+	pythonRuntime := goRuntime.WithLegacyPythonRuntime("./python", "v0.21.0")
+	defaultedRuntime := pythonRuntime.WithLegacyDangRuntime("", "")
+
+	require.Equal(t, "go", goRuntime.LegacyRuntime)
+	require.Equal(t, "./go", goRuntime.LegacyModuleSource)
+	require.Equal(t, "v0.20.3", goRuntime.LegacyEngineVersion)
+	require.Equal(t, "python", pythonRuntime.LegacyRuntime)
+	require.Equal(t, "./python", pythonRuntime.LegacyModuleSource)
+	require.Equal(t, "v0.21.0", pythonRuntime.LegacyEngineVersion)
+	require.Equal(t, "dang", defaultedRuntime.LegacyRuntime)
+	require.Empty(t, defaultedRuntime.LegacyModuleSource)
+	require.NotEmpty(t, defaultedRuntime.LegacyEngineVersion)
 }
 
 func TestModuleManifestEntrypointSetterReplacesPreviousValue(t *testing.T) {
@@ -132,7 +152,7 @@ func TestModuleManifestValidation(t *testing.T) {
 	}{
 		{
 			name:     "name",
-			manifest: (&ModuleManifest{}).WithLegacyGoRuntime(),
+			manifest: (&ModuleManifest{}).WithLegacyGoRuntime("", ""),
 			wantErr:  "name is required",
 		},
 		{
@@ -173,8 +193,18 @@ func TestModuleManifestValidation(t *testing.T) {
 			wantErr:  "legacy runtime is required",
 		},
 		{
+			name: "orphaned legacy module source",
+			manifest: &ModuleManifest{
+				Name:               "hello",
+				EntrypointKind:     "dang",
+				EntrypointSource:   ".",
+				LegacyModuleSource: "./src",
+			},
+			wantErr: "legacy runtime is required",
+		},
+		{
 			name:     "target engine version",
-			manifest: (&ModuleManifest{Name: "hello"}).WithLegacyGoRuntime().WithLegacyEngineVersion("v1.2.0"),
+			manifest: (&ModuleManifest{Name: "hello"}).WithLegacyGoRuntime("", "v1.2.0"),
 			target:   "v1.1.0",
 			wantErr:  "requires dagger v1.2.0, but target engine is v1.1.0",
 		},

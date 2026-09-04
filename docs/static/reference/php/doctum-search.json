@@ -6494,12 +6494,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleManifest::withLegacyEngineVersion",
-			"p": "Dagger/ModuleManifest.html#method_withLegacyEngineVersion",
-			"d": "<p>Set the engine version for the legacy runtime.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleManifest::withLegacyGoRuntime",
 			"p": "Dagger/ModuleManifest.html#method_withLegacyGoRuntime",
 			"d": "<p>Add the legacy Go runtime.</p>"
@@ -6544,7 +6538,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleManifest::withoutLegacyFields",
 			"p": "Dagger/ModuleManifest.html#method_withoutLegacyFields",
-			"d": "<p>Remove the legacy runtime, engine version, and include paths.</p>"
+			"d": "<p>Remove the legacy runtime, module source, engine version, and include paths.</p>"
 		},
 		{
 			"t": "M",

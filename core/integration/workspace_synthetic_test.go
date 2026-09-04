@@ -255,8 +255,10 @@ func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Conte
 	base := c.Directory().AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 	manifest := c.ModuleManifest("payments").
 		WithDangEntrypoint("./internal/dagger/main.dang").
-		WithLegacyGoRuntime().
-		WithLegacyEngineVersion("v0.20.3").
+		WithLegacyGoRuntime(dagger.ModuleManifestWithLegacyGoRuntimeOpts{
+			ModuleSource:  "./src",
+			EngineVersion: "v0.20.3",
+		}).
 		WithLegacyInclude("**/*.go").
 		WithLegacyInclude("go.mod")
 	tomlName, err := manifest.TomlFile().Name(ctx)
@@ -273,6 +275,7 @@ func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Conte
 	cfg, err := modules.ParseModuleConfigForFilename([]byte(tomlContents), modules.Filename)
 	require.NoError(t, err)
 	require.Equal(t, "payments", cfg.Name)
+	require.Equal(t, "./src", cfg.Source)
 	require.Equal(t, "go", cfg.SDK.Source)
 	require.Equal(t, []string{"**/*.go", "go.mod"}, cfg.Include)
 	require.Equal(t, "v0.20.3", cfg.EngineVersion)
@@ -283,6 +286,7 @@ func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Conte
 	legacyCfg, err := modules.ParseModuleConfigForFilename([]byte(jsonContents), modules.LegacyFilename)
 	require.NoError(t, err)
 	require.Equal(t, "payments", legacyCfg.Name)
+	require.Equal(t, "./src", legacyCfg.Source)
 	require.Equal(t, "go", legacyCfg.SDK.Source)
 	require.Equal(t, []string{"**/*.go", "go.mod"}, legacyCfg.Include)
 	require.NotContains(t, jsonContents, "entrypoint")
