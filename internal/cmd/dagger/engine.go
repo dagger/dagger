@@ -25,8 +25,13 @@ import (
 )
 
 const (
-	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+
+	// cloudEngineEnv and RunnerHostEnv are soft-deprecated, like the --cloud
+	// flag: --engine replaces both, but they still work as a fallback.
+	cloudEngineEnv = "DAGGER_CLOUD_ENGINE"
+	RunnerHostEnv  = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+
 	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
 	TraceNameEnv         = "DAGGER_TRACE_NAME"
 )

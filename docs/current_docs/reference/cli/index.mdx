@@ -1075,9 +1075,15 @@ PRIORITY
   The CLI uses the first of these that is set:
 
     1. --engine
-    2. DAGGER_CLOUD_ENGINE (any value selects Dagger Cloud)
-    3. _EXPERIMENTAL_DAGGER_RUNNER_HOST
+    2. DAGGER_CLOUD_ENGINE (deprecated; any value selects Dagger Cloud)
+    3. _EXPERIMENTAL_DAGGER_RUNNER_HOST (deprecated)
     4. The engine that this CLI version ships with
+
+  The two environment variables are soft-deprecated, like the --cloud flag.
+  They still work as a fallback, but --engine replaces them:
+
+    --engine=cloud  instead of DAGGER_CLOUD_ENGINE
+    --engine=URI    instead of _EXPERIMENTAL_DAGGER_RUNNER_HOST
 
 EXAMPLES
 

@@ -92,8 +92,13 @@ Engine selection has this priority:
 5. `_EXPERIMENTAL_DAGGER_RUNNER_HOST`
 6. The built-in default
 
-The two environment variables remain silent compatibility inputs. Their
-replacement and removal plan belongs to the user-environment design.
+`--cloud`, `DAGGER_CLOUD_ENGINE`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` are
+all soft-deprecated: `--engine` replaces them, but they still work as a
+fallback. `--engine=cloud` replaces `--cloud` and `DAGGER_CLOUD_ENGINE`.
+`--engine=URI` replaces `_EXPERIMENTAL_DAGGER_RUNNER_HOST`. Only `--cloud`
+warns today, because pflag prints the notice for a deprecated flag. The two
+environment variables stay silent; `dagger help engine` marks them deprecated.
+A warning for them, and their removal, belong to the user-environment design.
 
 The root command declares no capabilities. Bare `dagger` prints usage: it calls
 no engine, selects no workspace, reads no workspace configuration, and renders

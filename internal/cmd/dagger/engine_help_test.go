@@ -40,7 +40,12 @@ func TestEngineHelpTopic(t *testing.T) {
 	}
 	require.Contains(t, help, "tcp://HOST:PORT (no authentication)")
 	require.Contains(t, help, RunnerHostEnv)
-	require.Contains(t, help, "DAGGER_CLOUD_ENGINE")
+	require.Contains(t, help, cloudEngineEnv)
+	// Both environment variables are soft-deprecated in favour of --engine.
+	require.Contains(t, help, cloudEngineEnv+" (deprecated; any value selects Dagger Cloud)")
+	require.Contains(t, help, RunnerHostEnv+" (deprecated)")
+	require.Contains(t, help, "--engine=cloud  instead of "+cloudEngineEnv)
+	require.Contains(t, help, "--engine=URI    instead of "+RunnerHostEnv)
 	require.Contains(t, help, "dagger call --engine=cloud build")
 }
 

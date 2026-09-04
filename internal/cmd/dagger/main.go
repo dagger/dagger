@@ -75,7 +75,7 @@ var (
 	xRelease                  string
 	autoApply                 bool
 	engineFlag                string
-	_, useCloudEngine         = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	_, useCloudEngine         = os.LookupEnv(cloudEngineEnv)
 	profileFlag               bool
 
 	dotOutputFilePath string
