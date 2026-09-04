@@ -2,9 +2,10 @@
 
 ## Status
 
-Implementation complete through quiescent execution-runtime reclamation.
-Lightweight record collection remains intentionally disabled and is not part of
-change 10.
+Implemented through quiescent execution-runtime reclamation. Lightweight record
+collection remains intentionally disabled. The safety and liveness contracts
+are executable in TLA+; the Go tests cover the concrete synchronization
+boundaries.
 
 ### Implementation progress
 
@@ -24,12 +25,12 @@ Completed, in dependency order:
    force-flush and provider shutdown barrier. Metrics were deferred to the
    later aggregation-aware session migration in step 9.
 4. `ClientScope` and typed lifecycle leases exist. Accepted requests carry an
-   immutable per-scope metadata snapshot, and agents, services, lazy evaluation,
-   and shared DagQL work explicitly clone one typed lease when detaching. Agent
-   tombstones retain an explicit `agent-tombstone` durable lease because their
-   snapshots are not self-contained, replacing it on relaunch and releasing it
-   at session teardown; service and shared-work leases release only after their
-   observed terminal cleanup transitions.
+   immutable per-scope metadata snapshot, and services, lazy evaluation, and
+   shared DagQL work explicitly clone one typed lease when detaching. Service
+   and shared-work leases release only after their observed terminal cleanup
+   transitions. Agent lease kinds remain reserved for a future engine-owned
+   detached agent runtime; current agent composition executes through request
+   and shared-work scopes.
 5. Engine-owned container proxies and in-engine Dang proxies explicitly register
    one unique nested transport from the creating context's held `ClientScope`
    before serving. Registration validates the exact session authority, parent
@@ -60,9 +61,7 @@ Completed, in dependency order:
    runtime. Every detached DagQL cache initializer now retains one explicit
    shared-work scope and drops its detached context when the callback finishes.
    Module/schema memoization is scoped to its owning query capability instead
-   of a process-global cache. Agent tombstones compact their telemetry context
-   and visibly retain a typed durable lease because their DagQL snapshots remain
-   runtime-backed.
+   of a process-global cache.
 9. Metric aggregation, its meter provider, and its periodic reader are
    session-owned. Every engine measurement carries the immutable origin client
    ID as an aggregation attribute, and one routing exporter partitions each
@@ -84,10 +83,7 @@ Completed, in dependency order:
 The durable-capability audit remains explicit rather than optimistic. Workspace
 host access, telemetry, metadata, ancestry, secrets/sockets, exited-service
 records, and completed cache values use session records or self-contained data;
-running services and callbacks retain executable leases through cleanup. Agent
-DagQL snapshots are the one known non-self-contained cold capability, so dormant
-and failed agents now retain a distinct, visible `agent-tombstone` lease. They do
-not block reclamation for clients that have no such capability.
+running services and callbacks retain executable leases through cleanup.
 
 ### Remaining optional seam
 
@@ -120,7 +116,6 @@ that created it:
 
 | Consumer | How it outlives a request | What it later needs |
 |---|---|---|
-| Agent runtime | `AgentRuntime.start` detaches the loop context | Query, DagQL server, client metadata, telemetry |
 | Service runtime | Service and tunnel starts detach their contexts | Engine utility client, attachables, telemetry |
 | Lazy/shared DagQL work | Cache evaluation detaches shared callbacks | Original call, query, client identity, telemetry |
 | Workspace | Stores its creator's `ClientID` | Creator metadata and engine utility client |
@@ -139,7 +134,7 @@ The core problem is that one object represents five different lifetimes:
 
 1. **Reachability**: a proxy or transport can submit new requests.
 2. **Requests**: accepted requests are still running.
-3. **Background work**: agents, services, or shared evaluations are running.
+3. **Background work**: services or shared evaluations are running.
 4. **Durable capabilities**: cached values may refer to the client later.
 5. **Telemetry delivery**: buffered records and subscriptions still need routing.
 
@@ -228,8 +223,8 @@ The runtime has explicit leases:
 |---|---|---|
 | `transport` | Proxy/runtime becomes reachable | Proxy/runtime permanently exits |
 | `request` | Request is authenticated and accepted | Handler completes |
-| `agent` | An agent loop launches with the client scope | The loop terminates after atomically replacing it with `agent-tombstone` when needed |
-| `agent-tombstone` | A runtime-backed agent snapshot becomes dormant/addressable | Relaunch replaces it with the new caller's `agent` lease, or session teardown releases it |
+| `agent` | Reserved for a future engine-owned detached agent loop | The loop's terminal transition |
+| `agent-tombstone` | Reserved for a future runtime-backed dormant agent snapshot | Relaunch or session teardown |
 | `service` | Running service captures the client scope | Service exit/stop and tracked-resource cleanup are observed |
 | `shared-work` | Detached lazy/shared callback starts | Callback and its release path complete |
 | `child` | Nested runtime is created | Child runtime becomes quiescent |
@@ -377,6 +372,52 @@ but an unrelated request cannot acquire a new root lease. Session teardown wins
 by changing session state first, then draining through the same release paths.
 This prevents both resurrection and a last-release/new-acquire race.
 
+### Cache release handoff
+
+`dagql.Cache.ReleaseSession` intentionally remains a non-blocking tombstone
+operation when cache work is active. In that case #13940 assigns cleanup to the
+last active operation and returns before cleanup hooks run. Session teardown
+therefore follows it with `WaitSessionRelease`, which is the completion barrier:
+after it returns, the last operation and every per-session cleanup hook have
+finished. Only then may the session stamp telemetry completeness and shut down
+its providers.
+
+This separation preserves both useful contracts: ordinary release does not
+deadlock behind detached cache work, while authoritative teardown has a precise
+point after which no cache cleanup can emit more telemetry.
+
+## Executable model
+
+Two TLA+ modules divide ownership at the same boundary as the Go code:
+
+| Model | Owns | Project check |
+|---|---|---|
+| `dagql/tla/CacheLifecycle.tla` | Cache operation admission, release handoff, cleanup completion, and the release waiter | `dagger check tla-check:cache-lifecycle` |
+| `engine/server/tla/ClientLifecycle.tla` | Requests, typed client leases, nested-client ownership, runtime reclamation, session teardown, and final telemetry shutdown | `dagger check tla-check:client-lifecycle` |
+
+The client model treats cache cleanup as the abstract phases `live`, `deferred`,
+`cleaning`, and `done`; the cache model proves the detailed implementation of
+that abstraction. This avoids duplicating the large cache state space while
+still checking the cross-subsystem ordering rule.
+
+The modeled actions correspond to concrete serialization points:
+
+| Modeled transition | Go boundary |
+|---|---|
+| Admit or finish a request | `acquireRootClientScope` and request cleanup |
+| Start or finish detached work | `DetachClientScope` and `ClientLifecycleLease.Release` |
+| Register or close a child transport | `RegisterNestedClientTransport` and `NestedClientTransport.Close` |
+| Reclaim a runtime | `maybeUnpublishClientRuntimeLocked` |
+| Begin authoritative teardown | `markSessionRemoved` and `beginClientScopeTeardown` |
+| Complete cache cleanup | `ReleaseSession` followed by `WaitSessionRelease` |
+| Stop telemetry | `shutdownTelemetry` |
+
+Changes to these transitions should update the appropriate TLA+ action and
+configuration first, run TLC, then update the Go implementation and focused
+race tests. TLC verifies all interleavings in the bounded model; Go tests remain
+responsible for proving that the real locks, atomics, contexts, and callbacks
+implement those modeled atomic steps.
+
 ## Rejected shortcuts
 
 | Shortcut | Why it is insufficient |
@@ -408,9 +449,9 @@ record collection remains the only optional unchecked optimization.
    keepalives are gone, and final provider shutdown follows producer cleanup.
    Metrics were explicitly deferred to the aggregation-aware migration in step
    9.
-4. [x] **Introduce `ClientScope` and typed leases.** Request entry, agent and
-   service runtimes, DagQL shared/lazy work, and explicit detachment now carry
-   auditable lifecycle ownership.
+4. [x] **Introduce `ClientScope` and typed leases.** Request entry, service
+   runtimes, DagQL shared/lazy work, and explicit detachment now carry auditable
+   lifecycle ownership.
 5. [x] **Register nested transports through strict scope delegation.** Container
    and Dang proxies register before serving, own one opaque idempotent handle,
    reject stale/duplicate/reused identities, and delegate one parent `child`
@@ -429,10 +470,7 @@ record collection remains the only optional unchecked optimization.
    owner metadata and a session-owned gateway rather than owner runtime lookup;
    detached lazy, shared-call, and arbitrary-cache callbacks hold one explicit
    shared-work lease and release their contexts at terminal transitions.
-   Module/schema memoization is capability-owned instead of process-global, and
-   agent tombstones replace detached resolver contexts with compact telemetry
-   contexts while visibly retaining a typed `agent-tombstone` lease for their
-   non-self-contained DagQL snapshots.
+   Module/schema memoization is capability-owned instead of process-global.
 9. [x] **Move metrics to session ownership.** One session meter provider and
    periodic reader aggregate origin-attributed measurements, then a record-only
    routing exporter partitions data points to the origin and validated ancestor
@@ -464,12 +502,8 @@ proof. Runtime reclamation therefore does not require or imply record collection
   first executable query, and rejects conflicting updates afterward.
 - Closing during an active request reaches `closing`; the last request release
   performs reclamation.
-- Closing while an agent is idle, running, paused, failed, or being resumed does
-  not invalidate its context. A running or paused loop keeps its launching scope;
-  failed/stopped tombstones replace that executable lease with the visible
-  `agent-tombstone` durable lease required by their runtime-backed snapshot, and
-  a relaunch is owned by the new calling client.
-- The same matrix applies to shared and interactive services, including crash and
+- Closing while a shared or interactive service is running does not invalidate
+  its context. The same matrix applies to service crash and
   concurrent stop.
 - Lazy evaluation triggered after its creating request either succeeds through a
   documented capability or holds a visible durable lease.
