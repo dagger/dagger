@@ -58,10 +58,13 @@ Completed, in dependency order:
    set for non-quiescent executable state.
 8. Workspace host access uses a session-owned engine gateway plus immutable
    owner metadata from the record graph, so it no longer rediscovers an owner
-   runtime. Every detached DagQL cache initializer now retains one explicit
-   shared-work scope and drops its detached context when the callback finishes.
-   Module/schema memoization is scoped to its owning query capability instead
-   of a process-global cache.
+   runtime. Workspace served-schema operations are different: they explicitly
+   select the owner only when it is the currently scoped runtime or a validated
+   live ancestor retained by that scope's child-lease chain. Metadata alone
+   cannot select an arbitrary runtime. Every detached DagQL cache initializer
+   now retains one explicit shared-work scope and drops its detached context
+   when the callback finishes. Module/schema memoization is scoped to its owning
+   query capability instead of a process-global cache.
 9. Each live client runtime owns one meter provider and one periodic reader. Its
    exporter is bound to the client's immutable record and routes the whole
    collection to that record and its validated ancestors exactly once, without
@@ -299,6 +302,7 @@ single lookup with purpose-specific APIs:
 | Telemetry route | Record's immutable parent-ID route |
 | Execute as owner | A live `ClientScope`, or a self-contained capability |
 | Workspace host access | Session-owned host gateway plus workspace owner metadata |
+| Workspace served schema | Current held scope, restricted to its scoped runtime or a retained ancestor owner |
 
 In particular, move `engineutil.Client` toward a session-owned gateway whose
 methods take client metadata/scope. Most of its methods already derive routing
@@ -485,10 +489,12 @@ record collection remains the only optional unchecked optimization.
    runtime, while executable lookup requires both a published runtime and a held
    scope.
 8. [x] **Decouple cold capabilities.** Workspace host access uses immutable
-   owner metadata and a session-owned gateway rather than owner runtime lookup;
-   detached lazy, shared-call, and arbitrary-cache callbacks hold one explicit
-   shared-work lease and release their contexts at terminal transitions.
-   Module/schema memoization is capability-owned instead of process-global.
+   owner metadata and a session-owned gateway rather than owner runtime lookup.
+   Workspace served-schema lookup may select that owner only when the current
+   held scope's validated ancestry retains it. Detached lazy, shared-call, and
+   arbitrary-cache callbacks hold one explicit shared-work lease and release
+   their contexts at terminal transitions. Module/schema memoization is
+   capability-owned instead of process-global.
 9. [x] **Bind metrics to live runtimes.** One meter provider and periodic reader
    aggregate each live client's ordinary measurements. A record-bound exporter
    routes the collection to the origin and validated ancestor IDs exactly once.

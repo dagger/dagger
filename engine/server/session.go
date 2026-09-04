@@ -1461,6 +1461,52 @@ func (srv *Server) executableClientFromContext(ctx context.Context) (*clientRunt
 	return runtime, nil
 }
 
+// workspaceRuntimeFromContext resolves the runtime whose workspace-scoped
+// schema state should be used. Ordinarily that is the exact runtime authorized
+// by ClientScope. A Workspace passed down into a nested module deliberately
+// stamps its owner's metadata onto the context, however, and schema operations
+// must then resolve against that owner's served modules rather than the nested
+// module's own served schema.
+//
+// Metadata alone is never sufficient authority: the selected owner must be the
+// scoped runtime itself or one of its validated ancestors. A live descendant's
+// parent-scope lease chain retains every such ancestor for the duration of the
+// current scope, so this does not resurrect or reach through a reclaimed
+// runtime.
+func (srv *Server) workspaceRuntimeFromContext(ctx context.Context) (*clientRuntime, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("workspace runtime metadata: %w", err)
+	}
+	if metadata.SessionID != client.daggerSession.sessionID {
+		return nil, fmt.Errorf(
+			"workspace runtime session %q does not match executable scope session %q",
+			metadata.SessionID, client.daggerSession.sessionID,
+		)
+	}
+	if metadata.ClientID == client.clientID {
+		return client, nil
+	}
+
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace runtime ancestry: %w", err)
+	}
+	for _, ancestor := range ancestors {
+		if ancestor.clientID == metadata.ClientID {
+			return ancestor, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"workspace owner client %q is not the executable client %q or one of its ancestors",
+		metadata.ClientID, client.clientID,
+	)
+}
+
 func (srv *Server) clientRecordFromContext(ctx context.Context) (*clientRecord, error) {
 	metadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -3097,7 +3143,7 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 
 // Return the modules being served to the current client
 func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, error) {
-	client, err := srv.executableClientFromContext(ctx)
+	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

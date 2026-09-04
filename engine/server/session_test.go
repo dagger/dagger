@@ -954,6 +954,64 @@ func TestWorkspaceHostAccessDoesNotRequireOwnerRuntime(t *testing.T) {
 		"workspace access must clone immutable owner metadata")
 }
 
+func TestWorkspaceRuntimeFromContextSelectsOnlyScopedClientOrAncestor(t *testing.T) {
+	t.Parallel()
+
+	newRuntime := func(clientID string, parents ...string) *clientRuntime {
+		return &clientRuntime{
+			clientRecord: &clientRecord{
+				clientID:        clientID,
+				clientMetadata:  &engine.ClientMetadata{SessionID: "session", ClientID: clientID},
+				metadataSealed:  true,
+				accepting:       true,
+				parentClientIDs: parents,
+			},
+			state:           clientStateInitialized,
+			lifecycleLeases: map[uint64]clientLifecycleLeaseRecord{},
+		}
+	}
+	root := newRuntime("root")
+	child := newRuntime("child", "root")
+	sibling := newRuntime("sibling", "root")
+	sess := &daggerSession{
+		sessionID: "session",
+		clientRuntimes: map[string]*clientRuntime{
+			root.clientID: root, child.clientID: child, sibling.clientID: sibling,
+		},
+	}
+	for _, runtime := range sess.clientRuntimes {
+		runtime.daggerSession = sess
+	}
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{sess.sessionID: sess}}
+
+	scope, err := sess.acquireRootClientScope(child, engine.ClientLeaseRequest, "workspace schema")
+	require.NoError(t, err)
+	defer scope.Lease().Release()
+	ctx, err := engine.ContextWithClientScope(context.Background(), scope)
+	require.NoError(t, err)
+
+	got, err := srv.workspaceRuntimeFromContext(ctx)
+	require.NoError(t, err)
+	require.Same(t, child, got)
+
+	ancestorCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
+	got, err = srv.workspaceRuntimeFromContext(ancestorCtx)
+	require.NoError(t, err)
+	require.Same(t, root, got,
+		"workspace schema operations must use the validated owner ancestor")
+
+	siblingCtx := engine.ContextWithClientMetadata(ctx, sibling.clientMetadata)
+	_, err = srv.workspaceRuntimeFromContext(siblingCtx)
+	require.ErrorContains(t, err, "is not the executable client")
+
+	wrongSession := *root.clientMetadata
+	wrongSession.SessionID = "other"
+	_, err = srv.workspaceRuntimeFromContext(engine.ContextWithClientMetadata(ctx, &wrongSession))
+	require.ErrorContains(t, err, "does not match executable scope session")
+}
+
 func TestClientScopeRequiresSealedMetadata(t *testing.T) {
 	t.Parallel()
 

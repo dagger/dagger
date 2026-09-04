@@ -1433,7 +1433,7 @@ func (client *clientRuntime) removePendingModules(served []pendingModule) {
 // of failing the operation, and their failure messages are returned for the
 // caller to surface (see ensureModulesLoadedMode).
 func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
-	client, err := srv.executableClientFromContext(ctx)
+	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
