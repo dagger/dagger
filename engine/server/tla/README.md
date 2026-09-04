@@ -5,14 +5,20 @@ shared-work leases; live-session runtime reclamation; authoritative session
 teardown; lifecycle-bound client metric draining; and the final session
 trace/log telemetry barrier.
 
-NestedClientProxy.tla refines the transition immediately before a child enters
-that lifecycle. It keeps executable scope authority, context metadata, logical
-client IDs, and the exec bootstrap attachables carrier distinct. Its clean
-configuration checks exact routing and independent one-shot transports. Its
-mutation configurations deliberately choose a metadata parent, cross-scope
-carrier, malformed-header fallback, closed-ID rebind, client substitution,
-retryable closed response, or close-all behavior; each must violate its named
-invariant so the safety gates cannot pass vacuously.
+Green configurations are regression gates. ClientLifecycle_blocking_registration
+is a deliberate mutation: it models child registration that blocks behind
+session teardown instead of failing fast at the scope serialization point, and
+must violate TeardownEventuallyCompletes so that liveness gate cannot pass
+vacuously.
+
+The process-level proxy that an exec exposes to nested clients (one exact
+one-shot transport per logical client ID, the headerless bootstrap identity,
+malformed-header rejection, and terminal responses for closed transports) is a
+sequential routing decision made under one mutex. It is covered by Go unit
+tests rather than a TLA+ model: see engine/engineutil/executor_nested_test.go
+and the nested transport tests in engine/server/session_test.go. The one
+concurrency rule the proxy must respect, that registration never blocks
+behind session teardown, is what the blocking_registration mutation checks.
 
 The detailed DagQL cache algorithm remains in
 dagql/tla/CacheLifecycle.tla. This model consumes one contract from it:

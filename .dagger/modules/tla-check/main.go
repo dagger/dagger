@@ -73,17 +73,6 @@ var clientExpectedOutcome = map[string]string{
 	"blocking_registration": temporalOutcome,
 }
 
-var nestedClientProxyExpectedOutcome = map[string]string{
-	"core":               "",
-	"close_all":          "IndependentClose",
-	"cross_carrier":      "CarrierBindingExact",
-	"malformed_fallback": "MalformedRejected",
-	"metadata_parent":    "ParentUsesScope",
-	"rebind":             "NoClosedIDRebind",
-	"retry_closed":       "ClosedIsTerminal",
-	"substitute":         "ExactRouting",
-}
-
 type TlaCheck struct {
 	// The dagql/tla spec directory.
 	Source *dagger.Directory
@@ -146,8 +135,8 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
-// authoritative session teardown, the final telemetry barrier, and exact
-// nested process-proxy routing.
+// nested-client ownership, authoritative session teardown, and the final
+// telemetry barrier.
 // +check
 func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	base := m.base(m.ClientSource)
@@ -179,17 +168,9 @@ func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
 		run("lifecycle", "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name])
 	}
 
-	proxyNames := make([]string, 0, len(nestedClientProxyExpectedOutcome))
-	for name := range nestedClientProxyExpectedOutcome {
-		proxyNames = append(proxyNames, name)
-	}
-	sort.Strings(proxyNames)
-	for _, name := range proxyNames {
-		run("proxy", "NestedClientProxy", "NestedClientProxy_", name, nestedClientProxyExpectedOutcome[name])
-	}
 	wg.Wait()
 
-	return reportFailures("client lifecycle", failures, len(clientNames)+len(proxyNames))
+	return reportFailures("client lifecycle", failures, len(clientNames))
 }
 
 // One runs a single TLC configuration and returns the raw TLC output,
