@@ -268,14 +268,16 @@ BeginSessionTeardown ==
              IF k \in {"transport", "child"} THEN 0 ELSE leases[c][k]]]
     /\ UNCHANGED <<requests, work, cachePhase, clientMetrics, reclaimed>>
 
-\* The server begins cache release after handlers and services drain.
-\* ReleaseSession may return with cleanup deferred to shared cache work.
+\* Go: ReleaseSession runs after StopSessionServices and the dagql handler
+\* drain, but neither waits for the matching typed lease: a query's request
+\* lease is released after its handler decrements the in-flight count, and a
+\* stopped service releases its lease from ReleaseTrackedRefs. Only
+\* waitForClientScopeDrain, modeled by StopTelemetry's NoActiveProducers,
+\* is the lease barrier. ReleaseSession may return with cleanup deferred.
 BeginCacheRelease ==
     /\ ModelTeardown
     /\ sessionPhase = "closing"
     /\ cachePhase = "live"
-    /\ \A c \in Clients : ActiveRequests(c) = {}
-    /\ ActiveServiceWork = {}
     /\ cachePhase' =
          IF ActiveSharedWork = {} THEN "cleaning" ELSE "deferred"
     /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, clientMetrics, reclaimed>>
