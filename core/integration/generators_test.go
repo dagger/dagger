@@ -1286,6 +1286,113 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 	})
 }
 
+// TestWorkspaceGenerateReportsLoadFailureDetail covers what best-effort
+// `dagger generate` says about the modules it skips
+// (https://github.com/dagger/dagger/issues/13973): the skip must carry the
+// reason a user can act on, not a bare exit code, and must not tell them to run
+// the command they are running.
+//
+//   - broken-build: a Go module whose source does not compile. The compiler
+//     output lives in the SDK runtime's `go build` exec, hidden under the
+//     internal module-load spans; the skipped-module report inlines it.
+//   - ungenerated: a dagger-module.toml Go module with no committed generated
+//     files. Its strict-load error says "run `dagger generate`" — generate
+//     itself reports it as skipped until generated.
+//   - stale-build: does not compile either, and the regen generator writes
+//     into its directory this run — so generate loads it again with the
+//     changes applied. It still does not compile: the report shows the
+//     post-generation error, not a hedge.
+//   - fixable: does not compile until the fixer generator rewrites its
+//     main.go this run. Loaded again with the changes applied it works: the
+//     report says so and drops its pre-generation compiler output.
+func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generate-load-failures")
+
+	requireSkipDetail := func(t *testctx.T, out string) {
+		t.Helper()
+		// The compile error is the reason broken-build was skipped: the go
+		// build output follows the load error.
+		require.Contains(t, out, "modules/broken-build")
+		require.Contains(t, out, "exit code: 1")
+		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
+		// Missing generated files: skipped, without the misleading hint.
+		require.Contains(t, out, "modules/ungenerated")
+		require.Contains(t, out, `generated file ".dagger/modules/ungenerated/dagger.gen.go" is missing (skipped until it is generated)`)
+	}
+
+	t.Run("report", func(ctx context.Context, t *testctx.T) {
+		// The default non-interactive frontend renders the persisted SKIPPED
+		// MODULES report section after the generators.
+		out, err := base.
+			With(daggerExec("generate", "--no-apply")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:generate")
+		require.Contains(t, out, "SKIPPED MODULES")
+		requireSkipDetail(t, out)
+		// Only the skipped-module rows describe the failures, and they never
+		// tell the user to run the command they are running.
+		require.NotContains(t, out, "run `dagger generate`")
+		// fixable was rewritten by the fixer generator and loads with the
+		// changes applied: reported as such, pre-generation error dropped.
+		require.Contains(t, out, "REGENERATED")
+		require.Contains(t, out, "could not load before this run's changes; loads with them applied")
+		require.NotContains(t, out, "fixableUndefinedSymbol")
+		// stale-build was touched too but still does not compile: the report
+		// carries the post-generation error (same compiler output, once) next
+		// to the untouched broken-build's original one.
+		require.Contains(t, out, "still fails to load with this run's changes")
+		require.Equal(t, 2, strings.Count(out, "undefined: intentionallyUndefinedSymbol"), out)
+	})
+
+	t.Run("listing cannot classify, so it reports every skip", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:generate")
+		require.Contains(t, out, "modules/stale-build")
+		require.Equal(t, 2, strings.Count(out, "undefined: intentionallyUndefinedSymbol"), out)
+		require.Contains(t, out, "fixableUndefinedSymbol")
+		require.NotContains(t, out, "REGENERATED")
+	})
+
+	t.Run("plain progress", func(ctx context.Context, t *testctx.T) {
+		// Plain progress prints the skipped-module span's status inline on the
+		// run path (the listing never shows skips). It also streams the raw
+		// load spans as they fail, so the SDK's own message is visible too;
+		// what matters is that the skip row carries the detail.
+		out, err := base.
+			With(daggerExec("generate", "--no-apply", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		requireSkipDetail(t, out)
+	})
+
+	t.Run("--require-load reports the detail through the API", func(ctx context.Context, t *testctx.T) {
+		// loadFailures carries the same described messages, so an API consumer
+		// (or --require-load's telemetry) sees the compiler output too.
+		out, err := base.
+			With(daggerExecFail("generate", "-l", "--require-load", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
+	})
+
+	t.Run("strict load keeps the run-dagger-generate hint", func(ctx context.Context, t *testctx.T) {
+		// Only generate rewrites the hint; a call that needs the module loaded
+		// should still point the user at generate.
+		out, err := base.
+			With(daggerExecFail("call", "ungenerated", "hello")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "run `dagger generate`")
+	})
+}
+
 // TestWorkspaceCheckNarrowsToRequestedModule mirrors
 // TestWorkspaceGenerateNarrowsToRequestedModule for `dagger check`: an unrelated
 // broken/stale workspace module must not be loaded just to enumerate or run a

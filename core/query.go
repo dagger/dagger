@@ -90,7 +90,7 @@ type Server interface {
 	// warning instead of failing the operation, and their failure messages are
 	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
 	// for operations like generate that may be exactly what repairs the module.
-	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []string, _ error)
+	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []ModuleLoadFailure, _ error)
 
 	// A snapshot of the current workspace lockfile. When requireWritable is
 	// true, returns ok=false for read-only workspace lock sources.

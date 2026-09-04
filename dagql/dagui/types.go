@@ -95,6 +95,22 @@ func (db *DB) SkippedModuleSpans() []*Span {
 	return out
 }
 
+// RegeneratedModuleSpans returns the spans `dagger generate` emitted for
+// skipped modules whose directory its changes touched, keyed by the module
+// name they share with the skipped-module span. Each records the outcome of
+// loading the module again with the changes applied: OK (it loads) or failed
+// (the post-generation error). The report shows that outcome instead of the
+// pre-generation load error it supersedes.
+func (db *DB) RegeneratedModuleSpans() map[string]*Span {
+	out := map[string]*Span{}
+	for _, span := range db.Spans.Order {
+		if span.GenerateRegenerated {
+			out[span.Name] = span
+		}
+	}
+	return out
+}
+
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),

@@ -3803,6 +3803,9 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	for _, skip := range fe.db.SkippedModuleSpans() {
 		host.RevealedSpans.Add(skip)
 	}
+	for _, regen := range fe.db.RegeneratedModuleSpans() {
+		host.RevealedSpans.Add(regen)
+	}
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan

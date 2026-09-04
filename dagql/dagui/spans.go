@@ -284,6 +284,10 @@ type SpanSnapshot struct {
 	// Set on a span reporting a workspace module that best-effort generate
 	// skipped because it could not be loaded.
 	GenerateSkipped bool `json:",omitempty"`
+	// GenerateRegenerated marks the span `dagger generate` emits when its
+	// changes touch a module it skipped, so the report can show it as
+	// regenerated instead of failed.
+	GenerateRegenerated bool `json:",omitempty"`
 
 	// Service marks the long-lived exec span of a started service instance
 	// (running exactly while the service is up; cause-links to the API spans
@@ -449,6 +453,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.GenerateSkippedAttr:
 		snapshot.GenerateSkipped = val.(bool)
+
+	case telemetryattrs.GenerateRegeneratedAttr:
+		snapshot.GenerateRegenerated = val.(bool)
 
 	case telemetryattrs.ServiceAttr:
 		snapshot.Service = val.(bool)

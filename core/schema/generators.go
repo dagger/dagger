@@ -68,7 +68,11 @@ func (s generatorsSchema) list(ctx context.Context, parent *core.GeneratorGroup,
 }
 
 func (s generatorsSchema) loadFailures(_ context.Context, parent *core.GeneratorGroup, args struct{}) ([]string, error) {
-	return parent.LoadFailures, nil
+	messages := make([]string, 0, len(parent.LoadFailures))
+	for _, failure := range parent.LoadFailures {
+		messages = append(messages, failure.Message)
+	}
+	return messages, nil
 }
 
 func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, args struct{}) (*core.GeneratorGroup, error) {

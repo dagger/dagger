@@ -1,0 +1,9 @@
+type Regen {
+  """
+  Write into the stale-build module's directory, standing in for an SDK
+  generator regenerating a module's files.
+  """
+  pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile(".dagger/modules/stale-build/generated.txt", "regenerated").changes(workdir)
+  }
+}

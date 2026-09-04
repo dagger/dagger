@@ -43,6 +43,58 @@ func (RuntimeCodegenSuite) TestMissingGeneratedFiles(ctx context.Context, t *tes
 	requireErrOut(t, err, "run `dagger generate`")
 }
 
+// A dagger-module.toml module with a configured client and no committed
+// generated files must still generate on the first run: client generation
+// needs the module's schema, i.e. the module built, and the files it builds
+// from are exactly what the preceding codegen step produced. Loading the
+// module from the original source instead used to fail every first
+// `dagger generate` of such a module with the SDK's "generated file is
+// missing; run `dagger generate`" hint — from inside `dagger generate`
+// (https://github.com/dagger/dagger/issues/13973, "broken state 1").
+func (RuntimeCodegenSuite) TestClientGenerationFollowsCodegen(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	withClient := moduleFixture(t, c, "go/minimal").
+		With(configFile(".", &modules.ModuleConfig{
+			Name:          "minimal",
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: "go"},
+			Clients:       []*modules.ModuleConfigClient{{Generator: "go", Directory: "./client"}},
+		}))
+
+	t.Run("generates module and client", func(ctx context.Context, t *testctx.T) {
+		generated := withClient.
+			With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`))
+
+		entries, err := generated.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "dagger.gen.go")
+		require.Contains(t, entries, "client/")
+		clientEntries, err := generated.Directory("client").Entries(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, clientEntries)
+	})
+
+	t.Run("a build failure is the error, not the missing-files hint", func(ctx context.Context, t *testctx.T) {
+		// With the module loaded from the generated context, the only thing
+		// that can stop client generation is the module itself not building —
+		// and that is what the user has to see.
+		_, err := withClient.
+			WithNewFile("main.go", `package main
+
+type Minimal struct{}
+
+func (m *Minimal) Hello() string {
+	return intentionallyUndefinedSymbol()
+}
+`).
+			With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
+			Sync(ctx)
+		requireErrOut(t, err, "undefined: intentionallyUndefinedSymbol")
+		require.NotContains(t, err.Error(), "run `dagger generate`")
+	})
+}
+
 // Legacy dagger.json modules keep runtime codegen unconditionally; a stale
 // codegen.automaticGitignore=false opt-out is not read anymore. Nothing is
 // committed here, so success requires runtime regeneration.

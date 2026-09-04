@@ -425,9 +425,7 @@ func requireGeneratedFiles(
 		if bool(exists) {
 			continue
 		}
-		return fmt.Errorf(
-			"module %q: generated file %q is missing; run `dagger generate` and commit the generated files",
-			modName, rel)
+		return &core.MissingGeneratedFileError{Module: modName, Path: rel}
 	}
 	return nil
 }
