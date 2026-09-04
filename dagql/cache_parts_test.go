@@ -416,6 +416,10 @@ func TestEvaluatePartsSiblingGroupsRunConcurrently(t *testing.T) {
 func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, c := newPartsTestCache(t, nil)
+		spanExporter := &cacheTestSpanExporter{}
+		tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+		defer tracerProvider.Shutdown(t.Context())
+		producerCtx, producerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "parts producer")
 
 		metaEntered := make(chan struct{})
 		metaRelease := make(chan struct{})
@@ -435,11 +439,12 @@ func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
 				return nil
 			},
 		}
-		res := newPartsTestResult(t, c, ctx, obj)
+		res := newPartsTestResult(t, c, producerCtx, obj)
 
+		consumerCtx, consumerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "parts consumer")
 		eval := make(chan error, 1)
 		go func() {
-			eval <- c.EvaluateParts(ctx, res, partsTestPartMeta, partsTestPartFS)
+			eval <- c.EvaluateParts(consumerCtx, res, partsTestPartMeta, partsTestPartFS)
 		}()
 
 		waitLazyRetrySignal(t, metaEntered, "metadata body entry")
@@ -458,6 +463,38 @@ func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
 		shared.lazyMu.Unlock()
 		if partial {
 			t.Fatal("fully evaluated parts result must not report partial work")
+		}
+
+		consumerSpan.End()
+		producerSpan.End()
+		if err := tracerProvider.ForceFlush(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		spanExporter.mu.Lock()
+		spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+		spanExporter.mu.Unlock()
+		var resumeCount int
+		var sawCompleteResume bool
+		for _, span := range spans {
+			if span.Name() != "resume parts-test (meta)" && span.Name() != "resume parts-test (out)" {
+				continue
+			}
+			resumeCount++
+			hasPartialAttr := false
+			for _, attr := range span.Attributes() {
+				if string(attr.Key) == telemetryattrs.DagPartialAttr {
+					hasPartialAttr = true
+				}
+			}
+			if !hasPartialAttr {
+				sawCompleteResume = true
+			}
+		}
+		if resumeCount != 2 {
+			t.Fatalf("recorded %d parts resume spans, want 2", resumeCount)
+		}
+		if !sawCompleteResume {
+			t.Fatal("fully evaluated parts result must have a non-partial resume span")
 		}
 	})
 }
