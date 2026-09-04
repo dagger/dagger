@@ -1308,6 +1308,13 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	if !ok || source.OrgName == nil {
 		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
 	}
+	// The source is owned by a Dagger Cloud org. If the current user isn't a
+	// member of that org, the mapped-sources lookup below is denied with an
+	// opaque "unauthorized"; check membership first and surface a clear
+	// ownership error instead.
+	if err := ensureUserInOrg(ctx, client, *source.OrgName, repo); err != nil {
+		return workspaceAutocheckState{}, err
+	}
 	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
 	if err != nil {
 		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
@@ -1324,6 +1331,38 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 		SourceMode:     "SELECTED",
 		SelectedRepos:  selected,
 	}, nil
+}
+
+// ensureUserInOrg verifies the authenticated user is a member of orgName, the
+// Dagger Cloud org that owns the source backing repo. When they are not a
+// member it returns a clear ownership error rather than letting an org-scoped
+// query fail later with an opaque "unauthorized".
+func ensureUserInOrg(ctx context.Context, client *cloudapi.Client, orgName, repo string) error {
+	user, err := client.User(ctx)
+	if err != nil {
+		return fmt.Errorf("lookup Cloud user: %w", err)
+	}
+	return userOrgMembershipError(user, orgName, repo)
+}
+
+// userOrgMembershipError returns nil when the user is a member of orgName, and
+// otherwise a clear error explaining that repo is owned by a different Dagger
+// Cloud organization (listing the user's own orgs for context).
+func userOrgMembershipError(user *cloudapi.UserResponse, orgName, repo string) error {
+	names := make([]string, 0, len(user.Orgs))
+	for _, org := range user.Orgs {
+		if strings.EqualFold(org.Name, orgName) {
+			return nil
+		}
+		names = append(names, org.Name)
+	}
+	msg := fmt.Sprintf("%s is owned by Dagger Cloud organization %q, which you are not a member of", repo, orgName)
+	if len(names) > 0 {
+		msg += fmt.Sprintf("; your organizations: %s", strings.Join(names, ", "))
+	} else {
+		msg += "; you are not a member of any Dagger Cloud organizations"
+	}
+	return errors.New(msg)
 }
 
 func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {
