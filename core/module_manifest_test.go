@@ -140,13 +140,16 @@ engineVersion = "v0.20.3"
   pin = "sha256:old"
 `)))
 
-	updated := manifest.
+	withoutKeep := manifest.WithoutDependency("keep")
+	cleared := manifest.WithoutDependencies()
+	updated := cleared.
 		WithName("updated-name").
-		WithoutDependency("keep").
 		WithDependency("client", "./client", "sha256:new")
 
 	require.Equal(t, "current-name", manifest.Name)
 	require.Equal(t, "keep", manifest.Dependencies[0].Name)
+	require.Empty(t, withoutKeep.Dependencies)
+	require.Empty(t, cleared.Dependencies)
 	for filename, contents := range map[string][]byte{
 		modules.Filename:       mustModuleManifestTOMLContents(t, updated),
 		modules.LegacyFilename: mustModuleManifestJSONContents(t, updated),

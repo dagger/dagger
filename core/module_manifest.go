@@ -138,6 +138,12 @@ func (manifest *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
 	return manifest
 }
 
+func (manifest *ModuleManifest) WithoutDependencies() *ModuleManifest {
+	manifest = manifest.Clone()
+	manifest.Dependencies = nil
+	return manifest
+}
+
 func (manifest *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
 	return manifest.withEntrypoint("dang", source)
 }

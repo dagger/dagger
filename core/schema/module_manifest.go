@@ -37,6 +37,8 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 		dagql.Func("withoutDependency", s.withoutDependency).
 			Doc("Remove a module dependency by name.").
 			Args(dagql.Arg("name").Doc("Dependency name.")),
+		dagql.Func("withoutDependencies", s.withoutDependencies).
+			Doc("Remove all module dependencies."),
 		dagql.Func("withDangEntrypoint", s.withDangEntrypoint).
 			Doc("Use the built-in Dang entrypoint.").
 			Args(dagql.Arg("source").Doc("Entrypoint source address.")),
@@ -151,6 +153,14 @@ func (s *moduleManifestSchema) withoutDependency(
 	args struct{ Name string },
 ) (*core.ModuleManifest, error) {
 	return manifest.WithoutDependency(args.Name), nil
+}
+
+func (s *moduleManifestSchema) withoutDependencies(
+	ctx context.Context,
+	manifest *core.ModuleManifest,
+	args struct{},
+) (*core.ModuleManifest, error) {
+	return manifest.WithoutDependencies(), nil
 }
 
 func (s *moduleManifestSchema) withDangEntrypoint(
