@@ -87,13 +87,58 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, configDir string) 
 	return loadRef, configRef, nil
 }
 
-// resolveSDKManagedClientModule reads a persisted client target. Local paths
-// are relative to dagger.toml. Canonical references stay unchanged.
-func resolveSDKManagedClientModule(configDir, ref string) (string, error) {
+// resolveSDKManagedClientModule resolves a persisted client target for module
+// loading. Installed names resolve through [modules]. Local paths are relative
+// to dagger.toml. Canonical references stay unchanged.
+func resolveSDKManagedClientModule(ws *core.Workspace, cfg *workspace.Config, configDir, ref string) (string, error) {
+	if cfg != nil {
+		if entry, ok := cfg.Modules[ref]; ok {
+			resolved := resolvedModuleEntrySourceWithPin(configDir, entry)
+			if filepath.IsAbs(resolved) && ws == nil {
+				return resolved, nil
+			}
+			loadRef, _, err := resolveWorkspaceClientModuleRef(ws, resolved, ".")
+			return loadRef, err
+		}
+	}
 	if !workspace.IsLocalRef(ref, "") {
 		return ref, nil
 	}
 	return workspace.ResolveSDKManagedPath(configDir, ref)
+}
+
+// resolveWorkspaceClientModuleInput returns the target used for module loading
+// and the target stored in dagger.toml. An installed name is stored unchanged.
+func resolveWorkspaceClientModuleInput(
+	ws *core.Workspace,
+	cfg *workspace.Config,
+	configDir,
+	cwd,
+	ref string,
+) (loadRef string, configRef string, _ error) {
+	if cfg != nil {
+		if _, ok := cfg.Modules[ref]; ok {
+			loadRef, err := resolveSDKManagedClientModule(ws, cfg, configDir, ref)
+			return loadRef, ref, err
+		}
+	}
+	if workspace.IsLocalRef(ref, "") {
+		resolved, err := resolveWorkspacePath(ref, cwd)
+		if err != nil {
+			return "", "", fmt.Errorf("module target %q must not escape the workspace root", ref)
+		}
+		ref = resolved
+	}
+	loadRef, configRef, err := resolveWorkspaceClientModuleRef(ws, ref, configDir)
+	if err != nil {
+		return "", "", err
+	}
+	if cfg != nil {
+		if _, collides := cfg.Modules[configRef]; collides {
+			configRef = "./" + configRef
+		}
+	}
+	return loadRef, configRef, nil
 }
 
 func workspaceClientModuleSourceSelector(ref string) dagql.Selector {

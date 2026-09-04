@@ -37,7 +37,7 @@ func (s *workspaceSchema) sdks(
 
 	sdks := make(core.WorkspaceSDKs, 0, len(cfg.SDKs))
 	for name, entry := range cfg.SDKs {
-		sdk, err := workspaceSDKFromEntry(configDir, name, entry, cfg.Modules[entry.Module])
+		sdk, err := workspaceSDKFromEntry(cfg, configDir, name, entry, cfg.Modules[entry.Module])
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func (s *workspaceSchema) sdk(
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
-	sdk, err := workspaceSDKFromEntry(configDir, sdkName, cfg.SDKs[sdkName], entry)
+	sdk, err := workspaceSDKFromEntry(cfg, configDir, sdkName, cfg.SDKs[sdkName], entry)
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
@@ -174,7 +174,7 @@ func (s *workspaceSchema) workspaceSDK(
 	return sdk, nil
 }
 
-func workspaceSDKFromEntry(configDir, sdkName string, sdkEntry workspace.SDKEntry, moduleEntry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
+func workspaceSDKFromEntry(cfg *workspace.Config, configDir, sdkName string, sdkEntry workspace.SDKEntry, moduleEntry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
 	sdk := &core.WorkspaceSDK{
 		Name: sdkName,
 		Ref:  resolvedModuleEntrySourceWithPin(configDir, moduleEntry),
@@ -197,7 +197,7 @@ func workspaceSDKFromEntry(configDir, sdkName string, sdkEntry workspace.SDKEntr
 			})
 		}
 		for _, target := range scope.Clients {
-			ref, err := resolveSDKManagedClientModule(configDir, target)
+			ref, err := resolveSDKManagedClientModule(nil, cfg, configDir, target)
 			if err != nil {
 				return nil, fmt.Errorf("client managed by %q: %w", sdkName, err)
 			}

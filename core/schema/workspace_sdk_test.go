@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -226,7 +227,7 @@ func TestWorkspaceSDKEntryPaths(t *testing.T) {
 
 	// The SDK scope path is recorded against the config directory, like the
 	// entry's own source, and surfaces workspace-root-relative.
-	sdk, err := workspaceSDKFromEntry("apps/demo", "custom", sdkEntry, moduleEntry)
+	sdk, err := workspaceSDKFromEntry(nil, "apps/demo", "custom", sdkEntry, moduleEntry)
 	require.NoError(t, err)
 	require.Equal(t, "custom", sdk.Name)
 	require.Equal(t, "apps/sdk@sha256:abc", sdk.Ref)
@@ -245,7 +246,7 @@ func TestModuleEntrySourceWithPinRelativeToLeavesGitRefsCanonical(t *testing.T) 
 	require.Equal(t, "github.com/acme/sdk@v1.2.3", mustModuleEntrySourceWithPinRelativeTo(t, "apps/demo", ".dagger/modules/new", entry))
 }
 
-func TestValidateSDKModuleGenerationCycles(t *testing.T) {
+func TestValidateSDKModuleGenerationGraph(t *testing.T) {
 	t.Parallel()
 
 	cfg := &workspace.Config{
@@ -255,21 +256,22 @@ func TestValidateSDKModuleGenerationCycles(t *testing.T) {
 				Scopes: map[string]workspace.SDKScope{
 					".": {
 						IsModule: true,
+						Name:     "root",
 						Clients:  []string{"target", "github.com/acme/remote"},
 					},
-					"target": {IsModule: true},
+					"target": {IsModule: true, Name: "target"},
 				},
 			},
 		},
 	}
-	require.NoError(t, validateSDKModuleGenerationCycles(cfg, "apps/demo"))
+	require.NoError(t, validateSDKModuleGenerationGraph(cfg, "apps/demo"))
 
 	target := cfg.SDKs["go"].Scopes["target"]
 	target.Clients = []string{"."}
 	cfg.SDKs["go"].Scopes["target"] = target
 	require.EqualError(
 		t,
-		validateSDKModuleGenerationCycles(cfg, "apps/demo"),
+		validateSDKModuleGenerationGraph(cfg, "apps/demo"),
 		"local SDK generation cycle: apps/demo -> apps/demo/target -> apps/demo",
 	)
 }
@@ -361,6 +363,55 @@ func TestResolveWorkspaceClientModuleRefStoresClassifiableLocalRef(t *testing.T)
 	}
 }
 
+func TestResolveWorkspaceClientModuleInputPreservesInstalledName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+		"api":        {Source: "modules/api"},
+		"remote-api": {Source: "github.com/acme/api", Pin: "v1.2.3"},
+	}}
+	loadRef, configRef, err := resolveWorkspaceClientModuleInput(
+		&core.Workspace{},
+		cfg,
+		"apps",
+		"apps/client",
+		"api",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "apps/modules/api", filepath.ToSlash(loadRef))
+	require.Equal(t, "api", configRef)
+
+	loadRef, err = resolveSDKManagedClientModule(&core.Workspace{}, cfg, "apps", configRef)
+	require.NoError(t, err)
+	require.Equal(t, "apps/modules/api", filepath.ToSlash(loadRef))
+
+	loadRef, configRef, err = resolveWorkspaceClientModuleInput(
+		&core.Workspace{},
+		cfg,
+		"apps",
+		"apps/client",
+		"remote-api",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/api@v1.2.3", loadRef)
+	require.Equal(t, "remote-api", configRef)
+
+	cfg.Modules["target"] = workspace.ModuleEntry{Source: "installed/target"}
+	loadRef, configRef, err = resolveWorkspaceClientModuleInput(
+		&core.Workspace{},
+		cfg,
+		".",
+		".",
+		"./target",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "target", loadRef)
+	require.Equal(t, "./target", configRef)
+	loadRef, err = resolveSDKManagedClientModule(&core.Workspace{}, cfg, ".", configRef)
+	require.NoError(t, err)
+	require.Equal(t, "target", loadRef)
+}
+
 // A hand-written root-anchored SDK scope, matched by consumers that see the
 // module through its config-relative install source.
 func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
@@ -399,7 +450,7 @@ func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
 
 	t.Run("sdk listing resolves it", func(t *testing.T) {
 		config := cfg()
-		sdk, err := workspaceSDKFromEntry("common", "go", config.SDKs["go"], config.Modules["go-sdk"])
+		sdk, err := workspaceSDKFromEntry(config, "common", "go", config.SDKs["go"], config.Modules["go-sdk"])
 		require.NoError(t, err)
 		require.Equal(t, "common/.dagger/modules/mymod", sdk.Modules[0].Source)
 		require.ElementsMatch(t, []*core.WorkspaceModule{

@@ -633,7 +633,7 @@ source = "dep"
 	t.Run("SDK installs reject an env selection", func(ctx context.Context, t *testctx.T) {
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
-		sdkModulePath, err := filepath.Abs("../../modules/sdk-ux-go")
+		sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
 		require.NoError(t, err)
 
 		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "module", "install", sdkModulePath)
