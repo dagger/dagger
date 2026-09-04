@@ -319,14 +319,25 @@ func setupFinishLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI, auth
 		if errors.Is(err, idtui.ErrInterrupted) || errors.Is(err, context.Canceled) {
 			return err
 		}
-		msg := fmt.Sprintf("Could not set up organization: %v", err)
-		if ui == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "  "+msg)
-		} else {
-			ui.appendLoginDetail(msg + "\n")
-		}
+		setupOrgStatus(ui, cmd, fmt.Sprintf("Could not set up organization: %v", err), false)
 	}
 	return nil
+}
+
+// setupOrgStatus reports the outcome of the org-ensure step so it is visible in
+// the setup output. The TUI clears the login detail on completion and the final
+// summary omits it, so a message written there would never be seen; this routes
+// through a dedicated, always-rendered org status line instead.
+func setupOrgStatus(ui *setupUI, cmd *cobra.Command, message string, ok bool) {
+	if ui != nil {
+		ui.setOrgStatus(message, ok)
+		return
+	}
+	prefix := "  "
+	if !ok {
+		prefix = "  ! "
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), prefix+message)
 }
 
 // setupEnsureOrg makes sure the authenticated account has a current Dagger Cloud
@@ -357,20 +368,27 @@ func setupEnsureOrg(ctx context.Context, cmd *cobra.Command, ui *setupUI, auth *
 		return err
 	}
 
-	var w io.Writer = cmd.ErrOrStderr()
-	if ui != nil && ui.live {
-		w = setupLoginWriter{ui: ui}
-	}
 	if len(user.Orgs) == 0 {
-		org, err := createNewOrg(ctx, client, user, cloudOrgFlag, w)
+		// createNewOrg's inline writer is discarded here; the outcome is reported
+		// through setupOrgStatus so it renders in both the live and final views.
+		org, err := createNewOrg(ctx, client, user, cloudOrgFlag, io.Discard)
 		if err != nil {
 			return err
 		}
-		return cloudauth.SetCurrentOrg(org)
+		if err := cloudauth.SetCurrentOrg(org); err != nil {
+			return err
+		}
+		setupOrgStatus(ui, cmd, fmt.Sprintf("Created organization %q.", org.Name), true)
+		return nil
 	}
 	// Has org(s) but none selected yet: adopt the first so subsequent Cloud
 	// commands have a default without another prompt.
-	return cloudauth.SetCurrentOrg(&user.Orgs[0])
+	first := user.Orgs[0]
+	if err := cloudauth.SetCurrentOrg(&first); err != nil {
+		return err
+	}
+	setupOrgStatus(ui, cmd, fmt.Sprintf("Using organization %q.", first.Name), true)
+	return nil
 }
 
 type setupLoginChoice string
