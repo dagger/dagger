@@ -3921,6 +3921,43 @@ func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
 	return groups
 }
 
+// prepareLazyGroupEvalLocked selects the callback for a new group attempt.
+// It also records completion when no callback remains. lazyMu must be held.
+func prepareLazyGroupEvalLocked(
+	res AnyResult,
+	shared *sharedResult,
+	g *lazyGroupState,
+	group LazyGroupKey,
+	partsVal HasLazyEvaluationParts,
+) bool {
+	if g.syncPending {
+		// The callback body already succeeded. Retry only the cache-side
+		// bookkeeping from the previous attempt.
+		g.eval = nil
+		return false
+	}
+
+	var currentLazyEval LazyEvalFunc
+	if partsVal != nil {
+		currentLazyEval = partsVal.LazyEvalFuncForGroup(group)
+	} else {
+		currentLazyEval = lazyEvalFuncOfResult(res)
+	}
+	if currentLazyEval != nil {
+		g.eval = currentLazyEval
+		return false
+	}
+
+	g.eval = nil
+	g.complete = true
+	if partsVal == nil {
+		// The whole group is the value's entire deferred work; a parts value's
+		// result-level latch is set only by an all-groups pass (evaluateResolved).
+		shared.lazyEvalComplete = true
+	}
+	return true
+}
+
 // evaluateGroup is the per-(result, group) attempt loop: consult the
 // published attempt, trust settled object-side state, or lead a fresh
 // attempt. For LazyGroupWhole with a nil partsVal this is exactly the
@@ -4001,27 +4038,10 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		// attempt retries only the bookkeeping even if the value still
 		// exposes a non-nil callback. Otherwise a nil object-side callback
 		// means nothing deferred remains for this group.
-		var currentLazyEval LazyEvalFunc
-		if !g.syncPending {
-			if partsVal != nil {
-				currentLazyEval = partsVal.LazyEvalFuncForGroup(group)
-			} else {
-				currentLazyEval = lazyEvalFuncOfResult(res)
-			}
-			if currentLazyEval == nil {
-				g.eval = nil
-				g.complete = true
-				if partsVal == nil {
-					// The whole group is the value's entire deferred
-					// work; a parts value's result-level latch is set
-					// only by an all-groups pass (evaluateResolved).
-					shared.lazyEvalComplete = true
-				}
-				shared.lazyMu.Unlock()
-				return nil
-			}
+		if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
+			shared.lazyMu.Unlock()
+			return nil
 		}
-		g.eval = currentLazyEval
 
 		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
 		attemptOp, err := c.beginContextOperation(attemptCtx)
