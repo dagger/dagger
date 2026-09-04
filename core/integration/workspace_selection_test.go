@@ -304,7 +304,7 @@ module = "go-sdk"
 
 		out, err := ctr.With(workspaceSelectionDaggerExec("-W", remoteRef, "module", "init", "--help")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Initialize a module in the workspace")
+		require.Contains(t, out, "Initialize a new module for development with an SDK")
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {

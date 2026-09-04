@@ -33,6 +33,8 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	require.Nil(t, moduleInitCmd.Flags().Lookup("sdk"), "module init names its SDK positionally")
 	require.Nil(t, moduleClientAddCmd.Flags().Lookup("sdk"), "module client add names its SDK as a subcommand")
 	require.Empty(t, moduleInitCmd.Example)
+	require.Equal(t, "init SDK [flags]", moduleInitCmd.Use)
+	require.Equal(t, "Initialize a new module for development with an SDK", moduleInitCmd.Long)
 
 	nameFlag := moduleInitCmd.PersistentFlags().Lookup("name")
 	require.NotNil(t, nameFlag)
@@ -246,15 +248,49 @@ func TestModuleInitHelpListsInstalledSDKs(t *testing.T) {
 	require.NotNil(t, pythonAdd)
 	require.Equal(t, "go <module>", goAdd.Use)
 
-	for _, parent := range []*cobra.Command{moduleInitCmd, moduleClientAddCmd} {
-		var out bytes.Buffer
-		parent.SetOut(&out)
-		require.NoError(t, parent.Help())
-		parent.SetOut(nil)
-		help := out.String()
-		require.Contains(t, help, "AVAILABLE COMMANDS")
-		require.Contains(t, strings.Fields(help), "go")
-		require.Contains(t, strings.Fields(help), "python")
-		require.NotContains(t, help, "Examples")
+	var out bytes.Buffer
+	moduleInitCmd.SetOut(&out)
+	require.NoError(t, moduleInitCmd.Help())
+	moduleInitCmd.SetOut(nil)
+	help := out.String()
+	require.Contains(t, help, "Initialize a new module for development with an SDK")
+	require.Contains(t, help, "dagger module init SDK [flags]")
+	require.Contains(t, help, "AVAILABLE SDKs")
+	require.NotContains(t, help, "AVAILABLE COMMANDS")
+	require.Contains(t, strings.Fields(help), "go")
+	require.Contains(t, strings.Fields(help), "python")
+	require.NotContains(t, help, "Examples")
+
+	out.Reset()
+	moduleClientAddCmd.SetOut(&out)
+	require.NoError(t, moduleClientAddCmd.Help())
+	moduleClientAddCmd.SetOut(nil)
+	help = out.String()
+	require.Contains(t, help, "AVAILABLE COMMANDS")
+	require.Contains(t, strings.Fields(help), "go")
+	require.Contains(t, strings.Fields(help), "python")
+	require.NotContains(t, help, "Examples")
+}
+
+func TestModuleInitHelpWithoutInstalledSDKs(t *testing.T) {
+	root := &cobra.Command{Use: "dagger"}
+	root.SetUsageTemplate(usageTemplate)
+	module := &cobra.Command{Use: "module"}
+	cmd := &cobra.Command{
+		Use:                   moduleInitCmd.Use,
+		Long:                  moduleInitCmd.Long,
+		DisableFlagsInUseLine: true,
+		Annotations:           moduleInitCmd.Annotations,
+		Run:                   func(*cobra.Command, []string) {},
 	}
+	root.AddCommand(module)
+	module.AddCommand(cmd)
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	require.NoError(t, cmd.Help())
+	help := out.String()
+	require.Contains(t, help, "dagger module init SDK [flags]")
+	require.Contains(t, help, "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'")
+	require.NotContains(t, help, "AVAILABLE COMMANDS")
 }

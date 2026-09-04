@@ -608,16 +608,30 @@ source = "dang"
 		With(nonNestedDevEngine(c))
 
 	t.Run("lists installed SDK subcommands", func(ctx context.Context, t *testctx.T) {
-		for _, args := range [][]string{
-			{"module", "init", "--help"},
-			{"module", "client", "add", "--help"},
-		} {
-			out, err := base.With(daggerNonNestedExec(args...)).CombinedOutput(ctx)
-			require.NoError(t, err, out)
-			require.Contains(t, out, "AVAILABLE COMMANDS")
-			require.Contains(t, out, "go")
-			require.NotContains(t, out, "EXAMPLES")
-		}
+		out, err := base.With(daggerNonNestedExec("module", "init", "--help")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Initialize a new module for development with an SDK")
+		require.Contains(t, out, "dagger module init SDK [flags]")
+		require.Contains(t, out, "AVAILABLE SDKs")
+		require.NotContains(t, out, "AVAILABLE COMMANDS")
+		require.Contains(t, out, "go")
+		require.NotContains(t, out, "EXAMPLES")
+
+		out, err = base.With(daggerNonNestedExec("module", "client", "add", "--help")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "AVAILABLE COMMANDS")
+		require.Contains(t, out, "go")
+		require.NotContains(t, out, "EXAMPLES")
+	})
+
+	t.Run("explains when no SDK is installed", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			WithNewFile("/work/apps/shop/dagger.toml", "").
+			With(daggerNonNestedExec("module", "init", "--help")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'")
+		require.NotContains(t, out, "AVAILABLE COMMANDS")
 	})
 
 	t.Run("lists SDK sources", func(ctx context.Context, t *testctx.T) {

@@ -226,6 +226,8 @@ func init() {
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
 	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
+	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
+	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -1112,6 +1114,23 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 
 const visibleAliasesAnnotation = "help:visibleAliases"
 const hiddenAliasesAnnotation = "help:hiddenAliases"
+const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
+const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+
+func availableSubcommandsTitle(cmd *cobra.Command) string {
+	title := "AVAILABLE COMMANDS"
+	if cmd.Annotations != nil && cmd.Annotations[availableSubcommandsTitleAnnotation] != "" {
+		title = cmd.Annotations[availableSubcommandsTitleAnnotation]
+	}
+	return termenv.String(title).Bold().String()
+}
+
+func noAvailableSubcommands(cmd *cobra.Command) string {
+	if cmd.HasAvailableSubCommands() || cmd.Annotations == nil {
+		return ""
+	}
+	return cmd.Annotations[noAvailableSubcommandsAnnotation]
+}
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -1453,9 +1472,14 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableSubCommands}}
 
-{{ "Available Commands" | toUpperBold }}
+{{ availableSubcommandsTitle . }}
 {{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if noAvailableSubcommands .}}
+
+{{ noAvailableSubcommands . }}
+{{- end}}
 
 {{- $localFlags := availableFlags . .LocalFlags}}
 {{- if $localFlags.HasAvailableFlags}}

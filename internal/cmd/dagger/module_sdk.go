@@ -29,10 +29,14 @@ var (
 )
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a module in the workspace",
-	Long:  "Initialize a module in the workspace with an installed SDK.",
+	Use:   "init SDK [flags]",
+	Short: "Initialize a new module for development with an SDK",
+	Long:  "Initialize a new module for development with an SDK",
 	Args:  cobra.NoArgs,
+	Annotations: map[string]string{
+		availableSubcommandsTitleAnnotation: "AVAILABLE SDKs",
+		noAvailableSubcommandsAnnotation:    "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'",
+	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	},
