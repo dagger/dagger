@@ -699,11 +699,11 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+func setWorkspaceFlagPolicy(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = workspaceFlagPolicyLocalOnly
 }
 
 func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {

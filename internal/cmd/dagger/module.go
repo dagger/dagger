@@ -120,11 +120,11 @@ func init() {
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
-	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(installAliasCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(uninstallAliasCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleUpdateCmd)
+	setWorkspaceFlagPolicy(moduleDepInstallCmd)
+	setWorkspaceFlagPolicy(installAliasCmd)
+	setWorkspaceFlagPolicy(moduleDepUninstallCmd)
+	setWorkspaceFlagPolicy(uninstallAliasCmd)
 }
 
 var moduleUpdateCmd = &cobra.Command{
@@ -157,6 +157,7 @@ unless --no-generate is set.`,
 		},
 	}
 	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Update the lockfile without regenerating SDK client scopes")
+	setWorkspaceFlagPolicy(cmd)
 	return cmd
 }
 
