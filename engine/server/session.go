@@ -877,13 +877,19 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// canceled handler's detached cache executor may still be unwinding, so the
 	// cache provides its own operation accounting and deferred cleanup safety.
 
-	// ReleaseSession may assign cleanup to an active detached cache operation,
-	// so these immediate before/after values are an approximate debug snapshot.
+	// ReleaseSession may assign cleanup to an active detached cache operation.
+	// WaitSessionRelease turns that handoff into the completion barrier required
+	// before the final telemetry flush: cleanup hooks may themselves emit spans,
+	// logs, or metrics.
 	beforeDagqlEntries := srv.engineCache.Size()
 	beforeDagqlStats := srv.engineCache.EntryStats()
-	if err := srv.engineCache.ReleaseSession(ctx, sess.sessionID); err != nil {
-		slog.Error("error releasing dagql cache", "error", err)
-		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	cacheReleaseErr := srv.engineCache.ReleaseSession(ctx, sess.sessionID)
+	if cacheReleaseErr != nil {
+		slog.Error("error releasing dagql cache", "error", cacheReleaseErr)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", cacheReleaseErr))
+	} else if waitErr := srv.engineCache.WaitSessionRelease(ctx, sess.sessionID); waitErr != nil {
+		slog.Error("error waiting for dagql cache release", "error", waitErr)
+		errs = errors.Join(errs, fmt.Errorf("wait for dagql cache release: %w", waitErr))
 	}
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
