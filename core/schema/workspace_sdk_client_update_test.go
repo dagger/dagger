@@ -12,6 +12,9 @@ func stagedConfigWithClientScopes(t *testing.T) *stagedWorkspaceConfig {
 	return &stagedWorkspaceConfig{
 		ConfigDir: "app",
 		Config: &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"target": {Source: "target"},
+			},
 			SDKs: map[string]workspace.SDKEntry{
 				"go": {
 					Module: "go-sdk",
