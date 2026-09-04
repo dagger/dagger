@@ -265,8 +265,11 @@ The engine normalizes and persists the module scope path.
 
 The SDK-selected module path is not private SDK state. The engine uses it as the module scope and source path. Later generation uses the persisted path and does not call `defaultModulePath` again.
 
-Without an explicit `--path`, the command also installs the local module. With
-an explicit `--path`, the command records the SDK scope but does not install the
+Without an explicit `--path`, the command also installs the local module. When
+both `--name` and `--path` are absent, it installs the module as the workspace
+entrypoint. If a different entrypoint exists, the command reports an error and
+tells the user to pass `--name` to initialize a namespaced module. With an
+explicit `--path`, the command records the SDK scope but does not install the
 module.
 
 The command accepts SDK-setting flags. The CLI gets these flags from provider constructor settings. The named SDK is the only source of these flags, so they carry no SDK prefix.
@@ -826,7 +829,7 @@ The engine must use one atomic workspace change:
 4. Decode explicit SDK-setting overrides.
 5. If `--path` is absent, call optional `defaultModulePath` on the selected provider.
 6. Use a nonempty SDK result. Otherwise, use the engine default path.
-7. Validate and stage the scope path, resolved name, and explicit scope settings in `dagger.toml`.
+7. Validate and stage the scope path, resolved name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace entrypoint.
 8. Construct the provider with effective scope settings.
 9. Set a derived Workspace CWD to the module scope.
 10. Run the scope generator with the complete scope state.

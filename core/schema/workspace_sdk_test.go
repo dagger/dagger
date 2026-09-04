@@ -124,16 +124,49 @@ func TestResolveSDKModuleInit(t *testing.T) {
 }
 
 func TestPlanSDKModuleInitInstall(t *testing.T) {
-	t.Run("default path", func(t *testing.T) {
+	t.Run("default name and path install an entrypoint", func(t *testing.T) {
 		cfg := &workspace.Config{}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false))
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false))
+		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo", Entrypoint: true}, cfg.Modules["demo"])
+	})
+
+	t.Run("explicit name installs a namespaced module", func(t *testing.T) {
+		cfg := &workspace.Config{}
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, true))
 		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo"}, cfg.Modules["demo"])
 	})
 
 	t.Run("custom path", func(t *testing.T) {
 		cfg := &workspace.Config{}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", "apps/demo", true))
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", "apps/demo", true, false))
 		require.Empty(t, cfg.Modules)
+	})
+
+	t.Run("repeated default init promotes and preserves its entrypoint", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+			"demo": {Source: ".dagger/modules/demo"},
+		}}
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false))
+		require.True(t, cfg.Modules["demo"].Entrypoint)
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false))
+		require.True(t, cfg.Modules["demo"].Entrypoint)
+	})
+
+	t.Run("explicit init does not demote an entrypoint", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+			"demo": {Source: ".dagger/modules/demo", Entrypoint: true},
+		}}
+		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, true))
+		require.True(t, cfg.Modules["demo"].Entrypoint)
+	})
+
+	t.Run("different entrypoint requires an explicit name", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+			"existing": {Source: "existing", Entrypoint: true},
+		}}
+		err := planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false)
+		require.EqualError(t, err, `workspace already has entrypoint module "existing"; pass --name to initialize an additional namespaced module`)
+		require.NotContains(t, cfg.Modules, "demo")
 	})
 }
 

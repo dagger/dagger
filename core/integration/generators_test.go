@@ -703,8 +703,24 @@ name = "project"
 
 		config, err := initialized.File("/work/apps/shop/dagger.toml").Contents(ctx)
 		require.NoError(t, err)
+		parsed, err := workspacecfg.ParseConfig([]byte(config))
+		require.NoError(t, err)
+		require.True(t, parsed.Modules["shop-dev"].Entrypoint)
 		require.Contains(t, config, `[sdks.go.scopes.".dagger/modules/shop-dev"]`)
 		require.Contains(t, config, `name = "shop-dev"`)
+	})
+
+	t.Run("rejects a second inferred entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			WithNewFile("/work/apps/shop/dagger.toml", config+`
+[modules.existing]
+source = "target"
+entrypoint = true
+`).
+			With(daggerNonNestedExecFail("module", "init", "go", "-y")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `workspace already has entrypoint module "existing"; pass --name to initialize an additional namespaced module`)
 	})
 }
 
@@ -770,8 +786,21 @@ module = "workspace-writer"
 	config, err := initialized.File("/work/app/dagger.toml").Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, config, "[modules.demo]\nsource = \"../generated/demo\"")
+	parsed, err := workspacecfg.ParseConfig([]byte(config))
+	require.NoError(t, err)
+	require.False(t, parsed.Modules["demo"].Entrypoint)
 	require.Contains(t, config, `[sdks.test.scopes."../generated/demo"]`)
 	require.Contains(t, config, `name = "demo"`)
+
+	defaulted := workspace.With(daggerNonNestedExec("module", "init", "test", "-y"))
+	out, err = defaulted.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	config, err = defaulted.File("/work/app/dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+	parsed, err = workspacecfg.ParseConfig([]byte(config))
+	require.NoError(t, err)
+	require.True(t, parsed.Modules["app-dev"].Entrypoint)
+	require.Equal(t, "../generated/app-dev", parsed.Modules["app-dev"].Source)
 
 	custom := workspace.With(daggerNonNestedExec(
 		"module", "init", "test", "--name", "custom", "--path", "custom", "-y",

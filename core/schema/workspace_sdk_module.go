@@ -94,7 +94,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := planSDKModuleInitInstall(staged.Config, moduleName, configScopePath, explicitPath); err != nil {
+	if err := planSDKModuleInitInstall(staged.Config, moduleName, configScopePath, explicitPath, args.Name != ""); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if owner, found, err := moduleScopeOwner(staged.Config, staged.ConfigDir, scopePath); err != nil {
@@ -123,12 +123,36 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	return s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope)
 }
 
-func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath string, explicitPath bool) error {
+func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath string, explicitPath, explicitName bool) error {
 	if explicitPath {
 		return nil
 	}
-	_, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, moduleName, sourcePath)
-	return err
+	autoEntrypoint := !explicitName
+	if autoEntrypoint {
+		var entrypoints []string
+		for name, entry := range cfg.Modules {
+			if name != moduleName && entry.Entrypoint {
+				entrypoints = append(entrypoints, name)
+			}
+		}
+		if len(entrypoints) > 0 {
+			sort.Strings(entrypoints)
+			return fmt.Errorf(
+				"workspace already has entrypoint module %q; pass --name to initialize an additional namespaced module",
+				entrypoints[0],
+			)
+		}
+	}
+
+	if _, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, moduleName, sourcePath); err != nil {
+		return err
+	}
+	if autoEntrypoint {
+		entry := cfg.Modules[moduleName]
+		entry.Entrypoint = true
+		cfg.Modules[moduleName] = entry
+	}
+	return nil
 }
 
 // resolveSDKModuleInit resolves the module name and the path to use when the
