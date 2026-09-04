@@ -65,7 +65,7 @@ query WorkspaceModuleSettings($module: String!) {
 `
 
 var settingsCmd = newSettingsCmd(false)
-var settingsAliasCmd = newSettingsCmd(true)
+var settingsAliasCmd = newSettingsCmd(false)
 
 func init() {
 	addWorkspaceHereFlag(settingsCmd)

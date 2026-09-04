@@ -162,7 +162,7 @@ unless --no-generate is set.`,
 }
 
 var moduleDepInstallCmd = newWorkspaceInstallCmd(false, nil)
-var installAliasCmd = newWorkspaceInstallCmd(true, nil)
+var installAliasCmd = newWorkspaceInstallCmd(false, nil)
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -184,7 +184,7 @@ and the env is created if missing.`,
 }
 
 var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, nil)
-var uninstallAliasCmd = newWorkspaceUninstallCmd(true, nil)
+var uninstallAliasCmd = newWorkspaceUninstallCmd(false, nil)
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{

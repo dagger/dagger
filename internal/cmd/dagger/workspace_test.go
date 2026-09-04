@@ -27,7 +27,8 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
 	require.Same(t, installAliasCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 
 	cmd, _, err = rootCmd.Find([]string{"module", "update"})
@@ -136,7 +137,8 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"settings"})
 	require.NoError(t, err)
 	require.Same(t, settingsAliasCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
 
 	cmd, _, err = rootCmd.Find([]string{"module", "uninstall"})
 	require.NoError(t, err)
@@ -146,7 +148,8 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"uninstall"})
 	require.NoError(t, err)
 	require.Same(t, uninstallAliasCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
 
 	cmd, _, err = rootCmd.Find([]string{"module", "list"})
 	require.NoError(t, err)
