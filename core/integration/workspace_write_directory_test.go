@@ -197,7 +197,7 @@ func (m *InitFixture) GenerateScope(ws *dagger.Workspace, isModule bool, name st
 	if !isModule {
 		return ws
 	}
-	manifest := dag.ModuleManifest().V1(name).WithRuntime("go").AsFile()
+	manifest := dag.ModuleManifest(name).WithLegacyGoRuntime().TomlFile()
 	scaffold := dag.Directory().WithNewFile("scaffold.txt", name+"\n")
 	return ws.WithFile("dagger-module.toml", manifest).WithDirectory(".", scaffold)
 }

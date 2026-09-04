@@ -16,7 +16,7 @@ type ScopeSdk {
       ws
         .withFile(
           "dagger-module.toml",
-          moduleManifest.v1(name: name).withRuntime(source: "dang").asFile,
+          moduleManifest(name: name).withLegacyDangRuntime.tomlFile,
         )
         .withNewFile(
           "main.dang",
