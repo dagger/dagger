@@ -92,7 +92,8 @@ func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithConta
 // intentionally invalid because this engine does not support entrypoints yet.
 func (ModuleLoadingSuite) TestFatModuleManifestUsesLegacyRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	manifest := c.ModuleManifest("fat").
+	manifest := c.ModuleManifest().
+		WithName("fat").
 		WithDangEntrypoint("./missing-entrypoint").
 		WithLegacyDangRuntime()
 

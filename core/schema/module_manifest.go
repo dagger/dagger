@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -15,11 +16,27 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("moduleManifest", s.moduleManifest).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Construct a module manifest.").
-			Args(dagql.Arg("name").Doc("Module name.")),
+			Doc("Construct or load a module manifest.").
+			Args(
+				dagql.Arg("loadTOML").Doc("Optional dagger-module.toml file to load."),
+				dagql.Arg("loadJSON").Doc("Optional dagger.json file to load."),
+			),
 	}.Install(dag)
 
 	dagql.Fields[*core.ModuleManifest]{
+		dagql.Func("withName", s.withName).
+			Doc("Set the module name.").
+			Args(dagql.Arg("name").Doc("Module name.")),
+		dagql.Func("withDependency", s.withDependency).
+			Doc("Add or replace a module dependency.").
+			Args(
+				dagql.Arg("source").Doc("Dependency source address."),
+				dagql.Arg("name").Doc("Optional dependency name."),
+				dagql.Arg("pin").Doc("Optional dependency pin."),
+			),
+		dagql.Func("withoutDependency", s.withoutDependency).
+			Doc("Remove a module dependency by name.").
+			Args(dagql.Arg("name").Doc("Dependency name.")),
 		dagql.Func("withDangEntrypoint", s.withDangEntrypoint).
 			Doc("Use the built-in Dang entrypoint.").
 			Args(dagql.Arg("source").Doc("Entrypoint source address.")),
@@ -68,10 +85,72 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 
 func (s *moduleManifestSchema) moduleManifest(
 	ctx context.Context,
-	query *core.Query,
+	_ *core.Query,
+	args struct {
+		LoadTOML dagql.Optional[core.FileID] `name:"loadTOML"`
+		LoadJSON dagql.Optional[core.FileID] `name:"loadJSON"`
+	},
+) (*core.ModuleManifest, error) {
+	manifest := &core.ModuleManifest{}
+	if args.LoadJSON.Valid {
+		contents, err := loadModuleManifestFile(ctx, args.LoadJSON.Value)
+		if err != nil {
+			return nil, fmt.Errorf("load JSON module manifest: %w", err)
+		}
+		if err := manifest.LoadJSON(contents); err != nil {
+			return nil, err
+		}
+	}
+	if args.LoadTOML.Valid {
+		contents, err := loadModuleManifestFile(ctx, args.LoadTOML.Value)
+		if err != nil {
+			return nil, fmt.Errorf("load TOML module manifest: %w", err)
+		}
+		if err := manifest.LoadTOML(contents); err != nil {
+			return nil, err
+		}
+	}
+	return manifest, nil
+}
+
+func loadModuleManifestFile(ctx context.Context, id core.FileID) ([]byte, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file, err := id.Load(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	return file.Self().Contents(ctx, file, nil, nil)
+}
+
+func (s *moduleManifestSchema) withName(
+	ctx context.Context,
+	manifest *core.ModuleManifest,
 	args struct{ Name string },
 ) (*core.ModuleManifest, error) {
-	return &core.ModuleManifest{Name: args.Name}, nil
+	return manifest.WithName(args.Name), nil
+}
+
+func (s *moduleManifestSchema) withDependency(
+	ctx context.Context,
+	manifest *core.ModuleManifest,
+	args struct {
+		Source string
+		Name   dagql.Optional[dagql.String]
+		Pin    dagql.Optional[dagql.String]
+	},
+) (*core.ModuleManifest, error) {
+	return manifest.WithDependency(args.Name.Value.String(), args.Source, args.Pin.Value.String()), nil
+}
+
+func (s *moduleManifestSchema) withoutDependency(
+	ctx context.Context,
+	manifest *core.ModuleManifest,
+	args struct{ Name string },
+) (*core.ModuleManifest, error) {
+	return manifest.WithoutDependency(args.Name), nil
 }
 
 func (s *moduleManifestSchema) withDangEntrypoint(

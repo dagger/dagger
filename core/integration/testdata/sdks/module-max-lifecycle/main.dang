@@ -41,7 +41,7 @@ type ModuleMaxLifecycle {
       } else {
         ws.withDirectory(
           ".",
-          moduleManifest(name: name).withLegacyGoRuntime.directory,
+          moduleManifest.withName(name).withLegacyGoRuntime.directory,
         )
       }
       let withGoMod = if (exists(withConfig, "go.mod")) {
