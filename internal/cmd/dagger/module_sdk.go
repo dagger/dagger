@@ -331,7 +331,12 @@ func sdkModuleSettingsJSON(cmd *cobra.Command, selectedSDK string) (string, erro
 			visitErr = fmt.Errorf("--%s belongs to SDK %q, not selected SDK %q", flag.Name, flagSDK, selectedSDK)
 			return
 		}
-		settings[setting] = sdkInitFlagValue(flag)
+		value, err := sdkInitFlagValue(cmd.Flags(), flag)
+		if err != nil {
+			visitErr = fmt.Errorf("read SDK module setting --%s: %w", flag.Name, err)
+			return
+		}
+		settings[setting] = value
 	})
 	if visitErr != nil {
 		return "", visitErr

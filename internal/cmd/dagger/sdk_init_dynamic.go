@@ -135,12 +135,26 @@ func sdkModuleEntrySource(entry workspace.ModuleEntry) string {
 	return source
 }
 
-func sdkInitFlagValue(flag *pflag.Flag) any {
+func sdkInitFlagValue(flags *pflag.FlagSet, flag *pflag.Flag) (any, error) {
 	if getter, ok := flag.Value.(interface{ Get() any }); ok {
-		return getter.Get()
+		return getter.Get(), nil
+	}
+	switch flag.Value.Type() {
+	case "bool":
+		return flags.GetBool(flag.Name)
+	case "int":
+		return flags.GetInt(flag.Name)
+	case "float64":
+		return flags.GetFloat64(flag.Name)
+	case "boolSlice":
+		return flags.GetBoolSlice(flag.Name)
+	case "intSlice":
+		return flags.GetIntSlice(flag.Name)
+	case "float64Slice":
+		return flags.GetFloat64Slice(flag.Name)
 	}
 	if slice, ok := flag.Value.(pflag.SliceValue); ok {
-		return slice.GetSlice()
+		return slice.GetSlice(), nil
 	}
-	return flag.Value.String()
+	return flag.Value.String(), nil
 }

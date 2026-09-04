@@ -127,6 +127,52 @@ func TestSDKModuleSettingFlagRejectsAnotherSDK(t *testing.T) {
 	require.ErrorContains(t, err, `belongs to SDK "go"`)
 }
 
+func TestSDKModuleSettingFlagsKeepTypes(t *testing.T) {
+	cmd := &cobra.Command{Use: "init"}
+	sdk := configuredSDK{commandName: "test"}
+	args := []*modFunctionArg{
+		{Name: "boolean", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind}},
+		{Name: "integer", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindIntegerKind}},
+		{Name: "float", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindFloatKind}},
+		{Name: "booleans", TypeDef: &modTypeDef{
+			Kind: dagger.TypeDefKindListKind,
+			AsList: &modList{
+				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind},
+			},
+		}},
+		{Name: "integers", TypeDef: &modTypeDef{
+			Kind: dagger.TypeDefKindListKind,
+			AsList: &modList{
+				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindIntegerKind},
+			},
+		}},
+		{Name: "floats", TypeDef: &modTypeDef{
+			Kind: dagger.TypeDefKindListKind,
+			AsList: &modList{
+				ElementTypeDef: &modTypeDef{Kind: dagger.TypeDefKindFloatKind},
+			},
+		}},
+	}
+	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
+	require.NoError(t, cmd.Flags().Set("boolean", "true"))
+	require.NoError(t, cmd.Flags().Set("integer", "42"))
+	require.NoError(t, cmd.Flags().Set("float", "1.5"))
+	require.NoError(t, cmd.Flags().Set("booleans", "true,false"))
+	require.NoError(t, cmd.Flags().Set("integers", "1,2"))
+	require.NoError(t, cmd.Flags().Set("floats", "1.5,2.5"))
+
+	raw, err := sdkModuleSettingsJSON(cmd, "test")
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"boolean": true,
+		"integer": 42,
+		"float": 1.5,
+		"booleans": [true, false],
+		"integers": [1, 2],
+		"floats": [1.5, 2.5]
+	}`, raw)
+}
+
 func findCommand(parent *cobra.Command, name string) *cobra.Command {
 	for _, command := range parent.Commands() {
 		if command.Name() == name {
