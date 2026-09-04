@@ -3876,6 +3876,7 @@ func (lazy *ContainerWithMountedDirectoryLazy) ContainerLazyGroups(_ context.Con
 	return containerMountWriterGroups(ctr, lazy.Target, parts)
 }
 
+//nolint:dupl // symmetric with ContainerWithMountedFileLazy; sharing would hide directory and file accessor semantics
 func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
 	switch group {
 	case ContainerLazyGroupMetadata:
@@ -3975,6 +3976,7 @@ func (lazy *ContainerWithMountedFileLazy) ContainerLazyGroups(_ context.Context,
 	return containerMountWriterGroups(ctr, lazy.Target, parts)
 }
 
+//nolint:dupl // symmetric with ContainerWithMountedDirectoryLazy; sharing would hide file and directory accessor semantics
 func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
 	switch group {
 	case ContainerLazyGroupMetadata:
