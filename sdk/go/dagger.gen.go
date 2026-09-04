@@ -12396,6 +12396,15 @@ func (r *ModuleManifest) WithName(name string) *ModuleManifest {
 	}
 }
 
+// Remove all module dependencies.
+func (r *ModuleManifest) WithoutDependencies() *ModuleManifest {
+	q := r.query.Select("withoutDependencies")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
 // Remove a module dependency by name.
 func (r *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
 	q := r.query.Select("withoutDependency")
