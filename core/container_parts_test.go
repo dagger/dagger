@@ -100,6 +100,10 @@ func (op *containerPartsTestBaseOp) mountRunsFor(target string) int {
 
 var _ LazyContainerParts = (*containerPartsTestBaseOp)(nil)
 
+func (op *containerPartsTestBaseOp) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return dagql.ObjectResult[*Container]{}
+}
+
 func (op *containerPartsTestBaseOp) Evaluate(ctx context.Context, ctr *Container) error {
 	return ctr.evaluateAllLazyGroups(ctx, op)
 }
@@ -255,6 +259,36 @@ func attachContainerPartsTestObject[T dagql.Typed](
 	})
 	require.NoError(t, err)
 	return resAny.(dagql.ObjectResult[T])
+}
+
+func TestContainerFinalDelegationSweepDoesNotStartParentWork(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	baseOp := &containerPartsTestBaseOp{LazyState: NewLazyState()}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "final-delegation-base", base)
+	child := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy: &ContainerWithEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    baseRes,
+			Name:      "FOO",
+			Value:     "bar",
+		},
+	}
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "final-delegation-child", child)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMetadata))
+	require.Equal(t, int32(0), baseOp.fsRuns.Load())
+	_, fsSet := child.FS.Peek()
+	require.False(t, fsSet)
+	require.NotNil(t, child.lazyOpForRouting())
 }
 
 func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {

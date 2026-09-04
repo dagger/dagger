@@ -23,6 +23,10 @@ type containerImagePartsConcurrencyTestOp struct {
 	fsBodyHook func()
 }
 
+func (op *containerImagePartsConcurrencyTestOp) ContainerLazyParent() dagql.ObjectResult[*core.Container] {
+	return dagql.ObjectResult[*core.Container]{}
+}
+
 func (op *containerImagePartsConcurrencyTestOp) Evaluate(ctx context.Context, ctr *core.Container) error {
 	if err := op.EvaluateContainerGroup(ctx, ctr, core.ContainerLazyGroupMetadata); err != nil {
 		return err

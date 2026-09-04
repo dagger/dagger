@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,6 +10,81 @@ import (
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
+
+type containerPartsTestSuccessfulExecOp struct {
+	*ContainerExecLazy
+}
+
+func (op *containerPartsTestSuccessfulExecOp) EvaluateContainerGroup(ctx context.Context, ctr *Container, group dagql.LazyGroupKey) error {
+	if group != ContainerLazyGroupExecOutputs {
+		return op.ContainerExecLazy.EvaluateContainerGroup(ctx, ctr, group)
+	}
+	return op.State.LazyState.EvaluateGroup(ctx, "test.containerExec", group, func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		parts := []dagql.PartKey{ContainerPartFS}
+		for _, mnt := range ctr.Mounts {
+			if mnt.DirectorySource != nil || mnt.FileSource != nil {
+				parts = append(parts, ContainerPartMount(mnt.Target))
+			}
+		}
+		return cache.EvaluateParts(ctx, op.State.Parent, parts...)
+	})
+}
+
+func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
+	metaParent := &cacheVolumeTestImmutableRef{id: "exec-ro-parent", snapshotID: "exec-ro"}
+	metaChild := &cacheVolumeTestImmutableRef{id: "exec-ro-child", snapshotID: "exec-ro"}
+	snapshotManager := &cacheVolumeTestSnapshotManager{
+		immutableBySnapshotID: map[string]bkcache.ImmutableRef{"exec-ro": metaChild},
+	}
+	queryServer := &cacheVolumeTestQueryServer{
+		mockServer:   &mockServer{},
+		cacheManager: snapshotManager,
+	}
+	ctx, cache, srv, sessionID := newContainerPartsTestCtxWithQueryServer(t, queryServer)
+	ctx = ContextWithQuery(ctx, &Query{Server: queryServer})
+
+	baseOp := &containerPartsTestBaseOp{
+		LazyState:      NewLazyState(),
+		mountTargets:   []string{"/ro"},
+		mountSnapshots: map[string]bkcache.ImmutableRef{"/ro": metaParent},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{{
+			Target:          "/ro",
+			Readonly:        true,
+			DirectorySource: new(LazyAccessor[*Directory, *Container]),
+		}},
+		Lazy: baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-final-base", base)
+	child := newExecPartsTestChild(t, baseRes, base)
+	child.Lazy = &containerPartsTestSuccessfulExecOp{ContainerExecLazy: child.Lazy.(*ContainerExecLazy)}
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-final-child", child)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartExecMeta))
+	require.Equal(t, 1, baseOp.mountRunsFor("/ro"))
+	mountedDir, ok := child.mountAt("/ro").DirectorySource.Peek()
+	require.True(t, ok)
+	mountedSnapshot, ok := mountedDir.Snapshot.Peek()
+	require.True(t, ok)
+	require.Same(t, metaChild, mountedSnapshot)
+	require.Nil(t, child.lazyOpForRouting())
+	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
+
+	encoded, err := child.EncodePersistedObject(ctx, cache)
+	require.NoError(t, err)
+	var persisted struct {
+		Form string `json:"form"`
+	}
+	require.NoError(t, json.Unmarshal(encoded.JSON, &persisted))
+	require.Equal(t, persistedContainerFormReady, persisted.Form)
+}
 
 func newExecPartsTestChild(t *testing.T, baseRes dagql.ObjectResult[*Container], base *Container) *Container {
 	t.Helper()
