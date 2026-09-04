@@ -224,6 +224,39 @@ func TestSelectSDKModuleRequiresName(t *testing.T) {
 	require.EqualError(t, err, "SDK name is required")
 }
 
+func TestDeepestRecordedSDKModuleScope(t *testing.T) {
+	entry := workspace.SDKEntry{Scopes: map[string]workspace.SDKScope{
+		".":                    {},
+		"services":             {},
+		"services/api":         {},
+		"services/api/sibling": {},
+	}}
+
+	scope, err := deepestRecordedSDKModuleScope(entry, "apps/demo", "apps/demo/services/api/internal")
+	require.NoError(t, err)
+	require.Equal(t, "apps/demo/services/api", scope)
+}
+
+func TestDeeperSDKModuleScope(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		first    string
+		second   string
+		expected string
+	}{
+		{name: "none", expected: ""},
+		{name: "first only", first: "apps/demo", expected: "apps/demo"},
+		{name: "second only", second: "apps/demo", expected: "apps/demo"},
+		{name: "second is deeper", first: "apps/demo", second: "apps/demo/internal", expected: "apps/demo/internal"},
+		{name: "first is deeper", first: "apps/demo/internal", second: "apps/demo", expected: "apps/demo/internal"},
+		{name: "equal", first: "apps/demo", second: "apps/demo", expected: "apps/demo"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, deeperSDKModuleScope(test.first, test.second))
+		})
+	}
+}
+
 func TestWorkspaceSDKEntryPaths(t *testing.T) {
 	t.Parallel()
 

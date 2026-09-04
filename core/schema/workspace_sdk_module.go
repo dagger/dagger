@@ -231,7 +231,7 @@ func workspaceRootDirectoryName(ws *core.Workspace) string {
 	return workspaceDirectoryName(address)
 }
 
-// sdkModuleDetectScope returns the selected SDK module's scope for the current
+// sdkModuleDetectScope returns the selected SDK module's current scope for the
 // Workspace.cwd.
 func (s *workspaceSchema) sdkModuleDetectScope(
 	ctx context.Context,
@@ -242,7 +242,7 @@ func (s *workspaceSchema) sdkModuleDetectScope(
 	if err != nil {
 		return "", err
 	}
-	selection, err := s.detectSDKModuleScope(ctx, parent, staged, args.SDK)
+	selection, err := s.resolveCurrentSDKModuleScope(ctx, parent, staged, args.SDK)
 	if err != nil {
 		return "", err
 	}
@@ -264,11 +264,11 @@ func (s *workspaceSchema) withSDKModuleClient(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	detected, err := s.detectSDKModuleScope(ctx, parent, staged, args.SDK)
+	currentScope, err := s.resolveCurrentSDKModuleScope(ctx, parent, staged, args.SDK)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if detected.scope == "" {
+	if currentScope.scope == "" {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client generation is not available from workspace cwd %q", cleanWorkspaceRelPath(ws.Cwd))
 	}
 
@@ -298,7 +298,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	configScopePath, err := workspace.SDKManagedPathFor(staged.ConfigDir, detected.scope)
+	configScopePath, err := workspace.SDKManagedPathFor(staged.ConfigDir, currentScope.scope)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -306,18 +306,18 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	entry := staged.Config.SDKs[detected.sdk.name]
+	entry := staged.Config.SDKs[currentScope.sdk.name]
 	if entry.Scopes == nil {
 		entry.Scopes = map[string]workspace.SDKScope{}
 	}
 	scope := entry.Scopes[configScopePath]
 	if slices.Contains(scope.Clients, configTarget) {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client target %q already exists in scope %q", configTarget, detected.scope)
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client target %q already exists in scope %q", configTarget, currentScope.scope)
 	}
 	scope.Clients = append(scope.Clients, configTarget)
 	mergeSDKModuleSettings(&scope, explicitSettings)
 	entry.Scopes[configScopePath] = scope
-	staged.Config.SDKs[detected.sdk.name] = entry
+	staged.Config.SDKs[currentScope.sdk.name] = entry
 	if err := validateSDKModuleGenerationGraph(staged.Config, staged.ConfigDir); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -326,7 +326,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleScope(ctx, updated, staged, detected.sdk, configScopePath, detected.scope, scope)
+	return s.generateSDKModuleScope(ctx, updated, staged, currentScope.sdk, configScopePath, currentScope.scope, scope)
 }
 
 // withoutSDKModuleClient removes one client record and reconciles its SDK
@@ -650,38 +650,70 @@ func sdkModuleRefKey(ref string) string {
 	return ref
 }
 
-type detectedSDKModuleScope struct {
+type resolvedSDKModuleScope struct {
 	sdk   selectedSDKModule
 	scope string
 }
 
-func (s *workspaceSchema) detectSDKModuleScope(
+// resolveCurrentSDKModuleScope compares the selected SDK's deepest recorded
+// scope with its live detection result and returns the deeper path.
+func (s *workspaceSchema) resolveCurrentSDKModuleScope(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	staged *stagedWorkspaceConfig,
 	requestedSDK string,
-) (detectedSDKModuleScope, error) {
+) (resolvedSDKModuleScope, error) {
 	selected, err := selectSDKModule(staged.Config, requestedSDK)
 	if err != nil {
-		return detectedSDKModuleScope{}, err
+		return resolvedSDKModuleScope{}, err
+	}
+	recordedScope, err := deepestRecordedSDKModuleScope(selected.entry, staged.ConfigDir, parent.Self().Cwd)
+	if err != nil {
+		return resolvedSDKModuleScope{}, fmt.Errorf("SDK %q recorded scope: %w", selected.name, err)
 	}
 	settings, err := effectiveSDKModuleSettings(ctx, parent.Self(), staged.Config, selected.name, "")
 	if err != nil {
-		return detectedSDKModuleScope{}, err
+		return resolvedSDKModuleScope{}, err
 	}
 	provider, err := s.loadWorkspaceSDKModule(ctx, parent.Self(), staged.ConfigDir, selected.ref, settings)
 	if err != nil {
-		return detectedSDKModuleScope{}, err
+		return resolvedSDKModuleScope{}, err
 	}
 	rawScope, err := provider.DetectScope(ctx, parent)
 	if err != nil {
-		return detectedSDKModuleScope{}, err
+		return resolvedSDKModuleScope{}, err
 	}
 	scope, err := validateDetectedSDKModuleScope(rawScope, parent.Self().Cwd)
 	if err != nil {
-		return detectedSDKModuleScope{}, fmt.Errorf("SDK %q scope: %w", selected.name, err)
+		return resolvedSDKModuleScope{}, fmt.Errorf("SDK %q scope: %w", selected.name, err)
 	}
-	return detectedSDKModuleScope{sdk: selected, scope: scope}, nil
+	return resolvedSDKModuleScope{sdk: selected, scope: deeperSDKModuleScope(recordedScope, scope)}, nil
+}
+
+func deepestRecordedSDKModuleScope(entry workspace.SDKEntry, configDir, cwd string) (string, error) {
+	cwd = cleanWorkspaceRelPath(cwd)
+	deepest := ""
+	for configScope := range entry.Scopes {
+		scope, err := workspace.ResolveSDKManagedPath(configDir, configScope)
+		if err != nil {
+			return "", err
+		}
+		scope = cleanWorkspaceRelPath(scope)
+		if workspacePathContains(scope, cwd) {
+			deepest = deeperSDKModuleScope(deepest, scope)
+		}
+	}
+	return deepest, nil
+}
+
+func deeperSDKModuleScope(first, second string) string {
+	if first == "" {
+		return second
+	}
+	if second != "" && workspacePathContains(first, second) {
+		return second
+	}
+	return first
 }
 
 func selectSDKModule(cfg *workspace.Config, requested string) (selectedSDKModule, error) {

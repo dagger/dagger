@@ -256,7 +256,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Detect the selected SDK module's scope that contains the current location.").
+			Doc("Return the selected SDK module's current scope at this workspace location.").
 			Args(
 				dagql.Arg("sdk").Doc("SDK name to probe. Required."),
 			),

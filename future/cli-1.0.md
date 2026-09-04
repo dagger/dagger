@@ -281,9 +281,9 @@ dagger module init typescript --runtime=bun
 
 This command prints the client-generation scope for the current workspace location.
 
-The required `--sdk` flag selects one installed SDK module. The engine calls that SDK's `detectScope` function.
+The required `--sdk` flag selects one installed SDK module. The engine uses the current-scope lookup for that SDK.
 
-The command prints no output when the selected SDK does not find a scope.
+The command prints no output when the lookup finds no recorded or detected scope.
 
 ### `dagger module client add`
 
@@ -297,7 +297,7 @@ The module argument accepts these values:
 
 The engine resolves the argument to a pinned `ModuleSource`.
 
-The required SDK subcommand selects one installed SDK module. The engine calls only that SDK's `detectScope` function.
+The required SDK subcommand selects one installed SDK module. The engine uses the current-scope lookup for that SDK.
 
 The command accepts the selected SDK's setting flags. These flags have no SDK prefix and update settings for the selected scope.
 
@@ -558,14 +558,24 @@ The engine calls `detectScope` on a provider instance with global settings only.
 
 The method must not modify the workspace.
 
-The engine uses `detectScope` in these cases:
+### Current-scope lookup
 
-| Command | SDK calls | Use of returned path |
+The lookup always applies to one selected SDK:
+
+1. Find the deepest recorded scope for that SDK that contains `Workspace.cwd`.
+2. Call that SDK's `detectScope` with the command invocation Workspace.
+3. Return the deeper non-empty path.
+
+The engine uses this lookup in these cases:
+
+| Command | Lookup | Use of returned path |
 | --- | --- | --- |
 | `module init` | None | Not applicable |
-| `module client add SDK` | The selected SDK module | Persist the client scope |
-| `module client scope --sdk=SDK` | The selected SDK module | Print the selected scope |
+| `module client add SDK` | The selected SDK | Persist the client scope |
+| `module client scope --sdk=SDK` | The selected SDK | Print the selected scope |
 | `dagger generate` | None | Use persisted scopes |
+
+The engine does not use current-scope lookup to initialize a module or regenerate a known scope.
 
 ### `defaultModulePath`
 
@@ -831,8 +841,8 @@ The engine must use one atomic workspace change:
 
 1. Resolve the target reference and lock pin.
 2. Select the SDK provider.
-3. Call `detectScope` with the command invocation workspace.
-4. Validate and persist the returned scope.
+3. Resolve the current scope for the selected SDK.
+4. Persist that scope.
 5. Stage the client entry in `dagger.toml`.
 6. Stage explicit scope settings.
 7. Construct the provider with effective scope settings.

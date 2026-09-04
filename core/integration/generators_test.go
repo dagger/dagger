@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -578,9 +579,7 @@ func (GeneratorsSuite) TestSDKModuleInitDefaults(ctx context.Context, t *testctx
 	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
 	require.NoError(t, err)
 
-	base := goGitBase(t, c).
-		WithDirectory("/work/apps/shop/.dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
-		WithNewFile("/work/apps/shop/dagger.toml", `[modules.go-sdk]
+	const config = `[modules.go-sdk]
 source = ".dagger/modules/module-max-lifecycle"
 
 [modules.target-alias]
@@ -588,7 +587,11 @@ source = "target"
 
 [sdks.go]
 module = "go-sdk"
-`).
+`
+
+	base := goGitBase(t, c).
+		WithDirectory("/work/apps/shop/.dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
+		WithNewFile("/work/apps/shop/dagger.toml", config).
 		WithNewFile("/work/apps/shop/target/dagger-module.toml", `name = "target"
 engineVersion = "latest"
 
@@ -626,17 +629,40 @@ source = "dang"
 		require.NotContains(t, out, "MODULE")
 	})
 
-	t.Run("adds a client with an SDK subcommand", func(ctx context.Context, t *testctx.T) {
+	t.Run("client add prefers a deeper detected scope", func(ctx context.Context, t *testctx.T) {
 		added := base.
-			WithNewFile("/work/apps/shop/go.mod", "module example.com/shop\n\ngo 1.25\n").
+			WithNewFile("/work/apps/shop/dagger.toml", config+`
+[sdks.go.scopes."."]
+`).
+			WithNewFile("/work/apps/shop/internal/go.mod", "module example.com/internal\n\ngo 1.25\n").
 			With(daggerNonNestedExec("module", "client", "add", "go", "target-alias", "-y"))
 		out, err := added.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
-		config, err := added.File("/work/apps/shop/dagger.toml").Contents(ctx)
+		contents, err := added.File("/work/apps/shop/dagger.toml").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, config, `[sdks.go.scopes."."]`)
-		require.Contains(t, config, `"target-alias"`)
+		cfg, err := workspacecfg.ParseConfig([]byte(contents))
+		require.NoError(t, err)
+		require.Empty(t, cfg.SDKs["go"].Scopes["."].Clients)
+		require.Equal(t, []string{"target-alias"}, cfg.SDKs["go"].Scopes["internal"].Clients)
+	})
+
+	t.Run("scope information prefers a deeper recorded scope", func(ctx context.Context, t *testctx.T) {
+		selected := base.
+			WithNewFile("/work/apps/shop/dagger.toml", config+`
+[sdks.go.scopes."internal/project"]
+is-module = true
+name = "project"
+`).
+			WithNewFile("/work/apps/shop/go.mod", "module example.com/shop\n\ngo 1.25\n").
+			WithNewFile("/work/apps/shop/internal/project/subdir/.keep", "").
+			WithWorkdir("/work/apps/shop/internal/project/subdir")
+
+		out, err := selected.
+			With(daggerNonNestedExec("module", "client", "scope", "--sdk", "go")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "apps/shop/internal/project\n", out)
 	})
 
 	t.Run("requires an installed SDK", func(ctx context.Context, t *testctx.T) {
