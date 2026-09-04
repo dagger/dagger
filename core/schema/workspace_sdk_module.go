@@ -294,7 +294,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if _, err := s.resolveClientTargetModule(operationCtx, selectedWorkspace, moduleLoadRef); err != nil {
+	if _, err := s.resolveClientTargetModule(operationCtx, parent, moduleLoadRef); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
@@ -541,7 +541,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 			if workspace.IsLocalRef(loadRef, "") {
 				continue
 			}
-			if _, err := s.resolveClientTargetModule(refreshCtx, selectedWorkspace, loadRef); err != nil {
+			if _, err := s.resolveClientTargetModule(refreshCtx, parent, loadRef); err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update client %q: %w", target, err)
 			}
 		}
