@@ -1350,6 +1350,120 @@ engineVersion = "latest"
 	require.Equal(t, "git-module", name)
 }
 
+func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesGitContext(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	moduleDir := c.Directory().
+		WithNewFile("module/dagger-module.toml", `name = "git-module"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+`).
+		WithNewFile("module/main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/git-module/internal/dagger"
+)
+
+type GitModule struct{}
+
+func (m *GitModule) ContextCommits(
+	ctx context.Context,
+	// +defaultPath="/"
+	repoRoot *dagger.GitRepository,
+	// +defaultPath="."
+	repoDot *dagger.GitRepository,
+	// +defaultPath="./.git"
+	repoDotGit *dagger.GitRepository,
+	// +defaultPath=".git"
+	repoGit *dagger.GitRepository,
+	// +defaultPath="/"
+	refRoot *dagger.GitRef,
+	// +defaultPath="."
+	refDot *dagger.GitRef,
+	// +defaultPath="./.git"
+	refDotGit *dagger.GitRef,
+	// +defaultPath=".git"
+	refGit *dagger.GitRef,
+) ([]string, error) {
+	refs := map[string]*dagger.GitRef{
+		"repo /":       head(repoRoot),
+		"repo .":       head(repoDot),
+		"repo ./.git":  head(repoDotGit),
+		"repo .git":    head(repoGit),
+		"ref /":        refRoot,
+		"ref .":        refDot,
+		"ref ./.git":   refDotGit,
+		"ref .git":     refGit,
+	}
+	commits := make([]string, 0, len(refs))
+	for name, ref := range refs {
+		if ref == nil {
+			return nil, fmt.Errorf("%s context is nil", name)
+		}
+		commit, err := ref.Commit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%s commit: %w", name, err)
+		}
+		commits = append(commits, commit)
+	}
+	return commits, nil
+}
+
+func head(repo *dagger.GitRepository) *dagger.GitRef {
+	if repo == nil {
+		return nil
+	}
+	return repo.Head()
+}
+`)
+	moduleDir = moduleDir.WithDirectory("module", moduleDir.Directory("module").
+		AsModuleSource().GeneratedContextDirectory())
+	source := c.Directory().WithDirectory("module", moduleDir.Directory("module"))
+	repoCtr := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/repo", source).
+		WithWorkdir("/repo").
+		WithExec([]string{"git", "init", "-b", "main"}).
+		WithExec([]string{"git", "config", "user.email", "root@localhost"}).
+		WithExec([]string{"git", "config", "user.name", "Test User"}).
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec([]string{"git", "commit", "-m", "module"}).
+		WithExec([]string{"git", "branch", "workspace-ref"}).
+		WithNewFile("/repo/main-only.txt", "not in the workspace ref").
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec([]string{"git", "commit", "-m", "advance default branch"})
+	wantCommit, err := repoCtr.WithExec([]string{"git", "rev-parse", "workspace-ref"}).Stdout(ctx)
+	require.NoError(t, err)
+	wantCommit = strings.TrimSpace(wantCommit)
+	defaultCommit, err := repoCtr.WithExec([]string{"git", "rev-parse", "main"}).Stdout(ctx)
+	require.NoError(t, err)
+	defaultCommit = strings.TrimSpace(defaultCommit)
+	require.NotEqual(t, defaultCommit, wantCommit)
+
+	source = repoCtr.Directory("/repo")
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	ref := repo.Branch("workspace-ref")
+
+	src := ref.AsWorkspace().ModuleSource("module")
+	require.NoError(t, src.AsModule().Serve(ctx))
+	got, err := testutil.QueryWithClient[struct {
+		GitModule struct {
+			ContextCommits []string
+		}
+	}](c, t, `{gitModule{contextCommits}}`, nil)
+	require.NoError(t, err)
+	require.Len(t, got.GitModule.ContextCommits, 8)
+	for _, commit := range got.GitModule.ContextCommits {
+		require.Equal(t, wantCommit, commit)
+	}
+}
+
 func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	workspaceID, err := c.Directory().AsWorkspace().ID(ctx)

@@ -1909,7 +1909,30 @@ func (src *ModuleSource) LoadContextGit(
 	ctx context.Context,
 	dag *dagql.Server,
 ) (inst dagql.ObjectResult[*GitRepository], err error) {
-	if src.Kind == ModuleSourceKindGit && src.Workspace.Self() == nil {
+	if src.Kind == ModuleSourceKindGit && src.Workspace.Self() != nil {
+		ref, ok := src.Workspace.Self().SourceGitRef()
+		if !ok || ref.Self().Repo.Self() == nil {
+			return inst, fmt.Errorf("git workspace module source has no backing repository")
+		}
+		// A Git workspace deliberately keeps its checkout tree free of .git and
+		// retains the selected GitRef as separate source provenance. Derive a
+		// repository from that exact ref so contextual GitRepository/GitRef
+		// arguments keep the original credentials and service bindings while HEAD
+		// remains pinned to the workspace ref.
+		refID, err := ref.ID()
+		if err != nil {
+			return inst, fmt.Errorf("git workspace source ref ID: %w", err)
+		}
+		if err := dag.Select(ctx, ref.Self().Repo, &inst, dagql.Selector{
+			Field: "__withHead",
+			Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.NewID[*GitRef](refID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("pin git workspace source repository: %w", err)
+		}
+		return inst, nil
+	}
+
+	if src.Kind == ModuleSourceKindGit {
 		// easy, we're running a git repo
 		err := dag.Select(ctx, dag.Root(), &inst,
 			dagql.Selector{
