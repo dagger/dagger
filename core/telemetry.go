@@ -279,10 +279,21 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 	if frame == nil || frame.Module == nil {
 		return nil, nil
 	}
+	// All of these are best-effort: telemetry enrichment must never fail — let
+	// alone crash — a call, and each returns a nil value alongside its error,
+	// e.g. when the client's session has already gone away. So treat every
+	// result as possibly nil from here on.
 	cm, _ := q.MainClientCallerMetadata(ctx)
 	fc, _ := q.CurrentFunctionCall(ctx)
 	m, _ := q.CurrentModule(ctx)
 	sd, _ := q.CurrentServedDeps(ctx)
+
+	// Read the caller's labels through a local map so nil metadata simply
+	// means "no labels" rather than a nil dereference.
+	var callerLabels map[string]string
+	if cm != nil {
+		callerLabels = cm.Labels
+	}
 
 	callerRef, calleeRef := &moduleCallRef{}, &moduleCallRef{}
 	// there's a caller
@@ -304,9 +315,9 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 		if ms.Git != nil {
 			idx := strings.LastIndex(ms.AsString(), "@")
 			callerRef.ref, callerRef.version = ms.AsString()[:idx], ms.AsString()[idx+1:]
-		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+		} else if gremote, ok := callerLabels["dagger.io/git.remote"]; ok {
 			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
-			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
+			if gref, ok := callerLabels["dagger.io/git.ref"]; ok {
 				callerRef.version = gref
 			}
 		} else {
@@ -338,12 +349,12 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 		} else {
 			if ms.Local != nil {
 				calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
-				if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+				if gremote, ok := callerLabels["dagger.io/git.remote"]; ok {
 					calleeRef.ref = path.Join(gremote, calleeRef.ref)
 				} else {
 					return nil, nil
 				}
-			} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+			} else if gremote, ok := callerLabels["dagger.io/git.remote"]; ok {
 				subPath := ms.SourceRootSubpath
 				calleeRef.ref = path.Join(gremote, subPath)
 			} else {
@@ -352,7 +363,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 		}
 
 		// if not within a function and a local call, use the git ref as the version
-		if gr, ok := cm.Labels["dagger.io/git.ref"]; fc == nil && ok {
+		if gr, ok := callerLabels["dagger.io/git.ref"]; fc == nil && ok {
 			calleeRef.version = gr
 		} else {
 			calleeRef.version = callerRef.version
