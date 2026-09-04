@@ -2,6 +2,7 @@
 
 A TLC-checked model of the dagql cache's concurrency kernel: lookup,
 in-flight call deduplication, publication, session ownership and release,
+per-session release completion waits,
 the read barrier, lazy evaluation, persistence (import, decode, flush,
 restart), and calls issued by detached call executors.
 

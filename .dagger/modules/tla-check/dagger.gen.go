@@ -61,21 +61,25 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r TlaCheck) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Source *dagger.Directory
+		Source       *dagger.Directory
+		ClientSource *dagger.Directory
 	}
 	concrete.Source = r.Source
+	concrete.ClientSource = r.ClientSource
 	return json.Marshal(&concrete)
 }
 
 func (r *TlaCheck) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Source *dagger.Directory
+		Source       *dagger.Directory
+		ClientSource *dagger.Directory
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
 	r.Source = concrete.Source
+	r.ClientSource = concrete.ClientSource
 	return nil
 }
 
@@ -205,6 +209,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*TlaCheck).CacheLifecycle(&parent, ctx)
+		case "ClientLifecycle":
+			var parent TlaCheck
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*TlaCheck).ClientLifecycle(&parent, ctx)
 		case "One":
 			var parent TlaCheck
 			err = json.Unmarshal(parentJSON, &parent)
@@ -254,27 +265,34 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		return dag.Module().
 			WithDescription("TLA+ model checking for the dagql cache spec (dagql/tla).\n\nRuns every TLC configuration of CacheLifecycle.tla. Green configurations\nare regression gates: any violation fails the check. A configuration may\nname an expected invariant only while it deliberately tracks an accepted\nmodel finding.\n").
 			WithObject(
-				dag.TypeDef().WithObject("TlaCheck", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 59, 6)}).
+				dag.TypeDef().WithObject("TlaCheck", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 67, 6)}).
 					WithFunction(
 						dag.Function("CacheLifecycle",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("CacheLifecycle model-checks every configuration of the dagql cache spec\nand verifies each outcome against its expectation.").
-							WithSourceMap(dag.SourceMap("main.go", 84, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 98, 1)).
+							WithCheck()).
+					WithFunction(
+						dag.Function("ClientLifecycle",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("ClientLifecycle model-checks client runtime reclamation, typed leases,\nauthoritative session teardown, and the final telemetry barrier.").
+							WithSourceMap(dag.SourceMap("main.go", 137, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("One",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("One runs a single TLC configuration and returns the raw TLC output,\nusing the same pinned jar and invocation as the CacheLifecycle check.\nUnlike the check, it applies no expectation: violations come back in\nthe output for the caller to read.\n\nWith invariant set, the configuration's INVARIANTS line is replaced by\nthat single invariant, the specification is forced to the safety-only\nSpec, and PROPERTY lines are dropped, so one question runs in\nisolation. With define also set, the given TLA+ operator definition is\nappended to the spec first; that runs a scratch probe invariant (for\nexample a reachability probe expected to violate) without editing the\nrepository.").
-							WithSourceMap(dag.SourceMap("main.go", 132, 1)).
-							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 135, 2)}).
-							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 138, 2)}).
-							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 141, 2)})).
-					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 61, 2)}).
+							WithSourceMap(dag.SourceMap("main.go", 185, 1)).
+							WithArg("config", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "configuration name without the CacheLifecycle_ prefix, e.g. \"lazy\"", SourceMap: dag.SourceMap("main.go", 188, 2)}).
+							WithArg("invariant", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "invariant to check instead of the configuration's INVARIANTS line", SourceMap: dag.SourceMap("main.go", 191, 2)}).
+							WithArg("define", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "TLA+ operator definition to append to the spec, e.g. \"ProbeX == ...\"", SourceMap: dag.SourceMap("main.go", 194, 2)})).
+					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The dagql/tla spec directory.", SourceMap: dag.SourceMap("main.go", 69, 2)}).
+					WithField("ClientSource", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "The engine/server/tla spec directory.", SourceMap: dag.SourceMap("main.go", 72, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("TlaCheck")).
-							WithSourceMap(dag.SourceMap("main.go", 64, 1)).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 64, 10)}))), nil
+							WithSourceMap(dag.SourceMap("main.go", 75, 1)).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 75, 10)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
