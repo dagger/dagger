@@ -984,6 +984,7 @@ func TestContainerWithoutPathsJointWriteGroup(t *testing.T) {
 }
 
 func TestContainerGetVariantRefsEvaluatesImageParts(t *testing.T) {
+	//nolint:dogsled // the shared setup installs the cache and server in the returned context
 	ctx, _, _, _ := newContainerPartsTestCtx(t)
 	op := &containerPartsTestBaseOp{
 		LazyState:    NewLazyState(),
