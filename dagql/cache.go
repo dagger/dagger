@@ -140,6 +140,7 @@ const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
+var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
@@ -156,6 +157,8 @@ type cacheSessionLifecycle struct {
 	releaseMu      sync.Mutex
 	releasePlan    *cacheSessionReleasePlan
 	cleanupStarted bool
+	releaseDone    chan struct{}
+	releaseErr     error
 }
 
 type cacheSessionReleasePlan struct {
@@ -194,7 +197,7 @@ func (c *Cache) sessionLifecycle(sessionID string) *cacheSessionLifecycle {
 	if state, ok := c.sessionLifecycles.Load(sessionID); ok {
 		return state.(*cacheSessionLifecycle)
 	}
-	state := new(cacheSessionLifecycle)
+	state := &cacheSessionLifecycle{releaseDone: make(chan struct{})}
 	actual, _ := c.sessionLifecycles.LoadOrStore(sessionID, state)
 	return actual.(*cacheSessionLifecycle)
 }
@@ -1106,6 +1109,45 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	return cleanupErr
 }
 
+// WaitSessionRelease waits for cleanup started by ReleaseSession to finish.
+// Unlike ReleaseSession, its return is a completion barrier: all per-session
+// cleanup hooks have returned and no cache operation can produce more work for
+// the session. Callers must first call ReleaseSession to tombstone the session.
+func (c *Cache) WaitSessionRelease(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("wait for session release: empty session ID")
+	}
+	if c == nil {
+		return nil
+	}
+
+	state := c.sessionLifecycle(sessionID)
+	if state.lifecycle.Load()&cacheSessionReleasedBit == 0 {
+		return fmt.Errorf("%w: %q", ErrCacheSessionNotReleased, sessionID)
+	}
+
+	// Prefer an already-completed release even when ctx is also done. This
+	// makes the barrier's stored cleanup result stable for late waiters.
+	select {
+	case <-state.releaseDone:
+		state.releaseMu.Lock()
+		err := state.releaseErr
+		state.releaseMu.Unlock()
+		return err
+	default:
+	}
+
+	select {
+	case <-state.releaseDone:
+		state.releaseMu.Lock()
+		err := state.releaseErr
+		state.releaseMu.Unlock()
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
 	if state == nil || state.lifecycle.Load() != cacheSessionReleasedBit {
 		return nil
@@ -1123,6 +1165,8 @@ func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
 
 	state.releaseMu.Lock()
 	state.releasePlan = nil
+	state.releaseErr = err
+	close(state.releaseDone)
 	state.releaseMu.Unlock()
 	return err
 }

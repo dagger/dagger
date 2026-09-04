@@ -436,6 +436,92 @@ func TestCacheArbitraryReleaseRefusesValueAtOperationExit(t *testing.T) {
 	assert.Equal(t, c.Size(), 0)
 }
 
+func TestCacheWaitSessionReleaseWaitsForDeferredCleanup(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "wait-for-deferred-release"
+	call := cacheTestIntCall("wait-for-deferred-release")
+	cleanupStarted := make(chan struct{})
+	allowCleanup := make(chan struct{})
+	_, err = c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, func(context.Context) (AnyResult, error) {
+		return Result[Typed]{shared: &sharedResult{
+			self: cacheTestOnReleaseInt{Int: NewInt(1), onRelease: func(context.Context) error {
+				close(cleanupStarted)
+				<-allowCleanup
+				return nil
+			}},
+			resultCall: call,
+			hasValue:   true,
+		}}, nil
+	})
+	assert.NilError(t, err)
+
+	atExit := make(chan struct{})
+	allowExit := make(chan struct{})
+	c.testBeforeSessionOperationExit = func(gotSessionID string) {
+		if gotSessionID == sessionID {
+			close(atExit)
+			<-allowExit
+		}
+	}
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, ValueFunc(nil))
+		callDone <- err
+	}()
+	<-atExit
+
+	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- c.WaitSessionRelease(ctx, sessionID) }()
+	select {
+	case err := <-waitDone:
+		t.Fatalf("release wait returned before the active operation exited: %v", err)
+	default:
+	}
+
+	close(allowExit)
+	<-cleanupStarted
+	select {
+	case err := <-waitDone:
+		t.Fatalf("release wait returned before cleanup completed: %v", err)
+	default:
+	}
+
+	close(allowCleanup)
+	assert.ErrorIs(t, <-callDone, ErrCacheSessionReleased)
+	assert.NilError(t, <-waitDone)
+	assert.NilError(t, c.WaitSessionRelease(ctx, sessionID), "release completion must be repeatable")
+}
+
+func TestCacheWaitSessionReleaseCancellation(t *testing.T) {
+	c, err := NewCache(t.Context(), "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "cancel-release-wait"
+	op, err := c.beginSessionOperation(sessionID)
+	assert.NilError(t, err)
+	assert.NilError(t, c.ReleaseSession(t.Context(), sessionID))
+
+	waitCtx, cancelWait := context.WithCancel(t.Context())
+	cancelWait()
+	assert.ErrorIs(t, c.WaitSessionRelease(waitCtx, sessionID), context.Canceled)
+
+	op.finish(false)
+	assert.NilError(t, c.WaitSessionRelease(t.Context(), sessionID))
+}
+
+func TestCacheWaitSessionReleaseRequiresRelease(t *testing.T) {
+	c, err := NewCache(t.Context(), "", nil, nil)
+	assert.NilError(t, err)
+
+	err = c.WaitSessionRelease(t.Context(), "live-session")
+	assert.ErrorIs(t, err, ErrCacheSessionNotReleased)
+	assert.ErrorContains(t, err, "live-session")
+}
+
 func TestCacheDeferredReleaseErrorSurfacesFromClose(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil)
@@ -470,6 +556,7 @@ func TestCacheDeferredReleaseErrorSurfacesFromClose(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
 	close(allowExit)
 	assert.ErrorIs(t, <-callDone, ErrCacheSessionReleased)
+	assert.ErrorIs(t, c.WaitSessionRelease(ctx, sessionID), releaseErr)
 	assert.ErrorIs(t, c.Close(ctx), releaseErr)
 }
 
@@ -491,6 +578,7 @@ func TestCacheSynchronousReleaseErrorFailsCloseDirty(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.ErrorIs(t, c.ReleaseSession(ctx, sessionID), releaseErr)
+	assert.ErrorIs(t, c.WaitSessionRelease(ctx, sessionID), releaseErr)
 	assert.ErrorIs(t, c.Close(ctx), releaseErr)
 }
 
