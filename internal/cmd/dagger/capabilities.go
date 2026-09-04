@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"fmt"
+	"io"
 	"slices"
 	"sort"
 	"strings"
@@ -148,6 +149,10 @@ func resolveCommand(root *cobra.Command, args []string) (*cobra.Command, []strin
 func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	flags := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	flags.ParseErrorsAllowlist.UnknownFlags = true
+	// These are early passes over the same arguments Cobra parses later. Keep
+	// them quiet, or a deprecated flag prints its warning once per pass; the
+	// callers report their own errors.
+	flags.SetOutput(io.Discard)
 	if cmd.DisableFlagParsing {
 		// Dynamic commands parse their own arguments after loading a schema.
 		// Stop the early global pass at the first schema-owned token.
