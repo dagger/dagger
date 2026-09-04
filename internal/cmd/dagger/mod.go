@@ -135,11 +135,11 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 	}
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tDESCRIPTION\tREPO"); err != nil {
+	if _, err := fmt.Fprintln(w, "SOURCE\tDESCRIPTION"); err != nil {
 		return err
 	}
 	for _, m := range mods {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", m.Name, m.Description, m.Repo); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", m.Repo, m.Description); err != nil {
 			return err
 		}
 	}
@@ -147,6 +147,6 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 		return err
 	}
 
-	_, err := fmt.Fprintln(out, "\nRun 'dagger module install <REPO>' to install a module.")
+	_, err := fmt.Fprintln(out, "\nRun 'dagger install <SOURCE>' to install a module.")
 	return err
 }

@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
@@ -281,12 +282,13 @@ func TestPrintSDKSearchResults(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, printModuleSearchResults(&buf, entries))
 	out := buf.String()
-	require.Contains(t, out, "NAME")
-	require.Contains(t, out, "DESCRIPTION")
-	require.Contains(t, out, "go")
+	require.Equal(t, []string{"SOURCE", "DESCRIPTION"}, strings.Fields(strings.SplitN(out, "\n", 2)[0]))
+	require.Contains(t, out, "github.com/dagger/go-sdk")
 	require.Contains(t, out, "Official Dagger SDK for Go")
-	require.Contains(t, out, "java")
-	require.Contains(t, out, "\nRun 'dagger module install <REPO>' to install a module.\n")
+	require.Contains(t, out, "github.com/dagger/java-sdk")
+	require.NotContains(t, out, "\ngo ")
+	require.NotContains(t, out, "\njava ")
+	require.Contains(t, out, "\nRun 'dagger install <SOURCE>' to install a module.\n")
 }
 
 // Conventional SDK name derivation is shared with the engine in core/workspace.
