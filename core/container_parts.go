@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -746,6 +747,7 @@ func evaluateContainerPathWriterGroup(
 	opName string,
 	paths []string,
 	removeExactMount func(*ContainerMount) bool,
+	source dagql.AnyResult,
 	write func(context.Context) error,
 ) error {
 	switch group {
@@ -773,10 +775,24 @@ func evaluateContainerPathWriterGroup(
 			if err != nil {
 				return err
 			}
+			eg, egCtx := errgroup.WithContext(ctx)
 			for _, part := range parts {
-				if err := delegateContainerPart(ctx, container, parent, part); err != nil {
-					return err
-				}
+				part := part
+				eg.Go(func() error {
+					return delegateContainerPart(egCtx, container, parent, part)
+				})
+			}
+			if source != nil {
+				eg.Go(func() error {
+					cache, err := dagql.EngineCache(egCtx)
+					if err != nil {
+						return err
+					}
+					return cache.Evaluate(egCtx, source)
+				})
+			}
+			if err := eg.Wait(); err != nil {
+				return err
 			}
 			return write(ctx)
 		})
