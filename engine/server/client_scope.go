@@ -80,12 +80,20 @@ func (srv *Server) registerNestedClientTransport(
 		return nil, fmt.Errorf("session %q not found", metadata.SessionID)
 	}
 
-	sess.lifecycleMu.Lock()
-	defer sess.lifecycleMu.Unlock()
-	if sess.state.Load() != sessionStateInitialized {
+	// Registration serializes against session teardown under scopeMu, the
+	// same point used by markSessionRemoved and lease acquisition. It must
+	// never take lifecycleMu: removeDaggerSession holds that lock for its
+	// whole duration while it waits for every client scope lease to release,
+	// and the caller here is an exec whose own cleanup can be one of those
+	// lease owners. Blocking here would make that wait cyclic.
+	sess.scopeMu.Lock()
+	state := sess.state.Load()
+	authority := sess.scopeAuthority
+	sess.scopeMu.Unlock()
+	if state != sessionStateInitialized {
 		return nil, fmt.Errorf("session %q is not initialized", metadata.SessionID)
 	}
-	if !scope.CanDelegateTo(sess.scopeAuthority) {
+	if !scope.CanDelegateTo(authority) {
 		return nil, fmt.Errorf("parent client scope does not belong to the current session %q", metadata.SessionID)
 	}
 
@@ -146,24 +154,28 @@ func (srv *Server) registerNestedClientTransport(
 	})
 	client.nestedTransport = transport
 
+	// Publish under scopeMu with the session state re-checked so that teardown
+	// either observes the published child and closes it, or this registration
+	// observes the removed session and backs out. The delegated parent lease
+	// is released by the deferred error handler in the latter case.
 	sess.scopeMu.Lock()
-	client.transportLease = sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseTransport, metadata.ClientID)
-	sess.scopeMu.Unlock()
-
+	if sess.state.Load() != sessionStateInitialized {
+		sess.scopeMu.Unlock()
+		return nil, fmt.Errorf("session %q is not initialized", metadata.SessionID)
+	}
 	sess.clientMu.Lock()
-	if _, duplicate := sess.clientRecords[metadata.ClientID]; duplicate {
+	_, duplicateRecord := sess.clientRecords[metadata.ClientID]
+	_, duplicateRuntime := sess.clientRuntimes[metadata.ClientID]
+	if duplicateRecord || duplicateRuntime {
 		sess.clientMu.Unlock()
-		client.transportLease.Release()
+		sess.scopeMu.Unlock()
 		return nil, fmt.Errorf("nested client %q transport was concurrently registered", metadata.ClientID)
 	}
-	if _, duplicate := sess.clientRuntimes[metadata.ClientID]; duplicate {
-		sess.clientMu.Unlock()
-		client.transportLease.Release()
-		return nil, fmt.Errorf("nested client %q runtime was concurrently registered", metadata.ClientID)
-	}
+	client.transportLease = sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseTransport, metadata.ClientID)
 	sess.clientRecords[metadata.ClientID] = record
 	sess.clientRuntimes[metadata.ClientID] = client
 	sess.clientMu.Unlock()
+	sess.scopeMu.Unlock()
 	return transport, nil
 }
 

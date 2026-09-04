@@ -1796,8 +1796,16 @@ func (srv *Server) getOrInitClient(
 		// Root records and transport ownership are published on their first
 		// request. Unlike executable request scopes, the transport lease carries no
 		// metadata snapshot, so adjacent bootstrap metadata may still merge before
-		// the first executable request seals the record.
+		// the first executable request seals the record. Nested registration no
+		// longer serializes on lifecycleMu, so the ID must be re-checked at the
+		// publication point rather than trusted from the lookup above.
 		sess.clientMu.Lock()
+		if _, duplicate := sess.clientRecords[clientID]; duplicate {
+			sess.clientMu.Unlock()
+			unlockScope()
+			_ = client.shutdownMetrics(ctx)
+			return nil, nil, fmt.Errorf("client %q was concurrently registered as a nested client", clientID)
+		}
 		sess.clientRecords[clientID] = record
 		sess.clientRuntimes[clientID] = client
 		sess.clientMu.Unlock()

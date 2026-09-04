@@ -255,6 +255,78 @@ func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
 	require.ErrorContains(t, err, "does not belong to the current session")
 }
 
+func TestNestedTransportRegistrationDoesNotTakeLifecycleLock(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, _ := newNestedTransportTestFixture(t)
+
+	// removeDaggerSession holds lifecycleMu for its whole duration while it
+	// waits for client scope leases. A registration that blocked on it could
+	// be the exec cleanup that owns one of those leases.
+	sess.lifecycleMu.Lock()
+	defer sess.lifecycleMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("nested registration blocked on the session lifecycle lock")
+	}
+}
+
+func TestNestedTransportRegistrationRacesSessionTeardown(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		srv, sess, parent, ctx, parentRequest := newNestedTransportTestFixture(t)
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		var registered *engine.NestedClientTransport
+		var registerErr error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			registered, registerErr = srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("child"), parent.clientID)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			sess.markSessionRemoved()
+			sess.beginClientScopeTeardown()
+		}()
+		close(start)
+		wg.Wait()
+
+		if registerErr == nil {
+			// A registration that won the race was published before teardown
+			// snapshotted the runtimes, so teardown must have observed it.
+			require.NotNil(t, registered)
+			sess.scopeMu.Lock()
+			child := sess.clientRuntimes["child"]
+			require.NotNil(t, child)
+			require.False(t, child.accepting, "teardown must close a child registered before it began")
+			require.Nil(t, child.transportLease, "teardown must release the child's transport lease")
+			require.Nil(t, child.parentClientScopeLease, "teardown must release the child's parent lease")
+			sess.scopeMu.Unlock()
+		}
+
+		// Whichever side won, teardown's lease barrier must be able to complete
+		// once the parent's own request finishes: no transport or child lease
+		// may be stranded on an unpublished or unobserved runtime.
+		parentRequest.Lease().Release()
+		drainCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		require.NoError(t, sess.waitForClientScopeDrain(drainCtx), "registration racing teardown stranded a lease")
+		cancel()
+	}
+}
+
 func TestHeldParentScopeDelegatesWhileParentClosing(t *testing.T) {
 	t.Parallel()
 
