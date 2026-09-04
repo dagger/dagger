@@ -88,7 +88,7 @@ func Load(
 			return nil, fmt.Errorf("encode SDK module settings: %w", err)
 		}
 		selector.Args = append(selector.Args, dagql.NamedInput{
-			Name:  "legacyWorkspaceConfigJSON",
+			Name:  "legacyWorkspaceConfigJson",
 			Value: dagql.String(raw),
 		})
 	}
