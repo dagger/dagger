@@ -105,28 +105,9 @@ func (srv *Server) registerNestedClientTransport(
 	if err != nil {
 		return nil, fmt.Errorf("validate client ancestry: %w", err)
 	}
-	if attachablesClientID == "" {
-		attachablesClientID = metadata.ClientID
-	}
-	if attachablesClientID != metadata.ClientID {
-		sess.clientMu.RLock()
-		attachablesRecord := sess.clientRecords[attachablesClientID]
-		sess.clientMu.RUnlock()
-		if attachablesRecord == nil {
-			return nil, fmt.Errorf("attachables client %q not found for nested client %q", attachablesClientID, metadata.ClientID)
-		}
-		if attachablesRecord.nestedTransport == nil || attachablesRecord.nestedTransport.Closed() {
-			return nil, fmt.Errorf("attachables client %q is closed for nested client %q", attachablesClientID, metadata.ClientID)
-		}
-		if attachablesRecord.attachablesClientID != "" && attachablesRecord.attachablesClientID != attachablesRecord.clientID {
-			return nil, fmt.Errorf("attachables client %q is not an exec bootstrap client", attachablesClientID)
-		}
-		if attachablesRecord.secretToken != metadata.ClientSecretToken {
-			return nil, fmt.Errorf("attachables client %q has a different secret token", attachablesClientID)
-		}
-		if !slices.Equal(attachablesRecord.parentClientIDs, parentIDs) {
-			return nil, fmt.Errorf("attachables client %q is outside nested client %q's exec scope", attachablesClientID, metadata.ClientID)
-		}
+	attachablesClientID, err = sess.validateNestedTransportAttachables(metadata, parentIDs, attachablesClientID)
+	if err != nil {
+		return nil, err
 	}
 
 	parentScope, err := scope.Delegate(engine.ClientLeaseChild, metadata.ClientID)
@@ -184,6 +165,42 @@ func (srv *Server) registerNestedClientTransport(
 	sess.clientRuntimes[metadata.ClientID] = client
 	sess.clientMu.Unlock()
 	return transport, nil
+}
+
+// validateNestedTransportAttachables seals a logical nested client to the
+// bootstrap attachables channel created by the same exec. An ordinary nested
+// client owns its own channel and therefore needs no cross-record validation.
+func (sess *daggerSession) validateNestedTransportAttachables(
+	metadata *engine.ClientMetadata,
+	parentIDs []string,
+	attachablesClientID string,
+) (string, error) {
+	if attachablesClientID == "" {
+		return metadata.ClientID, nil
+	}
+	if attachablesClientID == metadata.ClientID {
+		return attachablesClientID, nil
+	}
+
+	sess.clientMu.RLock()
+	attachablesRecord := sess.clientRecords[attachablesClientID]
+	sess.clientMu.RUnlock()
+	if attachablesRecord == nil {
+		return "", fmt.Errorf("attachables client %q not found for nested client %q", attachablesClientID, metadata.ClientID)
+	}
+	if attachablesRecord.nestedTransport == nil || attachablesRecord.nestedTransport.Closed() {
+		return "", fmt.Errorf("attachables client %q is closed for nested client %q", attachablesClientID, metadata.ClientID)
+	}
+	if attachablesRecord.attachablesClientID != "" && attachablesRecord.attachablesClientID != attachablesRecord.clientID {
+		return "", fmt.Errorf("attachables client %q is not an exec bootstrap client", attachablesClientID)
+	}
+	if attachablesRecord.secretToken != metadata.ClientSecretToken {
+		return "", fmt.Errorf("attachables client %q has a different secret token", attachablesClientID)
+	}
+	if !slices.Equal(attachablesRecord.parentClientIDs, parentIDs) {
+		return "", fmt.Errorf("attachables client %q is outside nested client %q's exec scope", attachablesClientID, metadata.ClientID)
+	}
+	return attachablesClientID, nil
 }
 
 func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadata, error) {
