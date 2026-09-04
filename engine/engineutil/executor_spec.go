@@ -1078,6 +1078,15 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.nestedClientMetadata.ClientStableID = randid.NewID()
 
+	// Client metadata may deliberately name a workspace-owning ancestor while
+	// the held scope names the client actually executing this operation. Only
+	// the held scope is authority to create a child; using callerClientID here
+	// would let cache/workspace metadata choose the transport's parent.
+	parentClientID, err := nestedClientParentID(ctx, state.nestedClientMetadata.SessionID)
+	if err != nil {
+		return err
+	}
+
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars
 	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
 		if strings.HasPrefix(sockPath, "~") {
@@ -1104,7 +1113,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		ctx,
 		c.SessionHandler,
 		state.nestedClientMetadata,
-		state.callerClientID,
+		parentClientID,
 	)
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
@@ -1143,7 +1152,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				http.Error(resp, err.Error(), status)
 				return
 			}
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
@@ -1166,6 +1175,21 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	return nil
 }
 
+func nestedClientParentID(ctx context.Context, sessionID string) (string, error) {
+	parentScope, ok := engine.ClientScopeFromContext(ctx)
+	if !ok {
+		return "", errors.New("nested client setup requires a held parent client scope")
+	}
+	if parentScope.SessionID() != sessionID {
+		return "", fmt.Errorf(
+			"nested client parent scope session %q does not match nested session %q",
+			parentScope.SessionID(),
+			sessionID,
+		)
+	}
+	return parentScope.ClientID(), nil
+}
+
 // nestedClientTransportManager is the process-level proxy capability for one
 // exec. A nested process may create more than one sequential engine client, so
 // each exact header-aware client ID gets its own registered, one-shot transport;
@@ -1177,7 +1201,7 @@ type nestedClientTransportManager struct {
 	registrationCtx context.Context
 	sessionHandler  sessionHandler
 	baseMetadata    *engine.ClientMetadata
-	callerClientID  string
+	parentClientID  string
 
 	closed     bool
 	transports map[string]nestedClientTransport
@@ -1192,13 +1216,13 @@ func newNestedClientTransportManager(
 	ctx context.Context,
 	handler sessionHandler,
 	baseMetadata *engine.ClientMetadata,
-	callerClientID string,
+	parentClientID string,
 ) *nestedClientTransportManager {
 	return &nestedClientTransportManager{
 		registrationCtx: ctx,
 		sessionHandler:  handler,
 		baseMetadata:    baseMetadata,
-		callerClientID:  callerClientID,
+		parentClientID:  parentClientID,
 		transports:      map[string]nestedClientTransport{},
 	}
 }
@@ -1238,7 +1262,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
 		manager.registrationCtx,
 		&metadata,
-		manager.callerClientID,
+		manager.parentClientID,
 		manager.baseMetadata.ClientID,
 	)
 	if err != nil {

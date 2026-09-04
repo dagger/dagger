@@ -42,6 +42,31 @@ func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 	handler.served.Add(1)
 }
 
+func TestNestedClientParentUsesHeldScopeNotContextMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "workspace-owner",
+	})
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
+	t.Cleanup(lease.Release)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "executable-client",
+	}, lease)
+	require.NoError(t, err)
+	ctx, err = engine.ContextWithClientScope(ctx, scope)
+	require.NoError(t, err)
+
+	parentClientID, err := nestedClientParentID(ctx, "session")
+	require.NoError(t, err)
+	require.Equal(t, "executable-client", parentClientID)
+
+	_, err = nestedClientParentID(ctx, "other-session")
+	require.ErrorContains(t, err, "does not match")
+}
+
 func TestContainerNestedTransportsAreExactPerRequestClient(t *testing.T) {
 	t.Parallel()
 
