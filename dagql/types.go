@@ -176,6 +176,40 @@ type HasLazyEvaluation interface {
 	LazyEvalFunc() LazyEvalFunc
 }
 
+// PartKey identifies one separately evaluable piece of a result's value.
+// Keys are defined by the value's package; dagql treats them as opaque.
+type PartKey string
+
+// LazyGroupKey identifies one evaluation group of a result. Every part
+// maps to exactly one group; a group's single body fills all its parts.
+type LazyGroupKey string
+
+// LazyGroupWhole is the implicit group of values that do not split their
+// deferred work. It fills every part.
+const LazyGroupWhole LazyGroupKey = "whole"
+
+// HasLazyEvaluationParts is implemented by values whose deferred work is
+// split into independently evaluable groups. Values that implement only
+// HasLazyEvaluation have exactly one group, LazyGroupWhole.
+type HasLazyEvaluationParts interface {
+	HasLazyEvaluation
+
+	// ResolveLazyEvalGroups maps the requested parts to the groups that
+	// fill them, in the order they should be evaluated. nil parts means
+	// "every group that currently has deferred work". self is the
+	// attached result wrapping this value. Resolution may evaluate the
+	// value's own metadata part (via the cache) to settle positional
+	// parts; it must never evaluate snapshot content. The mapping must be
+	// deterministic and stable once metadata is settled.
+	ResolveLazyEvalGroups(ctx context.Context, self AnyResult, parts []PartKey) ([]LazyGroupKey, error)
+
+	// LazyEvalFuncForGroup returns the group's remaining deferred work,
+	// nil when none remains. Same consumption contract as LazyEvalFunc,
+	// per group: a successful body run consumes the group's work, and the
+	// cache independently guarantees the body never runs twice.
+	LazyEvalFuncForGroup(LazyGroupKey) LazyEvalFunc
+}
+
 // HasDependencyResults is implemented by resolver-returned values that embed
 // dependency results which must be normalized onto attached/cache-backed
 // results before lifecycle bookkeeping or persistence.

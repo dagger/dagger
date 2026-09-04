@@ -253,6 +253,11 @@ type SpanSnapshot struct {
 	// propagates failure to it.
 	Blocked bool `json:",omitempty"`
 
+	// Partial marks a successful lazy-evaluation resume span that completed
+	// one part while the result still had deferred work. It does not resolve
+	// the owning span's pending state.
+	Partial bool `json:",omitempty"`
+
 	// An extra flag to indicate that a span was canceled because the root span
 	// completed while the span was still running.
 	LeftRunning bool `json:",omitempty"`
@@ -410,6 +415,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.DagBlockedAttr:
 		snapshot.Blocked = val.(bool)
+
+	case telemetryattrs.DagPartialAttr:
+		snapshot.Partial = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
@@ -972,11 +980,13 @@ func (span *Span) IsPending() bool {
 }
 
 // hasResolvedEffects reports whether any causal continuation of this span
-// actually ran its deferred work. Blocked resumptions (aborted because a
-// prerequisite failed) don't count: the work is still pending.
+// actually finished all deferred work. Blocked resumptions and successful
+// partial resumptions do not count: the work is still pending.
 func (span *Span) hasResolvedEffects() bool {
 	for _, effect := range span.effectsViaLinks.Order {
-		if !effect.Blocked {
+		// This remains an any test. A partial effect may remain recorded after
+		// a sibling finishes, but that later non-partial effect resolves pending.
+		if !effect.Blocked && !effect.Partial {
 			return true
 		}
 	}
@@ -999,7 +1009,7 @@ func (span *Span) PendingReason() (bool, []string) {
 			return false, []string{"span has resumed via causal continuation"}
 		}
 		if len(span.effectsViaLinks.Order) > 0 {
-			return true, []string{"span only has blocked resumptions; work is still pending"}
+			return true, []string{"span only has incomplete resumptions; work is still pending"}
 		}
 		return true, []string{"span says it is pending"}
 	}
