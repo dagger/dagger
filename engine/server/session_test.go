@@ -1126,6 +1126,51 @@ func TestClientLifecycleScopesRaceSessionTeardown(t *testing.T) {
 	require.Empty(t, leases)
 }
 
+func TestClientLifecycleScopeDrainWaitsForTerminalRelease(t *testing.T) {
+	t.Parallel()
+
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientID:       "client",
+		clientMetadata: &engine.ClientMetadata{SessionID: "session", ClientID: "client"},
+		metadataSealed: true,
+		accepting:      true},
+		state:           clientStateInitialized,
+		lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	sess := &daggerSession{
+		sessionID:      "session",
+		clientRuntimes: map[string]*clientRuntime{client.clientID: client},
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	sess.state.Store(sessionStateInitialized)
+
+	transport, err := sess.acquireRootClientScope(client, engine.ClientLeaseTransport, "proxy")
+	require.NoError(t, err)
+	client.transportLease = transport.Lease()
+	request, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "request")
+	require.NoError(t, err)
+
+	sess.markSessionRemoved()
+	sess.beginClientScopeTeardown()
+
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, sess.waitForClientScopeDrain(canceledCtx), context.Canceled)
+
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- sess.waitForClientScopeDrain(t.Context()) }()
+	select {
+	case err := <-waitDone:
+		t.Fatalf("scope drain returned before the request lease: %v", err)
+	default:
+	}
+
+	request.Lease().Release()
+	require.NoError(t, <-waitDone)
+	_, _, leases := sess.clientLifecycleSnapshot(client)
+	require.Empty(t, leases)
+}
+
 func TestClientRuntimeReclamationRacesCloseLeasesChildAndTeardown(t *testing.T) {
 	t.Parallel()
 

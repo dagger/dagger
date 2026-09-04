@@ -88,6 +88,7 @@ type daggerSession struct {
 	scopeMu        sync.Mutex
 	nextScopeID    uint64
 	scopeAuthority *engine.ClientScopeAuthority
+	scopeWaitCh    chan struct{}
 
 	clientRecords  map[string]*clientRecord  // clientID -> stable identity and routing record
 	clientRuntimes map[string]*clientRuntime // clientID -> published non-quiescent execution runtime
@@ -826,7 +827,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	var errs error
 
 	// in theory none of this should block very long, but add a safeguard just in case
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	teardownCtx := context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancel()
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
@@ -887,9 +889,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	if cacheReleaseErr != nil {
 		slog.Error("error releasing dagql cache", "error", cacheReleaseErr)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", cacheReleaseErr))
-	} else if waitErr := srv.engineCache.WaitSessionRelease(ctx, sess.sessionID); waitErr != nil {
+	} else if waitErr := srv.engineCache.WaitSessionRelease(teardownCtx, sess.sessionID); waitErr != nil {
 		slog.Error("error waiting for dagql cache release", "error", waitErr)
 		errs = errors.Join(errs, fmt.Errorf("wait for dagql cache release: %w", waitErr))
+	}
+	// ReleaseSession tombstones the cache before this wait, and session removal
+	// prevents new client-scope acquisition. Waiting without the best-effort
+	// cleanup deadline is deliberate: shutting telemetry down while an accepted
+	// producer is still running violates the session's final-delivery contract.
+	if err := sess.waitForClientScopeDrain(teardownCtx); err != nil {
+		slog.Error("error waiting for client scopes to drain", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("wait for client scopes: %w", err))
 	}
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
@@ -913,9 +923,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// analytics hook, and cache cleanup is now stopped. Stamp the exact final
 	// wcprof count, then make metric/trace/log ForceFlush+Shutdown the final
 	// delivery barrier for the session-owned providers.
-	srv.stampSessionComplete(ctx, sess)
+	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
+	defer cancelTelemetry()
+	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-	errs = errors.Join(errs, sess.shutdownTelemetry(ctx))
+	errs = errors.Join(errs, sess.shutdownTelemetry(telemetryCtx))
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
