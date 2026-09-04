@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -195,6 +197,63 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	_, roSet = child.mountAt("/ro").DirectorySource.Peek()
 	require.True(t, roSet)
 	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+}
+
+func TestContainerExecEvaluatesParentMountsConcurrently(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseBodies := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseBodies()
+	baseOp := &containerPartsTestBaseOp{
+		LazyState:    NewLazyState(),
+		mountTargets: []string{"/one", "/two"},
+		mountBodyHook: func(target string) {
+			entered <- target
+			<-release
+		},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{
+			{Target: "/one", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])},
+			{Target: "/two", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])},
+		},
+		Lazy: baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-concurrent-mounts-base", base)
+	child := newExecPartsTestChild(t, baseRes, base)
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-concurrent-mounts-child", child)
+
+	eval := make(chan error, 1)
+	go func() {
+		eval <- cache.EvaluateParts(ctx, childRes, ContainerPartExecMeta)
+	}()
+
+	seen := map[string]bool{}
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for len(seen) < 2 {
+		select {
+		case target := <-entered:
+			seen[target] = true
+		case <-timer.C:
+			t.Fatal("parent mount bodies did not run concurrently")
+		}
+	}
+	releaseBodies()
+	select {
+	case err := <-eval:
+		require.Error(t, err)
+	case <-timer.C:
+		t.Fatal("exec evaluation did not return")
+	}
+	require.Equal(t, 1, baseOp.mountRunsFor("/one"))
+	require.Equal(t, 1, baseOp.mountRunsFor("/two"))
 }
 
 // Deliberate pin of the council-ruled VolatileEnv corner: the exec's

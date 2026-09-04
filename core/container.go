@@ -3758,15 +3758,9 @@ func (lazy *ContainerWithDirectoryLazy) EvaluateContainerGroup(ctx context.Conte
 		"Container.withDirectory",
 		[]string{lazy.Path},
 		func(mnt *ContainerMount) bool { return mnt.FileSource != nil },
+		lazy.Source,
 		func(ctx context.Context) error {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return err
-			}
-			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
-				return err
-			}
-			_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
+			_, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
 			return err
 		},
 	)
@@ -3822,15 +3816,9 @@ func (lazy *ContainerWithFileLazy) EvaluateContainerGroup(ctx context.Context, c
 		"Container.withFile",
 		[]string{lazy.Path},
 		removableExactContainerMount,
+		lazy.Source,
 		func(ctx context.Context) error {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return err
-			}
-			if err := cache.Evaluate(ctx, lazy.Source); err != nil {
-				return err
-			}
-			_, err = container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
+			_, err := container.WithFile(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Permissions, lazy.Owner)
 			return err
 		},
 	)
@@ -4412,6 +4400,7 @@ func (lazy *ContainerWithoutPathLazy) EvaluateContainerGroup(ctx context.Context
 		"Container.withoutPath",
 		[]string{lazy.Path},
 		removableExactContainerMount,
+		nil,
 		func(ctx context.Context) error {
 			_, err := container.WithoutPaths(ctx, lazy.Parent, lazy.Path)
 			return err
@@ -4457,6 +4446,7 @@ func (lazy *ContainerWithSymlinkLazy) EvaluateContainerGroup(ctx context.Context
 		"Container.withSymlink",
 		[]string{lazy.LinkPath},
 		removableExactContainerMount,
+		nil,
 		func(ctx context.Context) error {
 			_, err := container.WithSymlink(ctx, lazy.Parent, lazy.Target, lazy.LinkPath)
 			return err

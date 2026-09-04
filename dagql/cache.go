@@ -3827,8 +3827,23 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		// bookkeeping (their bodies are consumed), never a body.
 		groups = shared.pendingLazyGroups()
 	}
-	for _, group := range groups {
-		if err := c.evaluateGroup(ctx, res, shared, group, partsVal); err != nil {
+	// ResolveLazyEvalGroups completes any metadata prerequisite before it
+	// returns, so independent resolved groups can start together here.
+	switch len(groups) {
+	case 0:
+	case 1:
+		if err := c.evaluateGroup(ctx, res, shared, groups[0], partsVal); err != nil {
+			return err
+		}
+	default:
+		eg, egCtx := errgroup.WithContext(ctx)
+		for _, group := range groups {
+			group := group
+			eg.Go(func() error {
+				return c.evaluateGroup(egCtx, res, shared, group, partsVal)
+			})
+		}
+		if err := eg.Wait(); err != nil {
 			return err
 		}
 	}
