@@ -2102,6 +2102,40 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, ".", ref.workspaceSubdir)
 	})
+
+	t.Run("resolves legacy vanity ref", func(t *testing.T) {
+		t.Parallel()
+
+		ref, err := parseWorkspaceRemoteRefWithResolver(
+			context.Background(),
+			"dagger.io/go@main",
+			func(_ context.Context, got string) string {
+				require.Equal(t, "dagger.io/go@main", got)
+				return "https://github.com/dagger/dagger/sdk/go@main"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
+		require.Equal(t, "main", ref.version)
+		require.Equal(t, "sdk/go", ref.workspaceSubdir)
+	})
+
+	t.Run("resolves fragment vanity ref and preserves subdir", func(t *testing.T) {
+		t.Parallel()
+
+		ref, err := parseWorkspaceRemoteRefWithResolver(
+			context.Background(),
+			"https://dagger.io/go#main:docs",
+			func(_ context.Context, got string) string {
+				require.Equal(t, "https://dagger.io/go", got)
+				return "https://github.com/dagger/dagger/sdk/go"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
+		require.Equal(t, "main", ref.version)
+		require.Equal(t, "sdk/go/docs", ref.workspaceSubdir)
+	})
 }
 
 func TestGatherModuleLoadRequests(t *testing.T) {

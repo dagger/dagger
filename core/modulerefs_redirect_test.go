@@ -183,11 +183,11 @@ func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
 	ctxA := ctxForSession("session-a")
 	ctxB := ctxForSession("session-b")
 
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxA, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxA, ref))
 	require.EqualValues(t, 1, requests.Load(), "same-session lookup should hit the cache")
 
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxB, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxB, ref))
 	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
 }
 
@@ -218,7 +218,7 @@ func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
 		}),
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, ref, resolveDaggerGetRedirect(ctx, ref))
+			require.Equal(t, ref, ResolveDaggerGetRedirect(ctx, ref))
 		})
 	}
 	require.Zero(t, requests.Load())

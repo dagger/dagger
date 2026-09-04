@@ -33,7 +33,7 @@ var daggerGetClient = &http.Client{
 	},
 }
 
-// resolveDaggerGetRedirect implements the module redirect mechanism: for https
+// ResolveDaggerGetRedirect implements the module redirect mechanism: for https
 // (or schemeless, attempted over https) module refs, it fetches
 // "<ref>?dagger-get=1" and, if the host answers with a single 3xx pointing at
 // an absolute https Location, continues resolution with that destination. Any
@@ -47,7 +47,7 @@ var daggerGetClient = &http.Client{
 // Redirect resolution requires session infrastructure (engine cache + client
 // metadata). When either is unavailable the ref is returned untouched and no
 // network probe is issued, so standalone/offline ref parsing stays network-free.
-func resolveDaggerGetRedirect(ctx context.Context, refString string) string {
+func ResolveDaggerGetRedirect(ctx context.Context, refString string) string {
 	if !daggerGetEligible(refString) {
 		return refString
 	}
