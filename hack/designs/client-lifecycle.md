@@ -603,3 +603,99 @@ durable capability preventing reclamation.
 - Treating the `map[trace.Span]...` panic as a lifecycle mechanism. That map
   should be keyed by comparable span identity independently, but fixing it does
   not make premature provider shutdown safe.
+
+## Review handoff (2026-09-04)
+
+### Outcome
+
+The lifecycle model was reviewed against the Go serialization points it names.
+Its abstractions are sound, but two preconditions were stronger than the code,
+its teardown liveness property was vacuous in the one case that matters, no
+configuration exercised ancestry deeper than one level, and every state space
+was small (26 to 700 states for most configurations). NestedClientProxy.tla
+established each invariant directly in the one action that could violate it,
+gated by a mutation constant, so it could not fail under any interleaving; it
+was removed in favor of the Go tests that already cover those rules.
+
+Comparing the model's claimed serialization point (the scope lock) with the
+actual lock in nested registration (the lifecycle mutex) exposed a teardown
+deadlock: teardown holds the lifecycle mutex while waiting without a deadline
+for client scope leases, nested registration took that mutex, the proxy held
+its own mutex across registration, and the proxy's close runs inside the exec
+cleanup that owns one of the awaited leases. Three fix commits close the
+cycle, and a model mutation now documents the rule.
+
+Commits, in order: cache release may race held leases; children register from
+any held scope; TeardownEventuallyCompletes; three-level ancestry config;
+checker recognizes temporal violations; blocking-registration mutation gate;
+registration under the scope lock; teardown closes nested handles;
+registration outside the proxy lock; proxy model removed.
+
+### Running the model locally
+
+The tla-check module pins tla2tools 1.7.4. The same jar runs locally:
+
+```sh
+java -cp tla2tools.jar tlc2.TLC -workers auto -deadlock \
+  -config ClientLifecycle_teardown.cfg ClientLifecycle.tla
+```
+
+Every configuration except `blocking_registration` must report no error;
+that one must report a temporal violation. The lifecycle configurations
+complete in seconds.
+
+### Recommendation
+
+Do not invest in further model accuracy before merging. The remaining
+abstractions were checked: the initialization window collapses to
+admit-then-close because the provisional request lease makes those
+equivalent, and the flush-observes-drain property is about lock blocking,
+which the Go test expresses better than an atomic action. The bug class that
+exists in this code, lock-order cycles across several mutexes combined with
+uncancellable waits, is invisible to a serialization-point model by
+construction. Instead, spend a bounded effort on the vetting items below,
+add the integration test, and merge.
+
+### Open vetting items
+
+Each is a question of the form "does Go do what the model's action says, at
+the lock its comment names", in rough order of risk:
+
+1. Detached lazy attempts at teardown. `evaluateOne` detaches with the
+   caller's cancellation removed. Confirm something cancels an in-flight
+   attempt once the session is tombstoned; otherwise a stuck exec holds its
+   shared-work lease and `waitForClientScopeDrain` never returns.
+2. The lifecycle mutex across runtime initialization. Every admission takes
+   it, and attachables requests block on it during initialization. Confirm
+   that nothing in `initializeSessionEngineClient`, the core schema build, or
+   `AttachResult` waits on attachables or starts an exec.
+3. Service stop versus lease release. Teardown stops services and then waits
+   for their leases, which release later from tracked-ref cleanup. Confirm
+   that cleanup cannot block on session state.
+4. Main-client reclamation before teardown. The root runtime can be reclaimed
+   while the session is live once its shutdown request and attachables
+   connection end. Confirm nothing in teardown reaches for its heavy state.
+
+### Suggested integration test
+
+The stress acceptance test above was never written. A narrower test that
+repeatedly tears sessions down while module calls are starting, run under a
+timeout, would have caught the deadlock empirically and retires more of the
+remaining risk per hour than further reading or modeling.
+
+### Shelved
+
+The transport manager now has a real two-party protocol: a pending entry is
+published under its mutex, registration completes outside it, and whichever
+of close or the registrant observes the other second closes the transport.
+"No transport escapes cleanup" and "close never waits" are emergent
+properties there and would make a small, non-tautological model. Its failure
+mode is a leaked runtime until session end rather than a hang, so it is
+deferred.
+
+### Environment notes
+
+The local golangci-lint binary was built with an older Go than the tree
+requires and crashes; `go vet` reports only pre-existing context-leak
+findings in files this review did not touch. The trash-sweeper disk-pressure
+test failed once under a parallel full run and passed three of three alone.
