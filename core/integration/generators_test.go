@@ -463,8 +463,8 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 
 	// Workspace update must run the target scope before the root scope. The
 	// target scope is a client scope too, and the root cannot load it after its
-	// generated module is removed until that scope runs again.
-	withoutGeneratedTarget := generated.WithoutDirectory("target")
+	// module manifest is removed until that scope runs again.
+	withoutGeneratedTarget := generated.WithoutFile("target/dagger-module.toml")
 	workspaceUpdated := withoutGeneratedTarget.With(daggerNonNestedExec("workspace", "update"))
 	clientMarker, err = workspaceUpdated.File("internal/dagger/clients/target.gen.go").Contents(ctx)
 	require.NoError(t, err)
@@ -526,7 +526,7 @@ name = "demo"
 clients = ["`+target+`"]
 `)
 
-	seeded := base.With(daggerNonNestedExec("generate", "-y"))
+	seeded := base.With(daggerNonNestedExec("module", "client", "update", target, "-y"))
 	out, err := seeded.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	initialLock, err := seeded.File("dagger.lock").Contents(ctx)
@@ -559,7 +559,7 @@ clients = ["`+target+`"]
 	updated := seeded.
 		WithNewFile("dagger.lock", staleLock).
 		WithoutFile("internal/dagger/clients/wolfi.gen.go").
-		With(daggerNonNestedExec("module", "client", "update", target))
+		With(daggerNonNestedExec("module", "client", "update", target, "-y"))
 	out, err = updated.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 

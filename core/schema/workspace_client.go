@@ -13,7 +13,7 @@ import (
 
 func (s *workspaceSchema) resolveClientTargetModule(
 	ctx context.Context,
-	ws *core.Workspace,
+	ws dagql.ObjectResult[*core.Workspace],
 	ref string,
 ) (dagql.ObjectResult[*core.ModuleSource], error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
@@ -22,14 +22,10 @@ func (s *workspaceSchema) resolveClientTargetModule(
 		return src, fmt.Errorf("dagql server: %w", err)
 	}
 	if workspace.IsLocalRef(ref, "") {
-		workspaceResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
-		if err != nil {
-			return src, fmt.Errorf("load workspace: %w", err)
-		}
 		// Local client refs have already been normalized to workspace-root
 		// coordinates. Anchor them so Workspace.moduleSource does not resolve
 		// them against a non-root workspace cwd a second time.
-		if err := srv.Select(ctx, workspaceResult, &src, dagql.Selector{
+		if err := srv.Select(ctx, ws, &src, dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", ref)))},

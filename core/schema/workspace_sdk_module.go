@@ -294,7 +294,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if _, err := s.resolveClientTargetModule(operationCtx, selectedWorkspace, moduleLoadRef); err != nil {
+	if _, err := s.resolveClientTargetModule(operationCtx, parent, moduleLoadRef); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
@@ -541,7 +541,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 			if workspace.IsLocalRef(loadRef, "") {
 				continue
 			}
-			if _, err := s.resolveClientTargetModule(refreshCtx, selectedWorkspace, loadRef); err != nil {
+			if _, err := s.resolveClientTargetModule(refreshCtx, parent, loadRef); err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update client %q: %w", target, err)
 			}
 		}
@@ -1040,7 +1040,18 @@ func (s *workspaceSchema) validateSDKModuleWorkspace(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDK module must not modify engine-owned %s", filepath.ToSlash(configFile))
 		}
 	}
-	return attached, nil
+	changesID, err := changes.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDK-module changes ID: %w", err)
+	}
+	var adopted dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, base, &adopted, dagql.Selector{
+		Field: "withChanges",
+		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+	}); err != nil {
+		return adopted, fmt.Errorf("adopt SDK-module changes: %w", err)
+	}
+	return adopted, nil
 }
 
 func (s *workspaceSchema) validateGeneratedModuleConfig(

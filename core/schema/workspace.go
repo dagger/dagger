@@ -2013,27 +2013,11 @@ func (s *workspaceSchema) workspaceChangesBetween(
 		if err != nil {
 			return inst, err
 		}
-		apply := func(ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
-			changes, ok := ws.OverlayChanges()
-			if !ok {
-				return base, nil
-			}
-			changesID, err := changes.ID()
-			if err != nil {
-				return dagql.ObjectResult[*core.Directory]{}, err
-			}
-			var root dagql.ObjectResult[*core.Directory]
-			err = srv.Select(ctx, base, &root, dagql.Selector{
-				Field: "withChanges",
-				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
-			})
-			return root, err
-		}
-		beforeRoot, err = apply(from.Self())
+		beforeRoot, err = workspaceOverlayRootOnBase(ctx, srv, base, from.Self())
 		if err != nil {
 			return inst, err
 		}
-		afterRoot, err = apply(after.Self())
+		afterRoot, err = workspaceOverlayRootOnBase(ctx, srv, base, after.Self())
 		if err != nil {
 			return inst, err
 		}
@@ -2048,17 +2032,49 @@ func (s *workspaceSchema) workspaceChangesBetween(
 		}
 	}
 
-	beforeID, err := beforeRoot.ID()
-	if err != nil {
-		return inst, err
+	return directoryChangesBetween(ctx, srv, beforeRoot, afterRoot)
+}
+
+func workspaceOverlayRootOnBase(
+	ctx context.Context,
+	srv *dagql.Server,
+	base dagql.ObjectResult[*core.Directory],
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Directory], error) {
+	changes, ok := ws.OverlayChanges()
+	if !ok {
+		return base, nil
 	}
-	if err := srv.Select(ctx, afterRoot, &inst, dagql.Selector{
+	changesID, err := changes.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	var root dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, base, &root, dagql.Selector{
+		Field: "withChanges",
+		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+	})
+	return root, err
+}
+
+func directoryChangesBetween(
+	ctx context.Context,
+	srv *dagql.Server,
+	before dagql.ObjectResult[*core.Directory],
+	after dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var changes dagql.ObjectResult[*core.Changeset]
+	beforeID, err := before.ID()
+	if err != nil {
+		return changes, err
+	}
+	if err := srv.Select(ctx, after, &changes, dagql.Selector{
 		Field: "changes",
 		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
 	}); err != nil {
-		return inst, err
+		return changes, err
 	}
-	return inst, nil
+	return changes, nil
 }
 
 // changesetCwdCutover is the first module engine version whose changesets
@@ -2199,6 +2215,24 @@ func (s *workspaceSchema) export(
 	changes, ok := ws.OverlayChanges()
 	if !ok || changes.Self() == nil {
 		return core.Void{}, nil
+	}
+	if ws.ClientLocalBase() {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return core.Void{}, err
+		}
+		base, err := s.sparseHostBase(ctx, ws, ws.OverlayTouchedPaths())
+		if err != nil {
+			return core.Void{}, err
+		}
+		after, err := workspaceOverlayRootOnBase(ctx, srv, base, ws)
+		if err != nil {
+			return core.Void{}, err
+		}
+		changes, err = directoryChangesBetween(ctx, srv, base, after)
+		if err != nil {
+			return core.Void{}, err
+		}
 	}
 	isEmpty, err := changes.Self().IsEmpty(ctx)
 	if err != nil {

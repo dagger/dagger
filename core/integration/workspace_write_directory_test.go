@@ -156,6 +156,24 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 	}
 }
 
+func (WorkspaceSuite) TestWorkspaceWithDirectoryExportPreservesExistingFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "target"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "target", "keep.txt"), []byte("keep"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	source := c.Directory().WithNewFile("new.txt", "new")
+	require.NoError(t, c.CurrentWorkspace().WithDirectory("target", source).Export(ctx))
+
+	keep, err := os.ReadFile(filepath.Join(workdir, "target", "keep.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "keep", string(keep))
+	added, err := os.ReadFile(filepath.Join(workdir, "target", "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "new", string(added))
+}
+
 // workspaceInitOverExistingFixture is an SDK module whose module-init scaffolds
 // through Workspace.withDirectory, which is what an SDK needs once its
 // destination may already hold something: the user's own files, and the module
