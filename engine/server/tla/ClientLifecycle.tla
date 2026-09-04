@@ -42,6 +42,13 @@ ItemPhases == {"idle", "active", "done"}
 \* Configuration helper: one root with every other client its direct child.
 RootParents == [c \in Clients |-> IF c = Root THEN NoClient ELSE Root]
 
+\* Configuration helper: a root, one direct child, and every other client a
+\* grandchild under that child. Exercises transitive child-lease retention and
+\* the recursive reclamation that a grandchild's quiescence can trigger.
+ChainMid == CHOOSE c \in Clients \ {Root} : TRUE
+ChainParents == [c \in Clients |->
+    IF c = Root THEN NoClient ELSE IF c = ChainMid THEN Root ELSE ChainMid]
+
 VARIABLES
     sessionPhase,
     clients,

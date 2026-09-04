@@ -62,6 +62,7 @@ var clientExpectedOutcome = map[string]string{
 	"shared_work": "",
 	"child":       "",
 	"children":    "",
+	"grandchild":  "",
 	"teardown":    "",
 }
 
