@@ -16,6 +16,7 @@ legacy-default-path = true
 source = ".dagger/modules/dev"
 
 [modules.dev.settings]
+
 # Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
 # active Docker context points somewhere else.
 docker = "unix:///var/run/docker.sock"
@@ -42,6 +43,7 @@ legacy-default-path = true
 
 [modules.golang.settings]
 generate = "docs/current_docs/reference/cli"
+
 # FIXME: this can be an actual list (dagger.json required a hack)
 lint = ".,engine/distconsts,modules/daggerverse,sdk/go,.dagger/modules/cli-dev,.dagger/modules/docs-dev,.dagger/modules/engine-dev,.dagger/modules/go,.dagger/modules/release,!.dagger/modules/docs-dev/docusaurus,!.dagger/modules/engine-dev/notify,!.dagger/modules/release/apko,!.dagger/modules/release/gh,!.dagger/modules/release/registry-config,!.dagger/modules/release/testdata"
 test = "e2e/**"
@@ -51,6 +53,7 @@ source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
 [modules.helm.settings]
+
 # The module installs the wolfi `helm` package as `helm~<version>`, and that
 # package moved to the 4.x line, so 3.x versions no longer resolve. Charts are
 # still packaged with helm 3 (see .dagger/modules/release/helm.go); revisit once
@@ -90,16 +93,9 @@ source = ".dagger/modules/security"
 legacy-default-path = true
 
 [modules.security.settings]
+
 # Paths to exclude from the source tree before scanning.
-ignore = [
-  "bin",
-  ".git",
-  "docs",
-  "sdk/rust/examples",
-  "sdk/rust/crates/dagger-sdk/examples",
-  "core/integration/testdata",
-  "dagql/idtui/viztest",
-]
+ignore = ["bin", ".git", "docs", "sdk/rust/examples", "sdk/rust/crates/dagger-sdk/examples", "core/integration/testdata", "dagql/idtui/viztest"]
 
 [modules.shellcheck]
 source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
@@ -129,6 +125,12 @@ source = ".dagger/modules/tui-qa"
 source = ".dagger/modules/mcp-lab"
 
 [env.dev.modules.editor]
+source = "github.com/vito/editor"
+
+[modules.tla-check]
+source = ".dagger/modules/tla-check"
+
+[modules.editor]
 source = "github.com/vito/editor"
 
 [modules.dagger-dang-sdk.as-sdk]
@@ -217,9 +219,6 @@ path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/rust-client-dev"
-
-[modules.tla-check]
-source = ".dagger/modules/tla-check"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/tla-check"
