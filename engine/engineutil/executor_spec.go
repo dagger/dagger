@@ -1204,12 +1204,17 @@ type nestedClientTransportManager struct {
 	parentClientID  string
 
 	closed     bool
-	transports map[string]nestedClientTransport
+	transports map[string]*nestedClientTransport
 }
 
 type nestedClientTransport struct {
-	metadata  *engine.ClientMetadata
+	metadata *engine.ClientMetadata
+
+	// ready is closed once the registration for this ID has finished, after
+	// which exactly one of transport or err is set.
+	ready     chan struct{}
 	transport *engine.NestedClientTransport
+	err       error
 }
 
 func newNestedClientTransportManager(
@@ -1223,7 +1228,7 @@ func newNestedClientTransportManager(
 		sessionHandler:  handler,
 		baseMetadata:    baseMetadata,
 		parentClientID:  parentClientID,
-		transports:      map[string]nestedClientTransport{},
+		transports:      map[string]*nestedClientTransport{},
 	}
 }
 
@@ -1245,13 +1250,13 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	}
 
 	manager.mu.Lock()
-	defer manager.mu.Unlock()
-
 	if manager.closed {
+		manager.mu.Unlock()
 		return nil, nil, http.StatusGone, errors.New("nested client proxy is closed")
 	}
 	if client, ok := manager.transports[clientID]; ok {
-		return client.transport, client.metadata, 0, nil
+		manager.mu.Unlock()
+		return client.await()
 	}
 
 	// The request chooses only its fresh logical client ID. Session identity,
@@ -1259,26 +1264,62 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	// the exec-created proxy metadata.
 	metadata := *manager.baseMetadata
 	metadata.ClientID = clientID
+	client := &nestedClientTransport{
+		metadata: &metadata,
+		ready:    make(chan struct{}),
+	}
+	manager.transports[clientID] = client
+	manager.mu.Unlock()
+
+	// Register without holding manager.mu. Close runs from exec cleanup, which
+	// can itself be waited on by the session that serves this registration, so
+	// the server call must never be able to block Close. Concurrent requests
+	// for the same ID wait on the pending entry instead of racing a second
+	// registration.
 	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
 		manager.registrationCtx,
 		&metadata,
 		manager.parentClientID,
 		manager.baseMetadata.ClientID,
 	)
+
+	manager.mu.Lock()
 	if err != nil {
 		// Registration is an exact, one-time binding. A failure must not send an
-		// SSE client into a retry loop or fall through to any other client.
-		return nil, nil, http.StatusConflict, fmt.Errorf("register nested client transport: %w", err)
+		// SSE client into a retry loop or fall through to any other client, and
+		// it is not cached: a later request for the same ID registers again.
+		if manager.transports[clientID] == client {
+			delete(manager.transports, clientID)
+		}
+		client.err = fmt.Errorf("register nested client transport: %w", err)
+		close(client.ready)
+		manager.mu.Unlock()
+		return nil, nil, http.StatusConflict, client.err
+	}
+	client.transport = transport
+	closedMeanwhile := manager.closed
+	close(client.ready)
+	manager.mu.Unlock()
+
+	if closedMeanwhile {
+		// Close could not see this transport while the registration was in
+		// flight, so the registering request completes the cleanup.
+		transport.Close()
 	}
 	if wcprof.Enabled(manager.registrationCtx) {
 		// The analyzer stitches each logical nested client's ops under this exec.
 		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, 0, 0, metadata.ClientID, 0)
 	}
-	client := nestedClientTransport{
-		metadata:  &metadata,
-		transport: transport,
+	return transport, &metadata, 0, nil
+}
+
+// await returns the outcome of the registration that created this entry,
+// waiting for it if it is still in flight.
+func (client *nestedClientTransport) await() (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
+	<-client.ready
+	if client.err != nil {
+		return nil, nil, http.StatusConflict, client.err
 	}
-	manager.transports[metadata.ClientID] = client
 	return client.transport, client.metadata, 0, nil
 }
 
@@ -1291,7 +1332,11 @@ func (manager *nestedClientTransportManager) Close() {
 	manager.closed = true
 	transports := make([]*engine.NestedClientTransport, 0, len(manager.transports))
 	for _, client := range manager.transports {
-		transports = append(transports, client.transport)
+		// A registration still in flight closes its own transport once it
+		// observes the closed manager.
+		if client.transport != nil {
+			transports = append(transports, client.transport)
+		}
 	}
 	manager.mu.Unlock()
 
