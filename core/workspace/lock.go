@@ -20,6 +20,7 @@ const (
 	LockOperationOCISHA    = "oci-sha"
 	LockOperationGitLatest = "git-latest"
 	LockOperationGitSHA    = "git-sha"
+	LockOperationVanityURL = "vanity-url"
 
 	LatestReleaseVersion = "v1.0.0-beta.11"
 )

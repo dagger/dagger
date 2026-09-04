@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
@@ -18,6 +20,101 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
+}
+
+func TestUpdateVanityURLLockEntry(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://github.com/dagger/dagger?dagger-get=1", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	sourceURL := "https://" + srv.Listener.Addr().String() + "/go"
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+		"https://github.com/old/repository",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(t.Context(), nil, lock))
+	resolved, ok := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+	)
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
+}
+
+func TestUpdateVanityURLLockEntryValidatesInputs(t *testing.T) {
+	for _, inputs := range [][]any{
+		nil,
+		{42},
+		{""},
+		{"https://example.com/source", "extra"},
+		workspace.LookupInputs(
+			[]any{"https://example.com/source"},
+			workspace.LookupOption{Name: "other", Value: true},
+		),
+	} {
+		_, err := updateVanityURLLockEntry(t.Context(), workspace.LookupEntry{
+			Operation: workspace.LockOperationVanityURL,
+			Inputs:    inputs,
+		})
+		require.Error(t, err)
+	}
+}
+
+func TestUpdateVanityURLLockEntryPreservesMappingOnFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		location string
+		cancel   bool
+	}{
+		{name: "server error", status: http.StatusInternalServerError},
+		{name: "not a redirect", status: http.StatusOK},
+		{name: "missing location", status: http.StatusTemporaryRedirect},
+		{name: "invalid location", status: http.StatusTemporaryRedirect, location: "http://example.com/repo?dagger-get=1"},
+		{name: "cancelled request", status: http.StatusTemporaryRedirect, cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Location", tc.location)
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+			oldClient := daggerGetClient
+			daggerGetClient = srv.Client()
+			daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+			defer func() { daggerGetClient = oldClient }()
+
+			lock := workspace.NewLock()
+			inputs := []any{srv.URL + "/go"}
+			previous := "https://github.com/dagger/dagger@v1.2.3"
+			require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, inputs, previous))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancel {
+				cancel()
+			}
+			err := UpdateWorkspaceLock(ctx, nil, lock)
+			require.ErrorContains(t, err, "no valid redirect received")
+			actual, ok := lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, inputs)
+			require.True(t, ok)
+			require.Equal(t, previous, actual)
+		})
+	}
 }
 
 func TestSelectedSHAEntry(t *testing.T) {

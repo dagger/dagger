@@ -46,6 +46,8 @@ type mockServer struct {
 	functionCall   *FunctionCall
 	clientMetadata *engine.ClientMetadata
 	attachables    map[string]*grpc.ClientConn
+	workspaceLock  *workspacepkg.Lock
+	lockWritable   bool
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
@@ -132,12 +134,18 @@ func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID s
 	return conn, conn != nil, nil
 }
 
-func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg.Lock, bool, error) {
-	return nil, false, nil
+func (ms *mockServer) CurrentWorkspaceLock(_ context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error) {
+	if requireWritable && !ms.lockWritable {
+		return nil, false, nil
+	}
+	return ms.workspaceLock, ms.workspaceLock != nil, nil
 }
 
-func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
-	return nil
+func (ms *mockServer) SetCurrentWorkspaceLookup(_ context.Context, namespace, operation string, inputs []any, value string) error {
+	if ms.workspaceLock == nil {
+		return nil
+	}
+	return ms.workspaceLock.SetLookup(namespace, operation, inputs, value)
 }
 
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {

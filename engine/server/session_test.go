@@ -2109,9 +2109,9 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		ref, err := parseWorkspaceRemoteRefWithResolver(
 			context.Background(),
 			"dagger.io/go@main",
-			func(_ context.Context, got string) string {
+			func(_ context.Context, got string) (string, error) {
 				require.Equal(t, "dagger.io/go@main", got)
-				return "https://github.com/dagger/dagger/sdk/go@main"
+				return "https://github.com/dagger/dagger/sdk/go@main", nil
 			},
 		)
 		require.NoError(t, err)
@@ -2126,9 +2126,9 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		ref, err := parseWorkspaceRemoteRefWithResolver(
 			context.Background(),
 			"https://dagger.io/go#main:docs",
-			func(_ context.Context, got string) string {
+			func(_ context.Context, got string) (string, error) {
 				require.Equal(t, "https://dagger.io/go", got)
-				return "https://github.com/dagger/dagger/sdk/go"
+				return "https://github.com/dagger/dagger/sdk/go", nil
 			},
 		)
 		require.NoError(t, err)
