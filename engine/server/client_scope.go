@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -24,6 +25,30 @@ func (srv *Server) RegisterNestedClientTransport(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
 	parentClientID string,
+) (*engine.NestedClientTransport, error) {
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, "")
+}
+
+// RegisterNestedClientTransportForExec additionally binds a logical nested
+// client to the exact bootstrap attachables channel created by the same exec.
+// The binding is internal proxy state and cannot come from request metadata.
+func (srv *Server) RegisterNestedClientTransportForExec(
+	ctx context.Context,
+	metadata *engine.ClientMetadata,
+	parentClientID string,
+	attachablesClientID string,
+) (*engine.NestedClientTransport, error) {
+	if attachablesClientID == "" {
+		return nil, errors.New("nested exec transport is missing its attachables client ID")
+	}
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID)
+}
+
+func (srv *Server) registerNestedClientTransport(
+	ctx context.Context,
+	metadata *engine.ClientMetadata,
+	parentClientID string,
+	attachablesClientID string,
 ) (_ *engine.NestedClientTransport, rerr error) {
 	if metadata == nil {
 		return nil, errors.New("nested client metadata is nil")
@@ -80,6 +105,29 @@ func (srv *Server) RegisterNestedClientTransport(
 	if err != nil {
 		return nil, fmt.Errorf("validate client ancestry: %w", err)
 	}
+	if attachablesClientID == "" {
+		attachablesClientID = metadata.ClientID
+	}
+	if attachablesClientID != metadata.ClientID {
+		sess.clientMu.RLock()
+		attachablesRecord := sess.clientRecords[attachablesClientID]
+		sess.clientMu.RUnlock()
+		if attachablesRecord == nil {
+			return nil, fmt.Errorf("attachables client %q not found for nested client %q", attachablesClientID, metadata.ClientID)
+		}
+		if attachablesRecord.nestedTransport == nil || attachablesRecord.nestedTransport.Closed() {
+			return nil, fmt.Errorf("attachables client %q is closed for nested client %q", attachablesClientID, metadata.ClientID)
+		}
+		if attachablesRecord.attachablesClientID != "" && attachablesRecord.attachablesClientID != attachablesRecord.clientID {
+			return nil, fmt.Errorf("attachables client %q is not an exec bootstrap client", attachablesClientID)
+		}
+		if attachablesRecord.secretToken != metadata.ClientSecretToken {
+			return nil, fmt.Errorf("attachables client %q has a different secret token", attachablesClientID)
+		}
+		if !slices.Equal(attachablesRecord.parentClientIDs, parentIDs) {
+			return nil, fmt.Errorf("attachables client %q is outside nested client %q's exec scope", attachablesClientID, metadata.ClientID)
+		}
+	}
 
 	parentScope, err := scope.Delegate(engine.ClientLeaseChild, metadata.ClientID)
 	if err != nil {
@@ -96,14 +144,15 @@ func (srv *Server) RegisterNestedClientTransport(
 		return nil, err
 	}
 	record := &clientRecord{
-		daggerSession:   sess,
-		clientID:        metadata.ClientID,
-		clientVersion:   metadata.ClientVersion,
-		secretToken:     metadata.ClientSecretToken,
-		shutdownCh:      make(chan struct{}),
-		clientMetadata:  metadataSnapshot,
-		parentClientIDs: parentIDs,
-		accepting:       true,
+		daggerSession:       sess,
+		clientID:            metadata.ClientID,
+		clientVersion:       metadata.ClientVersion,
+		secretToken:         metadata.ClientSecretToken,
+		shutdownCh:          make(chan struct{}),
+		clientMetadata:      metadataSnapshot,
+		parentClientIDs:     parentIDs,
+		attachablesClientID: attachablesClientID,
+		accepting:           true,
 	}
 	client := &clientRuntime{
 		clientRecord:           record,
