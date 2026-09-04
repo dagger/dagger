@@ -46,7 +46,8 @@ func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
-// authoritative session teardown, and the final telemetry barrier.
+// authoritative session teardown, the final telemetry barrier, and exact
+// nested process-proxy routing.
 func (r *TlaCheck) ClientLifecycle(ctx context.Context) error {
 	if r.clientLifecycle != nil {
 		return nil
