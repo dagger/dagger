@@ -148,6 +148,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// Arbitrary binary data, represented as a base64-encoded string.
+type Bytes string
+
 // A unique identifier for an object.
 type ID string
 
@@ -422,6 +425,15 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Load a workspace from a module reference.
+func (r *Address) Workspace() *Workspace {
+	q := r.query.Select("workspace")
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // AsNode returns this Address as a Node.
@@ -6471,6 +6483,15 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 }
 
+// Interpret this file as a Git bundle by lazily parsing its header.
+func (r *File) AsGitBundle() *GitBundle {
+	q := r.query.Select("asGitBundle")
+
+	return &GitBundle{
+		query: q,
+	}
+}
+
 // Parse the file contents as JSON.
 func (r *File) AsJSON() *JSONValue {
 	q := r.query.Select("asJSON")
@@ -8144,6 +8165,271 @@ func (r *GeneratorGroup) AsNode() Node {
 	}
 }
 
+// A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.
+type GitBundle struct {
+	query *querybuilder.Selection
+
+	id           *ID
+	objectFormat *string
+	version      *int
+}
+type WithGitBundleFunc func(r *GitBundle) *GitBundle
+
+// With calls the provided function with current GitBundle.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitBundle) With(f WithGitBundleFunc) *GitBundle {
+	return f(r)
+}
+
+func (r *GitBundle) WithGraphQLQuery(q *querybuilder.Selection) *GitBundle {
+	return &GitBundle{
+		query: q,
+	}
+}
+
+// Return the bundle bytes as a File.
+func (r *GitBundle) AsFile() *File {
+	q := r.query.Select("asFile")
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitBundle.
+func (r *GitBundle) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitBundle) XXX_GraphQLType() string {
+	return "GitBundle"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitBundle) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitBundle) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitBundle) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GitBundle) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GitBundle{query: selectNode(dag.query, id, "GitBundle")}
+	return nil
+}
+
+// Object format capability: sha1 or sha256.
+func (r *GitBundle) ObjectFormat(ctx context.Context) (string, error) {
+	if r.objectFormat != nil {
+		return *r.objectFormat, nil
+	}
+	q := r.query.Select("objectFormat")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commits that must already exist wherever this bundle is applied.
+func (r *GitBundle) PrerequisiteSHAs(ctx context.Context) ([]string, error) {
+	q := r.query.Select("prerequisiteSHAs")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Refs advertised by the bundle and the object IDs they resolve to.
+func (r *GitBundle) Refs(ctx context.Context) ([]GitBundleRef, error) {
+	q := r.query.Select("refs")
+
+	q = q.Select("id")
+
+	type refs struct {
+		Id ID
+	}
+
+	convert := func(fields []refs) []GitBundleRef {
+		out := []GitBundleRef{}
+
+		for i := range fields {
+			val := GitBundleRef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitBundleRef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []refs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Perform full structural verification of the bundle and error if it is malformed.
+func (r *GitBundle) Validate() *GitBundle {
+	q := r.query.Select("validate")
+
+	return &GitBundle{
+		query: q,
+	}
+}
+
+// Bundle format version (2 or 3).
+func (r *GitBundle) Version(ctx context.Context) (int, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundle as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitBundle) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A ref advertised by a Git bundle.
+type GitBundleRef struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+	sha  *string
+}
+
+func (r *GitBundleRef) WithGraphQLQuery(q *querybuilder.Selection) *GitBundleRef {
+	return &GitBundleRef{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitBundleRef.
+func (r *GitBundleRef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitBundleRef) XXX_GraphQLType() string {
+	return "GitBundleRef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitBundleRef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitBundleRef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitBundleRef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GitBundleRef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GitBundleRef{query: selectNode(dag.query, id, "GitBundleRef")}
+	return nil
+}
+
+// The advertised ref name.
+func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID the advertised ref resolves to.
+func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundleRef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitBundleRef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An immutable git commit.
 type GitCommit struct {
 	query *querybuilder.Selection
@@ -8753,6 +9039,14 @@ type GitRepository struct {
 	id  *ID
 	url *string
 }
+type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
+
+// With calls the provided function with current GitRepository.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
+	return f(r)
+}
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
@@ -8813,6 +9107,28 @@ func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranc
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitRepositoryBundleOpts contains options for GitRepository.Bundle
+type GitRepositoryBundleOpts struct {
+	// A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+	Base *GitRef
+}
+
+// Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+func (r *GitRepository) Bundle(refs []string, opts ...GitRepositoryBundleOpts) *GitBundle {
+	q := r.query.Select("bundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
+	q = q.Arg("refs", refs)
+
+	return &GitBundle{
+		query: q,
+	}
 }
 
 // Returns details of a commit.
@@ -8956,6 +9272,29 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitRepositoryWithBundleOpts contains options for GitRepository.WithBundle
+type GitRepositoryWithBundleOpts struct {
+	// An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+	PrerequisiteRef string
+}
+
+// Import a Git bundle after fetching and verifying all of its prerequisites.
+func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithBundleOpts) *GitRepository {
+	assertNotNil("bundle", bundle)
+	q := r.query.Select("withBundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `prerequisiteRef` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PrerequisiteRef) {
+			q = q.Arg("prerequisiteRef", opts[i].PrerequisiteRef)
+		}
+	}
+	q = q.Arg("bundle", bundle)
+
+	return &GitRepository{
+		query: q,
+	}
 }
 
 // AsNode returns this GitRepository as a Node.
@@ -12838,6 +13177,31 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
+// BlobOpts contains options for Query.Blob
+type BlobOpts struct {
+	// Permissions of the new file. Example: 0600
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Creates a file from arbitrary binary contents.
+func (r *Query) Blob(name string, contents Bytes, opts ...BlobOpts) *File {
+	q := r.query.Select("blob")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("contents", contents)
+
+	return &File{
+		query: q,
+	}
+}
+
 // CacheVolumeOpts contains options for Query.CacheVolume
 type CacheVolumeOpts struct {
 	// Identifier of the directory to use as the cache volume's root.
@@ -14924,6 +15288,241 @@ func (r *Terminal) AsSyncer() Syncer {
 	}
 }
 
+type TerminalGroup struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithTerminalGroupFunc func(r *TerminalGroup) *TerminalGroup
+
+// With calls the provided function with current TerminalGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *TerminalGroup) With(f WithTerminalGroupFunc) *TerminalGroup {
+	return f(r)
+}
+
+func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGroup {
+	return &TerminalGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this TerminalGroup.
+func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TerminalGroup) XXX_GraphQLType() string {
+	return "TerminalGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TerminalGroup) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TerminalGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TerminalGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *TerminalGroup) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = TerminalGroup{query: selectNode(dag.query, id, "TerminalGroup")}
+	return nil
+}
+
+// Return the selected terminal targets and their details
+func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []TerminalTarget {
+		out := []TerminalTarget{}
+
+		for i := range fields {
+			val := TerminalTarget{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TerminalTarget")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Open the selected terminal target
+func (r *TerminalGroup) Run() *TerminalGroup {
+	q := r.query.Select("run")
+
+	return &TerminalGroup{
+		query: q,
+	}
+}
+
+// AsNode returns this TerminalGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TerminalGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type TerminalTarget struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *TerminalTarget) WithGraphQLQuery(q *querybuilder.Selection) *TerminalTarget {
+	return &TerminalTarget{
+		query: q,
+	}
+}
+
+// The description of the terminal target
+func (r *TerminalTarget) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this TerminalTarget.
+func (r *TerminalTarget) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TerminalTarget) XXX_GraphQLType() string {
+	return "TerminalTarget"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TerminalTarget) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TerminalTarget) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TerminalTarget) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *TerminalTarget) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = TerminalTarget{query: selectNode(dag.query, id, "TerminalTarget")}
+	return nil
+}
+
+// Return the fully qualified name of the terminal target
+func (r *TerminalTarget) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module in which the terminal target is defined
+func (r *TerminalTarget) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The path of the terminal target within its module
+func (r *TerminalTarget) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this TerminalTarget as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TerminalTarget) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
@@ -15976,7 +16575,9 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace.
+// Write this workspace's pending changes to its local Git workspace on the current client's host.
+//
+// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
 func (r *Workspace) Export(ctx context.Context) error {
 	if r.export != nil {
 		return nil
@@ -16404,6 +17005,27 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// WorkspaceTerminalsOpts contains options for Workspace.Terminals
+type WorkspaceTerminalsOpts struct {
+	// Only include terminal targets matching the specified patterns
+	Include []string
+}
+
+// Return all terminal targets from modules loaded in the workspace.
+func (r *Workspace) Terminals(opts ...WorkspaceTerminalsOpts) *TerminalGroup {
+	q := r.query.Select("terminals")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &TerminalGroup{
 		query: q,
 	}
 }
