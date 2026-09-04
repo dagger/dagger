@@ -24,9 +24,15 @@ const (
 	javaBaseImage   = "eclipse-temurin:21-jre"
 )
 
+// temporalOutcome is the expected outcome of a configuration that must
+// violate a temporal property. TLC does not name the violated property, so
+// a liveness mutation can only be gated on the class of failure.
+const temporalOutcome = "temporal"
+
 // expectedOutcome maps every configuration to what TLC must report:
-// "" means the run must complete with no error found; a non-empty value
-// names the one invariant that must be violated.
+// "" means the run must complete with no error found; temporalOutcome means
+// a temporal property must be violated; any other value names the one
+// invariant that must be violated.
 var expectedOutcome = map[string]string{
 	// green: regression gates over the modeled cache behavior
 	"core":              "",
@@ -320,6 +326,17 @@ func runOne(
 			violated = strings.TrimSuffix(violated, " is violated")
 			break
 		}
+		if strings.HasPrefix(line, "Error: Temporal properties were violated") {
+			violated = temporalOutcome
+			break
+		}
+	}
+
+	describe := func(outcome string) string {
+		if outcome == temporalOutcome {
+			return "a temporal property"
+		}
+		return "invariant " + outcome
 	}
 
 	switch {
@@ -328,7 +345,7 @@ func runOne(
 	case expect == "" && violated != "":
 		return &runFailure{
 			name:    name,
-			summary: fmt.Sprintf("expected a clean pass, but invariant %s was violated — a regression in the modeled behavior or the spec", violated),
+			summary: fmt.Sprintf("expected a clean pass, but %s was violated — a regression in the modeled behavior or the spec", describe(violated)),
 			detail:  out,
 		}
 	case expect != "" && violated == expect:
@@ -336,19 +353,19 @@ func runOne(
 	case expect != "" && clean:
 		return &runFailure{
 			name:    name,
-			summary: fmt.Sprintf("expected invariant %s to be violated, but the run came up clean — the model or config no longer reproduces it", expect),
+			summary: fmt.Sprintf("expected %s to be violated, but the run came up clean — the model or config no longer reproduces it", describe(expect)),
 			detail:  out,
 		}
 	case expect != "" && violated != "":
 		return &runFailure{
 			name:    name,
-			summary: fmt.Sprintf("expected invariant %s to be violated, but %s was violated instead — the configuration drifted", expect, violated),
+			summary: fmt.Sprintf("expected %s to be violated, but %s was violated instead — the configuration drifted", describe(expect), describe(violated)),
 			detail:  out,
 		}
 	default:
 		return &runFailure{
 			name:    name,
-			summary: "unrecognized TLC outcome (no clean pass or invariant violation)",
+			summary: "unrecognized TLC outcome (no clean pass, invariant violation, or temporal violation)",
 			detail:  out,
 		}
 	}
