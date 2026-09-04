@@ -484,4 +484,11 @@ QuiescentTeardownEventuallyCompletes ==
       /\ cachePhase \in {"cleaning", "done"})
         ~> sessionPhase = "removed"
 
+\* Stronger than the above: once teardown begins, fair producer completion and
+\* system progress reach removal without assuming producers have already
+\* drained. Any modeled step that can block a producer during teardown must
+\* violate this property.
+TeardownEventuallyCompletes ==
+    sessionPhase = "closing" ~> sessionPhase = "removed"
+
 =============================================================================
