@@ -636,9 +636,9 @@ extend type Query {
 
 type ModuleManifest {
   withName(name: String!): ModuleManifest!
-  withDependency(source: String!, name: String, pin: String): ModuleManifest!
-  withoutDependency(name: String!): ModuleManifest!
-  withoutDependencies: ModuleManifest!
+  withLegacyRuntimeDependency(source: String!, name: String, pin: String): ModuleManifest!
+  withoutLegacyRuntimeDependency(name: String!): ModuleManifest!
+  withoutLegacyRuntimeDependencies: ModuleManifest!
 
   withDangEntrypoint(source: String!): ModuleManifest!
   withModuleEntrypoint(source: String!): ModuleManifest!
@@ -670,7 +670,7 @@ extend type Workspace {
 
 `withDangEntrypoint` sets an embedded Dang entrypoint. `withModuleEntrypoint` sets a module entrypoint. If both functions are called, the last call replaces the earlier entrypoint.
 
-The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. Each function sets the legacy runtime, module source, and engine version as one unit. A null module source omits `source`; the legacy loader then uses the manifest directory. A null engine version uses the running engine version. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, module source, engine version, and include paths.
+The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. Each function sets the legacy runtime, module source, and engine version as one unit. A null module source omits `source`; the legacy loader then uses the manifest directory. A null engine version uses the running engine version. `withLegacyRuntimeDependency` adds a module to the schema used by the legacy runtime. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, module source, engine version, include paths, and runtime dependencies.
 
 `tomlFile` returns `dagger-module.toml`. It contains the entrypoint and any legacy fallback fields. `legacyJSONFile` returns `dagger.json`. It contains only the legacy fields and returns an error if no legacy runtime is set.
 

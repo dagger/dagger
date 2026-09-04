@@ -22,11 +22,11 @@ type ModuleManifest struct {
 	EntrypointKind   string
 	EntrypointSource string
 
-	LegacyRuntime       string
-	LegacyModuleSource  string
-	LegacyEngineVersion string
-	LegacyInclude       []string
-	Dependencies        []*modules.ModuleConfigDependency
+	LegacyRuntime             string
+	LegacyModuleSource        string
+	LegacyEngineVersion       string
+	LegacyInclude             []string
+	LegacyRuntimeDependencies []*modules.ModuleConfigDependency
 
 	TOMLConfig       *modules.ModuleConfigWithUserFields
 	LegacyJSONConfig *modules.ModuleConfigWithUserFields
@@ -44,7 +44,7 @@ func (*ModuleManifest) TypeDescription() string {
 func (manifest *ModuleManifest) Clone() *ModuleManifest {
 	cloned := *manifest
 	cloned.LegacyInclude = slices.Clone(manifest.LegacyInclude)
-	cloned.Dependencies = cloneManifestDependencies(manifest.Dependencies)
+	cloned.LegacyRuntimeDependencies = cloneManifestDependencies(manifest.LegacyRuntimeDependencies)
 	cloned.TOMLConfig = cloneManifestConfig(manifest.TOMLConfig)
 	cloned.LegacyJSONConfig = cloneManifestConfig(manifest.LegacyJSONConfig)
 	return &cloned
@@ -93,7 +93,7 @@ func (manifest *ModuleManifest) loadCanonicalConfig(cfg *modules.ModuleConfigWit
 	manifest.LegacyModuleSource = cfg.Source
 	manifest.LegacyEngineVersion = cfg.EngineVersion
 	manifest.LegacyInclude = slices.Clone(cfg.Include)
-	manifest.Dependencies = cloneManifestDependencies(cfg.Dependencies)
+	manifest.LegacyRuntimeDependencies = cloneManifestDependencies(cfg.Dependencies)
 	manifest.LegacyRuntime = ""
 	if cfg.SDK != nil {
 		manifest.LegacyRuntime = cfg.SDK.Source
@@ -106,17 +106,17 @@ func (manifest *ModuleManifest) WithName(name string) *ModuleManifest {
 	return manifest
 }
 
-func (manifest *ModuleManifest) WithDependency(name, source, pin string) *ModuleManifest {
+func (manifest *ModuleManifest) WithLegacyRuntimeDependency(name, source, pin string) *ModuleManifest {
 	manifest = manifest.Clone()
 	dependency := &modules.ModuleConfigDependency{Name: name, Source: source, Pin: pin}
-	for index, configured := range manifest.Dependencies {
+	for index, configured := range manifest.LegacyRuntimeDependencies {
 		if configured.Name == name && (name != "" || configured.Source == source) {
-			manifest.Dependencies[index] = dependency
+			manifest.LegacyRuntimeDependencies[index] = dependency
 			return manifest
 		}
 	}
-	manifest.Dependencies = append(manifest.Dependencies, dependency)
-	slices.SortFunc(manifest.Dependencies, func(left, right *modules.ModuleConfigDependency) int {
+	manifest.LegacyRuntimeDependencies = append(manifest.LegacyRuntimeDependencies, dependency)
+	slices.SortFunc(manifest.LegacyRuntimeDependencies, func(left, right *modules.ModuleConfigDependency) int {
 		leftKey := left.Name
 		if leftKey == "" {
 			leftKey = left.Source
@@ -130,17 +130,17 @@ func (manifest *ModuleManifest) WithDependency(name, source, pin string) *Module
 	return manifest
 }
 
-func (manifest *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
+func (manifest *ModuleManifest) WithoutLegacyRuntimeDependency(name string) *ModuleManifest {
 	manifest = manifest.Clone()
-	manifest.Dependencies = slices.DeleteFunc(manifest.Dependencies, func(dependency *modules.ModuleConfigDependency) bool {
+	manifest.LegacyRuntimeDependencies = slices.DeleteFunc(manifest.LegacyRuntimeDependencies, func(dependency *modules.ModuleConfigDependency) bool {
 		return dependency.Name == name || dependency.Name == "" && dependency.Source == name
 	})
 	return manifest
 }
 
-func (manifest *ModuleManifest) WithoutDependencies() *ModuleManifest {
+func (manifest *ModuleManifest) WithoutLegacyRuntimeDependencies() *ModuleManifest {
 	manifest = manifest.Clone()
-	manifest.Dependencies = nil
+	manifest.LegacyRuntimeDependencies = nil
 	return manifest
 }
 
@@ -211,6 +211,7 @@ func (manifest *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
 	manifest.LegacyModuleSource = ""
 	manifest.LegacyEngineVersion = ""
 	manifest.LegacyInclude = nil
+	manifest.LegacyRuntimeDependencies = nil
 	manifest.LoadedLegacyJSON = false
 	return manifest
 }
@@ -232,7 +233,7 @@ func (manifest *ModuleManifest) Validate(targetEngineVersion string) error {
 		return fmt.Errorf("module manifest entrypoint kind must be dang or module")
 	}
 
-	hasLegacyFields := manifest.LegacyModuleSource != "" || manifest.LegacyEngineVersion != "" || len(manifest.LegacyInclude) > 0
+	hasLegacyFields := manifest.LegacyModuleSource != "" || manifest.LegacyEngineVersion != "" || len(manifest.LegacyInclude) > 0 || len(manifest.LegacyRuntimeDependencies) > 0
 	if manifest.LegacyRuntime == "" && hasLegacyFields {
 		return fmt.Errorf("module manifest legacy runtime is required when legacy fields are set")
 	}
@@ -373,7 +374,7 @@ func (manifest *ModuleManifest) applyCommonFields(config *modules.ModuleConfigWi
 	config.Source = manifest.LegacyModuleSource
 	config.EngineVersion = manifest.LegacyEngineVersion
 	config.Include = slices.Clone(manifest.LegacyInclude)
-	config.Dependencies = cloneManifestDependencies(manifest.Dependencies)
+	config.Dependencies = cloneManifestDependencies(manifest.LegacyRuntimeDependencies)
 	if manifest.LegacyRuntime == "" {
 		config.SDK = nil
 	} else if config.SDK == nil || config.SDK.Source != manifest.LegacyRuntime {

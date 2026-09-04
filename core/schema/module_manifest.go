@@ -27,18 +27,18 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 		dagql.Func("withName", s.withName).
 			Doc("Set the module name.").
 			Args(dagql.Arg("name").Doc("Module name.")),
-		dagql.Func("withDependency", s.withDependency).
-			Doc("Add or replace a module dependency.").
+		dagql.Func("withLegacyRuntimeDependency", s.withLegacyRuntimeDependency).
+			Doc("Add or replace a module available to the legacy runtime.").
 			Args(
-				dagql.Arg("source").Doc("Dependency source address."),
-				dagql.Arg("name").Doc("Optional dependency name."),
-				dagql.Arg("pin").Doc("Optional dependency pin."),
+				dagql.Arg("source").Doc("Module source address."),
+				dagql.Arg("name").Doc("Optional module name in the legacy runtime schema."),
+				dagql.Arg("pin").Doc("Optional module source pin."),
 			),
-		dagql.Func("withoutDependency", s.withoutDependency).
-			Doc("Remove a module dependency by name.").
-			Args(dagql.Arg("name").Doc("Dependency name.")),
-		dagql.Func("withoutDependencies", s.withoutDependencies).
-			Doc("Remove all module dependencies."),
+		dagql.Func("withoutLegacyRuntimeDependency", s.withoutLegacyRuntimeDependency).
+			Doc("Remove a module from the legacy runtime by name.").
+			Args(dagql.Arg("name").Doc("Module name.")),
+		dagql.Func("withoutLegacyRuntimeDependencies", s.withoutLegacyRuntimeDependencies).
+			Doc("Remove all modules from the legacy runtime."),
 		dagql.Func("withDangEntrypoint", s.withDangEntrypoint).
 			Doc("Use the built-in Dang entrypoint.").
 			Args(dagql.Arg("source").Doc("Entrypoint source address.")),
@@ -71,7 +71,7 @@ func (s *moduleManifestSchema) Install(dag *dagql.Server) {
 				"This operation is additive.").
 			Args(dagql.Arg("path").Doc("Path to include.")),
 		dagql.Func("withoutLegacyFields", s.withoutLegacyFields).
-			Doc("Remove the legacy runtime, module source, engine version, and include paths."),
+			Doc("Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies."),
 		dagql.Func("validate", s.validate).
 			Doc("Validate the manifest.",
 				"If targetEngineVersion is set, also validate the legacy runtime against that engine version.").
@@ -135,7 +135,7 @@ func (s *moduleManifestSchema) withName(
 	return manifest.WithName(args.Name), nil
 }
 
-func (s *moduleManifestSchema) withDependency(
+func (s *moduleManifestSchema) withLegacyRuntimeDependency(
 	ctx context.Context,
 	manifest *core.ModuleManifest,
 	args struct {
@@ -144,23 +144,23 @@ func (s *moduleManifestSchema) withDependency(
 		Pin    dagql.Optional[dagql.String]
 	},
 ) (*core.ModuleManifest, error) {
-	return manifest.WithDependency(args.Name.Value.String(), args.Source, args.Pin.Value.String()), nil
+	return manifest.WithLegacyRuntimeDependency(args.Name.Value.String(), args.Source, args.Pin.Value.String()), nil
 }
 
-func (s *moduleManifestSchema) withoutDependency(
+func (s *moduleManifestSchema) withoutLegacyRuntimeDependency(
 	ctx context.Context,
 	manifest *core.ModuleManifest,
 	args struct{ Name string },
 ) (*core.ModuleManifest, error) {
-	return manifest.WithoutDependency(args.Name), nil
+	return manifest.WithoutLegacyRuntimeDependency(args.Name), nil
 }
 
-func (s *moduleManifestSchema) withoutDependencies(
+func (s *moduleManifestSchema) withoutLegacyRuntimeDependencies(
 	ctx context.Context,
 	manifest *core.ModuleManifest,
 	args struct{},
 ) (*core.ModuleManifest, error) {
-	return manifest.WithoutDependencies(), nil
+	return manifest.WithoutLegacyRuntimeDependencies(), nil
 }
 
 func (s *moduleManifestSchema) withDangEntrypoint(

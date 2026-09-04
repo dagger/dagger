@@ -97,6 +97,7 @@ func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 	base := empty.WithName("payments")
 	entrypoint := base.WithDangEntrypoint("./main.dang")
 	fat := entrypoint.WithLegacyGoRuntime("./src", "v0.20.3").WithLegacyInclude("go.mod")
+	fat = fat.WithLegacyRuntimeDependency("dep", "./dep", "")
 	current := fat.WithoutLegacyFields()
 
 	require.Empty(t, empty.Name)
@@ -109,6 +110,7 @@ func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 	require.Empty(t, current.LegacyModuleSource)
 	require.Empty(t, current.LegacyEngineVersion)
 	require.Empty(t, current.LegacyInclude)
+	require.Empty(t, current.LegacyRuntimeDependencies)
 	require.Equal(t, "dang", current.EntrypointKind)
 }
 
@@ -140,16 +142,16 @@ engineVersion = "v0.20.3"
   pin = "sha256:old"
 `)))
 
-	withoutKeep := manifest.WithoutDependency("keep")
-	cleared := manifest.WithoutDependencies()
+	withoutKeep := manifest.WithoutLegacyRuntimeDependency("keep")
+	cleared := manifest.WithoutLegacyRuntimeDependencies()
 	updated := cleared.
 		WithName("updated-name").
-		WithDependency("client", "./client", "sha256:new")
+		WithLegacyRuntimeDependency("client", "./client", "sha256:new")
 
 	require.Equal(t, "current-name", manifest.Name)
-	require.Equal(t, "keep", manifest.Dependencies[0].Name)
-	require.Empty(t, withoutKeep.Dependencies)
-	require.Empty(t, cleared.Dependencies)
+	require.Equal(t, "keep", manifest.LegacyRuntimeDependencies[0].Name)
+	require.Empty(t, withoutKeep.LegacyRuntimeDependencies)
+	require.Empty(t, cleared.LegacyRuntimeDependencies)
 	for filename, contents := range map[string][]byte{
 		modules.Filename:       mustModuleManifestTOMLContents(t, updated),
 		modules.LegacyFilename: mustModuleManifestJSONContents(t, updated),
@@ -280,6 +282,11 @@ func TestModuleManifestValidation(t *testing.T) {
 		{
 			name:     "orphaned legacy field",
 			manifest: (&ModuleManifest{Name: "hello"}).WithDangEntrypoint(".").WithLegacyInclude("src/**"),
+			wantErr:  "legacy runtime is required",
+		},
+		{
+			name:     "orphaned legacy runtime dependency",
+			manifest: (&ModuleManifest{Name: "hello"}).WithDangEntrypoint(".").WithLegacyRuntimeDependency("dep", "./dep", ""),
 			wantErr:  "legacy runtime is required",
 		},
 		{
