@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/dagger/dagger/core/modules"
@@ -25,6 +26,11 @@ type ModuleManifest struct {
 	LegacyModuleSource  string
 	LegacyEngineVersion string
 	LegacyInclude       []string
+	Dependencies        []*modules.ModuleConfigDependency
+
+	TOMLConfig       *modules.ModuleConfigWithUserFields
+	LegacyJSONConfig *modules.ModuleConfigWithUserFields
+	LoadedLegacyJSON bool
 }
 
 func (*ModuleManifest) Type() *ast.Type {
@@ -38,7 +44,98 @@ func (*ModuleManifest) TypeDescription() string {
 func (manifest *ModuleManifest) Clone() *ModuleManifest {
 	cloned := *manifest
 	cloned.LegacyInclude = slices.Clone(manifest.LegacyInclude)
+	cloned.Dependencies = cloneManifestDependencies(manifest.Dependencies)
+	cloned.TOMLConfig = cloneManifestConfig(manifest.TOMLConfig)
+	cloned.LegacyJSONConfig = cloneManifestConfig(manifest.LegacyJSONConfig)
 	return &cloned
+}
+
+func (manifest *ModuleManifest) LoadTOML(contents []byte) error {
+	cfg, err := modules.ParseModuleConfigForFilename(contents, modules.Filename)
+	if err != nil {
+		return fmt.Errorf("load dagger-module.toml: %w", err)
+	}
+	var document struct {
+		Entrypoint *moduleManifestEntrypoint `toml:"entrypoint"`
+	}
+	if err := toml.Unmarshal(contents, &document); err != nil {
+		return fmt.Errorf("load dagger-module.toml entrypoint: %w", err)
+	}
+
+	manifest.TOMLConfig = cloneManifestConfig(cfg)
+	if manifest.LegacyJSONConfig == nil {
+		manifest.LegacyJSONConfig = cloneManifestConfig(cfg)
+	}
+	manifest.loadCanonicalConfig(cfg)
+	if document.Entrypoint != nil {
+		manifest.EntrypointKind = document.Entrypoint.Kind
+		manifest.EntrypointSource = document.Entrypoint.Source
+	}
+	return nil
+}
+
+func (manifest *ModuleManifest) LoadJSON(contents []byte) error {
+	cfg, err := modules.ParseModuleConfigForFilename(contents, modules.LegacyFilename)
+	if err != nil {
+		return fmt.Errorf("load dagger.json: %w", err)
+	}
+	manifest.LegacyJSONConfig = cloneManifestConfig(cfg)
+	manifest.LoadedLegacyJSON = true
+	if manifest.TOMLConfig == nil {
+		manifest.TOMLConfig = cloneManifestConfig(cfg)
+		manifest.loadCanonicalConfig(cfg)
+	}
+	return nil
+}
+
+func (manifest *ModuleManifest) loadCanonicalConfig(cfg *modules.ModuleConfigWithUserFields) {
+	manifest.Name = cfg.Name
+	manifest.LegacyModuleSource = cfg.Source
+	manifest.LegacyEngineVersion = cfg.EngineVersion
+	manifest.LegacyInclude = slices.Clone(cfg.Include)
+	manifest.Dependencies = cloneManifestDependencies(cfg.Dependencies)
+	manifest.LegacyRuntime = ""
+	if cfg.SDK != nil {
+		manifest.LegacyRuntime = cfg.SDK.Source
+	}
+}
+
+func (manifest *ModuleManifest) WithName(name string) *ModuleManifest {
+	manifest = manifest.Clone()
+	manifest.Name = name
+	return manifest
+}
+
+func (manifest *ModuleManifest) WithDependency(name, source, pin string) *ModuleManifest {
+	manifest = manifest.Clone()
+	dependency := &modules.ModuleConfigDependency{Name: name, Source: source, Pin: pin}
+	for index, configured := range manifest.Dependencies {
+		if configured.Name == name && (name != "" || configured.Source == source) {
+			manifest.Dependencies[index] = dependency
+			return manifest
+		}
+	}
+	manifest.Dependencies = append(manifest.Dependencies, dependency)
+	slices.SortFunc(manifest.Dependencies, func(left, right *modules.ModuleConfigDependency) int {
+		leftKey := left.Name
+		if leftKey == "" {
+			leftKey = left.Source
+		}
+		rightKey := right.Name
+		if rightKey == "" {
+			rightKey = right.Source
+		}
+		return bytes.Compare([]byte(leftKey), []byte(rightKey))
+	})
+	return manifest
+}
+
+func (manifest *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
+	manifest = manifest.Clone()
+	manifest.Dependencies = slices.DeleteFunc(manifest.Dependencies, func(dependency *modules.ModuleConfigDependency) bool {
+		return dependency.Name == name || dependency.Name == "" && dependency.Source == name
+	})
+	return manifest
 }
 
 func (manifest *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
@@ -92,6 +189,7 @@ func (manifest *ModuleManifest) withLegacyRuntime(runtime, moduleSource, engineV
 		engineVersion = engine.Version
 	}
 	manifest.LegacyEngineVersion = normalizeManifestEngineVersion(engineVersion)
+	manifest.LoadedLegacyJSON = true
 	return manifest
 }
 
@@ -107,6 +205,7 @@ func (manifest *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
 	manifest.LegacyModuleSource = ""
 	manifest.LegacyEngineVersion = ""
 	manifest.LegacyInclude = nil
+	manifest.LoadedLegacyJSON = false
 	return manifest
 }
 
@@ -132,7 +231,7 @@ func (manifest *ModuleManifest) Validate(targetEngineVersion string) error {
 		return fmt.Errorf("module manifest legacy runtime is required when legacy fields are set")
 	}
 	if manifest.LegacyRuntime != "" {
-		if !sdkmeta.IsBuiltin(manifest.LegacyRuntime) {
+		if !sdkmeta.IsBuiltin(manifest.LegacyRuntime) && manifest.TOMLConfig == nil && manifest.LegacyJSONConfig == nil {
 			return fmt.Errorf("module manifest legacy runtime %q is not supported", manifest.LegacyRuntime)
 		}
 		if manifest.LegacyEngineVersion == "" {
@@ -158,15 +257,6 @@ func (manifest *ModuleManifest) Validate(targetEngineVersion string) error {
 	return nil
 }
 
-type moduleManifestTOMLDocument struct {
-	Name          string                    `toml:"name"`
-	Source        string                    `toml:"source,omitempty"`
-	EngineVersion string                    `toml:"engineVersion,omitempty"`
-	Include       []string                  `toml:"include,omitempty"`
-	Runtime       *modules.SDK              `toml:"runtime,omitempty"`
-	Entrypoint    *moduleManifestEntrypoint `toml:"entrypoint,omitempty"`
-}
-
 type moduleManifestEntrypoint struct {
 	Kind   string `toml:"kind"`
 	Source string `toml:"source"`
@@ -177,46 +267,41 @@ func (manifest *ModuleManifest) TOMLContents() ([]byte, error) {
 		return nil, err
 	}
 
-	document := moduleManifestTOMLDocument{
-		Name:          manifest.Name,
-		Source:        manifest.LegacyModuleSource,
-		EngineVersion: manifest.LegacyEngineVersion,
-		Include:       slices.Clone(manifest.LegacyInclude),
-	}
-	if manifest.LegacyRuntime != "" {
-		document.Runtime = &modules.SDK{Source: manifest.LegacyRuntime}
-	}
-	if manifest.EntrypointKind != "" {
-		document.Entrypoint = &moduleManifestEntrypoint{
-			Kind:   manifest.EntrypointKind,
-			Source: manifest.EntrypointSource,
-		}
-	}
-
-	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Order(toml.OrderPreserve).Encode(document); err != nil {
+	contents, err := modules.MarshalModuleConfigForFilename(manifest.currentConfig(), modules.Filename)
+	if err != nil {
 		return nil, fmt.Errorf("serialize module manifest TOML: %w", err)
 	}
-	return normalizeModuleManifestContents(buf.Bytes()), nil
+	if manifest.EntrypointKind == "" {
+		return contents, nil
+	}
+
+	document := struct {
+		Entrypoint *moduleManifestEntrypoint `toml:"entrypoint"`
+	}{
+		Entrypoint: &moduleManifestEntrypoint{
+			Kind:   manifest.EntrypointKind,
+			Source: manifest.EntrypointSource,
+		},
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Order(toml.OrderPreserve).Encode(document); err != nil {
+		return nil, fmt.Errorf("serialize module manifest TOML entrypoint: %w", err)
+	}
+	contents = bytes.TrimRight(contents, "\n")
+	contents = append(contents, '\n', '\n')
+	contents = append(contents, bytes.TrimLeft(buf.Bytes(), "\n")...)
+	return normalizeModuleManifestContents(contents), nil
 }
 
 func (manifest *ModuleManifest) LegacyJSONContents() ([]byte, error) {
 	if err := manifest.Validate(""); err != nil {
 		return nil, err
 	}
-	if manifest.LegacyRuntime == "" {
+	if manifest.LegacyRuntime == "" && !manifest.LoadedLegacyJSON {
 		return nil, fmt.Errorf("module manifest has no legacy runtime")
 	}
 
-	return modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
-		ModuleConfig: modules.ModuleConfig{
-			Name:          manifest.Name,
-			Source:        manifest.LegacyModuleSource,
-			EngineVersion: manifest.LegacyEngineVersion,
-			Include:       slices.Clone(manifest.LegacyInclude),
-			SDK:           &modules.SDK{Source: manifest.LegacyRuntime},
-		},
-	}, modules.LegacyFilename)
+	return modules.MarshalModuleConfigForFilename(manifest.legacyConfig(), modules.LegacyFilename)
 }
 
 func (manifest *ModuleManifest) TOMLFile(ctx context.Context) (dagql.ObjectResult[*File], error) {
@@ -245,7 +330,7 @@ func (manifest *ModuleManifest) Directory(ctx context.Context) (dagql.ObjectResu
 		Name:     modules.Filename,
 		Contents: tomlContents,
 	}}
-	if manifest.LegacyRuntime != "" {
+	if manifest.LegacyRuntime != "" || manifest.LoadedLegacyJSON {
 		legacyJSONContents, err := manifest.LegacyJSONContents()
 		if err != nil {
 			return dagql.ObjectResult[*Directory]{}, err
@@ -257,6 +342,114 @@ func (manifest *ModuleManifest) Directory(ctx context.Context) (dagql.ObjectResu
 	}
 
 	return moduleManifestDirectory(ctx, files)
+}
+
+func (manifest *ModuleManifest) currentConfig() *modules.ModuleConfigWithUserFields {
+	config := cloneManifestConfig(manifest.TOMLConfig)
+	if config == nil {
+		config = &modules.ModuleConfigWithUserFields{}
+	}
+	manifest.applyCommonFields(config)
+	return config
+}
+
+func (manifest *ModuleManifest) legacyConfig() *modules.ModuleConfigWithUserFields {
+	config := cloneManifestConfig(manifest.LegacyJSONConfig)
+	if config == nil {
+		config = &modules.ModuleConfigWithUserFields{}
+	}
+	manifest.applyCommonFields(config)
+	return config
+}
+
+func (manifest *ModuleManifest) applyCommonFields(config *modules.ModuleConfigWithUserFields) {
+	config.Name = manifest.Name
+	config.Source = manifest.LegacyModuleSource
+	config.EngineVersion = manifest.LegacyEngineVersion
+	config.Include = slices.Clone(manifest.LegacyInclude)
+	config.Dependencies = cloneManifestDependencies(manifest.Dependencies)
+	if manifest.LegacyRuntime == "" {
+		config.SDK = nil
+	} else if config.SDK == nil || config.SDK.Source != manifest.LegacyRuntime {
+		config.SDK = &modules.SDK{Source: manifest.LegacyRuntime}
+	}
+}
+
+func cloneManifestConfig(config *modules.ModuleConfigWithUserFields) *modules.ModuleConfigWithUserFields {
+	if config == nil {
+		return nil
+	}
+	cloned := *config
+	cloned.ModuleConfig = config.ModuleConfig
+	cloned.SDK = cloneManifestSDK(config.SDK)
+	cloned.Blueprint = cloneManifestDependency(config.Blueprint)
+	cloned.Toolchains = cloneManifestDependencies(config.Toolchains)
+	cloned.Include = slices.Clone(config.Include)
+	cloned.Dependencies = cloneManifestDependencies(config.Dependencies)
+	cloned.Codegen = nil
+	if config.Codegen != nil {
+		cloned.Codegen = config.Codegen.Clone()
+	}
+	cloned.Exclude = slices.Clone(config.Exclude)
+	cloned.Clients = make([]*modules.ModuleConfigClient, 0, len(config.Clients))
+	for _, client := range config.Clients {
+		if client != nil {
+			cloned.Clients = append(cloned.Clients, client.Clone())
+		}
+	}
+	if config.DisableDefaultFunctionCaching != nil {
+		value := *config.DisableDefaultFunctionCaching
+		cloned.DisableDefaultFunctionCaching = &value
+	}
+	return &cloned
+}
+
+func cloneManifestSDK(sdk *modules.SDK) *modules.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cloned := *sdk
+	cloned.Config = maps.Clone(sdk.Config)
+	cloned.Experimental = maps.Clone(sdk.Experimental)
+	return &cloned
+}
+
+func cloneManifestDependencies(dependencies []*modules.ModuleConfigDependency) []*modules.ModuleConfigDependency {
+	if len(dependencies) == 0 {
+		return nil
+	}
+	cloned := make([]*modules.ModuleConfigDependency, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		if dependency != nil {
+			cloned = append(cloned, cloneManifestDependency(dependency))
+		}
+	}
+	return cloned
+}
+
+func cloneManifestDependency(dependency *modules.ModuleConfigDependency) *modules.ModuleConfigDependency {
+	if dependency == nil {
+		return nil
+	}
+	cloned := *dependency
+	cloned.Customizations = make([]*modules.ModuleConfigArgument, 0, len(dependency.Customizations))
+	for _, customization := range dependency.Customizations {
+		if customization == nil {
+			continue
+		}
+		clonedCustomization := *customization
+		clonedCustomization.Function = slices.Clone(customization.Function)
+		clonedCustomization.Ignore = slices.Clone(customization.Ignore)
+		cloned.Customizations = append(cloned.Customizations, &clonedCustomization)
+	}
+	cloned.IgnoreChecks = slices.Clone(dependency.IgnoreChecks)
+	cloned.IgnoreGenerators = slices.Clone(dependency.IgnoreGenerators)
+	cloned.IgnoreServices = slices.Clone(dependency.IgnoreServices)
+	cloned.PortMappings = maps.Clone(dependency.PortMappings)
+	for name, ports := range cloned.PortMappings {
+		cloned.PortMappings[name] = slices.Clone(ports)
+	}
+	return &cloned
 }
 
 type moduleManifestOutputFile struct {

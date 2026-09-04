@@ -19,7 +19,8 @@ type ModuleMaxWorkspaceWriter {
     let generated = if (isModule) {
       ws.withDirectory(
         ".",
-        moduleManifest(name: name)
+        moduleManifest
+          .withName(name)
           .withLegacyGoRuntime
           .directory,
       )

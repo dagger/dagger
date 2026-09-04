@@ -253,7 +253,8 @@ func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Conte
 	c := connect(ctx, t)
 
 	base := c.Directory().AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
-	manifest := c.ModuleManifest("payments").
+	manifest := c.ModuleManifest().
+		WithName("payments").
 		WithDangEntrypoint("./internal/dagger/main.dang").
 		WithLegacyGoRuntime(dagger.ModuleManifestWithLegacyGoRuntimeOpts{
 			ModuleSource:  "./src",
@@ -300,7 +301,8 @@ func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Conte
 func (WorkspaceSuite) TestWorkspaceWithCurrentModuleManifestDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	manifest := c.ModuleManifest("payments").
+	manifest := c.ModuleManifest().
+		WithName("payments").
 		WithDangEntrypoint("./internal/dagger/entrypoint")
 	directory := manifest.Directory()
 

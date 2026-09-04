@@ -20,9 +20,9 @@ func TestModuleManifestTOMLContents(t *testing.T) {
 	contents, err := manifest.TOMLContents()
 	require.NoError(t, err)
 	require.Equal(t, `name = "payments"
-source = "./src"
 engineVersion = "v0.20.3"
 include = ["**/*.go", "go.mod"]
+source = "./src"
 
 [runtime]
   source = "go"
@@ -93,11 +93,14 @@ func TestModuleManifestLegacyRuntimes(t *testing.T) {
 func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 	t.Parallel()
 
-	base := &ModuleManifest{Name: "payments"}
+	empty := &ModuleManifest{}
+	base := empty.WithName("payments")
 	entrypoint := base.WithDangEntrypoint("./main.dang")
 	fat := entrypoint.WithLegacyGoRuntime("./src", "v0.20.3").WithLegacyInclude("go.mod")
 	current := fat.WithoutLegacyFields()
 
+	require.Empty(t, empty.Name)
+	require.Equal(t, "payments", base.Name)
 	require.Empty(t, base.EntrypointKind)
 	require.Empty(t, entrypoint.LegacyRuntime)
 	require.Equal(t, "go", fat.LegacyRuntime)
@@ -107,6 +110,90 @@ func TestModuleManifestBuilderIsImmutable(t *testing.T) {
 	require.Empty(t, current.LegacyEngineVersion)
 	require.Empty(t, current.LegacyInclude)
 	require.Equal(t, "dang", current.EntrypointKind)
+}
+
+func TestModuleManifestLoadsAndUpdatesBothFormats(t *testing.T) {
+	t.Parallel()
+
+	manifest := &ModuleManifest{}
+	require.NoError(t, manifest.LoadJSON([]byte(`{
+  "name": "legacy-name",
+  "engineVersion": "v0.20.3",
+  "sdk": {
+    "source": "go",
+    "config": {"legacy": true}
+  },
+  "dependencies": [
+    {"name": "stale", "source": "github.com/example/stale"}
+  ]
+}`)))
+	require.NoError(t, manifest.LoadTOML([]byte(`name = "current-name"
+source = "."
+engineVersion = "v0.20.3"
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "keep"
+  source = "github.com/example/keep"
+  pin = "sha256:old"
+`)))
+
+	updated := manifest.
+		WithName("updated-name").
+		WithoutDependency("keep").
+		WithDependency("client", "./client", "sha256:new")
+
+	require.Equal(t, "current-name", manifest.Name)
+	require.Equal(t, "keep", manifest.Dependencies[0].Name)
+	for filename, contents := range map[string][]byte{
+		modules.Filename:       mustModuleManifestTOMLContents(t, updated),
+		modules.LegacyFilename: mustModuleManifestJSONContents(t, updated),
+	} {
+		cfg, err := modules.ParseModuleConfigForFilename(contents, filename)
+		require.NoError(t, err)
+		require.Equal(t, "updated-name", cfg.Name)
+		require.Equal(t, ".", cfg.Source)
+		require.Equal(t, "go", cfg.SDK.Source)
+		require.Len(t, cfg.Dependencies, 1)
+		require.Equal(t, "client", cfg.Dependencies[0].Name)
+		require.Equal(t, "./client", cfg.Dependencies[0].Source)
+		require.Equal(t, "sha256:new", cfg.Dependencies[0].Pin)
+	}
+
+	legacyContents := mustModuleManifestJSONContents(t, updated)
+	require.Contains(t, string(legacyContents), `"config"`)
+	require.Contains(t, string(legacyContents), `"legacy": true`)
+}
+
+func TestModuleManifestLoadsExternalRuntime(t *testing.T) {
+	t.Parallel()
+
+	manifest := &ModuleManifest{}
+	require.NoError(t, manifest.LoadJSON([]byte(`{
+  "name": "external-runtime",
+  "engineVersion": "v0.20.3",
+  "sdk": "github.com/example/sdk@v1.2.3"
+}`)))
+
+	contents, err := manifest.LegacyJSONContents()
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "github.com/example/sdk@v1.2.3")
+}
+
+func mustModuleManifestTOMLContents(t *testing.T, manifest *ModuleManifest) []byte {
+	t.Helper()
+	contents, err := manifest.TOMLContents()
+	require.NoError(t, err)
+	return contents
+}
+
+func mustModuleManifestJSONContents(t *testing.T, manifest *ModuleManifest) []byte {
+	t.Helper()
+	contents, err := manifest.LegacyJSONContents()
+	require.NoError(t, err)
+	return contents
 }
 
 func TestModuleManifestLegacyRuntimeSetterReplacesPreviousValues(t *testing.T) {

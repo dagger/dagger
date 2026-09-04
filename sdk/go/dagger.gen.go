@@ -12147,6 +12147,34 @@ func (r *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
 	}
 }
 
+// ModuleManifestWithDependencyOpts contains options for ModuleManifest.WithDependency
+type ModuleManifestWithDependencyOpts struct {
+	// Optional dependency name.
+	Name string
+	// Optional dependency pin.
+	Pin string
+}
+
+// Add or replace a module dependency.
+func (r *ModuleManifest) WithDependency(source string, opts ...ModuleManifestWithDependencyOpts) *ModuleManifest {
+	q := r.query.Select("withDependency")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `pin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pin) {
+			q = q.Arg("pin", opts[i].Pin)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
 // ModuleManifestWithLegacyDangRuntimeOpts contains options for ModuleManifest.WithLegacyDangRuntime
 type ModuleManifestWithLegacyDangRuntimeOpts struct {
 	// Module source path. The default is the manifest directory.
@@ -12352,6 +12380,26 @@ func (r *ModuleManifest) WithLegacyTypescriptRuntime(opts ...ModuleManifestWithL
 func (r *ModuleManifest) WithModuleEntrypoint(source string) *ModuleManifest {
 	q := r.query.Select("withModuleEntrypoint")
 	q = q.Arg("source", source)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Set the module name.
+func (r *ModuleManifest) WithName(name string) *ModuleManifest {
+	q := r.query.Select("withName")
+	q = q.Arg("name", name)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Remove a module dependency by name.
+func (r *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
+	q := r.query.Select("withoutDependency")
+	q = q.Arg("name", name)
 
 	return &ModuleManifest{
 		query: q,
@@ -14039,10 +14087,27 @@ func (r *Query) Module() *Module {
 	}
 }
 
-// Construct a module manifest.
-func (r *Query) ModuleManifest(name string) *ModuleManifest {
+// ModuleManifestOpts contains options for Query.ModuleManifest
+type ModuleManifestOpts struct {
+	// Optional dagger-module.toml file to load.
+	LoadTOML *File
+	// Optional dagger.json file to load.
+	LoadJSON *File
+}
+
+// Construct or load a module manifest.
+func (r *Query) ModuleManifest(opts ...ModuleManifestOpts) *ModuleManifest {
 	q := r.query.Select("moduleManifest")
-	q = q.Arg("name", name)
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `loadTOML` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LoadTOML) {
+			q = q.Arg("loadTOML", opts[i].LoadTOML)
+		}
+		// `loadJSON` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LoadJSON) {
+			q = q.Arg("loadJSON", opts[i].LoadJSON)
+		}
+	}
 
 	return &ModuleManifest{
 		query: q,
