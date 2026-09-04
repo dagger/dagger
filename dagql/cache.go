@@ -3889,6 +3889,25 @@ func (g *lazyGroupState) settled() bool {
 	return g.attempt == nil && !g.syncPending && g.eval == nil
 }
 
+// lazyPartsEvaluationPartial reports whether a successful parts attempt left
+// other work on the result. The current group is still published until its
+// resume span ends, so it is excluded from the cache-side scan. This check
+// depends on Container.runLazyGroup consuming final parent delegations before
+// its callback returns.
+func lazyPartsEvaluationPartial(shared *sharedResult, res AnyResult, current *lazyGroupState) bool {
+	shared.lazyMu.Lock()
+	defer shared.lazyMu.Unlock()
+	for _, group := range shared.lazyPartGroups {
+		if group == current {
+			continue
+		}
+		if !group.settled() || !group.complete {
+			return true
+		}
+	}
+	return lazyEvalFuncOfResult(res) != nil
+}
+
 // pendingLazyGroups returns every group with live cache-side state, in a
 // deterministic order. Used when resolution can no longer name a
 // consumed value's groups.
@@ -4074,12 +4093,13 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// succeeded and consumed its object-side state; any later error in
 			// this attempt is cache-side bookkeeping, which stays retryable.
 			bodyDone := false
+			partial := false
 			// End lazySpan before closing attempt.done so callers observe the span
 			// as ended and exported, and every joiner's target span is closed.
 			runEval := func() {
 				if lazySpan != nil {
 					defer func() {
-						endOTelLazyOp(lazySpan, lazyIsResume, shared.id, &err)
+						endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, &err)
 					}()
 				}
 
@@ -4099,6 +4119,9 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 				}
 				if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
 					err = releaseErr
+				}
+				if err == nil && partsVal != nil {
+					partial = lazyPartsEvaluationPartial(shared, res, g)
 				}
 			}
 			runEval()

@@ -9,7 +9,9 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/vektah/gqlparser/v2/ast"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
@@ -257,6 +259,70 @@ func TestEvaluatePartsMetadataLeavesSiblingGroupPending(t *testing.T) {
 	}
 	if HasPendingLazyEvaluation(res) {
 		t.Fatal("result must not be pending after full evaluation")
+	}
+}
+
+func TestEvaluatePartsResumeSpansMarkPartialCompletion(t *testing.T) {
+	t.Parallel()
+
+	ctx, c := newPartsTestCache(t, nil)
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	producerCtx, producerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "parts producer")
+	obj := &cacheTestPartsObject{Value: 1}
+	obj.resolveFn = partsTestDirectResolve
+	obj.groupEval = map[LazyGroupKey]LazyEvalFunc{
+		partsTestGroupMeta: func(context.Context) error { return nil },
+		partsTestGroupOut:  func(context.Context) error { return nil },
+	}
+	res := newPartsTestResult(t, c, producerCtx, obj)
+
+	metaCtx, metaSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "metadata consumer")
+	if err := c.EvaluateParts(metaCtx, res, partsTestPartMeta); err != nil {
+		t.Fatal(err)
+	}
+	metaSpan.End()
+	outCtx, outSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "output consumer")
+	if err := c.EvaluateParts(outCtx, res, partsTestPartFS); err != nil {
+		t.Fatal(err)
+	}
+	outSpan.End()
+	producerSpan.End()
+	if err := tracerProvider.ForceFlush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+	partialAttr := func(span sdktrace.ReadOnlySpan) (bool, bool) {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == telemetryattrs.DagPartialAttr {
+				return attr.Value.AsBool(), true
+			}
+		}
+		return false, false
+	}
+	var sawMetadata, sawOutput bool
+	for _, span := range spans {
+		switch span.Name() {
+		case "resume parts-test (meta)":
+			sawMetadata = true
+			partial, found := partialAttr(span)
+			if !found || !partial {
+				t.Fatal("metadata resume span must report partial completion")
+			}
+		case "resume parts-test (out)":
+			sawOutput = true
+			if _, found := partialAttr(span); found {
+				t.Fatal("final resume span must not report partial completion")
+			}
+		}
+	}
+	if !sawMetadata || !sawOutput {
+		t.Fatalf("resume spans found: metadata=%v output=%v", sawMetadata, sawOutput)
 	}
 }
 

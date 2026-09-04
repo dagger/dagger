@@ -435,6 +435,60 @@ func TestPendingClearsAndPropagatesThroughCausalContinuation(t *testing.T) {
 	}
 }
 
+func TestPartialCausalContinuationKeepsPending(t *testing.T) {
+	db := NewDB()
+
+	origID := SpanID{trace.SpanID{1}}
+	orig := db.newSpan(origID)
+	orig.Received = true
+	orig.Name = "original"
+	orig.Pending = true
+	orig.StartTime = time.Now()
+	orig.EndTime = orig.StartTime.Add(time.Millisecond)
+	db.Spans.Add(orig)
+	db.integrateSpan(orig)
+	orig.PropagateStatusToParentsAndLinks()
+
+	partialID := SpanID{trace.SpanID{2}}
+	partial := db.newSpan(partialID)
+	partial.Received = true
+	partial.Name = "partial resume"
+	partial.Partial = true
+	partial.StartTime = time.Now()
+	partial.EndTime = partial.StartTime.Add(time.Millisecond)
+	partial.Status = sdktrace.Status{Code: codes.Ok}
+	partial.Links = []SpanLink{{SpanContext: SpanContext{SpanID: origID}}}
+	db.Spans.Add(partial)
+	db.integrateSpan(partial)
+	partial.PropagateStatusToParentsAndLinks()
+
+	if !orig.IsPending() {
+		t.Fatal("completed partial continuation must leave the original span pending")
+	}
+	if pending, _ := orig.PendingReason(); !pending {
+		t.Fatal("pending reason must agree after a partial continuation")
+	}
+
+	completeID := SpanID{trace.SpanID{3}}
+	complete := db.newSpan(completeID)
+	complete.Received = true
+	complete.Name = "complete resume"
+	complete.StartTime = time.Now()
+	complete.EndTime = complete.StartTime.Add(time.Millisecond)
+	complete.Status = sdktrace.Status{Code: codes.Ok}
+	complete.Links = []SpanLink{{SpanContext: SpanContext{SpanID: origID}}}
+	db.Spans.Add(complete)
+	db.integrateSpan(complete)
+	complete.PropagateStatusToParentsAndLinks()
+
+	if orig.IsPending() {
+		t.Fatal("completed final continuation must clear pending state")
+	}
+	if pending, _ := orig.PendingReason(); pending {
+		t.Fatal("pending reason must agree after a final continuation")
+	}
+}
+
 // TestRollUpStateMultiLevel verifies that rollup state propagates correctly
 // through multiple levels of the span hierarchy
 func TestRollUpStateMultiLevel(t *testing.T) {
