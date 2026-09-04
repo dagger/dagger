@@ -17,9 +17,11 @@ type ModuleMaxWorkspaceWriter {
     clients: [ModuleSource!]!,
   ): Workspace! {
     let generated = if (isModule) {
-      ws.withFile(
-        "dagger-module.toml",
-        moduleManifest.v1(name: name).withRuntime(source: "go").asFile,
+      ws.withDirectory(
+        ".",
+        moduleManifest(name: name)
+          .withLegacyGoRuntime
+          .directory,
       )
     } else {
       ws

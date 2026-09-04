@@ -6,9 +6,6 @@ new engine-owned SDK-module interface without the beta asSDK adapter or its own
 @generate functions.
 """
 type SdkUxGo {
-  """Runtime source written to a new module manifest."""
-  runtimeSource: String! = "go"
-
   """Starter style used when a module has no source yet."""
   starter: String! = "default"
 
@@ -55,9 +52,11 @@ type SdkUxGo {
       let withConfig = if (exists(ws, "dagger-module.toml")) {
         ws
       } else {
-        ws.withFile(
-          "dagger-module.toml",
-          moduleManifest.v1(name: name).withRuntime(source: runtimeSource).asFile,
+        ws.withDirectory(
+          ".",
+          moduleManifest(name: name)
+            .withLegacyGoRuntime
+            .directory,
         )
       }
       let withGoMod = if (exists(withConfig, "go.mod")) {
