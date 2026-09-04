@@ -430,7 +430,7 @@ func (s *workspaceSchema) resolveSDKModuleScopeClients(
 		if err != nil {
 			return operationCtx, nil, err
 		}
-		target, err := s.resolveClientTargetModule(operationCtx, selectedWorkspace, moduleLoadRef)
+		target, err := s.resolveClientTargetModule(operationCtx, current, moduleLoadRef)
 		if err != nil {
 			return operationCtx, nil, err
 		}

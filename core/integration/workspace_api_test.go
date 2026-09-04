@@ -1333,6 +1333,39 @@ engineVersion = "latest"
 	require.Equal(t, "dep-b", name)
 }
 
+// A workspace-backed module records its local dependencies relative to its own
+// source root, which makes the resolved path workspace-root relative. It must
+// resolve as such even when the workspace cwd sits below the root, as it does
+// while an SDK generates a module scope.
+func (WorkspaceAPISuite) TestModuleSourceResolvesDependenciesFromWorkspaceRoot(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	for path, contents := range map[string]string{
+		"dagger.toml": "\n",
+		"a/b/app/dagger-module.toml": `name = "app"
+engineVersion = "latest"
+
+[[dependencies]]
+name = "dep"
+source = "../../../clients/dep"
+`,
+		"clients/dep/dagger-module.toml": `name = "dep"
+engineVersion = "latest"
+`,
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workdir, path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o600))
+	}
+
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "a", "b", "app")))
+	deps, err := c.CurrentWorkspace().ModuleSource(".").Dependencies(ctx)
+	require.NoError(t, err)
+	require.Len(t, deps, 1)
+	name, err := deps[0].ModuleOriginalName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dep", name)
+}
+
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := c.Directory().WithNewFile("module/dagger-module.toml", `name = "git-module"
