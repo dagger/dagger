@@ -7070,3 +7070,1363 @@ func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, candidates[2].ClientID, "alpha-client")
 	assert.Equal(t, candidates[2].Value, "alpha")
 }
+
+func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncestors(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("LATE_DEP")
+
+	type slotArgs struct {
+		Slot String `name:"slot"`
+	}
+	Fields[cacheTestQuery]{
+		NodeFunc("gatedLeafParent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             1,
+				dependencyResults: []AnyResult{leaf},
+			})
+		}),
+		NodeFunc("plain", func(ctx context.Context, _ ObjectResult[cacheTestQuery], args slotArgs) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 2})
+		}),
+		NodeFunc("wrap", func(ctx context.Context, _ ObjectResult[cacheTestQuery], args slotArgs) (Result[*cacheTestObject], error) {
+			var inner Result[*cacheTestObject]
+			if err := srv.Select(ctx, srv.Root(), &inner, Selector{
+				Field: "plain",
+				Args:  []NamedInput{{Name: "slot", Value: args.Slot}},
+			}); err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             3,
+				dependencyResults: []AnyResult{inner},
+			})
+		}),
+	}.Install(srv)
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", handle, "bound"))
+
+	sel := func(field, slot string) Result[*cacheTestObject] {
+		t.Helper()
+		var res Result[*cacheTestObject]
+		selector := Selector{Field: field}
+		if slot != "" {
+			selector.Args = []NamedInput{{Name: "slot", Value: NewString(slot)}}
+		}
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &res, selector))
+		return res
+	}
+
+	gated := sel("gatedLeafParent", "")
+	middle := sel("plain", "a")
+	plainDep := sel("plain", "b")
+	top := sel("wrap", "a")
+	topShared := top.cacheSharedResult()
+	assert.Assert(t, topShared != nil && topShared.id != 0)
+	middleShared := middle.cacheSharedResult()
+	assert.Assert(t, middleShared != nil && middleShared.id != 0)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	c.egraphMu.RLock()
+	middleGenBefore := middleShared.requiredSessionResourcesGen.Load()
+	topGenBefore := topShared.requiredSessionResourcesGen.Load()
+	topRequiresBefore := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !topRequiresBefore)
+
+	// The late dep on the already-published middle result must land, grow
+	// middle's stored required set, and cascade to its ancestor: top depends
+	// on middle, middle now depends on the requirement-carrying parent, so
+	// both stored sets must grow to {handle} and both requirement
+	// generations must move.
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, gated, "test_late_dep"))
+
+	gatedShared := gated.cacheSharedResult()
+	assert.Assert(t, gatedShared != nil && gatedShared.id != 0)
+	c.egraphMu.RLock()
+	_, edgeAdded := middleShared.deps[gatedShared.id]
+	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
+	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
+	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
+	topGenAfter := topShared.requiredSessionResourcesGen.Load()
+	c.egraphMu.RUnlock()
+	assert.Assert(t, edgeAdded, "accepted dep must record the retention edge")
+	assert.Assert(t, middleRequired)
+	assert.Assert(t, topRequired, "ancestor stored set went stale after a late explicit dependency")
+	assert.Assert(t, middleGenAfter > middleGenBefore, "growth must bump the parent's requirement generation")
+	assert.Assert(t, topGenAfter > topGenBefore, "growth must bump the ancestor's requirement generation")
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A requirement-free dep must not bump the parent's generation: the
+	// stored set does not change, so serve fast paths stay valid.
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, plainDep, "test_retention_dep"))
+	plainDepShared := plainDep.cacheSharedResult()
+	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
+	c.egraphMu.RLock()
+	_, retained := middleShared.deps[plainDepShared.id]
+	middleGenFinal := middleShared.requiredSessionResourcesGen.Load()
+	c.egraphMu.RUnlock()
+	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
+	assert.Equal(t, middleGenAfter, middleGenFinal, "an unchanged stored set must not bump the generation")
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A session that never bound the handle is refused a fresh ID load of
+	// the grown ancestor: new selections read the grown stored set.
+	otherCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "latedep-other-client",
+		SessionID: "latedep-other",
+	})
+	otherCtx = ContextWithCache(otherCtx, c)
+	_, err = c.LoadResultByResultID(otherCtx, "latedep-other", srv, uint64(topShared.id))
+	assert.ErrorContains(t, err, "has not bound the session resources this result requires")
+
+	// The binding session still loads it.
+	loaded, err := c.LoadResultByResultID(ctx, "test-session", srv, uint64(topShared.id))
+	assert.NilError(t, err)
+	loadedShared := loaded.cacheSharedResult()
+	assert.Assert(t, loadedShared != nil && loadedShared.id == topShared.id)
+
+	assert.NilError(t, c.ReleaseSession(otherCtx, "latedep-other"))
+	cacheTestReleaseSession(t, c, ctx)
+}
+
+// cacheTestBlockingAttachObj holds its dependency attachment open until the
+// test releases it, so a second session can select the published result while
+// its required set is still growing.
+type cacheTestBlockingAttachObj struct {
+	Value         int
+	leaf          AnyResult
+	attachErr     error
+	selfID        uint64
+	attachStarted chan struct{}
+	attachRelease chan struct{}
+}
+
+func (*cacheTestBlockingAttachObj) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CacheTestBlockingAttachObj",
+		NonNull:   true,
+	}
+}
+
+func (obj *cacheTestBlockingAttachObj) AttachDependencyResults(
+	_ context.Context,
+	self AnyResult,
+	attach func(AnyResult) (AnyResult, error),
+) ([]AnyResult, error) {
+	if shared := self.cacheSharedResult(); shared != nil {
+		obj.selfID = uint64(shared.id)
+	}
+	close(obj.attachStarted)
+	<-obj.attachRelease
+	if obj.attachErr != nil {
+		return nil, obj.attachErr
+	}
+	if obj.leaf == nil {
+		return nil, nil
+	}
+	attached, err := attach(obj.leaf)
+	if err != nil {
+		return nil, err
+	}
+	obj.leaf = attached
+	return []AnyResult{attached}, nil
+}
+
+func TestCacheHitRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("HIT_GROWTH")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "hitgrow-a-client",
+		SessionID: "hitgrow-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "hitgrow-b-client",
+		SessionID: "hitgrow-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, "hitgrow-a", "hitgrow-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "hit-growth-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	aDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(aCtx, "hitgrow-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+			obj.leaf = leaf
+			res, err := NewResultForCall(obj, frame)
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		})
+		aDone <- callOutcome{res: res, err: err}
+	}()
+
+	// Attachment has started, so the result is indexed and lookup-visible
+	// with an empty required set, and the attach barrier is open.
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "hitgrow-b", srv, &CallRequest{ResultCall: frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			res, err := NewResultForCall(&cacheTestBlockingAttachObj{
+				Value:         99,
+				attachStarted: make(chan struct{}),
+				attachRelease: func() chan struct{} { ch := make(chan struct{}); close(ch); return ch }(),
+				leaf:          nil,
+			}, frame.clone())
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// B's lookup must select the parent before the required set grows; the
+	// recorded session edge proves the selection happened.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["hitgrow-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Let attachment finish: the gated leaf lands and the parent's required
+	// set grows to {handle} before the barrier opens for B.
+	close(obj.attachRelease)
+
+	aOut := <-aDone
+	assert.NilError(t, aOut.err)
+	aShared := aOut.res.cacheSharedResult()
+	assert.Assert(t, aShared != nil && aShared.id == parentID)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Equal(t, int32(1), bInitCalls.Load(),
+		"session B must fall through to the singleflight instead of being served the grown result")
+	bShared := bOut.res.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	assert.Assert(t, bShared.id != parentID,
+		"session B was served a result requiring a handle it never bound")
+
+	c.egraphMu.RLock()
+	parentRequires := cacheTestSessionResourceSetContains(aShared.requiredSessionResources, handle)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, parentRequires)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	assert.NilError(t, c.ReleaseSession(aCtx, "hitgrow-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "hitgrow-b"))
+}
+
+func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("LOAD_GROWTH")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "loadgrow-a-client",
+		SessionID: "loadgrow-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "loadgrow-b-client",
+		SessionID: "loadgrow-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, "loadgrow-a", "loadgrow-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "load-growth-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	aDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(aCtx, "loadgrow-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+			obj.leaf = leaf
+			res, err := NewResultForCall(obj, frame)
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		})
+		aDone <- callOutcome{res: res, err: err}
+	}()
+
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.LoadResultByResultID(bCtx, "loadgrow-b", srv, uint64(parentID))
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// The gated pre-check in sharedResultByResultID passes while the required
+	// set is still empty and records the session edge; the load then parks at
+	// the attach barrier.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["loadgrow-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B's load to pass the gated pre-check")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	close(obj.attachRelease)
+
+	aOut := <-aDone
+	assert.NilError(t, aOut.err)
+
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil,
+		"session B's load must be refused once the required set grew past its bound set")
+	assert.ErrorContains(t, bOut.err, "has not bound the session resources this result requires")
+
+	assertCacheRequiredSessionResourcesExact(t, c)
+	assert.NilError(t, c.ReleaseSession(aCtx, "loadgrow-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "loadgrow-b"))
+}
+
+func TestCacheLoadResultByResultIDIgnoresUncleanCanonicalSiblings(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	contentDig := digest.FromString("cache-test canonical clean attachment")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "canon-a-client",
+		SessionID: "canon-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	loaderCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "canon-loader-client",
+		SessionID: "canon-loader",
+	})
+	loaderCtx = ContextWithCache(loaderCtx, c)
+
+	// The sibling registers first (lower result ID, so the canonicalization
+	// iterates it before the exact result) and holds its attachment open.
+	attachFailure := errors.New("cache-test sibling attachment failure")
+	sibling := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachErr:     attachFailure,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+	siblingFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "canon-sibling",
+	}
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	siblingDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(aCtx, "canon-a", srv, &CallRequest{ResultCall: siblingFrame}, func(ctx context.Context) (AnyResult, error) {
+			res, err := NewResultForCall(sibling, siblingFrame)
+			if err != nil {
+				return nil, err
+			}
+			return res.WithContentDigest(ctx, contentDig)
+		})
+		siblingDone <- callOutcome{res: res, err: err}
+	}()
+	<-sibling.attachStarted
+	siblingID := sharedResultID(sibling.selfID)
+	assert.Assert(t, siblingID != 0)
+
+	// The exact result shares the sibling's content digest and settles
+	// cleanly. It cannot adopt the sibling at publication because adoption
+	// already requires clean attachment.
+	exactFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "canon-exact",
+	}
+	exactRes, err := c.GetOrInitCall(aCtx, "canon-a", srv, &CallRequest{ResultCall: exactFrame}, func(ctx context.Context) (AnyResult, error) {
+		res, err := NewResultForCall(&cacheTestObject{Value: 2}, exactFrame)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithContentDigest(ctx, contentDig)
+	})
+	assert.NilError(t, err)
+	exactShared := exactRes.cacheSharedResult()
+	assert.Assert(t, exactShared != nil && exactShared.id != 0)
+	assert.Assert(t, siblingID < exactShared.id, "sibling must sort before the exact result")
+
+	// While the sibling's attachment is still open, an ID load of the exact
+	// result must not be redirected onto the sibling's barrier: it must be
+	// served from the settled exact result immediately.
+	loaded, err := c.LoadResultByResultID(loaderCtx, "canon-loader", srv, uint64(exactShared.id))
+	assert.NilError(t, err)
+	loadedShared := loaded.cacheSharedResult()
+	assert.Assert(t, loadedShared != nil)
+	assert.Equal(t, exactShared.id, loadedShared.id,
+		"ID load must resolve to the exact result, not an unclean canonical sibling")
+
+	// Cleanup: fail the sibling's attachment and collect its call error.
+	close(sibling.attachRelease)
+	siblingOut := <-siblingDone
+	assert.ErrorContains(t, siblingOut.err, attachFailure.Error())
+
+	assert.NilError(t, c.ReleaseSession(aCtx, "canon-a"))
+	assert.NilError(t, c.ReleaseSession(loaderCtx, "canon-loader"))
+}
+
+func TestCacheDigestLookupRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("DIGEST_GROWTH")
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "diggrow-a-client",
+		SessionID: "diggrow-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "diggrow-b-client",
+		SessionID: "diggrow-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, "diggrow-a", "diggrow-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "digest-growth-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	aDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, "diggrow-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+			obj.leaf = leaf
+			res, err := NewResultForCall(obj, frame)
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		})
+		aDone <- err
+	}()
+
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := c.lookupCacheForDigests(bCtx, "diggrow-b", srv, cacheTestCallDigest(frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["diggrow-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B's digest lookup to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	close(obj.attachRelease)
+	assert.NilError(t, <-aDone)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the stale hit into a miss after the required set grew")
+	assert.Assert(t, bOut.res == nil)
+
+	assertCacheRequiredSessionResourcesExact(t, c)
+	assert.NilError(t, c.ReleaseSession(aCtx, "diggrow-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "diggrow-b"))
+}
+
+// cacheTestLateGrowthFixture publishes a settled parent result and an
+// attached requirement-carrying dep for session A (which binds the handle),
+// and installs the serve re-validation hook so a test can park one serve of
+// the parent between its selection critical section and its serve-time
+// re-check. Callers land the late retention edge while the serve is parked.
+type cacheTestLateGrowthFixture struct {
+	cache       *Cache
+	srv         *Server
+	handle      SessionResourceHandle
+	frame       *ResultCall
+	parent      AnyResult
+	parentID    sharedResultID
+	dep         AnyResult
+	aCtx        context.Context
+	bCtx        context.Context
+	hookReached chan struct{}
+	hookRelease chan struct{}
+}
+
+func newCacheTestLateGrowthFixture(t *testing.T, slot string) *cacheTestLateGrowthFixture {
+	t.Helper()
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle(slot)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-a-client",
+		SessionID: slot + "-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-b-client",
+		SessionID: slot + "-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+	assert.NilError(t, c.BindSessionResource(aCtx, slot+"-a", slot+"-a-client", handle, "bound"))
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: slot + "-parent",
+	}
+	parent, err := c.GetOrInitCall(aCtx, slot+"-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, frame)
+	})
+	assert.NilError(t, err)
+	parentShared := parent.cacheSharedResult()
+	assert.Assert(t, parentShared != nil && parentShared.id != 0)
+
+	leaf, err := cacheTestSessionResourceLeaf(aCtx, handle)
+	assert.NilError(t, err)
+	dep, err := c.AttachResult(aCtx, slot+"-a", srv, leaf)
+	assert.NilError(t, err)
+	depShared := dep.cacheSharedResult()
+	assert.Assert(t, depShared != nil && depShared.id != 0)
+
+	f := &cacheTestLateGrowthFixture{
+		cache:       c,
+		srv:         srv,
+		handle:      handle,
+		frame:       frame,
+		parent:      parent,
+		parentID:    parentShared.id,
+		dep:         dep,
+		aCtx:        aCtx,
+		bCtx:        bCtx,
+		hookReached: make(chan struct{}),
+		hookRelease: make(chan struct{}),
+	}
+	var hookOnce sync.Once
+	c.testBeforeServeRequirementRecheck = func(res *sharedResult) {
+		if res.id != f.parentID {
+			return
+		}
+		hookOnce.Do(func() {
+			close(f.hookReached)
+			<-f.hookRelease
+		})
+	}
+	return f
+}
+
+// landLateDep waits for a serve of the parent to park at the re-validation
+// hook, lands the requirement-carrying retention edge, and unparks the
+// serve. The parked serve captured its requirement generation before the
+// growth, so the re-validation must run the full locked re-check.
+func (f *cacheTestLateGrowthFixture) landLateDep(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.hookReached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the parked serve to reach the re-validation hook")
+	}
+	assert.NilError(t, f.cache.AddExplicitDependency(f.aCtx, f.parent, f.dep, "test_late_dep"))
+	close(f.hookRelease)
+}
+
+func (f *cacheTestLateGrowthFixture) assertParentRequiresHandle(t *testing.T) {
+	t.Helper()
+	parentShared := f.parent.cacheSharedResult()
+	f.cache.egraphMu.RLock()
+	parentRequires := cacheTestSessionResourceSetContains(parentShared.requiredSessionResources, f.handle)
+	f.cache.egraphMu.RUnlock()
+	assert.Assert(t, parentRequires)
+	assertCacheRequiredSessionResourcesExact(t, f.cache)
+}
+
+func (f *cacheTestLateGrowthFixture) releaseSessions(t *testing.T, slot string) {
+	t.Helper()
+	assert.NilError(t, f.cache.ReleaseSession(f.aCtx, slot+"-a"))
+	assert.NilError(t, f.cache.ReleaseSession(f.bCtx, slot+"-b"))
+}
+
+func TestCacheHitRechecksSessionResourcesAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowhit"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := f.cache.GetOrInitCall(f.bCtx, slot+"-b", f.srv, &CallRequest{ResultCall: f.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 99}, f.frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// B's lookup selects the settled parent while its required set is still
+	// empty and parks at the re-validation hook; the retention edge then
+	// grows the set before the serve resumes.
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Equal(t, int32(1), bInitCalls.Load(),
+		"session B must fall through to the singleflight instead of being served the grown result")
+	bShared := bOut.res.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	assert.Assert(t, bShared.id != f.parentID,
+		"session B was served a result requiring a handle it never bound")
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
+}
+
+func TestCacheLoadResultByResultIDRechecksAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowload"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := f.cache.LoadResultByResultID(f.bCtx, slot+"-b", f.srv, uint64(f.parentID))
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	// The requirement pre-check in sharedResultByResultID passes while the
+	// required set is still empty; the load parks at the re-validation hook
+	// and the retention edge grows the set before the serve resumes.
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil,
+		"session B's load must be refused once the required set grew past its bound set")
+	assert.ErrorContains(t, bOut.err, "has not bound the session resources this result requires")
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
+}
+
+func TestCacheDigestLookupRechecksSessionResourcesAfterLateExplicitDependency(t *testing.T) {
+	t.Parallel()
+
+	const slot = "lategrowdig"
+	f := newCacheTestLateGrowthFixture(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := f.cache.lookupCacheForDigests(f.bCtx, slot+"-b", f.srv, cacheTestCallDigest(f.frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	f.landLateDep(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the stale hit into a miss after the required set grew")
+	assert.Assert(t, bOut.res == nil)
+
+	f.assertParentRequiresHandle(t)
+	f.releaseSessions(t, slot)
+}
+
+// cacheTestProducerReleaseWindow drives session A's publication into the
+// producer-release window: A's call publishes a result whose dependency
+// attachment is parked (cacheTestBlockingAttachObj holding a plain child),
+// the test waits for session B's serve to select the result and park at the
+// attach barrier, releases session A, and then unparks the attachment,
+// whose child claim is refused because A is released. The returned outcome
+// channel carries A's call error.
+type cacheTestProducerReleaseWindow struct {
+	cache    *Cache
+	srv      *Server
+	frame    *ResultCall
+	obj      *cacheTestBlockingAttachObj
+	parentID sharedResultID
+	aCtx     context.Context
+	bCtx     context.Context
+	aDone    chan error
+}
+
+func newCacheTestProducerReleaseWindow(t *testing.T, slot string) *cacheTestProducerReleaseWindow {
+	t.Helper()
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-a-client",
+		SessionID: slot + "-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  slot + "-b-client",
+		SessionID: slot + "-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: slot + "-parent",
+	}
+	child, err := NewResultForCall(NewString("child-value"), &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(NewString("").Type()),
+		Field: slot + "-child",
+	})
+	assert.NilError(t, err)
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		leaf:          child,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	w := &cacheTestProducerReleaseWindow{
+		cache: c, srv: srv, frame: frame, obj: obj,
+		aCtx: aCtx, bCtx: bCtx,
+		aDone: make(chan error, 1),
+	}
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, slot+"-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, frame)
+		})
+		w.aDone <- err
+	}()
+	<-obj.attachStarted
+	w.parentID = sharedResultID(obj.selfID)
+	assert.Assert(t, w.parentID != 0)
+	return w
+}
+
+// releaseProducerAndUnpark waits for session B to have selected the parked
+// parent (the recorded session edge proves the selection), releases session
+// A while attachment is still parked, and then unparks the attachment so
+// its child claim runs against the released session.
+func (w *cacheTestProducerReleaseWindow) releaseProducerAndUnpark(t *testing.T, slot string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		w.cache.sessionMu.Lock()
+		_, selected := w.cache.sessionResultIDsBySession[slot+"-b"][w.parentID]
+		w.cache.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	assert.NilError(t, w.cache.ReleaseSession(w.aCtx, slot+"-a"))
+	close(w.obj.attachRelease)
+}
+
+// assertProducerKeptAttachmentError asserts session A's own call failed with
+// the claim refusal and that the classified barrier form did not leak into
+// the producer's error.
+func (w *cacheTestProducerReleaseWindow) assertProducerKeptAttachmentError(t *testing.T) {
+	t.Helper()
+	aErr := <-w.aDone
+	assert.Assert(t, aErr != nil, "the producing session's call must fail with the attachment error")
+	assert.Assert(t, errors.Is(aErr, ErrCacheSessionReleased))
+	assert.Assert(t, !errors.Is(aErr, errAttachRefusedByProducerRelease),
+		"the classified barrier form must not replace the producer's own error")
+}
+
+func TestCacheHitConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attrelhit"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := w.cache.GetOrInitCall(w.bCtx, slot+"-b", w.srv, &CallRequest{ResultCall: w.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestBlockingAttachObj{
+				Value:         99,
+				attachStarted: make(chan struct{}),
+				attachRelease: func() chan struct{} { ch := make(chan struct{}); close(ch); return ch }(),
+			}, w.frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err,
+		"an innocent parked reader must not surface the producer's release as its own failure")
+	assert.Equal(t, int32(1), bInitCalls.Load(),
+		"session B must fall through to the singleflight and execute its own call")
+	bShared := bOut.res.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	assert.Assert(t, bShared.id != w.parentID)
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheDigestLookupConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attreldig"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		hit bool
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, hit, err := w.cache.lookupCacheForDigests(w.bCtx, slot+"-b", w.srv, cacheTestCallDigest(w.frame), nil)
+		bDone <- callOutcome{res: res, hit: hit, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	bOut := <-bDone
+	assert.NilError(t, bOut.err)
+	assert.Assert(t, !bOut.hit,
+		"the digest lookup must convert the parked hit into a miss after the producer-release attachment failure")
+	assert.Assert(t, bOut.res == nil)
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheLoadResultByResultIDStillFailsWhenProducerReleaseFailsAttachment(t *testing.T) {
+	t.Parallel()
+
+	const slot = "attrelload"
+	w := newCacheTestProducerReleaseWindow(t, slot)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := w.cache.LoadResultByResultID(w.bCtx, slot+"-b", w.srv, uint64(w.parentID))
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	w.releaseProducerAndUnpark(t, slot)
+	w.assertProducerKeptAttachmentError(t)
+
+	// A by-ID load names one exact result and has no call to re-execute, so
+	// it keeps propagating the attachment error; the classified form stays
+	// visible in the chain for callers that want to distinguish it.
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil)
+	assert.Assert(t, errors.Is(bOut.err, errAttachRefusedByProducerRelease))
+
+	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
+}
+
+func TestCacheHitKeepsGenuineAttachmentFailure(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attrelctl-a-client",
+		SessionID: "attrelctl-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attrelctl-b-client",
+		SessionID: "attrelctl-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "attrelctl-parent",
+	}
+	genuineErr := errors.New("cache-test genuine attachment failure")
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		attachErr:     genuineErr,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+
+	aDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(aCtx, "attrelctl-a", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, frame)
+		})
+		aDone <- err
+	}()
+	<-obj.attachStarted
+	parentID := sharedResultID(obj.selfID)
+	assert.Assert(t, parentID != 0)
+
+	type callOutcome struct {
+		res AnyResult
+		err error
+	}
+	var bInitCalls atomic.Int32
+	bDone := make(chan callOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "attrelctl-b", srv, &CallRequest{ResultCall: frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			bInitCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 99}, frame.clone())
+		})
+		bDone <- callOutcome{res: res, err: err}
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c.sessionMu.Lock()
+		_, selected := c.sessionResultIDsBySession["attrelctl-b"][parentID]
+		c.sessionMu.Unlock()
+		if selected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for session B to select the still-attaching parent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Both sessions stay live: this failure is the attachment hook's own.
+	close(obj.attachRelease)
+
+	aErr := <-aDone
+	assert.ErrorContains(t, aErr, genuineErr.Error())
+
+	bOut := <-bDone
+	assert.Assert(t, bOut.err != nil,
+		"a genuine attachment failure must keep propagating to parked readers")
+	assert.ErrorContains(t, bOut.err, genuineErr.Error())
+	assert.Assert(t, !errors.Is(bOut.err, errAttachRefusedByProducerRelease))
+	assert.Equal(t, int32(0), bInitCalls.Load(),
+		"a genuine failure must not convert the reader to a miss")
+
+	assert.NilError(t, c.ReleaseSession(aCtx, "attrelctl-a"))
+	assert.NilError(t, c.ReleaseSession(bCtx, "attrelctl-b"))
+}
+
+func TestCachePublicationRollsBackWhenStructuralDepMissing(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "rollback-a-client",
+		SessionID: "rollback-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "rollback-b-client",
+		SessionID: "rollback-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	// Session A publishes the result the failing structural ref will point
+	// at; session B publishes the one whose partial dependency edge must be
+	// unwound.
+	deadFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-dead-ref",
+	}
+	deadRes, err := c.GetOrInitCall(aCtx, "rollback-a", srv, &CallRequest{ResultCall: deadFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, deadFrame)
+	})
+	assert.NilError(t, err)
+	deadShared := deadRes.cacheSharedResult()
+	assert.Assert(t, deadShared != nil && deadShared.id != 0)
+
+	liveFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-live-dep",
+	}
+	liveRes, err := c.GetOrInitCall(bCtx, "rollback-b", srv, &CallRequest{ResultCall: liveFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 2}, liveFrame)
+	})
+	assert.NilError(t, err)
+	liveShared := liveRes.cacheSharedResult()
+	assert.Assert(t, liveShared != nil && liveShared.id != 0)
+
+	// The value's frame references the live dep first (receiver) and the
+	// doomed one second (arg), so the publication adds the live dep's edge
+	// before the missing-ref failure and the rollback must unwind it.
+	valueFrame := &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType((&cacheTestObject{}).Type()),
+		Field:    "rollback-parent",
+		Receiver: &ResultCallRef{ResultID: uint64(liveShared.id), shared: liveShared},
+		Args: []*ResultCallArg{{
+			Name: "doomed",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindResultRef,
+				ResultRef: &ResultCallRef{ResultID: uint64(deadShared.id), shared: deadShared},
+			},
+		}},
+	}
+	reqFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "rollback-request",
+	}
+
+	// The doomed ref's target is collected inside the window between the
+	// pre-lock digest derivations (which read the target's still-present
+	// frame through the ref's fast-path pointer) and the indexing critical
+	// section, where the dependency pass finds it missing.
+	var (
+		hookOnce      sync.Once
+		resultsBefore int
+		liveOwnBefore int64
+	)
+	c.testBeforePublicationIndex = func(oc *ongoingCall) {
+		hookOnce.Do(func() {
+			assert.NilError(t, c.ReleaseSession(aCtx, "rollback-a"))
+			c.egraphMu.RLock()
+			_, stillRegistered := c.resultsByID[deadShared.id]
+			resultsBefore = len(c.resultsByID)
+			liveOwnBefore = liveShared.incomingOwnershipCount
+			c.egraphMu.RUnlock()
+			assert.Assert(t, !stillRegistered, "the doomed ref's target must be collected before indexing")
+		})
+	}
+
+	var initCalls atomic.Int32
+	runOnce := func() error {
+		_, err := c.GetOrInitCall(bCtx, "rollback-b", srv, &CallRequest{ResultCall: reqFrame.clone()}, func(ctx context.Context) (AnyResult, error) {
+			initCalls.Add(1)
+			return NewResultForCall(&cacheTestObject{Value: 3}, valueFrame.clone())
+		})
+		return err
+	}
+
+	err = runOnce()
+	assert.Assert(t, err != nil, "the publication must fail loudly on the missing structural ref")
+	assert.ErrorContains(t, err, "missing cached result")
+
+	// The rollback must leave no trace of the partial publication: no new
+	// registered record and the live dep's ownership back to its session
+	// edge alone.
+	c.egraphMu.RLock()
+	resultsAfter := len(c.resultsByID)
+	liveOwnAfter := liveShared.incomingOwnershipCount
+	c.egraphMu.RUnlock()
+	assert.Equal(t, resultsBefore, resultsAfter,
+		"the failed publication must not leave a registered record behind")
+	assert.Equal(t, liveOwnBefore, liveOwnAfter,
+		"the partial dependency edge must be unwound")
+
+	// A repeat of the same call must execute again - nothing selectable was
+	// left behind to serve as a stale hit. It fails earlier than the first
+	// attempt (the collected target's frame is gone, so the value's digest
+	// derivation refuses the dead ref), but it fails loudly after
+	// re-executing.
+	err = runOnce()
+	assert.Assert(t, err != nil)
+	assert.Equal(t, int32(2), initCalls.Load(),
+		"the repeated call must re-execute rather than hit a stranded record")
+
+	assert.NilError(t, c.ReleaseSession(bCtx, "rollback-b"))
+}
+
+func TestCacheAttachmentClaimPinsTargetAgainstForeignRelease(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	aCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "pin-a-client",
+		SessionID: "pin-a",
+	})
+	aCtx = ContextWithCache(aCtx, c)
+	bCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "pin-b-client",
+		SessionID: "pin-b",
+	})
+	bCtx = ContextWithCache(bCtx, c)
+
+	// Session A publishes the child; session B claims it at acquisition, as
+	// every production acquisition path does.
+	childFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "pin-child",
+	}
+	child, err := c.GetOrInitCall(aCtx, "pin-a", srv, &CallRequest{ResultCall: childFrame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 7}, childFrame)
+	})
+	assert.NilError(t, err)
+	childShared := child.cacheSharedResult()
+	assert.Assert(t, childShared != nil && childShared.id != 0)
+	childID := childShared.id
+	bHeld, err := c.LoadResultByResultID(bCtx, "pin-b", srv, uint64(childID))
+	assert.NilError(t, err)
+	assert.Assert(t, bHeld.cacheSharedResult().id == childID)
+
+	// B's publication embeds the child and parks mid-attachment; A releases
+	// while it is parked. B's claim pins the child, so A's release must not
+	// collect it and the attachment must complete against the original
+	// record.
+	parentFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestBlockingAttachObj{}).Type()),
+		Field: "pin-parent",
+	}
+	obj := &cacheTestBlockingAttachObj{
+		Value:         1,
+		leaf:          child,
+		attachStarted: make(chan struct{}),
+		attachRelease: make(chan struct{}),
+	}
+	bDone := make(chan error, 1)
+	var bRes AnyResult
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "pin-b", srv, &CallRequest{ResultCall: parentFrame}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCall(obj, parentFrame)
+		})
+		bRes = res
+		bDone <- err
+	}()
+	<-obj.attachStarted
+	assert.NilError(t, c.ReleaseSession(aCtx, "pin-a"))
+
+	c.egraphMu.RLock()
+	_, stillRegistered := c.resultsByID[childID]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, stillRegistered, "session B's claim must pin the child across session A's release")
+
+	close(obj.attachRelease)
+	assert.NilError(t, <-bDone)
+	bShared := bRes.cacheSharedResult()
+	assert.Assert(t, bShared != nil && bShared.id != 0)
+	c.egraphMu.RLock()
+	_, childRetained := bShared.deps[childID]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, childRetained, "the attachment must retain the original pinned child")
+
+	assert.NilError(t, c.ReleaseSession(bCtx, "pin-b"))
+}
+
+func TestCacheWithSessionResourceHandleRefusesAttachedMutation(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(cacheTestContext(baseCtx), c)
+	srv := cacheTestServer(t)
+	handle := cacheTestVolatileSessionResourceHandle("ATTACHED_MUTATION")
+
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "attached-mutation-target",
+	}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame}, func(ctx context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, frame)
+	})
+	assert.NilError(t, err)
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil && shared.id != 0)
+
+	stamper, ok := res.(interface {
+		WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
+	})
+	assert.Assert(t, ok, "result %T does not support session resource handles", res)
+
+	// A semantic handle change on an attached result must be refused and
+	// must leave the stored requirement set untouched.
+	_, err = stamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.ErrorContains(t, err, "already attached; its session-resource handle cannot change")
+
+	c.egraphMu.RLock()
+	stillEmpty := shared.requiredSessionResources == nil || shared.requiredSessionResources.Empty()
+	unchangedHandle := shared.sessionResourceHandle == ""
+	c.egraphMu.RUnlock()
+	assert.Assert(t, stillEmpty, "refused mutation must not grow the stored requirement set")
+	assert.Assert(t, unchangedHandle)
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// The identical value is a no-op: stamp a detached leaf, attach it, and
+	// re-apply the same handle.
+	leafFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "attached-mutation-leaf",
+	}
+	leafRes, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: leafFrame}, func(ctx context.Context) (AnyResult, error) {
+		res, err := NewResultForCall(&cacheTestObject{Value: 2}, leafFrame)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithSessionResourceHandle(ctx, handle)
+	})
+	assert.NilError(t, err)
+	leafStamper, ok := leafRes.(interface {
+		WithSessionResourceHandleAny(context.Context, SessionResourceHandle) (AnyResult, error)
+	})
+	assert.Assert(t, ok, "result %T does not support session resource handles", leafRes)
+	same, err := leafStamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, leafRes.cacheSharedResult().id, same.cacheSharedResult().id)
+
+	cacheTestReleaseSession(t, c, ctx)
+
+	// The release collected the leaf (its only owner released), so even the
+	// identical re-stamp must report the collection: the registration guard
+	// still runs before the no-op.
+	_, err = leafStamper.WithSessionResourceHandleAny(ctx, handle)
+	assert.ErrorContains(t, err, "was already collected")
+}
