@@ -36,6 +36,7 @@ LeaseKinds == {"transport", "request", "shared-work", "service", "child"}
 BackgroundKinds == {"shared-work", "service"}
 SessionPhases == {"live", "closing", "telemetryStopped", "removed"}
 CachePhases == {"live", "deferred", "cleaning", "done"}
+MetricPhases == {"live", "draining", "stopped"}
 ItemPhases == {"idle", "active", "done"}
 
 \* Configuration helper: one root with every other client its direct child.
@@ -48,9 +49,11 @@ VARIABLES
     requests,
     work,
     cachePhase,
+    clientMetrics,
     reclaimed
 
-vars == <<sessionPhase, clients, leases, requests, work, cachePhase, reclaimed>>
+vars == <<sessionPhase, clients, leases, requests, work, cachePhase,
+          clientMetrics, reclaimed>>
 
 ClientRecord(published, accepting, runtime, transport) ==
     [published |-> published,
@@ -72,6 +75,8 @@ Init ==
     /\ requests = [q \in Requests |-> IdleRequest]
     /\ work = [w \in Works |-> IdleWork]
     /\ cachePhase = "live"
+    /\ clientMetrics = [c \in Clients |->
+         IF c = Root THEN "live" ELSE "stopped"]
     /\ reclaimed = {}
 
 ActiveRequests(c) ==
@@ -141,7 +146,7 @@ AdmitRequest(q, c) ==
     /\ requests' = [requests EXCEPT
          ![q] = [phase |-> "active", client |-> c]]
     /\ leases' = [leases EXCEPT ![c]["request"] = @ + 1]
-    /\ UNCHANGED <<sessionPhase, clients, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, work, cachePhase, clientMetrics, reclaimed>>
 
 \* Go: request cleanup releases the exact lease admitted above.
 FinishRequest(q) ==
@@ -149,7 +154,7 @@ FinishRequest(q) ==
     /\ LET c == requests[q].client IN
        /\ requests' = [requests EXCEPT ![q].phase = "done"]
        /\ leases' = [leases EXCEPT ![c]["request"] = @ - 1]
-    /\ UNCHANGED <<sessionPhase, clients, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, work, cachePhase, clientMetrics, reclaimed>>
 
 \* Go: DetachClientScope clones one typed lease from already-held executable
 \* authority. Client close does not invalidate an accepted request's ability
@@ -164,7 +169,7 @@ StartBackgroundWork(w, c) ==
          /\ work' = [work EXCEPT
               ![w] = [phase |-> "active", client |-> c, kind |-> k]]
          /\ leases' = [leases EXCEPT ![c][k] = @ + 1]
-    /\ UNCHANGED <<sessionPhase, clients, requests, cachePhase, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, requests, cachePhase, clientMetrics, reclaimed>>
 
 \* The work lease spans the callback's complete terminal transition. If this
 \* is the final shared cache operation after ReleaseSession returned, the same
@@ -181,7 +186,7 @@ FinishBackgroundWork(w) ==
           /\ leases' = [leases EXCEPT ![c][k] = @ - 1]
           /\ cachePhase' =
                IF lastDeferredShared THEN "cleaning" ELSE cachePhase
-    /\ UNCHANGED <<sessionPhase, clients, requests, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, requests, clientMetrics, reclaimed>>
 
 (***************************************************************************)
 (* CLIENT REACHABILITY, CHILD OWNERSHIP, AND RECLAMATION                   *)
@@ -203,6 +208,7 @@ RegisterChild(q, child) ==
        /\ leases' = [leases EXCEPT
             ![child]["transport"] = @ + 1,
             ![parent]["child"] = @ + 1]
+       /\ clientMetrics' = [clientMetrics EXCEPT ![child] = "live"]
     /\ UNCHANGED <<sessionPhase, requests, work, cachePhase, reclaimed>>
 
 \* Go: transport.Close and closeClientScope serialize the monotonic admission
@@ -215,20 +221,30 @@ CloseTransport(c) ==
          ![c].accepting = FALSE,
          ![c].transport = FALSE]
     /\ leases' = [leases EXCEPT ![c]["transport"] = @ - 1]
-    /\ UNCHANGED <<sessionPhase, requests, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, requests, work, cachePhase, clientMetrics, reclaimed>>
 
-\* Go: maybeUnpublishClientRuntimeLocked. A child releases its parent's child
-\* lease only after the child runtime is no longer executable.
-ReclaimClient(c) ==
+\* Go: maybeBeginClientRuntimeReclamationLocked marks the reclamation owner. The
+\* closed runtime stays published while its client-bound metric provider drains.
+BeginClientMetricDrain(c) ==
     /\ sessionPhase = "live"
     /\ clients[c].published
     /\ clients[c].runtime
     /\ ~clients[c].accepting
     /\ TotalLeases(c) = 0
+    /\ clientMetrics[c] = "live"
+    /\ clientMetrics' = [clientMetrics EXCEPT ![c] = "draining"]
+    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, cachePhase, reclaimed>>
+
+\* Go: finishClientRuntimeReclamation. Once the metric ForceFlush+Shutdown
+\* barrier returns, the runtime is unpublished and its parent edge is released.
+\* If authoritative teardown won meanwhile, it already released child edges.
+FinishClientReclamation(c) ==
+    /\ clientMetrics[c] = "draining"
     /\ clients' = [clients EXCEPT ![c].runtime = FALSE]
+    /\ clientMetrics' = [clientMetrics EXCEPT ![c] = "stopped"]
     /\ reclaimed' = reclaimed \cup {c}
     /\ leases' =
-         IF ParentOf[c] = NoClient
+         IF sessionPhase # "live" \/ ParentOf[c] = NoClient
          THEN leases
          ELSE [leases EXCEPT ![ParentOf[c]]["child"] = @ - 1]
     /\ UNCHANGED <<sessionPhase, requests, work, cachePhase>>
@@ -250,7 +266,7 @@ BeginSessionTeardown ==
     /\ leases' = [c \in Clients |->
          [k \in LeaseKinds |->
              IF k \in {"transport", "child"} THEN 0 ELSE leases[c][k]]]
-    /\ UNCHANGED <<requests, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<requests, work, cachePhase, clientMetrics, reclaimed>>
 
 \* The server begins cache release after handlers and services drain.
 \* ReleaseSession may return with cleanup deferred to shared cache work.
@@ -262,14 +278,24 @@ BeginCacheRelease ==
     /\ ActiveServiceWork = {}
     /\ cachePhase' =
          IF ActiveSharedWork = {} THEN "cleaning" ELSE "deferred"
-    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, clientMetrics, reclaimed>>
 
 \* Go: WaitSessionRelease observes completion only after cache release hooks
 \* and per-session record deletion have finished.
 FinishCacheCleanup ==
     /\ cachePhase = "cleaning"
     /\ cachePhase' = "done"
-    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, reclaimed>>
+    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, clientMetrics, reclaimed>>
+
+\* Go: shutdownTelemetry drains every still-live client metric provider after
+\* cache cleanup and all typed producers have stopped.
+StopClientMetrics(c) ==
+    /\ sessionPhase = "closing"
+    /\ cachePhase = "done"
+    /\ NoActiveProducers
+    /\ clientMetrics[c] = "live"
+    /\ clientMetrics' = [clientMetrics EXCEPT ![c] = "stopped"]
+    /\ UNCHANGED <<sessionPhase, clients, leases, requests, work, cachePhase, reclaimed>>
 
 \* Go: shutdownTelemetry is the final producer barrier. In particular it may
 \* not run merely because ReleaseSession returned in the deferred phase.
@@ -277,8 +303,9 @@ StopTelemetry ==
     /\ sessionPhase = "closing"
     /\ cachePhase = "done"
     /\ NoActiveProducers
+    /\ \A c \in Clients : clientMetrics[c] = "stopped"
     /\ sessionPhase' = "telemetryStopped"
-    /\ UNCHANGED <<clients, leases, requests, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<clients, leases, requests, work, cachePhase, clientMetrics, reclaimed>>
 
 \* The session record and retained runtimes are dropped only after telemetry
 \* has stopped and no executable work remains.
@@ -290,7 +317,7 @@ RemoveSession ==
                             !.runtime = FALSE,
                             !.transport = FALSE]]
     /\ leases' = [c \in Clients |-> [k \in LeaseKinds |-> 0]]
-    /\ UNCHANGED <<requests, work, cachePhase, reclaimed>>
+    /\ UNCHANGED <<requests, work, cachePhase, clientMetrics, reclaimed>>
 
 Next ==
     \/ \E q \in Requests, c \in Clients : AdmitRequest(q, c)
@@ -299,10 +326,12 @@ Next ==
     \/ \E w \in Works : FinishBackgroundWork(w)
     \/ \E q \in Requests, child \in Clients : RegisterChild(q, child)
     \/ \E c \in Clients : CloseTransport(c)
-    \/ \E c \in Clients : ReclaimClient(c)
+    \/ \E c \in Clients : BeginClientMetricDrain(c)
+    \/ \E c \in Clients : FinishClientReclamation(c)
     \/ BeginSessionTeardown
     \/ BeginCacheRelease
     \/ FinishCacheCleanup
+    \/ \E c \in Clients : StopClientMetrics(c)
     \/ StopTelemetry
     \/ RemoveSession
 
@@ -311,6 +340,7 @@ Spec == Init /\ [][Next]_vars
 SystemProgress ==
     \/ BeginCacheRelease
     \/ FinishCacheCleanup
+    \/ \E c \in Clients : StopClientMetrics(c)
     \/ StopTelemetry
     \/ RemoveSession
 
@@ -319,7 +349,8 @@ LiveSpec ==
     /\ WF_vars(SystemProgress)
     /\ \A q \in Requests : WF_vars(FinishRequest(q))
     /\ \A w \in Works : WF_vars(FinishBackgroundWork(w))
-    /\ \A c \in Clients : WF_vars(ReclaimClient(c))
+    /\ \A c \in Clients : WF_vars(BeginClientMetricDrain(c))
+    /\ \A c \in Clients : WF_vars(FinishClientReclamation(c))
 
 (***************************************************************************)
 (* SAFETY AND LIVENESS PROPERTIES                                          *)
@@ -328,6 +359,7 @@ LiveSpec ==
 TypeOK ==
     /\ sessionPhase \in SessionPhases
     /\ cachePhase \in CachePhases
+    /\ \A c \in Clients : clientMetrics[c] \in MetricPhases
     /\ reclaimed \subseteq Clients
     /\ DOMAIN clients = Clients
     /\ DOMAIN leases = Clients
@@ -342,6 +374,8 @@ TypeOK ==
          /\ \A k \in LeaseKinds : leases[c][k] \in Nat
          /\ clients[c].accepting => clients[c].runtime
          /\ clients[c].transport => clients[c].accepting
+         /\ sessionPhase = "live" /\ clients[c].runtime
+              => clientMetrics[c] # "stopped"
     /\ \A q \in Requests :
          /\ requests[q].phase \in ItemPhases
          /\ requests[q].client \in Clients
@@ -360,15 +394,34 @@ LeaseExact ==
 \* Executable work never observes a reclaimed runtime.
 ActiveWorkHasRuntime ==
     /\ \A q \in Requests :
-         requests[q].phase = "active" => clients[requests[q].client].runtime
+         requests[q].phase = "active"
+           => /\ clients[requests[q].client].runtime
+              /\ clientMetrics[requests[q].client] = "live"
     /\ \A w \in Works :
-         work[w].phase = "active" => clients[work[w].client].runtime
+         work[w].phase = "active"
+           => /\ clients[work[w].client].runtime
+              /\ clientMetrics[work[w].client] = "live"
 
 \* A live session cannot reclaim a client while any typed owner remains.
 NoEarlyReclamation ==
     \A c \in Clients :
         sessionPhase = "live" /\ clients[c].published /\ ~clients[c].runtime
           => TotalLeases(c) = 0
+
+\* Runtime reclamation completes only after the client-bound metric provider's
+\* final flush and shutdown barrier.
+MetricsStopBeforeReclamation ==
+    \A c \in Clients :
+        clients[c].published /\ ~clients[c].runtime
+          => clientMetrics[c] = "stopped"
+
+\* A live-runtime metric drain can begin only after reachability closes and
+\* every typed producer lease reaches its terminal transition.
+MetricsDrainAfterProducers ==
+    \A c \in Clients :
+        clientMetrics[c] = "draining"
+          => /\ ~clients[c].accepting
+             /\ TotalLeases(c) = 0
 
 \* Runtime publication is monotonic for one client ID.
 NoClientResurrection ==
@@ -384,12 +437,14 @@ ChildRetainsParent ==
             => /\ clients[ParentOf[child]].runtime
                /\ leases[ParentOf[child]]["child"] > 0
 
-\* The session-owned telemetry providers stop only after every producer,
-\* including deferred cache cleanup, has reached its terminal transition.
+\* The session-owned trace/log providers stop only after every producer,
+\* including deferred cache cleanup and every live client metric provider, has
+\* reached its terminal transition.
 TelemetryStopsAfterProducers ==
     sessionPhase \in {"telemetryStopped", "removed"}
       => /\ cachePhase = "done"
          /\ NoActiveProducers
+         /\ \A c \in Clients : clientMetrics[c] = "stopped"
 
 \* Once a live-session client is closed and lease-free, fair reclamation
 \* eventually unpublishes its runtime.

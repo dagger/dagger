@@ -16,6 +16,7 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -237,13 +238,13 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				usage.TotalTokens = resp.Usage.TotalTokens
 			}
 			if usage.InputTokens > 0 {
-				inputTokens.Record(ctx, usage.InputTokens, llmMetricAttributes(ctx, attrs...))
+				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
 			}
 			if usage.CachedTokenReads > 0 {
-				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, llmMetricAttributes(ctx, attrs...))
+				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
 			}
 			if usage.OutputTokens > 0 {
-				outputTokens.Record(ctx, usage.OutputTokens, llmMetricAttributes(ctx, attrs...))
+				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
 			}
 
 			// Extract text from the completed response (tool calls handled above)

@@ -23,8 +23,9 @@ type LifecycleDebugSnapshot struct {
 }
 
 // LifecycleTelemetryCounts reports configured provider, processor, reader, and
-// queue cardinality. All provider and reader counts are session-owned. Queue
-// capacity is configured fact, never measured occupancy.
+// queue cardinality. Trace/log resources are session-owned; metric resources
+// belong to live client runtimes. Queue capacity is configured fact, never
+// measured occupancy.
 type LifecycleTelemetryCounts struct {
 	TracerProviders          int `json:"tracer_providers"`
 	LoggerProviders          int `json:"logger_providers"`
@@ -60,8 +61,8 @@ type ClientLifecycleDebugSnapshot struct {
 	QuiescentAt      *time.Time                 `json:"quiescent_at,omitempty"`
 	ShutdownAt       *time.Time                 `json:"shutdown_at,omitempty"`
 	RetentionReasons []LifecycleRetentionReason `json:"retention_reasons,omitempty"`
-	// Telemetry is retained for debug API compatibility and is now always zero;
-	// provider topology lives on the owning session snapshot.
+	// Telemetry reports runtime-owned metric resources. Trace/log topology lives
+	// on the owning session snapshot.
 	Telemetry LifecycleTelemetryCounts `json:"telemetry"`
 }
 
@@ -122,12 +123,14 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 				leases           []clientLifecycleLeaseRecord
 				activeCount      int
 				initialized      bool
+				clientTelemetry  LifecycleTelemetryCounts
 			)
 			if runtime != nil {
 				_, lifecycleTracked, leases = sess.clientLifecycleSnapshot(runtime)
 				runtime.stateMu.RLock()
 				activeCount = runtime.activeCount
 				initialized = runtime.state == clientStateInitialized
+				clientTelemetry = runtime.telemetryDebug
 				runtime.stateMu.RUnlock()
 			}
 			clientLeaseCounts := make(map[string]LifecycleRetentionReason)
@@ -147,6 +150,7 @@ func (srv *Server) ClientLifecycleDebugSnapshot() LifecycleDebugSnapshot {
 			clientOut := ClientLifecycleDebugSnapshot{
 				ClientID:       record.clientID,
 				MetadataSealed: metadataSealed,
+				Telemetry:      clientTelemetry,
 			}
 			requestLeases := lifecycleLeaseCountKind(clientLeaseCounts, "request")
 			if requestLeases > 0 {

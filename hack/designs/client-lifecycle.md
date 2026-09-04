@@ -22,8 +22,8 @@ Completed, in dependency order:
    session-owned. Emissions carry an immutable origin client ID, nested telemetry
    fans out through the validated ancestry route, clientdb operations release
    their handles, and session teardown stops producers before the final
-   force-flush and provider shutdown barrier. Metrics were deferred to the
-   later aggregation-aware session migration in step 9.
+   force-flush and provider shutdown barrier. Metrics were deferred until typed
+   leases could make their shorter runtime ownership safe in step 9.
 4. `ClientScope` and typed lifecycle leases exist. Accepted requests carry an
    immutable per-scope metadata snapshot, and services, lazy evaluation, and
    shared DagQL work explicitly clone one typed lease when detaching. Service
@@ -62,23 +62,25 @@ Completed, in dependency order:
    shared-work scope and drops its detached context when the callback finishes.
    Module/schema memoization is scoped to its owning query capability instead
    of a process-global cache.
-9. Metric aggregation, its meter provider, and its periodic reader are
-   session-owned. Every engine measurement carries the immutable origin client
-   ID as an aggregation attribute, and one routing exporter partitions each
-   collection to the origin record and its validated ancestors exactly once.
-   Incoming and cloud metrics overwrite payload origin claims with the
-   authenticated origin and use the same record-only router. Metric flush and
-   shutdown now participate in the final session telemetry barrier after all
-   producers and cleanup have stopped.
+9. Each live client runtime owns one meter provider and one periodic reader. Its
+   exporter is bound to the client's immutable record and routes the whole
+   collection to that record and its validated ancestors exactly once, without
+   requiring origin attributes on every engine measurement or one reader per
+   ancestor. The serialized zero-lease transition keeps the closed runtime
+   published while metrics force-flush and shut down, then unpublishes it.
+   Authoritative session teardown drains metrics for every remaining runtime
+   before the final session trace/log barrier.
 
 10. Quiescent runtime reclamation is enabled. Transport close serializes the
     monotonic acceptance stop and transport-lease release; every admitted
     request, including bootstrap requests, already owns its request lease before
-    that lock is released. A live session atomically unpublishes a closed runtime
-    only when its typed lease set is empty, drops execution-only fields from any
-    stale released-lease shell, and releases the parent's `child` lease from that
-    one child transition. Authoritative teardown first marks the session removed,
-    disabling independent reclamation while it drains the same idempotent edges.
+    that lock is released. When a live session observes an empty typed lease set,
+    one serialized transition marks the runtime reclaiming; its metric provider
+    drains outside the lock before the runtime is atomically unpublished,
+    execution-only fields are dropped, and the parent's `child` lease is released.
+    Authoritative teardown first marks the session removed, disabling new
+    reclamation starts while it drains the same idempotent edges and remaining
+    metric providers.
 
 The durable-capability audit remains explicit rather than optimistic. Workspace
 host access, telemetry, metadata, ancestry, secrets/sockets, exited-service
@@ -103,9 +105,10 @@ At the time of the proposal, that retention was expensive. Every client owned a
 DagQL server and schema, an engine utility client, module and workspace state,
 three OpenTelemetry providers, one large trace queue, one log queue, periodic
 metric readers, and a long-lived clientdb reference with three stream goroutines.
-The completed session-telemetry seams removed all per-client providers,
-readers, queues, and DB keepalives. Change 10 now also unpublishes and clears the
-remaining DagQL/schema execution state when a closed client has no typed owner.
+The completed telemetry seams removed per-client trace/log providers, queues,
+and DB keepalives. Metric providers and readers remain only on live runtimes and
+are reclaimed with them. Change 10 also unpublishes and clears the remaining
+DagQL/schema execution state when a closed client has no typed owner.
 
 At the time of the proposal, calling `/shutdown` from SDK runtimes did not solve
 this. Containerized SDKs did not consistently call it, and the in-engine Dang
@@ -309,7 +312,7 @@ resource and attachable registries. A dead external attachable may produce the
 existing clear "no active session attachables" error; retaining a heavyweight
 client object cannot make that external process live again.
 
-### Session-owned telemetry
+### Lifecycle-owned telemetry
 
 Telemetry should be fixed before client reclamation. It is the dominant retained
 cost, and its lifetime is naturally the session's, not an individual proxy's.
@@ -326,18 +329,20 @@ that operation ends. Remove the per-client keepalive DB. The DB manager may keep
 an internal bounded idle cache if reopen cost is measurable, but that cache must
 have an explicit size/time bound rather than one entry per historical client.
 
-Metrics use one session meter provider and require engine measurements to carry
-origin client ID as an attribute before OTel aggregation. The routing exporter
-partitions aggregated data points by that origin and resolves only the immutable
-record graph, so one periodic reader delivers each point to the origin and every
-validated ancestor without retaining client runtimes.
+Metrics instead use one meter provider and periodic reader per live client
+runtime. Each exporter is bound to an immutable client record, so ordinary OTel
+measurement attributes remain untouched and the whole aggregated collection can
+be routed through the record graph. There is one reader per client, not one per
+ancestor; reclaimed clients retain neither provider nor reader.
 
-Provider shutdown then happens only during session teardown. Teardown first
-prevents new root work, cancels and drains background leases, and releases cache
-and session resources that may emit cleanup telemetry. A final force-flush is the
-barrier after those producers have stopped; only then are the session providers
-shut down, DB references closed, and descriptors removed. A detached agent cannot
-accidentally inherit a provider that another goroutine shuts down.
+Client metric shutdown happens only after close and the typed lease count reaches
+zero. Reclamation keeps the runtime published but non-accepting during that drain,
+so concurrent session flushes cannot miss it, then unpublishes the runtime and
+releases its parent edge. Session teardown prevents new root work, drains
+background leases and cache cleanup, shuts down any remaining client metrics,
+and finally force-flushes and shuts down the session trace/log providers. A
+detached agent cannot accidentally inherit a provider that another goroutine
+shuts down.
 
 ### State machine
 
@@ -363,14 +368,19 @@ session is live
 AND record.accepting == false
 AND runtime.totalLeases == 0
 AND runtime is still the record's published runtime
+AND runtime is not already reclaiming
 ```
 
-The operation atomically unpublishes the runtime before running slow cleanup.
-Lease acquisition first checks `accepting` under the same serialization point;
-an already-held lease may be cloned for child/background work while closing,
-but an unrelated request cannot acquire a new root lease. Session teardown wins
-by changing session state first, then draining through the same release paths.
-This prevents both resurrection and a last-release/new-acquire race.
+The operation atomically marks one reclamation owner, keeps the non-accepting
+runtime published while its metric provider drains outside the lock, then
+atomically unpublishes it before clearing heavy state and releasing its parent
+edge. Keeping it published makes concurrent session flushes wait for that drain
+instead of missing the provider. Lease acquisition first checks `accepting` under
+the same serialization point; an already-held lease may be cloned for
+child/background work while closing, but an unrelated request cannot acquire a
+new root lease. Session teardown wins by changing session state first, then
+draining through the same release paths. This prevents resurrection, duplicate
+reclamation, and a last-release/new-acquire race.
 
 ### Cache release handoff
 
@@ -413,7 +423,8 @@ The modeled actions correspond to concrete serialization points:
 | Admit or finish a request | `acquireRootClientScope` and request cleanup |
 | Start or finish detached work | `DetachClientScope` and `ClientLifecycleLease.Release` |
 | Register or close a child transport | `RegisterNestedClientTransport` and `NestedClientTransport.Close` |
-| Reclaim a runtime | `maybeUnpublishClientRuntimeLocked` |
+| Begin metric drain for a runtime | `maybeBeginClientRuntimeReclamationLocked` |
+| Finish metric drain and reclaim | `shutdownMetrics` and `finishClientRuntimeReclamation` |
 | Begin authoritative teardown | `markSessionRemoved` and `beginClientScopeTeardown` |
 | Complete cache cleanup | `ReleaseSession` followed by `WaitSessionRelease` |
 | Drain accepted producers | `waitForClientScopeDrain` |
@@ -454,8 +465,8 @@ record collection remains the only optional unchecked optimization.
 3. [x] **Move traces and logs to session-owned providers.** Explicit origin IDs
    route records to immutable ancestry, per-client trace/log queues and DB
    keepalives are gone, and final provider shutdown follows producer cleanup.
-   Metrics were explicitly deferred to the aggregation-aware migration in step
-   9.
+   Metrics were explicitly deferred until typed leases could prove their
+   runtime-scoped shutdown boundary in step 9.
 4. [x] **Introduce `ClientScope` and typed leases.** Request entry, service
    runtimes, DagQL shared/lazy work, and explicit detachment now carry auditable
    lifecycle ownership.
@@ -478,12 +489,11 @@ record collection remains the only optional unchecked optimization.
    detached lazy, shared-call, and arbitrary-cache callbacks hold one explicit
    shared-work lease and release their contexts at terminal transitions.
    Module/schema memoization is capability-owned instead of process-global.
-9. [x] **Move metrics to session ownership.** One session meter provider and
-   periodic reader aggregate origin-attributed measurements, then a record-only
-   routing exporter partitions data points to the origin and validated ancestor
-   IDs exactly once. Incoming and cloud metrics use authenticated origin
-   adapters, and metric flush/shutdown joins the final producer-stop telemetry
-   barrier.
+9. [x] **Bind metrics to live runtimes.** One meter provider and periodic reader
+   aggregate each live client's ordinary measurements. A record-bound exporter
+   routes the collection to the origin and validated ancestor IDs exactly once.
+   The zero-lease transition drains metrics before unpublishing the runtime;
+   session teardown drains every remaining provider before trace/log shutdown.
 10. [x] **Enable quiescent runtime reclamation.** Proxy close monotonically marks
     `accepting=false` and releases `transport`; admitted requests already own
     their typed lease, and one serialized zero-lease transition atomically
@@ -530,10 +540,11 @@ proof. Runtime reclamation therefore does not require or imply record collection
 
 - Synchronous and detached spans/logs from nested clients appear in the origin
   and every ancestor DB exactly once.
-- Aggregated metrics preserve their immutable origin and appear in that record
-  and each validated ancestor exactly once.
-- Trace, log, and metric provider/reader count is proportional to sessions, not
-  clients.
+- Aggregated metrics from each record appear in that record and each validated
+  ancestor exactly once, without a caller-supplied routing attribute.
+- Trace/log provider and queue count is proportional to sessions; metric
+  provider and reader count is proportional to live runtimes, not historical
+  clients or ancestry depth.
 - Clientdb stream goroutines return to the bounded idle baseline.
 - Closing any nested proxy cannot turn a live agent's tracer into a noop tracer.
 - Session flush includes records concurrently emitted by closing client scopes
@@ -549,8 +560,8 @@ long-lived work and wait for two GC/telemetry intervals.
 The acceptance criteria are:
 
 - live client runtimes return to the known baseline;
-- trace/log/metric provider, reader, and queue counts remain constant for the
-  session;
+- trace/log provider and queue counts remain constant for the session, while
+  metric provider/reader counts return to the live-runtime baseline;
 - clientdb goroutines and open streams remain within the configured idle bound;
 - heap after forced GC plateaus across waves rather than tracking total
   invocations;

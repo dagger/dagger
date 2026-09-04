@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type clientLifecycleLeaseRecord struct {
@@ -249,7 +250,7 @@ func (sess *daggerSession) closeNestedClientTransport(record *clientRecord) {
 		transport = client.transportLease
 		client.transportLease = nil
 	}
-	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
+	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
 	sess.scopeMu.Unlock()
 
 	transport.Release()
@@ -267,42 +268,57 @@ func (sess *daggerSession) markClientClosedLocked(record *clientRecord) {
 }
 
 type clientRuntimeReclamation struct {
-	runtime     *clientRuntime
-	parentLease *engine.ClientLifecycleLease
+	runtime *clientRuntime
 }
 
-// maybeUnpublishClientRuntimeLocked performs one serialized quiescent
-// transition. sess.scopeMu must be held. The runtime map deletion and parent-
-// lease detachment are one operation, so a child can release its parent only
-// after it is no longer executable and can do so only once.
-func (sess *daggerSession) maybeUnpublishClientRuntimeLocked(client *clientRuntime) clientRuntimeReclamation {
-	if client == nil || sess.state.Load() != sessionStateInitialized || client.accepting || len(client.lifecycleLeases) != 0 {
+// maybeBeginClientRuntimeReclamationLocked starts one serialized quiescent transition.
+// sess.scopeMu must be held. The closed runtime remains published but cannot
+// admit or execute work while its metric provider performs its final drain.
+func (sess *daggerSession) maybeBeginClientRuntimeReclamationLocked(client *clientRuntime) clientRuntimeReclamation {
+	if client == nil || sess.state.Load() != sessionStateInitialized || client.accepting || len(client.lifecycleLeases) != 0 || client.reclaiming {
 		return clientRuntimeReclamation{}
 	}
 
-	sess.clientMu.Lock()
+	sess.clientMu.RLock()
 	if sess.clientRuntimes[client.clientID] != client {
-		sess.clientMu.Unlock()
+		sess.clientMu.RUnlock()
 		return clientRuntimeReclamation{}
 	}
-	delete(sess.clientRuntimes, client.clientID)
-	client.quiescentAt = time.Now()
-	parentLease := client.parentClientScopeLease
-	client.parentClientScopeLease = nil
-	sess.clientMu.Unlock()
+	sess.clientMu.RUnlock()
+	client.reclaiming = true
 
-	return clientRuntimeReclamation{runtime: client, parentLease: parentLease}
+	return clientRuntimeReclamation{runtime: client}
 }
 
 // finishClientRuntimeReclamation runs outside session locks. Heavy state is
-// dropped before releasing the parent's child lease; that release may
-// recursively reclaim a closed parent.
+// unpublished only after metrics finish draining, then dropped before releasing
+// the parent's child lease; that release may recursively reclaim a closed parent.
 func (sess *daggerSession) finishClientRuntimeReclamation(reclamation clientRuntimeReclamation) {
 	if reclamation.runtime == nil {
 		return
 	}
+	metricsCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	if err := reclamation.runtime.shutdownMetrics(metricsCtx); err != nil {
+		slog.Error("error shutting down quiescent client metrics",
+			"sessionID", sess.sessionID,
+			"clientID", reclamation.runtime.clientID,
+			"error", err)
+	}
+	cancel()
+
+	sess.scopeMu.Lock()
+	sess.clientMu.Lock()
+	if sess.clientRuntimes[reclamation.runtime.clientID] == reclamation.runtime {
+		delete(sess.clientRuntimes, reclamation.runtime.clientID)
+		reclamation.runtime.quiescentAt = time.Now()
+	}
+	parentLease := reclamation.runtime.parentClientScopeLease
+	reclamation.runtime.parentClientScopeLease = nil
+	sess.clientMu.Unlock()
+	sess.scopeMu.Unlock()
+
 	reclamation.runtime.releaseHeavyState()
-	reclamation.parentLease.Release()
+	parentLease.Release()
 }
 
 // acquireRootClientScope acquires work directly from a reachable client. Root
@@ -410,7 +426,7 @@ func (sess *daggerSession) delegateClientLifecycleLease(
 func (sess *daggerSession) releaseClientLifecycleLease(client *clientRuntime, leaseID uint64) {
 	sess.scopeMu.Lock()
 	delete(client.lifecycleLeases, leaseID)
-	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
+	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
 	sess.signalClientScopeWaiterLocked()
 	sess.scopeMu.Unlock()
 	sess.finishClientRuntimeReclamation(reclamation)
@@ -425,7 +441,7 @@ func (sess *daggerSession) signalClientScopeWaiterLocked() {
 
 // clientScopesDrainedLocked reports whether session teardown has observed the
 // terminal transition of every executable client scope. sess.scopeMu must be
-// held; the lock order matches maybeUnpublishClientRuntimeLocked.
+// held; the lock order matches maybeBeginClientRuntimeReclamationLocked.
 func (sess *daggerSession) clientScopesDrainedLocked() bool {
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
@@ -468,7 +484,7 @@ func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 	sess.markClientClosedLocked(client.clientRecord)
 	transport := client.transportLease
 	client.transportLease = nil
-	reclamation := sess.maybeUnpublishClientRuntimeLocked(client)
+	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
 	sess.scopeMu.Unlock()
 
 	transport.Release()
