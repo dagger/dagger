@@ -3445,6 +3445,9 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 		var resolved dagql.ObjectResult[*Directory]
 		switch {
 		case mnt == nil:
+			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartFS); err != nil {
+				return err
+			}
 			var rootfs dagql.ObjectResult[*Directory]
 			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
 				return err
@@ -3607,6 +3610,9 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 		var resolved dagql.ObjectResult[*File]
 		switch {
 		case mnt == nil:
+			if err := cache.EvaluateParts(ctx, lazy.Parent, ContainerPartFS); err != nil {
+				return err
+			}
 			var rootfs dagql.ObjectResult[*Directory]
 			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
 				return err

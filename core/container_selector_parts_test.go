@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,6 +10,48 @@ import (
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
+
+type containerSelectorPartsTestServer struct {
+	*mockServer
+	dag *dagql.Server
+}
+
+func (srv *containerSelectorPartsTestServer) Server(context.Context) (*dagql.Server, error) {
+	return srv.dag, nil
+}
+
+func TestContainerDirectorySelectorReturnsRootFSErrorBeforeSelection(t *testing.T) {
+	t.Parallel()
+	queryServer := &containerSelectorPartsTestServer{mockServer: &mockServer{}}
+	ctx, cache, srv, sessionID := newContainerPartsTestCtxWithQueryServer(t, queryServer)
+	queryServer.dag = srv
+	ctx = ContextWithQuery(ctx, &Query{Server: queryServer})
+
+	injected := errors.New("injected rootfs failure")
+	baseOp := &containerPartsTestBaseOp{
+		LazyState: NewLazyState(),
+		fsErr:     injected,
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "selector-rootfs-error-base", base)
+	dir := &Directory{
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		Lazy: &ContainerDirectoryLazy{
+			LazyState: NewLazyState(),
+			Parent:    baseRes,
+			Path:      "/x",
+		},
+	}
+
+	err := dir.LazyEvalFunc()(ctx)
+	require.ErrorIs(t, err, injected)
+	require.Equal(t, int32(1), baseOp.fsRuns.Load())
+}
 
 // ctr.directory("/a") on a container with several mounted inputs
 // evaluates metadata plus the part /a lives in: the unrelated mount's

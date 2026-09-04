@@ -46,6 +46,7 @@ type containerPartsTestBaseOp struct {
 	// fsBodyHook, when set, runs inside the fs group's body before it
 	// returns.
 	fsBodyHook func()
+	fsErr      error
 }
 
 type containerPartsTestDirectorySourceOp struct {
@@ -136,6 +137,9 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 	case containerDelegationGroup(ContainerPartFS):
 		return op.LazyState.EvaluateGroup(ctx, "test.base", group, func(context.Context) error {
 			op.fsRuns.Add(1)
+			if op.fsErr != nil {
+				return op.fsErr
+			}
 			dir := &Directory{
 				Dir:      new(LazyAccessor[string, *Directory]),
 				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
