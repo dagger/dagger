@@ -11,6 +11,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -324,16 +325,16 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 		// Keep track of the token usage
 		if acc.Usage.OutputTokens > 0 {
-			outputTokens.Record(ctx, acc.Usage.OutputTokens, llmMetricAttributes(ctx, attrs...))
+			outputTokens.Record(ctx, acc.Usage.OutputTokens, metric.WithAttributes(attrs...))
 		}
 		if acc.Usage.InputTokens > 0 {
-			inputTokens.Record(ctx, acc.Usage.InputTokens, llmMetricAttributes(ctx, attrs...))
+			inputTokens.Record(ctx, acc.Usage.InputTokens, metric.WithAttributes(attrs...))
 		}
 		if acc.Usage.CacheReadInputTokens > 0 {
-			inputTokensCacheReads.Record(ctx, acc.Usage.CacheReadInputTokens, llmMetricAttributes(ctx, attrs...))
+			inputTokensCacheReads.Record(ctx, acc.Usage.CacheReadInputTokens, metric.WithAttributes(attrs...))
 		}
 		if acc.Usage.CacheCreationInputTokens > 0 {
-			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, llmMetricAttributes(ctx, attrs...))
+			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
 		}
 
 		// Route each content block's stream into its own display span: thinking

@@ -2,7 +2,8 @@
 
 ClientLifecycle.tla models per-client request, transport, child, service, and
 shared-work leases; live-session runtime reclamation; authoritative session
-teardown; and the final session telemetry barrier.
+teardown; lifecycle-bound client metric draining; and the final session
+trace/log telemetry barrier.
 
 The detailed DagQL cache algorithm remains in
 dagql/tla/CacheLifecycle.tla. This model consumes one contract from it:

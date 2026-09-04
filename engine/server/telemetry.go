@@ -167,65 +167,35 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }
 
-type sessionMetricExporter struct {
-	sess *daggerSession
-	ps   *PubSub
+// clientMetricExporter binds one live client's metric stream to its immutable
+// record. Measurements therefore need no routing attribute: each provider
+// aggregates one client's work, and export resolves that record's current
+// origin-to-ancestor route without retaining any ancestor runtime.
+type clientMetricExporter struct {
+	record *clientRecord
+	ps     *PubSub
 }
 
-func (exp sessionMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+func (exp clientMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
 	return metricdata.DeltaTemporality
 }
 
-func (exp sessionMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+func (exp clientMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
 	return sdkmetric.AggregationDefault{}
 }
 
-func (exp sessionMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+func (exp clientMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
 	if metrics == nil || len(metrics.ScopeMetrics) == 0 {
 		return nil
 	}
-	origins := map[string]struct{}{}
-	_, err := transformResourceMetrics(metrics, func(attrs attribute.Set) (attribute.Set, bool, error) {
-		origin, err := metricDataOriginClientID(attrs)
-		if err != nil {
-			return attrs, false, err
-		}
-		origins[origin] = struct{}{}
-		return attrs, true, nil
-	})
+	route, err := exp.record.daggerSession.telemetryRouteClientIDs(exp.record)
 	if err != nil {
 		return err
 	}
-
-	originsByTarget := map[string]map[string]struct{}{}
-	for origin := range origins {
-		route, err := exp.sess.telemetryRouteOriginClientID(origin)
-		if err != nil {
-			return err
-		}
-		for _, target := range route {
-			if originsByTarget[target] == nil {
-				originsByTarget[target] = map[string]struct{}{}
-			}
-			originsByTarget[target][origin] = struct{}{}
-		}
-	}
-
 	var eg errgroup.Group
-	for target, targetOrigins := range originsByTarget {
-		routed, err := transformResourceMetrics(metrics, func(attrs attribute.Set) (attribute.Set, bool, error) {
-			origin, err := metricDataOriginClientID(attrs)
-			if err != nil {
-				return attrs, false, err
-			}
-			_, include := targetOrigins[origin]
-			return attrs, include, nil
-		})
-		if err != nil {
-			return err
-		}
+	for _, target := range route {
 		eg.Go(func() error {
-			if err := exp.ps.Metrics(target).Export(ctx, routed); err != nil {
+			if err := exp.ps.Metrics(target).Export(ctx, metrics); err != nil {
 				return fmt.Errorf("export metrics to %s: %w", target, err)
 			}
 			return nil
@@ -234,166 +204,12 @@ func (exp sessionMetricExporter) Export(ctx context.Context, metrics *metricdata
 	return eg.Wait()
 }
 
-func (sessionMetricExporter) ForceFlush(context.Context) error { return nil }
-func (sessionMetricExporter) Shutdown(context.Context) error   { return nil }
+func (clientMetricExporter) ForceFlush(context.Context) error { return nil }
+func (clientMetricExporter) Shutdown(context.Context) error   { return nil }
 
-func metricDataOriginClientID(attrs attribute.Set) (string, error) {
-	value, ok := attrs.Value(attribute.Key(telemetryattrs.TelemetryOriginClientIDAttr))
-	if !ok || value.Type() != attribute.STRING || value.AsString() == "" {
-		return "", fmt.Errorf("metric data point is missing telemetry origin client ID")
-	}
-	return value.AsString(), nil
-}
-
-type metricAttributeTransform func(attribute.Set) (attribute.Set, bool, error)
-
-func transformResourceMetrics(metrics *metricdata.ResourceMetrics, transform metricAttributeTransform) (*metricdata.ResourceMetrics, error) {
-	out := &metricdata.ResourceMetrics{Resource: metrics.Resource}
-	for _, scopeMetrics := range metrics.ScopeMetrics {
-		outScope := metricdata.ScopeMetrics{Scope: scopeMetrics.Scope}
-		for _, data := range scopeMetrics.Metrics {
-			transformed, include, err := transformMetric(data, transform)
-			if err != nil {
-				return nil, fmt.Errorf("transform metric %q: %w", data.Name, err)
-			}
-			if include {
-				outScope.Metrics = append(outScope.Metrics, transformed)
-			}
-		}
-		if len(outScope.Metrics) > 0 {
-			out.ScopeMetrics = append(out.ScopeMetrics, outScope)
-		}
-	}
-	return out, nil
-}
-
-func transformMetric(data metricdata.Metrics, transform metricAttributeTransform) (metricdata.Metrics, bool, error) {
-	var err error
-	switch aggregation := data.Data.(type) {
-	case metricdata.Gauge[int64]:
-		aggregation.DataPoints, err = transformDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Gauge[float64]:
-		aggregation.DataPoints, err = transformDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Sum[int64]:
-		aggregation.DataPoints, err = transformDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Sum[float64]:
-		aggregation.DataPoints, err = transformDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Histogram[int64]:
-		aggregation.DataPoints, err = transformHistogramDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Histogram[float64]:
-		aggregation.DataPoints, err = transformHistogramDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.ExponentialHistogram[int64]:
-		aggregation.DataPoints, err = transformExponentialHistogramDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.ExponentialHistogram[float64]:
-		aggregation.DataPoints, err = transformExponentialHistogramDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	case metricdata.Summary:
-		aggregation.DataPoints, err = transformSummaryDataPoints(aggregation.DataPoints, transform)
-		data.Data = aggregation
-	default:
-		return metricdata.Metrics{}, false, fmt.Errorf("unsupported aggregation %T", data.Data)
-	}
-	if err != nil {
-		return metricdata.Metrics{}, false, err
-	}
-	return data, metricDataPointCount(data.Data) > 0, nil
-}
-
-func transformDataPoints[N int64 | float64](points []metricdata.DataPoint[N], transform metricAttributeTransform) ([]metricdata.DataPoint[N], error) {
-	out := make([]metricdata.DataPoint[N], 0, len(points))
-	for _, point := range points {
-		attrs, include, err := transform(point.Attributes)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			point.Attributes = attrs
-			out = append(out, point)
-		}
-	}
-	return out, nil
-}
-
-func transformHistogramDataPoints[N int64 | float64](points []metricdata.HistogramDataPoint[N], transform metricAttributeTransform) ([]metricdata.HistogramDataPoint[N], error) {
-	out := make([]metricdata.HistogramDataPoint[N], 0, len(points))
-	for _, point := range points {
-		attrs, include, err := transform(point.Attributes)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			point.Attributes = attrs
-			out = append(out, point)
-		}
-	}
-	return out, nil
-}
-
-func transformExponentialHistogramDataPoints[N int64 | float64](points []metricdata.ExponentialHistogramDataPoint[N], transform metricAttributeTransform) ([]metricdata.ExponentialHistogramDataPoint[N], error) {
-	out := make([]metricdata.ExponentialHistogramDataPoint[N], 0, len(points))
-	for _, point := range points {
-		attrs, include, err := transform(point.Attributes)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			point.Attributes = attrs
-			out = append(out, point)
-		}
-	}
-	return out, nil
-}
-
-func transformSummaryDataPoints(points []metricdata.SummaryDataPoint, transform metricAttributeTransform) ([]metricdata.SummaryDataPoint, error) {
-	out := make([]metricdata.SummaryDataPoint, 0, len(points))
-	for _, point := range points {
-		attrs, include, err := transform(point.Attributes)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			point.Attributes = attrs
-			out = append(out, point)
-		}
-	}
-	return out, nil
-}
-
-func metricDataPointCount(data metricdata.Aggregation) int {
-	switch aggregation := data.(type) {
-	case metricdata.Gauge[int64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Gauge[float64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Sum[int64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Sum[float64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Histogram[int64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Histogram[float64]:
-		return len(aggregation.DataPoints)
-	case metricdata.ExponentialHistogram[int64]:
-		return len(aggregation.DataPoints)
-	case metricdata.ExponentialHistogram[float64]:
-		return len(aggregation.DataPoints)
-	case metricdata.Summary:
-		return len(aggregation.DataPoints)
-	default:
-		return 0
-	}
-}
-
-// originSpanExporter, originLogExporter, and originMetricExporter adapt
-// telemetry delivered without an emission context (incoming OTLP and cloud
-// scale-out) into the same stamped, session-owned routing path.
+// originSpanExporter and originLogExporter adapt telemetry delivered without an
+// emission context (incoming OTLP and cloud scale-out) into the same stamped,
+// session-owned routing path.
 type originSpanExporter struct {
 	origin string
 	next   sdktrace.SpanExporter
@@ -442,44 +258,6 @@ func (exp originLogExporter) Export(ctx context.Context, records []sdklog.Record
 }
 func (exp originLogExporter) ForceFlush(ctx context.Context) error { return exp.next.ForceFlush(ctx) }
 func (exp originLogExporter) Shutdown(ctx context.Context) error   { return exp.next.Shutdown(ctx) }
-
-type originMetricExporter struct {
-	origin string
-	next   sdkmetric.Exporter
-}
-
-func (exp originMetricExporter) Temporality(kind sdkmetric.InstrumentKind) metricdata.Temporality {
-	return exp.next.Temporality(kind)
-}
-
-func (exp originMetricExporter) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	return exp.next.Aggregation(kind)
-}
-
-func (exp originMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
-	if metrics == nil {
-		return exp.next.Export(ctx, nil)
-	}
-	stamped, err := transformResourceMetrics(metrics, func(attrs attribute.Set) (attribute.Set, bool, error) {
-		filtered, _ := attrs.Filter(func(attr attribute.KeyValue) bool {
-			return string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr
-		})
-		originAttrs := append(filtered.ToSlice(), attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, exp.origin))
-		return attribute.NewSet(originAttrs...), true, nil
-	})
-	if err != nil {
-		return err
-	}
-	return exp.next.Export(ctx, stamped)
-}
-
-func (exp originMetricExporter) ForceFlush(ctx context.Context) error {
-	return exp.next.ForceFlush(ctx)
-}
-
-func (exp originMetricExporter) Shutdown(ctx context.Context) error {
-	return exp.next.Shutdown(ctx)
-}
 
 type PubSub struct {
 	srv *Server
@@ -607,23 +385,17 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := record.daggerSession.telemetryRouteClientIDs(record)
-	if err != nil {
-		slog.Warn("error resolving telemetry route", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-	slog.Debug("exporting metrics to clients", "clients", len(route))
+	slog.Debug("exporting metrics", "origin", clientID)
 
 	start := time.Now()
-	exporter := originMetricExporter{origin: clientID, next: record.daggerSession.metricExporter}
+	exporter := clientMetricExporter{record: record, ps: ps}
 	if err := enginetel.ReexportMetricsFromPB(r.Context(), []sdkmetric.Exporter{exporter}, &req); err != nil {
 		slog.Error("error exporting metrics", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if elapsed := time.Since(start); elapsed > slowTelemetryOp {
-		slog.Warn("slow metric fan-out", "from", record.clientID, "clients", len(route), "duration", elapsed)
+		slog.Warn("slow metric fan-out", "from", record.clientID, "duration", elapsed)
 	}
 
 	rw.WriteHeader(http.StatusCreated)

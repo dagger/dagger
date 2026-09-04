@@ -125,15 +125,12 @@ type daggerSession struct {
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
 
-	// Session-owned telemetry pipelines. Their processors/measurements capture
-	// an origin client ID from each emission context and their exporters resolve
-	// the session's immutable ancestry graph when a batch is exported.
+	// Session-owned trace and log pipelines capture an origin client ID from
+	// each emission context and resolve the immutable ancestry graph at export.
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
-	meterProvider  *sdkmetric.MeterProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
-	metricExporter sdkmetric.Exporter
 	telemetryDebug LifecycleTelemetryCounts
 
 	// informed when a client goes away to prevent hanging on drain
@@ -269,6 +266,7 @@ type clientRuntime struct {
 	lifecycleLeases        map[uint64]clientLifecycleLeaseRecord
 	transportLease         *engine.ClientLifecycleLease
 	parentClientScopeLease *engine.ClientLifecycleLease
+	reclaiming             bool
 
 	state   clientRuntimeState
 	stateMu sync.RWMutex
@@ -292,12 +290,19 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	// Telemetry providers and readers are session-owned. These lightweight
-	// bound exporters are retained only for integrations that deliver trace/log
-	// telemetry for a known client without an emission context (for example
-	// cloud scale-out).
+	// Trace and log providers are session-owned. These lightweight bound
+	// exporters are retained only for integrations that deliver telemetry for a
+	// known client without an emission context (for example cloud scale-out).
 	spanExporter sdktrace.SpanExporter
 	logExporter  sdklog.Exporter
+
+	// Metrics are owned by the live runtime. The typed lease invariant proves
+	// that no producer remains when the runtime becomes quiescent, so its one
+	// provider and periodic reader can be flushed and shut down at reclamation.
+	metricMu       sync.Mutex
+	meterProvider  *sdkmetric.MeterProvider
+	metricExporter sdkmetric.Exporter
+	telemetryDebug LifecycleTelemetryCounts
 
 	// Workspace and extra module loading is deferred from initializeClientRuntime
 	// to serveQuery because it requires the client's engine utility session, which
@@ -559,18 +564,74 @@ func timedProviderOp(ctx context.Context, errs *error, op func(context.Context) 
 	return time.Since(start)
 }
 
+func (sess *daggerSession) clientMetricRuntimes() []*clientRuntime {
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+	clients := make([]*clientRuntime, 0, len(sess.clientRuntimes))
+	for _, client := range sess.clientRuntimes {
+		clients = append(clients, client)
+	}
+	return clients
+}
+
+func runClientMetricOp(
+	ctx context.Context,
+	clients []*clientRuntime,
+	name string,
+	op func(*clientRuntime, context.Context) error,
+) error {
+	var eg errgroup.Group
+	for _, client := range clients {
+		eg.Go(func() error {
+			if err := op(client, ctx); err != nil {
+				return fmt.Errorf("%s for client %s: %w", name, client.clientID, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func (client *clientRuntime) flushMetrics(ctx context.Context) error {
+	client.metricMu.Lock()
+	defer client.metricMu.Unlock()
+	if client.meterProvider == nil {
+		return nil
+	}
+	return client.meterProvider.ForceFlush(ctx)
+}
+
+func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
+	client.metricMu.Lock()
+	if client.meterProvider == nil {
+		client.metricMu.Unlock()
+		return nil
+	}
+	var errs error
+	errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
+	errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
+	client.meterProvider = nil
+	client.metricExporter = nil
+	client.metricMu.Unlock()
+
+	client.stateMu.Lock()
+	client.telemetryDebug.MeterProviders = 0
+	client.telemetryDebug.ConfiguredMetricReaders = 0
+	client.stateMu.Unlock()
+	return errs
+}
+
 // shutdownTelemetry is the final session telemetry barrier. Callers must first
 // stop and drain every producer and complete cleanup that can emit telemetry.
-// Metrics flush and shut down first so exporter cleanup telemetry is still
-// accepted by the trace/log providers before their final flush and shutdown.
+// Client metrics shut down first so exporter cleanup telemetry is still
+// accepted by the session trace/log providers before their final flush.
 func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	start := time.Now()
 	var errs error
 	var traceDur, logDur, metricDur time.Duration
-	if sess.meterProvider != nil {
-		metricDur = timedProviderOp(ctx, &errs, sess.meterProvider.ForceFlush)
-		metricDur += timedProviderOp(ctx, &errs, sess.meterProvider.Shutdown)
-	}
+	metricStart := time.Now()
+	errs = errors.Join(errs, runClientMetricOp(ctx, sess.clientMetricRuntimes(), "shutdown metrics", (*clientRuntime).shutdownMetrics))
+	metricDur = time.Since(metricStart)
 	if sess.tracerProvider != nil {
 		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
 	}
@@ -629,6 +690,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	inflight := inflightSessionTelemetryFlushes.Add(1)
 	defer inflightSessionTelemetryFlushes.Add(-1)
 
+	clients := sess.clientMetricRuntimes()
 	sess.clientMu.RLock()
 	records := len(sess.clientRecords)
 	sess.clientMu.RUnlock()
@@ -649,26 +711,44 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	if sess.loggerProvider != nil {
 		logDur = timedProviderOp(ctx, &errs, sess.loggerProvider.ForceFlush)
 	}
-	if sess.meterProvider != nil {
-		metricDur = timedProviderOp(ctx, &errs, sess.meterProvider.ForceFlush)
-	}
+	metricStart := time.Now()
+	errs = errors.Join(errs, runClientMetricOp(ctx, clients, "flush metrics", (*clientRuntime).flushMetrics))
+	metricDur = time.Since(metricStart)
 	logClientTelemetryOp(lg, "session telemetry flush", start, traceDur, logDur, metricDur, errs)
 	return errs
 }
 
 const metricReaderInterval = 5 * time.Second
 
+func (srv *Server) initializeClientMetrics(client *clientRuntime) {
+	exporter := clientMetricExporter{
+		record: client.clientRecord,
+		ps:     srv.telemetryPubSub,
+	}
+	client.metricMu.Lock()
+	client.metricExporter = exporter
+	client.meterProvider = sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
+			exporter,
+			sdkmetric.WithInterval(metricReaderInterval),
+		)),
+	)
+	client.metricMu.Unlock()
+	client.telemetryDebug = LifecycleTelemetryCounts{
+		MeterProviders:          1,
+		ConfiguredMetricReaders: 1,
+	}
+}
+
 func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
-	metricExporter := sessionMetricExporter{sess: sess, ps: srv.telemetryPubSub}
 	sess.spanExporter = spanExporter
 	sess.logExporter = logExporter
-	sess.metricExporter = metricExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue, one bounded log queue, and one periodic metric reader serve the
-	// entire session.
+	// queue and one bounded log queue serve the entire session.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
 	tracerOpts := []sdktrace.TracerProviderOption{
@@ -687,20 +767,11 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession) {
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
-	sess.meterProvider = sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(telemetry.Resource),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			metricExporter,
-			sdkmetric.WithInterval(metricReaderInterval),
-		)),
-	)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
 		TracerProviders:          1,
 		LoggerProviders:          1,
-		MeterProviders:           1,
 		ConfiguredSpanProcessors: 4,
 		ConfiguredLogProcessors:  2,
-		ConfiguredMetricReaders:  1,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 	}
@@ -1210,10 +1281,9 @@ func (srv *Server) initializeClientRuntime(
 		}
 	}
 
-	// Telemetry providers, queues, metric aggregation, and the periodic reader are
-	// session-owned. These bound exporters stamp telemetry delivered without an
-	// emission context (cloud scale-out) with this client's immutable origin
-	// before using the same session router.
+	// Trace and log providers are session-owned. These bound exporters stamp
+	// telemetry delivered without an emission context (cloud scale-out) with
+	// this client's immutable origin before using the same session router.
 	client.spanExporter = originSpanExporter{
 		origin: client.clientID,
 		next:   client.daggerSession.spanExporter,
@@ -1222,6 +1292,10 @@ func (srv *Server) initializeClientRuntime(
 		origin: client.clientID,
 		next:   client.daggerSession.logExporter,
 	}
+	// Metric aggregation is client-bound so its exporter already knows the
+	// immutable origin. The lifecycle lease transition flushes and shuts down
+	// this provider before discarding the quiescent runtime.
+	srv.initializeClientMetrics(client)
 
 	client.state = clientStateInitialized
 	return nil
@@ -2214,9 +2288,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		}
 	}
 
-	// Install the session-owned logger and meter providers.
+	// Install the session-owned logger and lifecycle-bound client meter provider.
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
-	ctx = telemetry.WithMeterProvider(ctx, sess.meterProvider)
+	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
@@ -2478,8 +2552,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 	}
 
-	// All providers and metric aggregation are session-owned, so any client
-	// shutdown flushes the one session pipeline before acknowledging that the
+	// Trace/log providers are session-owned, while every live runtime owns its
+	// metric aggregation. Flush both layers before acknowledging that the
 	// client's current telemetry is durable.
 	flushErr := drainPhase("flush session telemetry", func() error {
 		return sess.FlushTelemetry(ctx, "client shutdown")
@@ -3397,12 +3471,9 @@ func (srv *Server) CloudEngineClient(
 
 			CloudAuth: parentClient.clientMetadata.CloudAuth,
 
-			EngineTrace: parentClient.spanExporter,
-			EngineLogs:  parentClient.logExporter,
-			EngineMetrics: []sdkmetric.Exporter{originMetricExporter{
-				origin: parentClient.clientID,
-				next:   parentClient.daggerSession.metricExporter,
-			}},
+			EngineTrace:   parentClient.spanExporter,
+			EngineLogs:    parentClient.logExporter,
+			EngineMetrics: []sdkmetric.Exporter{parentClient.metricExporter},
 
 			// FIXME: for now, disable recursive scale out to prevent any
 			// surprise "fork-bomb" scenarios. Eventually this should be

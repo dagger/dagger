@@ -16,7 +16,6 @@ import (
 	"github.com/containerd/continuity/sysx"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/internal/fsutil/types"
@@ -25,6 +24,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -455,7 +455,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 					countUploaded(written)
 					rootPathSpan.mu.Lock()
 					rootPathSpan.writtenBytes += written
-					fsMetric.Record(ctx, written, telemetryattrs.MetricAttributes(ctx, attrs...))
+					fsMetric.Record(ctx, written, metric.WithAttributes(attrs...))
 					// only track the max(end) of all the files within a root path
 					if writeEnd.After(rootPathSpan.maxStop) {
 						rootPathSpan.maxStop = writeEnd
