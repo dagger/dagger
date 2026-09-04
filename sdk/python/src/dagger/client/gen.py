@@ -11502,32 +11502,6 @@ class ModuleManifest(Type):
         _ctx = self._select("withDangEntrypoint", _args)
         return ModuleManifest(_ctx)
 
-    def with_dependency(
-        self,
-        source: str,
-        *,
-        name: str | None = None,
-        pin: str | None = None,
-    ) -> Self:
-        """Add or replace a module dependency.
-
-        Parameters
-        ----------
-        source:
-            Dependency source address.
-        name:
-            Optional dependency name.
-        pin:
-            Optional dependency pin.
-        """
-        _args = [
-            Arg("source", source),
-            Arg("name", name, None),
-            Arg("pin", pin, None),
-        ]
-        _ctx = self._select("withDependency", _args)
-        return ModuleManifest(_ctx)
-
     def with_legacy_dang_runtime(
         self,
         *,
@@ -11682,6 +11656,32 @@ class ModuleManifest(Type):
         _ctx = self._select("withLegacyPythonRuntime", _args)
         return ModuleManifest(_ctx)
 
+    def with_legacy_runtime_dependency(
+        self,
+        source: str,
+        *,
+        name: str | None = None,
+        pin: str | None = None,
+    ) -> Self:
+        """Add or replace a module available to the legacy runtime.
+
+        Parameters
+        ----------
+        source:
+            Module source address.
+        name:
+            Optional module name in the legacy runtime schema.
+        pin:
+            Optional module source pin.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("name", name, None),
+            Arg("pin", pin, None),
+        ]
+        _ctx = self._select("withLegacyRuntimeDependency", _args)
+        return ModuleManifest(_ctx)
+
     def with_legacy_typescript_runtime(
         self,
         *,
@@ -11733,32 +11733,32 @@ class ModuleManifest(Type):
         _ctx = self._select("withName", _args)
         return ModuleManifest(_ctx)
 
-    def without_dependencies(self) -> Self:
-        """Remove all module dependencies."""
+    def without_legacy_fields(self) -> Self:
+        """Remove the legacy runtime, module source, engine version, include
+        paths, and runtime dependencies.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("withoutDependencies", _args)
+        _ctx = self._select("withoutLegacyFields", _args)
         return ModuleManifest(_ctx)
 
-    def without_dependency(self, name: str) -> Self:
-        """Remove a module dependency by name.
+    def without_legacy_runtime_dependencies(self) -> Self:
+        """Remove all modules from the legacy runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutLegacyRuntimeDependencies", _args)
+        return ModuleManifest(_ctx)
+
+    def without_legacy_runtime_dependency(self, name: str) -> Self:
+        """Remove a module from the legacy runtime by name.
 
         Parameters
         ----------
         name:
-            Dependency name.
+            Module name.
         """
         _args = [
             Arg("name", name),
         ]
-        _ctx = self._select("withoutDependency", _args)
-        return ModuleManifest(_ctx)
-
-    def without_legacy_fields(self) -> Self:
-        """Remove the legacy runtime, module source, engine version, and include
-        paths.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withoutLegacyFields", _args)
+        _ctx = self._select("withoutLegacyRuntimeDependency", _args)
         return ModuleManifest(_ctx)
 
     def with_(
@@ -15734,7 +15734,7 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def detect_scope(self, sdk: str) -> str:
-        """Detect the selected SDK module's scope that contains the current
+        """Return the selected SDK module's current scope at this workspace
         location.
 
         Parameters

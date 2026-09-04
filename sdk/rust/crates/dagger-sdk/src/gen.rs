@@ -11630,15 +11630,6 @@ pub struct ModuleManifestValidateOpts<'a> {
     pub target_engine_version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ModuleManifestWithDependencyOpts<'a> {
-    /// Optional dependency name.
-    #[builder(setter(into, strip_option), default)]
-    pub name: Option<&'a str>,
-    /// Optional dependency pin.
-    #[builder(setter(into, strip_option), default)]
-    pub pin: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleManifestWithLegacyDangRuntimeOpts<'a> {
     /// Required engine API version. The default is the running engine version.
     #[builder(setter(into, strip_option), default)]
@@ -11691,6 +11682,15 @@ pub struct ModuleManifestWithLegacyPythonRuntimeOpts<'a> {
     /// Module source path. The default is the manifest directory.
     #[builder(setter(into, strip_option), default)]
     pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyRuntimeDependencyOpts<'a> {
+    /// Optional module name in the legacy runtime schema.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
+    /// Optional module source pin.
+    #[builder(setter(into, strip_option), default)]
+    pub pin: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleManifestWithLegacyTypescriptRuntimeOpts<'a> {
@@ -11791,46 +11791,6 @@ impl ModuleManifest {
     pub fn with_dang_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
         let mut query = self.selection.select("withDangEntrypoint");
         query = query.arg("source", source.into());
-        ModuleManifest {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Add or replace a module dependency.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - Dependency source address.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_dependency(&self, source: impl Into<String>) -> ModuleManifest {
-        let mut query = self.selection.select("withDependency");
-        query = query.arg("source", source.into());
-        ModuleManifest {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Add or replace a module dependency.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - Dependency source address.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_dependency_opts<'a>(
-        &self,
-        source: impl Into<String>,
-        opts: ModuleManifestWithDependencyOpts<'a>,
-    ) -> ModuleManifest {
-        let mut query = self.selection.select("withDependency");
-        query = query.arg("source", source.into());
-        if let Some(name) = opts.name {
-            query = query.arg("name", name);
-        }
-        if let Some(pin) = opts.pin {
-            query = query.arg("pin", pin);
-        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -12062,6 +12022,46 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add or replace a module available to the legacy runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Module source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_runtime_dependency(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyRuntimeDependency");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add or replace a module available to the legacy runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Module source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_runtime_dependency_opts<'a>(
+        &self,
+        source: impl Into<String>,
+        opts: ModuleManifestWithLegacyRuntimeDependencyOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyRuntimeDependency");
+        query = query.arg("source", source.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(pin) = opts.pin {
+            query = query.arg("pin", pin);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Add the legacy TypeScript runtime.
     ///
     /// # Arguments
@@ -12125,32 +12125,32 @@ impl ModuleManifest {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Remove all module dependencies.
-    pub fn without_dependencies(&self) -> ModuleManifest {
-        let query = self.selection.select("withoutDependencies");
+    /// Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
+    pub fn without_legacy_fields(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutLegacyFields");
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Remove a module dependency by name.
+    /// Remove all modules from the legacy runtime.
+    pub fn without_legacy_runtime_dependencies(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutLegacyRuntimeDependencies");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove a module from the legacy runtime by name.
     ///
     /// # Arguments
     ///
-    /// * `name` - Dependency name.
-    pub fn without_dependency(&self, name: impl Into<String>) -> ModuleManifest {
-        let mut query = self.selection.select("withoutDependency");
+    /// * `name` - Module name.
+    pub fn without_legacy_runtime_dependency(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withoutLegacyRuntimeDependency");
         query = query.arg("name", name.into());
-        ModuleManifest {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Remove the legacy runtime, module source, engine version, and include paths.
-    pub fn without_legacy_fields(&self) -> ModuleManifest {
-        let query = self.selection.select("withoutLegacyFields");
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -16286,7 +16286,7 @@ impl Workspace {
         let query = self.selection.select("cwd");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Detect the selected SDK module's scope that contains the current location.
+    /// Return the selected SDK module's current scope at this workspace location.
     ///
     /// # Arguments
     ///

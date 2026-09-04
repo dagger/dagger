@@ -2308,18 +2308,6 @@ export type ModuleManifestValidateOpts = {
   targetEngineVersion?: string
 }
 
-export type ModuleManifestWithDependencyOpts = {
-  /**
-   * Optional dependency name.
-   */
-  name?: string
-
-  /**
-   * Optional dependency pin.
-   */
-  pin?: string
-}
-
 export type ModuleManifestWithLegacyDangRuntimeOpts = {
   /**
    * Module source path. The default is the manifest directory.
@@ -2390,6 +2378,18 @@ export type ModuleManifestWithLegacyPythonRuntimeOpts = {
    * Required engine API version. The default is the running engine version.
    */
   engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyRuntimeDependencyOpts = {
+  /**
+   * Optional module name in the legacy runtime schema.
+   */
+  name?: string
+
+  /**
+   * Optional module source pin.
+   */
+  pin?: string
 }
 
 export type ModuleManifestWithLegacyTypescriptRuntimeOpts = {
@@ -12186,20 +12186,6 @@ export class ModuleManifest extends BaseClient {
   }
 
   /**
-   * Add or replace a module dependency.
-   * @param source Dependency source address.
-   * @param opts.name Optional dependency name.
-   * @param opts.pin Optional dependency pin.
-   */
-  withDependency = (
-    source: string,
-    opts?: ModuleManifestWithDependencyOpts,
-  ): ModuleManifest => {
-    const ctx = this._ctx.select("withDependency", { source, ...opts })
-    return new ModuleManifest(ctx)
-  }
-
-  /**
    * Add the legacy Dang runtime.
    * @param opts.moduleSource Module source path. The default is the manifest directory.
    * @param opts.engineVersion Required engine API version. The default is the running engine version.
@@ -12283,6 +12269,23 @@ export class ModuleManifest extends BaseClient {
   }
 
   /**
+   * Add or replace a module available to the legacy runtime.
+   * @param source Module source address.
+   * @param opts.name Optional module name in the legacy runtime schema.
+   * @param opts.pin Optional module source pin.
+   */
+  withLegacyRuntimeDependency = (
+    source: string,
+    opts?: ModuleManifestWithLegacyRuntimeDependencyOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyRuntimeDependency", {
+      source,
+      ...opts,
+    })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
    * Add the legacy TypeScript runtime.
    * @param opts.moduleSource Module source path. The default is the manifest directory.
    * @param opts.engineVersion Required engine API version. The default is the running engine version.
@@ -12313,27 +12316,27 @@ export class ModuleManifest extends BaseClient {
   }
 
   /**
-   * Remove all module dependencies.
-   */
-  withoutDependencies = (): ModuleManifest => {
-    const ctx = this._ctx.select("withoutDependencies")
-    return new ModuleManifest(ctx)
-  }
-
-  /**
-   * Remove a module dependency by name.
-   * @param name Dependency name.
-   */
-  withoutDependency = (name: string): ModuleManifest => {
-    const ctx = this._ctx.select("withoutDependency", { name })
-    return new ModuleManifest(ctx)
-  }
-
-  /**
-   * Remove the legacy runtime, module source, engine version, and include paths.
+   * Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
    */
   withoutLegacyFields = (): ModuleManifest => {
     const ctx = this._ctx.select("withoutLegacyFields")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove all modules from the legacy runtime.
+   */
+  withoutLegacyRuntimeDependencies = (): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyRuntimeDependencies")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove a module from the legacy runtime by name.
+   * @param name Module name.
+   */
+  withoutLegacyRuntimeDependency = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyRuntimeDependency", { name })
     return new ModuleManifest(ctx)
   }
 
@@ -15723,7 +15726,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Detect the selected SDK module's scope that contains the current location.
+   * Return the selected SDK module's current scope at this workspace location.
    * @param sdk SDK name to probe. Required.
    */
   detectScope = async (sdk: string): Promise<string> => {

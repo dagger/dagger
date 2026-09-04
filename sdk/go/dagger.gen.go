@@ -12147,34 +12147,6 @@ func (r *ModuleManifest) WithDangEntrypoint(source string) *ModuleManifest {
 	}
 }
 
-// ModuleManifestWithDependencyOpts contains options for ModuleManifest.WithDependency
-type ModuleManifestWithDependencyOpts struct {
-	// Optional dependency name.
-	Name string
-	// Optional dependency pin.
-	Pin string
-}
-
-// Add or replace a module dependency.
-func (r *ModuleManifest) WithDependency(source string, opts ...ModuleManifestWithDependencyOpts) *ModuleManifest {
-	q := r.query.Select("withDependency")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `name` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Name) {
-			q = q.Arg("name", opts[i].Name)
-		}
-		// `pin` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pin) {
-			q = q.Arg("pin", opts[i].Pin)
-		}
-	}
-	q = q.Arg("source", source)
-
-	return &ModuleManifest{
-		query: q,
-	}
-}
-
 // ModuleManifestWithLegacyDangRuntimeOpts contains options for ModuleManifest.WithLegacyDangRuntime
 type ModuleManifestWithLegacyDangRuntimeOpts struct {
 	// Module source path. The default is the manifest directory.
@@ -12349,6 +12321,34 @@ func (r *ModuleManifest) WithLegacyPythonRuntime(opts ...ModuleManifestWithLegac
 	}
 }
 
+// ModuleManifestWithLegacyRuntimeDependencyOpts contains options for ModuleManifest.WithLegacyRuntimeDependency
+type ModuleManifestWithLegacyRuntimeDependencyOpts struct {
+	// Optional module name in the legacy runtime schema.
+	Name string
+	// Optional module source pin.
+	Pin string
+}
+
+// Add or replace a module available to the legacy runtime.
+func (r *ModuleManifest) WithLegacyRuntimeDependency(source string, opts ...ModuleManifestWithLegacyRuntimeDependencyOpts) *ModuleManifest {
+	q := r.query.Select("withLegacyRuntimeDependency")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `pin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pin) {
+			q = q.Arg("pin", opts[i].Pin)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
 // ModuleManifestWithLegacyTypescriptRuntimeOpts contains options for ModuleManifest.WithLegacyTypescriptRuntime
 type ModuleManifestWithLegacyTypescriptRuntimeOpts struct {
 	// Module source path. The default is the manifest directory.
@@ -12396,28 +12396,28 @@ func (r *ModuleManifest) WithName(name string) *ModuleManifest {
 	}
 }
 
-// Remove all module dependencies.
-func (r *ModuleManifest) WithoutDependencies() *ModuleManifest {
-	q := r.query.Select("withoutDependencies")
-
-	return &ModuleManifest{
-		query: q,
-	}
-}
-
-// Remove a module dependency by name.
-func (r *ModuleManifest) WithoutDependency(name string) *ModuleManifest {
-	q := r.query.Select("withoutDependency")
-	q = q.Arg("name", name)
-
-	return &ModuleManifest{
-		query: q,
-	}
-}
-
-// Remove the legacy runtime, module source, engine version, and include paths.
+// Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
 func (r *ModuleManifest) WithoutLegacyFields() *ModuleManifest {
 	q := r.query.Select("withoutLegacyFields")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Remove all modules from the legacy runtime.
+func (r *ModuleManifest) WithoutLegacyRuntimeDependencies() *ModuleManifest {
+	q := r.query.Select("withoutLegacyRuntimeDependencies")
+
+	return &ModuleManifest{
+		query: q,
+	}
+}
+
+// Remove a module from the legacy runtime by name.
+func (r *ModuleManifest) WithoutLegacyRuntimeDependency(name string) *ModuleManifest {
+	q := r.query.Select("withoutLegacyRuntimeDependency")
+	q = q.Arg("name", name)
 
 	return &ModuleManifest{
 		query: q,
@@ -16870,7 +16870,7 @@ func (r *Workspace) Cwd(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Detect the selected SDK module's scope that contains the current location.
+// Return the selected SDK module's current scope at this workspace location.
 func (r *Workspace) DetectScope(ctx context.Context, sdk string) (string, error) {
 	if r.detectScope != nil {
 		return *r.detectScope, nil

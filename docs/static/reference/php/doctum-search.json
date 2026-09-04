@@ -6482,12 +6482,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleManifest::withDependency",
-			"p": "Dagger/ModuleManifest.html#method_withDependency",
-			"d": "<p>Add or replace a module dependency.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleManifest::withLegacyDangRuntime",
 			"p": "Dagger/ModuleManifest.html#method_withLegacyDangRuntime",
 			"d": "<p>Add the legacy Dang runtime.</p>"
@@ -6530,6 +6524,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleManifest::withLegacyRuntimeDependency",
+			"p": "Dagger/ModuleManifest.html#method_withLegacyRuntimeDependency",
+			"d": "<p>Add or replace a module available to the legacy runtime.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleManifest::withLegacyTypescriptRuntime",
 			"p": "Dagger/ModuleManifest.html#method_withLegacyTypescriptRuntime",
 			"d": "<p>Add the legacy TypeScript runtime.</p>"
@@ -6548,21 +6548,21 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleManifest::withoutDependencies",
-			"p": "Dagger/ModuleManifest.html#method_withoutDependencies",
-			"d": "<p>Remove all module dependencies.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleManifest::withoutDependency",
-			"p": "Dagger/ModuleManifest.html#method_withoutDependency",
-			"d": "<p>Remove a module dependency by name.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleManifest::withoutLegacyFields",
 			"p": "Dagger/ModuleManifest.html#method_withoutLegacyFields",
-			"d": "<p>Remove the legacy runtime, module source, engine version, and include paths.</p>"
+			"d": "<p>Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::withoutLegacyRuntimeDependencies",
+			"p": "Dagger/ModuleManifest.html#method_withoutLegacyRuntimeDependencies",
+			"d": "<p>Remove all modules from the legacy runtime.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::withoutLegacyRuntimeDependency",
+			"p": "Dagger/ModuleManifest.html#method_withoutLegacyRuntimeDependency",
+			"d": "<p>Remove a module from the legacy runtime by name.</p>"
 		},
 		{
 			"t": "M",
@@ -7630,7 +7630,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::detectScope",
 			"p": "Dagger/Workspace.html#method_detectScope",
-			"d": "<p>Detect the selected SDK module's scope that contains the current location.</p>"
+			"d": "<p>Return the selected SDK module's current scope at this workspace location.</p>"
 		},
 		{
 			"t": "M",

@@ -74,22 +74,6 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * Add or replace a module dependency.
-     */
-    public function withDependency(string $source, ?string $name = null, ?string $pin = null): ModuleManifest
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependency');
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $name) {
-        $innerQueryBuilder->setArgument('name', $name);
-        }
-        if (null !== $pin) {
-        $innerQueryBuilder->setArgument('pin', $pin);
-        }
-        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Add the legacy Dang runtime.
      */
     public function withLegacyDangRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
@@ -196,6 +180,25 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
+     * Add or replace a module available to the legacy runtime.
+     */
+    public function withLegacyRuntimeDependency(
+        string $source,
+        ?string $name = null,
+        ?string $pin = null,
+    ): ModuleManifest {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLegacyRuntimeDependency');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $name) {
+        $innerQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $pin) {
+        $innerQueryBuilder->setArgument('pin', $pin);
+        }
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Add the legacy TypeScript runtime.
      */
     public function withLegacyTypescriptRuntime(
@@ -233,30 +236,30 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * Remove all module dependencies.
-     */
-    public function withoutDependencies(): ModuleManifest
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
-        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove a module dependency by name.
-     */
-    public function withoutDependency(string $name): ModuleManifest
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependency');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the legacy runtime, module source, engine version, and include paths.
+     * Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
      */
     public function withoutLegacyFields(): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLegacyFields');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove all modules from the legacy runtime.
+     */
+    public function withoutLegacyRuntimeDependencies(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLegacyRuntimeDependencies');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove a module from the legacy runtime by name.
+     */
+    public function withoutLegacyRuntimeDependency(string $name): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLegacyRuntimeDependency');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

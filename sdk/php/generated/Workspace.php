@@ -114,7 +114,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Detect the selected SDK module's scope that contains the current location.
+     * Return the selected SDK module's current scope at this workspace location.
      */
     public function detectScope(string $sdk): string
     {

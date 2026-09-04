@@ -133,7 +133,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Detect the selected SDK module's scope that contains the current location.
+  Return the selected SDK module's current scope at this workspace location.
   """
   @spec detect_scope(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
   def detect_scope(%__MODULE__{} = workspace, sdk) do

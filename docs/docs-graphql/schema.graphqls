@@ -4254,18 +4254,6 @@ type ModuleManifest implements Node {
     source: String!
   ): ModuleManifest!
 
-  """Add or replace a module dependency."""
-  withDependency(
-    """Dependency source address."""
-    source: String!
-
-    """Optional dependency name."""
-    name: String
-
-    """Optional dependency pin."""
-    pin: String
-  ): ModuleManifest!
-
   """Add the legacy Dang runtime."""
   withLegacyDangRuntime(
     """Module source path. The default is the manifest directory."""
@@ -4342,6 +4330,18 @@ type ModuleManifest implements Node {
     engineVersion: String
   ): ModuleManifest!
 
+  """Add or replace a module available to the legacy runtime."""
+  withLegacyRuntimeDependency(
+    """Module source address."""
+    source: String!
+
+    """Optional module name in the legacy runtime schema."""
+    name: String
+
+    """Optional module source pin."""
+    pin: String
+  ): ModuleManifest!
+
   """Add the legacy TypeScript runtime."""
   withLegacyTypescriptRuntime(
     """Module source path. The default is the manifest directory."""
@@ -4365,19 +4365,19 @@ type ModuleManifest implements Node {
     name: String!
   ): ModuleManifest!
 
-  """Remove all module dependencies."""
-  withoutDependencies: ModuleManifest!
-
-  """Remove a module dependency by name."""
-  withoutDependency(
-    """Dependency name."""
-    name: String!
-  ): ModuleManifest!
-
   """
-  Remove the legacy runtime, module source, engine version, and include paths.
+  Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
   """
   withoutLegacyFields: ModuleManifest!
+
+  """Remove all modules from the legacy runtime."""
+  withoutLegacyRuntimeDependencies: ModuleManifest!
+
+  """Remove a module from the legacy runtime by name."""
+  withoutLegacyRuntimeDependency(
+    """Module name."""
+    name: String!
+  ): ModuleManifest!
 }
 
 """
@@ -5868,7 +5868,7 @@ type Workspace implements Node {
   cwd: String!
 
   """
-  Detect the selected SDK module's scope that contains the current location.
+  Return the selected SDK module's current scope at this workspace location.
   """
   detectScope(
     """SDK name to probe. Required."""

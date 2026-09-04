@@ -103,25 +103,6 @@ defmodule Dagger.ModuleManifest do
   end
 
   @doc """
-  Add or replace a module dependency.
-  """
-  @spec with_dependency(t(), String.t(), [{:name, String.t() | nil}, {:pin, String.t() | nil}]) ::
-          Dagger.ModuleManifest.t()
-  def with_dependency(%__MODULE__{} = module_manifest, source, optional_args \\ []) do
-    query_builder =
-      module_manifest.query_builder
-      |> QB.select("withDependency")
-      |> QB.put_arg("source", source)
-      |> QB.maybe_put_arg("name", optional_args[:name])
-      |> QB.maybe_put_arg("pin", optional_args[:pin])
-
-    %Dagger.ModuleManifest{
-      query_builder: query_builder,
-      client: module_manifest.client
-    }
-  end
-
-  @doc """
   Add the legacy Dang runtime.
   """
   @spec with_legacy_dang_runtime(t(), [
@@ -258,6 +239,27 @@ defmodule Dagger.ModuleManifest do
   end
 
   @doc """
+  Add or replace a module available to the legacy runtime.
+  """
+  @spec with_legacy_runtime_dependency(t(), String.t(), [
+          {:name, String.t() | nil},
+          {:pin, String.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def with_legacy_runtime_dependency(%__MODULE__{} = module_manifest, source, optional_args \\ []) do
+    query_builder =
+      module_manifest.query_builder
+      |> QB.select("withLegacyRuntimeDependency")
+      |> QB.put_arg("source", source)
+      |> QB.maybe_put_arg("name", optional_args[:name])
+      |> QB.maybe_put_arg("pin", optional_args[:pin])
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
   Add the legacy TypeScript runtime.
   """
   @spec with_legacy_typescript_runtime(t(), [
@@ -308,40 +310,42 @@ defmodule Dagger.ModuleManifest do
   end
 
   @doc """
-  Remove all module dependencies.
-  """
-  @spec without_dependencies(t()) :: Dagger.ModuleManifest.t()
-  def without_dependencies(%__MODULE__{} = module_manifest) do
-    query_builder =
-      module_manifest.query_builder |> QB.select("withoutDependencies")
-
-    %Dagger.ModuleManifest{
-      query_builder: query_builder,
-      client: module_manifest.client
-    }
-  end
-
-  @doc """
-  Remove a module dependency by name.
-  """
-  @spec without_dependency(t(), String.t()) :: Dagger.ModuleManifest.t()
-  def without_dependency(%__MODULE__{} = module_manifest, name) do
-    query_builder =
-      module_manifest.query_builder |> QB.select("withoutDependency") |> QB.put_arg("name", name)
-
-    %Dagger.ModuleManifest{
-      query_builder: query_builder,
-      client: module_manifest.client
-    }
-  end
-
-  @doc """
-  Remove the legacy runtime, module source, engine version, and include paths.
+  Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
   """
   @spec without_legacy_fields(t()) :: Dagger.ModuleManifest.t()
   def without_legacy_fields(%__MODULE__{} = module_manifest) do
     query_builder =
       module_manifest.query_builder |> QB.select("withoutLegacyFields")
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
+  Remove all modules from the legacy runtime.
+  """
+  @spec without_legacy_runtime_dependencies(t()) :: Dagger.ModuleManifest.t()
+  def without_legacy_runtime_dependencies(%__MODULE__{} = module_manifest) do
+    query_builder =
+      module_manifest.query_builder |> QB.select("withoutLegacyRuntimeDependencies")
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
+  Remove a module from the legacy runtime by name.
+  """
+  @spec without_legacy_runtime_dependency(t(), String.t()) :: Dagger.ModuleManifest.t()
+  def without_legacy_runtime_dependency(%__MODULE__{} = module_manifest, name) do
+    query_builder =
+      module_manifest.query_builder
+      |> QB.select("withoutLegacyRuntimeDependency")
+      |> QB.put_arg("name", name)
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,
