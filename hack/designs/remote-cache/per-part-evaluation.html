@@ -82,7 +82,7 @@
   <strong>Contents</strong>
   <ol start="0">
     <li><a href="#s0">How to read this</a></li>
-    <li><a href="#sg">Glossary: read this first</a></li>
+    <li><a href="#s1">Glossary: read this first</a></li>
     <li><a href="#s2">Summary, and the items that need a decision</a></li>
     <li><a href="#s3">Background: lazy evaluation before this change</a></li>
     <li><a href="#s4">What a part is</a></li>
@@ -111,7 +111,7 @@
 <h1>Per-part lazy evaluation of containers</h1>
 <p class="meta">
   Design, mechanism, status, and open decisions for evaluating lazy containers one part at a time.
-  Written 2026-09-03 against this branch (implementation head: the commit titled “hack/designs: stage 2 revision 5, adopt the uniform op-pointer rule”). This document merges the
+  Written 2026-09-03, updated 2026-09-04 with the decisions of that day, against this branch (implementation head: the commit titled “hack/designs: stage 2 revision 5, adopt the uniform op-pointer rule”). This document merges the
   earlier design record and a separate teaching document into one; the appendix names both. Every technical claim was
   checked by reading the source. Nothing was run for this document. Line numbers refer to the files as they stood at the end of the initial implementation (the commit titled "core: one rule for the lazy op pointer" and the design revision that follows it), before the conversion commits listed in section 10.5, unless a commit is named.
 </p>
@@ -145,7 +145,7 @@
 </section>
 
 
-<section id="sg">
+<section id="s1">
 <h2>1. Glossary: read this first</h2>
 <p>Every term below is used later in the document. The definitions are concrete: each names the Go type or field it refers to.</p>
 <dl class="gloss">
@@ -295,9 +295,9 @@ live on the op. The part-to-group arrows are the exec's <code>ContainerLazyGroup
   <li><strong>Confirm the user-visible timing change</strong>: <code>withExec(failing).workdir()</code> now succeeds (section 14.1).</li>
   <li><strong>Rule on <code>ImageRef</code> after an exec.</strong> An evaluated exec child ends up with its parent's <code>ImageRef</code>, although <code>WithExec</code> clears it on the shell. Pre-existing; the conversion preserved it.</li>
   <li><strong>Rule on the <code>resources_restart</code> model configuration budget</strong> (section 16.3).</li>
-  <li><strong>Decide whether independent groups in one call should run concurrently</strong> (section 12).</li>
-  <li><strong>Close a persistence regression.</strong> An exec with a read-only mount is persisted as a recipe after a partial demand, so its completed run is repeated after a restart (sections 17.7, 19.4). Recommendation: have the exec's run also fill the read-only mount copies. The mount and writer conversions widened its reach by one cheap link per chain (section 17.7).</li>
-  <li><strong>Decide whether <code>withoutFiles</code> should become one multi-path operation.</strong> Today it is a chain of single-path operations, and the converted machinery already supports a joint write group over several paths. Coalescing would change the persisted shape. Recommendation: leave the chain (section 18.10).</li>
+  <li><strong>Done 2026-09-04: groups of one call run concurrently</strong> (section 18.8). Running them one after another had been a regression against the old bodies, which evaluated a parent and a source together.</li>
+  <li><strong>Done 2026-09-04: the persistence regression is fixed</strong> (sections 8.6, 18.9). An exec with a read-only mount had been persisted as a recipe after a partial demand; a delegated copy now runs as soon as the parent's part is final.</li>
+  
 </ol>
 </div>
 <h3>2.4 Status at a glance</h3>
@@ -308,7 +308,7 @@ live on the op. The part-to-group arrows are the exec's <code>ContainerLazyGroup
 <tr><td>29 metadata-only mutations, 3 selectors, 16 readers</td><td>Converted</td><td>section 10</td></tr>
 <tr><td>Mount mutations, rootfs content writers, <code>from</code>, export narrowing</td><td>Converted and merged; reviewed by a two-member council, approved with no blockers</td><td>sections 10.5, 17, 22.5</td></tr>
 <tr><td>Model (TLA+): per-group generalization, five new configurations, budget work</td><td>Done per the implementation record; one configuration needs a ruling</td><td>section 16</td></tr>
-<tr><td>Correctness review of the implemented machinery</td><td>No wrong-result defect established; one persistence regression (repeated work after restart); two open questions</td><td>section 19</td></tr>
+<tr><td>Correctness review of the implemented machinery</td><td>No wrong-result defect established across ten review rounds; the persistence regression found on the way is fixed; one open question remains (the legacy stdout resolvers, 18.3)</td><td>section 19</td></tr>
 </table>
 </section>
 
@@ -335,7 +335,7 @@ live on the op. The part-to-group arrows are the exec's <code>ContainerLazyGroup
 </ul>
 </section>
 
-<section id="s2">
+<section id="s4">
 <h2>4. What a part is</h2>
 <p>
   A part is a name for one separately demandable piece of a value. In <code>dagql</code> it is an opaque string
@@ -372,7 +372,7 @@ live on the op. The part-to-group arrows are the exec's <code>ContainerLazyGroup
 </p>
 </section>
 
-<section id="s3">
+<section id="s5">
 <h2>5. What a group is, and why it is not a part</h2>
 <p>
   A group is one unit of deferred work: one body, one attempt record in the cache, one <code>done</code> flag on the op.
@@ -471,7 +471,7 @@ and because the bundling differs per op while the names do not.
 </div>
 </section>
 
-<section id="s4">
+<section id="s6">
 <h2>6. Where the "is it done" state lives</h2>
 <p>
   Three Go structs hold "done" information about one lazy container. They are in different packages. They are
@@ -647,7 +647,7 @@ X := M.withExec(["sh", "-c", "echo hi &gt; /out/f"])
 </p>
 </section>
 
-<section id="s5">
+<section id="s7">
 <h2>7. One demand, end to end</h2>
 <p>
   This section follows three calls on the container <code>X</code> from section 6.4, one function at a time. Every
@@ -794,7 +794,7 @@ G:                      copy M's plain fields onto X; groups["metadata"].done = 
 caller:             returns nil</code></pre>
 </section>
 
-<section id="s6">
+<section id="s8">
 <h2>8. Delegation, exactly</h2>
 <p>
   <strong>Definition.</strong> A delegation group is a group whose body does two things and nothing else:
@@ -938,9 +938,19 @@ clones, one per level, each recorded as complete in its own result's cache recor
   run (<span class="fileref">core/container_exec.go:1362-1373</span>) so that the snapshot body writes only its own
   group's parts.
 </p>
+<h3>8.6 A delegated copy runs as soon as the parent's part is final <span class="pill v">decided and implemented 2026-09-04</span></h3>
+<p>
+  The record originally said a delegation group runs only when its part is demanded. That rule was wrong when the parent's part is already final: the copy costs one clone and forces nothing, and leaving it unconsumed keeps the op pointer set. Two bugs followed. A <code>from</code> on the scratch root kept its <code>execMeta</code> and mount copy groups unconsumed after the pull, so it reported pending forever and the TUI rendered it as never finished. An exec with a read-only mount kept that mount's copy unconsumed after <code>stdout()</code>, so the container was persisted as a recipe and the exec ran again after a restart (section 19.4).
+</p>
+<p>
+  The corrected rule: after any group body of a refined op succeeds, and before the op checks whether it can clear its pointer, it runs every not-yet-consumed delegation group whose parent part is already final. "Final" means the parent container's op pointer is nil, or the parent's op is refined and reports that part's group consumed. A copy whose parent part is not final is never run, because that would force parent work nobody asked for. The copies run through the normal delegation body under their own group mutex, inside the current attempt's callback, so their snapshots get leases in the same bookkeeping pass.
+</p>
+<p>
+  Consequences: a <code>from</code> is fully consumed after its pull; an exec with read-only mounts is fully consumed after its run, because the run already evaluated the parent's mount parts; a Template A child on a pending parent is unchanged, since none of its parent's parts are final yet.
+</p>
 </section>
 
-<section id="s7">
+<section id="s9">
 <h2>9. Five things that get confused</h2>
 <table>
 <tr><th>Concept</th><th>Which layer</th><th>Cardinality</th><th>Exists for</th><th>Line</th></tr>
@@ -1014,9 +1024,22 @@ clones, one per level, each recorded as complete in its own result's cache recor
 <tr><td>“core: preserve parallel image part evaluation”</td><td>Fix round after the final review</td><td>Restores the per-container fan-out the export resolvers had through <code>Evaluate(a, b, c)</code>: an errgroup with a derived context, one goroutine per container. Without it a multi-platform export materialized each variant serially; the reviewer found this, and a test now fails under serial execution. Adds a discriminating test for the <code>withFile</code> removal predicate, a full-consumption test for a path writer, and eager-branch tests for the four snapshot-free mutations.</td></tr>
 </table>
 <p>What remains unconverted: the sources <code>import</code> and <code>dockerBuild</code>, services, and terminals. Directory and File keep one whole-value unit by decision 3.</p>
+<h4>The fix round after the first CI run (2026-09-04)</h4>
+<p>The pull request's first CI run failed the TUI goldens (section 14.8). Five more commits, reviewed by the same council over two rounds:</p>
+<table>
+<tr><th>Commit (by title)</th><th>What it does</th></tr>
+<tr><td>“core: consume final container delegations”</td><td>The rule of section 8.6: after any group of a refined op succeeds, delegation groups whose parent part is final are copied at once. Every refined op exposes its parent through <code>ContainerLazyParent</code>. The parent's part is final only when the parent's op pointer is nil, or the parent's metadata group is consumed and the group that fills the part is consumed; the parent's mapping is never consulted before its metadata is final.</td></tr>
+<tr><td>“dagql: evaluate resolved lazy groups concurrently”</td><td>Decision 18: <code>evaluateResolved</code> runs the resolved groups in an errgroup; the path-writer write group evaluates its parent parts and source concurrently. The first error surfaced is now the first to fail.</td></tr>
+<tr><td>“dagql: keep partial resume spans pending”</td><td>Decision 19: the <code>dagger.io/dag.partial</code> attribute on a resume span whose result still has outstanding work; the TUI ignores partial resume spans when clearing pending.</td></tr>
+<tr><td>“core: evaluate selector rootfs before nested calls”</td><td>The <code>directory</code> and <code>file</code> selectors evaluate the parent's rootfs part before issuing the nested <code>rootfs</code> call, so a failing exec surfaces where it did before.</td></tr>
+<tr><td>“dagql: classify abandoned lazy attempts”</td><td>Two review findings on the concurrency change: an attempt abandoned by its waiters marks its resume span blocked instead of failed, and the partial decision is made in the same critical section that retires the attempt, which removes a window in which two concurrent completions could both read as partial.</td></tr>
+<tr><td>“dagql: assert concurrent resume completion”</td><td>Test only: the concurrent-groups test now inspects the exported spans and requires a resume span without the partial attribute. The reviewer ran it against the pre-fix commit and it fails there.</td></tr>
+<tr><td>“dagql: extract lazy group attempt preparation”</td><td>Lint only: the callback selection and nil-callback completion of the attempt loop moved into a helper called under the same <code>lazyMu</code> hold, to stay under the cyclomatic complexity limit. The reviewer diffed the rest of the function byte for byte against the reviewed version and mapped the extracted block branch for branch.</td></tr>
+</table>
+<p>Outcome: the pull request's CI passed every check at that head, and the telemetry goldens passed with no golden file changed. All twenty original golden failures were resolved by the fixes rather than by editing expectations.</p>
 </section>
 
-<section id="s8">
+<section id="s11">
 <h2>11. Scenarios, traced</h2>
 <p>
   Fixed cast for this section unless a scenario says otherwise. <code>P</code> is a pending exec container with three
@@ -1267,7 +1290,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 </p>
 </section>
 
-<section id="s9">
+<section id="s12">
 <h2>12. Sequential versus parallel</h2>
 <table>
 <tr><th>Work</th><th>Sequential or parallel</th><th>Why</th><th>Line</th></tr>
@@ -1286,9 +1309,12 @@ asserts exactly this for <code>stdout</code>).</figcaption>
   <code>sync</code> on a container whose parent has three pending mount sources materializes them one at a time
   (section 19, recommendation 2).
 </p>
+<div class="callout">
+<strong>Decided 2026-09-04.</strong> The first row of the table above is being changed: the resolved groups of one call run concurrently, one goroutine per group, with metadata still settled first by resolution. Running them one after another was a regression against the old bodies, which evaluated a parent and a source together through <code>Evaluate(a, b)</code>. Bodies that need several independent results also ask for them concurrently. Section 18.8.
+</div>
 </section>
 
-<section id="s10">
+<section id="s13">
 <h2>13. The invariants and what enforces them</h2>
 
 <h3>13.1 No duplicate execution of a body</h3>
@@ -1367,6 +1393,14 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <p>After the conversion of the Dockerfile-compat mount, the resolver decides at call time whether the source path is a file or a directory and records that kind in the mount entry. A source path that names a file but carries a directory hint (a trailing slash) used to fail at the mutation call. On a pending parent it now fails when the mount part is first demanded, with the same error. On an evaluated parent it still fails at the call.</p>
 <h3>14.7 What does not change</h3>
 <p>Lookup, hit selection, cache identity, the e-graph, session-resource enforcement, release, prune, shutdown, and persistence formats are untouched. An engine whose workloads never read metadata on pending chains behaves as before at the same hot-path cost: the completed-result fast path is one mutex lock and one bool check, and values that never split allocate no new state.</p>
+<h3>14.8 What the telemetry goldens exposed on the pull request <span class="pill v">verified</span></h3>
+<p>The TUI golden tests in <code>dagql/idtui</code> failed on the first CI run of the pull request. Twenty subtests, three causes, none of them acceptable as a golden update. All three were fixed and the goldens passed unchanged on the next CI run (section 10.5).</p>
+<ul>
+  <li><strong><code>from</code> rendered as never finished.</strong> The TUI marks a call pending when it returns a lazy result and clears pending when a resume span for that result completes. A <code>from</code> whose rootfs was consumed still had unconsumed copy groups, so it was reported pending forever and never reported cached. Fixed by the rule in section 8.6.</li>
+  <li><strong>A blocked call rendered as succeeded.</strong> A call now has one resume span per group. In the <code>pending</code> fixture the last <code>withExec</code> after a failing exec had its metadata resume span complete cleanly and its output resume span blocked; the TUI cleared pending and rendered a process that never ran as done. Fix: a resume span is marked partial when the result still has outstanding work when that attempt ends, and the TUI ignores partial resume spans when clearing pending. The decision is made in the same critical section that retires the attempt, so two groups finishing together cannot each see the other as unfinished and both be marked partial, which would leave a fully evaluated call pending forever.</li>
+  <li><strong>An abandoned attempt rendered as a failure.</strong> With the groups of one call running concurrently, one group's failure cancels the others' waiters; a sibling attempt whose last waiter left is canceled, and its resume span ended with a cancellation error that the TUI treated as a real failure, so a call such as <code>withoutMount</code> beneath a failing exec rendered as failed. Fix: an attempt whose error is its own cancellation (the same condition that marks it for retry) marks its resume span blocked, because the work is still pending and will be retried.</li>
+  <li><strong>The generator lost its error line.</strong> The <code>directory</code> selector settled metadata first, then issued a nested <code>rootfs</code> call on the parent before the parent's rootfs had been evaluated. The nested call appeared as a new pending row and the <code>exit code: 3</code> line disappeared from the generator. Fix: the selectors evaluate the parent's located part before issuing the nested call, so the failing exec surfaces where it did before.</li>
+</ul>
 </section>
 
 <section id="s15">
@@ -1409,7 +1443,9 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <tr><td><code>lazy_parts_delegate</code></td><td>A delegation body mid-flight while its session releases; the parent pinned by the dependency edge.</td><td>37,417,395 / 4m54s, single-group shape only</td></tr>
 </table>
 <p>The delegate configuration runs a single-group shape because multi-group shapes exceeded the run budget. The team accepted this narrowing: delegation is a cross-result mechanism and group multiplicity is covered by the other configurations.</p>
-<h3>16.3 Run-budget work</h3>
+<h3>16.3 Why concurrent groups within one call need no model change</h3>
+<p>The model gives every part demand its own evaluator, so two groups of one result being driven at once is already the shape the <code>lazy_parts</code> configuration checks, and the reachability probe for two bodies of one result running concurrently already passes. The prerequisite relation <code>GroupNeeds</code> still holds, because resolution settles metadata before any group of the call is led or joined. So decision 18 (section 20) changes the code's loop, not the model's state space.</p>
+<h3>16.4 Run-budget work</h3>
 <ul>
   <li><code>attach_release_reader</code> had grown to about 863 million distinct states, about two hours. Reducing the invocation bound was ruled out by measurement: at bound 2 the check passes in 11 seconds, but the deliberately broken variant also passes with an identical state count, so the mechanism is unreachable there. The reduction came from scenario scope instead, via two constants: which sessions may release, and whether persisted edges are in play. Scoped result: 26,213,049 states, under three minutes, both evidence arms re-verified.</li>
   <li>A second over-budget configuration for resource growth was scoped the same way to 11,403,800 states.</li>
@@ -1467,13 +1503,14 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 </ul>
 
 <h3>17.6 Groups of one call run one after another</h3>
-<p><strong>Status: open.</strong> The export resolvers now fan out across containers, but groups of one container within one call still run one after another.</p>
+<p><strong>Status: decided 2026-09-04, being implemented.</strong> The assessment below was too mild: the old bodies evaluated a parent and a source together, so running the groups of one call one after another was a regression, not a first choice. Section 18.8.</p>
 <ul>
   <li><strong>Stated reason.</strong> "Sequential matches today's one-body execution most closely, keeps failure attribution simple, and the joint exec group dominates cost anyway; parallelizing groups within one result is an optimization nobody has asked for."</li>
   <li><strong>Assessment <span class="pill i">judgment</span>.</strong> A defensible first choice that becomes wrong once section 17.1 lands. The exec body's demand on its parent is one call naming the rootfs and every mount (<span class="fileref">core/container_exec.go:1321-1328</span>). With three pending mount sources, they materialize one at a time. Different callers already run different groups concurrently and a test covers it, so the machinery is ready. Section 18.8.</li>
 </ul>
 
 <h3>17.7 Per-part persistence, and a regression the current fallback causes</h3>
+<p><strong>Status: the regression is being fixed</strong> by the rule in section 8.6. Per-part persisted forms remain future work.</p>
 <ul>
   <li><strong>Today.</strong> A container is written in the data form only when <code>Lazy</code> is nil, which requires every group consumed; otherwise it is written as its recipe (<span class="fileref">core/container.go:1539-1546</span>). After a restart a recipe re-arms with every group pending. The decode path for an exec restores the rootfs and writable-mount accessor values when they were persisted with values, but always resets the exec-metadata accessor and installs a fresh op with no group done (<span class="fileref">core/container_exec.go:2384-2418</span>). Restored values are therefore pre-seeds in the sense of section 8.3: the first demand of any exec output runs the process again and overwrites them.</li>
   <li><strong>Stated reason.</strong> Per-part persisted forms are the next piece of work. The record argued the fallback is harmless: "the discarded work is metadata copies and delegated accessor clones, cheap by construction, while expensive work (an exec that ran) was latched in the parent's own row."</li>
@@ -1551,6 +1588,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 </ul>
 
 <h3>18.8 Decide whether independent groups in one call should run concurrently</h3>
+<p><strong>Decided and done 2026-09-04.</strong> <code>evaluateResolved</code> runs the resolved groups in an errgroup, and the path-writer bodies evaluate their parent parts and source concurrently (commit “dagql: evaluate resolved lazy groups concurrently”).</p>
 <ul>
   <li><strong>Situation.</strong> Section 12. Groups resolved for one call run one after another. The exec body's demand for its parent's rootfs and every mount is one such call, so a parent with three pending mount sources materializes them serially.</li>
   <li><strong>Mechanism.</strong> A <code>for</code> loop in <code>evaluateResolved</code> (<span class="fileref">dagql/cache.go:3831-3835</span>). Per-group attempts are already safe to run concurrently; different callers do it today, and a test exercises it.</li>
@@ -1559,7 +1597,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 </ul>
 
 <h3>18.9 Close the persistence regression for execs with read-only mounts</h3>
-<p><strong>Status: open.</strong> Deliberately kept out of the conversion commits. Their reach widened it by one cheap link per chain (section 17.7).</p>
+<p><strong>Decided and fixed 2026-09-04</strong> by the rule in section 8.6, landed on the pull request and covered by a test that asserts the data form is selected. The option list below is kept as the record of what was considered.</p>
 <ul>
   <li><strong>Situation.</strong> Section 19.4. An exec container that has at least one read-only directory or file mount is written to persistence as a recipe after <code>stdout()</code>, <code>directory(path)</code>, or any other demand short of a full <code>sync</code>. After a restart, the first demand of an exec output runs the process again. Before this change the same demand kept the run.</li>
   <li><strong>Mechanism.</strong> The data form is selected only when <code>Container.Lazy</code> is nil (<span class="fileref">core/container.go:1539-1546</span>), which requires every group consumed (<span class="fileref">core/container_parts.go:234-254</span>). The exec's read-only mounts are separate delegation groups (<span class="fileref">core/container_exec.go:161-168</span>) that those demands never touch. Decode re-arms every group (<span class="fileref">core/container_exec.go:2384-2418</span>).</li>
@@ -1569,17 +1607,11 @@ asserts exactly this for <code>stdout</code>).</figcaption>
   <li><strong>What changes with the decision.</strong> Yes: execs persist in the data form after any output demand, as before this change. No: users must <code>sync</code> before shutdown to keep a run whose container has read-only mounts.</li>
 </ul>
 
-<h3>18.10 Decide whether <code>withoutFiles</code> becomes one multi-path operation</h3>
-<ul>
-  <li><strong>Situation.</strong> <code>withoutFiles</code> and <code>withFiles</code> build a chain of single-path operations through the schema (<code>core/schema/container.go</code>, the <code>withoutFiles</code> and <code>withFiles</code> resolvers). The converted path-writer machinery supports several paths mapping to one joint <code>write</code> group, and a unit test exercises that, but no resolver uses it.</li>
-  <li><strong>Mechanism.</strong> <code>ContainerWithoutPathLazy</code> persists one path. A multi-path op would need a new persisted payload shape and a decode case.</li>
-  <li><strong>Why it matters.</strong> A chain of N single-path ops is N containers, N metadata copies, and N write groups where one would do. Each link is cheap, so the cost is proportional to N and small.</li>
-  <li><strong>Recommendation.</strong> Leave the chain. The implementer kept it on purpose because coalescing changes persistence shape, and no correctness issue depends on it.</li>
-  <li><strong>What changes with the decision.</strong> Yes: one op, one persisted shape change, one decode case. No: nothing changes.</li>
-</ul>
+<h3>18.10 <code>withoutFiles</code>: not a decision</h3>
+<p>Removed as a decision item on 2026-09-04. <code>withoutFiles</code> and <code>withFiles</code> built a chain of single-path operations before this work, and the conversion kept that exactly. There is no correctness or performance change. The implementer mentioned it only because the new write-group code could in principle handle several paths in one operation, which would change the persisted shape. Nothing needs deciding.</p>
 </section>
 
-<section id="s12">
+<section id="s19">
 <h2>19. Critical review findings</h2>
 <div class="callout ok">
 <strong>Bottom line.</strong> I did not establish a defect that produces wrong results in the parts, groups, or delegation machinery. I did establish one regression in persistence effectiveness (finding 19.4: repeated exec work after a restart for containers with read-only mounts). What follows is what I inspected, two open questions with evidence, the regression, the items inspected and dismissed, and the recommendations. Verified facts, inferences, open questions, and recommendations are labeled.
@@ -1620,7 +1652,8 @@ asserts exactly this for <code>stdout</code>).</figcaption>
   "synced means every upstream result is materialized", which is no longer true. <span class="pill i">inference</span>
 </p>
 
-<h3>19.4 Finding: an exec with a read-only mount is persisted as a recipe after a partial demand, and its completed run is repeated after a restart <span class="pill q">severity medium</span></h3>
+<h3>19.4 Finding: an exec with a read-only mount is persisted as a recipe after a partial demand, and its completed run is repeated after a restart <span class="pill v">fixed 2026-09-04</span></h3>
+<p><strong>Status: fixed</strong> by the rule in section 8.6 (commit “core: consume final container delegations”). A test evaluates an exec child with a read-only mount through its output group and asserts the op pointer is nil and the persistence encoder selects the data form.</p>
 <p><strong>Evidence.</strong></p>
 <ul>
   <li>The data form is selected only when <code>Container.Lazy</code> is nil; otherwise the recipe is written (<span class="fileref">core/container.go:1539-1546</span>).</li>
@@ -1658,6 +1691,8 @@ asserts exactly this for <code>stdout</code>).</figcaption>
   <li>Accepted residual: no unit test observes a path writer's in-place write producing a value, because the harness has no snapshot manager. The focused integration runs for <code>withDirectory</code>, <code>withFile</code>, <code>withNewFile</code>, <code>withoutDirectory</code>, <code>withoutFile</code>, and <code>withSymlink</code> cover it.</li>
   <li>Known limitation, not a defect: <code>withMountedSecret</code> and <code>withUnixSocket</code> with an owner name resolve ownership in the metadata group and therefore read the parent's rootfs (section 14.5).</li>
 </ul>
+<h3>19.8 Telemetry golden failures on the pull request <span class="pill v">verified</span></h3>
+<p>The first CI run of the pull request failed the <code>dagql/idtui</code> goldens. The three causes and their fixes are in section 14.8. Two points for the record: the persistence regression of 19.4 and the <code>from</code> rendering failure have the same root cause, delegated copies left unconsumed, and are closed by one rule (section 8.6); and the "blocked call renders as succeeded" case is a telemetry contract that per-group attempts broke, since the TUI's pending rule assumed one resume span per result.</p>
 </section>
 
 <section id="s20">
@@ -1671,7 +1706,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <tr><td>4</td><td>Metadata first: any demand beyond metadata settles metadata before mapping; the mapping is computed from settled metadata only.</td><td>Whether a mount exists and whether it is read-only are metadata; metadata bodies never touch snapshots, so the rule is cheap.</td></tr>
 <tr><td>5</td><td>One production per part. Construction-time copies are not productions. Delegation and write groups always overwrite.</td><td>Shell clones taken through an unconverted writer carry stale values; trusting them served wrong content. Found in review, fixed, tested (section 8.3).</td></tr>
 <tr><td>6</td><td>Resolution enumerates groups by the op's shape; the cache decides remaining work and defends against under-reporting.</td><td>Object-side state cannot see cache-side pending bookkeeping; trusting an empty answer set the completion flag falsely. Found in review, fixed, tested (section 13.3).</td></tr>
-<tr><td>7</td><td><code>Evaluate</code> unchanged; <code>EvaluateParts</code> added; whole evaluation of a converted value runs its groups one after another, metadata first.</td><td>Existing callers untouched. Sequential matches the old single-body execution and keeps failure attribution simple. Section 17.6 reconsiders this.</td></tr>
+<tr><td>7</td><td><code>Evaluate</code> unchanged; <code>EvaluateParts</code> added; the groups of one call run concurrently after resolution has settled metadata. Revised 2026-09-04; the original decision ran them one after another.</td><td>Existing callers untouched. The sequential form was a regression against the old bodies, which evaluated a parent and a source together (decision 18).</td></tr>
 <tr><td>8</td><td>Partially evaluated results persist as recipes; no format change.</td><td>Partial progress is cheap to re-derive; expensive work is recorded on ancestor records.</td></tr>
 <tr><td>9</td><td>The lock discipline of section 13.4, including the rule that the op pointer is read or cleared only under <code>lazyOpMu</code> and that the whole-op flag is atomic.</td><td>Converged over four review rounds; every rule carries a race test shown red before the fix.</td></tr>
 <tr><td>10</td><td>Recursion detection keys on (result, group), pushed at group entry.</td><td>The resolution phase legitimately re-enters the same result for its metadata group; a result-keyed stack would refuse it.</td></tr>
@@ -1680,11 +1715,14 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <tr><td>13</td><td>Lease bookkeeping is serialized per result (<code>leaseSyncMu</code>).</td><td>Concurrent group attempts make concurrent bookkeeping routine, and two interleaved read-diff-write passes could transiently drop a stored link.</td></tr>
 <tr><td>14</td><td>Every container mutation resolver forks on parent state: an evaluated parent gets an eager child with no op; a pending parent gets a converted op.</td><td>The unconverted resolvers used to install an op unconditionally, which made every one of them a whole-value link. Section 10.4 and 10.5.</td></tr>
 <tr><td>15</td><td>Ownership by name is resolved where the helper resolves it: in the metadata group for <code>withMountedSecret</code> and <code>withUnixSocket</code>, in the write group for <code>withMountedDirectory</code> and <code>withMountedFile</code>.</td><td>The secret and socket entries carry the resolved ownership as metadata; the mount writers apply it to the mounted content. The former costs a parent rootfs read on a metadata demand (section 14.5).</td></tr>
-<tr><td>16</td><td><code>withoutFiles</code> and <code>withFiles</code> stay chains of single-path operations.</td><td>Coalescing changes the persisted shape and needs a ruling (section 18.10).</td></tr>
+<tr><td>16</td><td><code>withoutFiles</code> and <code>withFiles</code> stay chains of single-path operations.</td><td>Pre-existing shape, unchanged by this work; no decision needed (section 18.10).</td></tr>
+<tr><td>17</td><td>A delegated copy runs as soon as the parent's part is final, after any of the op's own groups succeeds. Decided 2026-09-04.</td><td>Leaving cheap copies unconsumed kept op pointers set, which made <code>from</code> report pending forever and made execs with read-only mounts persist as recipes (sections 8.6, 14.8, 19.4).</td></tr>
+<tr><td>18</td><td>The groups of one call run concurrently; metadata is still settled first by resolution. Decided 2026-09-04.</td><td>Sequential groups were a regression against the old bodies, which evaluated a parent and a source together (sections 12, 18.8).</td></tr>
+<tr><td>19</td><td>A resume span is marked partial when its result still has outstanding work, decided at attempt retirement under <code>lazyMu</code>, and the TUI does not clear a call's pending state on a partial resume. An attempt abandoned by its waiters marks its resume span blocked. Decided 2026-09-04.</td><td>Per-group attempts give a call several resume spans; the TUI's pending rule assumed one (section 14.8).</td></tr>
 </table>
 </section>
 
-<section id="s14">
+<section id="s21">
 <h2>21. Check your understanding</h2>
 <details><summary>1. You call <code>EvaluateParts(X, execMeta)</code> on an exec child whose parent P is also an exec. Which processes run?</summary>
 <p>X's process runs (group <code>execOutputs</code>). Its body demands P's <code>fs</code> and every P mount part, which resolve to P's <code>execOutputs</code>, so P's process runs too. P's <code>execMeta</code> is produced as a side effect of P's run but is never demanded. Nothing above P runs unless P's inputs require it.</p></details>
@@ -1706,7 +1744,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <p>The one-production rule. Nothing at either layer excludes two groups from writing the same accessor, and the exec's joint group would also write <code>execMeta</code> and writable mounts, so provenance could mix within one result.</p></details>
 </section>
 
-<section id="s15">
+<section id="s22">
 <h2>22. Appendix: file and line index</h2>
 <table>
 <tr><th>Concept</th><th>Where</th></tr>
@@ -1780,6 +1818,7 @@ asserts exactly this for <code>stdout</code>).</figcaption>
 <p>Recorded so the review trail is legible. The design went through five revisions and the implementation through four review rounds by three reviewers. Before any code, one defect was fixed in the design: the object-side sketch held a lock across group bodies, which would have deadlocked on the metadata self-demand. In implementation review, two blockers were found: delegation trusted pre-seeded accessor values and served stale content (section 8.3), and an op consumed on its last body while lease bookkeeping still failed made the cache record permanent false completion (section 13.3). Rounds two to four converged the op-pointer locking to the uniform rule in section 13.4. Every fix carries a test shown failing on the pre-fix code.</p>
 <h3>22.5 Review trail for the conversion commits</h3>
 <p>Implementer: a Codex agent working in a private worktree forked from the end of the initial implementation plus this design record. Reviewers: the coordinator (this document's author) and an independent Claude reviewer sharing the implementer's worktree read-only, building and testing each commit in a clean temporary worktree. Four review rounds: commits 1 and 2; commit 3; commits 4 to 6; the fix commit. Every should-fix item was either addressed or deferred with a stated reason; no item was deferred in the end. The implementer ran focused integration suites against a dev engine for <code>from</code>, the mount mutations, the mounted sources, the Dockerfile bind mounts, the path writers, the export family, and multi-platform export and publish; the coordinator inspected each log's summary. The reviewed commits were then carried onto the rebased PR stack as a linear series. Every replayed commit was byte-identical under <code>git range-diff</code>, checked by the reviewer. This record names commits by title so that it survives further rebases.</p>
+<p>Fix round after the first CI run: the same implementer wrote the five commits in section 10.5's second table against a specification derived from the golden failures; the reviewer pre-read the affected TUI and cache code, raised nine concerns before the code existed, six of which were folded into the specification, and found two real defects in the concurrency change on review (an abandoned sibling attempt rendering as a failure, and a window in which concurrent completions could all read as partial), both fixed in the fifth commit. The implementer bisected the visible symptom to the concurrency commit and confirmed the reviewer's mechanism by running the affected golden at each commit. Local golden runs left only cold-engine differences; CI is the authoritative check.</p>
 </section>
 
 
