@@ -1,6 +1,6 @@
 {
   "name": "sdk-ux-go",
-  "engineVersion": "v1.0.0-beta.11",
+  "engineVersion": "v1.0.0",
   "sdk": {
     "source": "dang"
   }
