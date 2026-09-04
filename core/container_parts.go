@@ -426,7 +426,7 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 		return err
 	}
 	// Keep the sweep inside the attempt callback. It must finish before the
-	// cache decides whether the attempt's resume span is partial.
+	// cache retires the attempt and decides whether its resume span is partial.
 	if err := container.consumeFinalParentDelegations(ctx, op); err != nil {
 		return err
 	}
@@ -490,7 +490,7 @@ func containerParentPartFinal(ctx context.Context, parent *Container, part dagql
 		return false, err
 	}
 	if len(groups) != 1 {
-		return false, fmt.Errorf("container parent part %q maps to %d groups", part, len(groups))
+		return false, nil
 	}
 	return parentOp.ContainerLazyState().GroupConsumed(groups[0]), nil
 }

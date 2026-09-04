@@ -3889,18 +3889,12 @@ func (g *lazyGroupState) settled() bool {
 	return g.attempt == nil && !g.syncPending && g.eval == nil
 }
 
-// lazyPartsEvaluationPartial reports whether a successful parts attempt left
-// other work on the result. The current group is still published until its
-// resume span ends, so it is excluded from the cache-side scan. This check
+// lazyPartsEvaluationPartialLocked reports whether a successful parts attempt
+// left other work on the result after that attempt was retired. This check
 // depends on Container.runLazyGroup consuming final parent delegations before
-// its callback returns.
-func lazyPartsEvaluationPartial(shared *sharedResult, res AnyResult, current *lazyGroupState) bool {
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
+// its callback returns. lazyMu must be held.
+func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool {
 	for _, group := range shared.lazyPartGroups {
-		if group == current {
-			continue
-		}
 		if !group.settled() || !group.complete {
 			return true
 		}
@@ -4094,15 +4088,8 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// this attempt is cache-side bookkeeping, which stays retryable.
 			bodyDone := false
 			partial := false
-			// End lazySpan before closing attempt.done so callers observe the span
-			// as ended and exported, and every joiner's target span is closed.
+			abandoned := false
 			runEval := func() {
-				if lazySpan != nil {
-					defer func() {
-						endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, &err)
-					}()
-				}
-
 				leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
 				if leaseErr != nil {
 					err = fmt.Errorf("acquire operation lease: %w", leaseErr)
@@ -4120,16 +4107,14 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 				if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
 					err = releaseErr
 				}
-				if err == nil && partsVal != nil {
-					partial = lazyPartsEvaluationPartial(shared, res, g)
-				}
 			}
 			runEval()
 			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
 			attempt.err = err
-			attempt.retry = lazyEvalErrorCausedByContext(attemptCtx, err)
+			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
+			attempt.retry = abandoned
 			attempt.cancel = nil
 			if err == nil {
 				g.complete = true
@@ -4147,8 +4132,18 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// still names this attempt: publishing a successor requires it to be
 			// nil, and only this path clears it.
 			g.attempt = nil
+			if err == nil && partsVal != nil {
+				partial = lazyPartsEvaluationPartialLocked(shared, res)
+			}
 			shared.lazyMu.Unlock()
 
+			// End lazySpan after retiring the attempt but before closing done. The
+			// retired state prevents concurrently successful attempts from all
+			// reporting stale partial work, while callers still observe an ended
+			// and exported span when their wait completes.
+			if lazySpan != nil {
+				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, &err)
+			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
 			}
