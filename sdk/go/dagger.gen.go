@@ -16870,24 +16870,13 @@ func (r *Workspace) Cwd(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceDetectScopeOpts contains options for Workspace.DetectScope
-type WorkspaceDetectScopeOpts struct {
-	// Optional SDK name to probe. All installed SDK modules are probed when omitted.
-	SDK string
-}
-
-// Detect the most specific SDK-module scope that contains the current location.
-func (r *Workspace) DetectScope(ctx context.Context, opts ...WorkspaceDetectScopeOpts) (string, error) {
+// Detect the selected SDK module's scope that contains the current location.
+func (r *Workspace) DetectScope(ctx context.Context, sdk string) (string, error) {
 	if r.detectScope != nil {
 		return *r.detectScope, nil
 	}
 	q := r.query.Select("detectScope")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sdk` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SDK) {
-			q = q.Arg("sdk", opts[i].SDK)
-		}
-	}
+	q = q.Arg("sdk", sdk)
 
 	var response string
 
@@ -17400,26 +17389,21 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 
 // WorkspaceWithClientOpts contains options for Workspace.WithClient
 type WorkspaceWithClientOpts struct {
-	// Optional SDK name. Scope detection selects the SDK when omitted.
-	SDK string
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
 }
 
 // Return this workspace with a generated module client added to its detected scope.
-func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *Workspace {
+func (r *Workspace) WithClient(module string, sdk string, opts ...WorkspaceWithClientOpts) *Workspace {
 	q := r.query.Select("withClient")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `sdk` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SDK) {
-			q = q.Arg("sdk", opts[i].SDK)
-		}
 		// `settings` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Settings) {
 			q = q.Arg("settings", opts[i].Settings)
 		}
 	}
 	q = q.Arg("module", module)
+	q = q.Arg("sdk", sdk)
 
 	return &Workspace{
 		query: q,

@@ -11630,6 +11630,15 @@ pub struct ModuleManifestValidateOpts<'a> {
     pub target_engine_version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithDependencyOpts<'a> {
+    /// Optional dependency name.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
+    /// Optional dependency pin.
+    #[builder(setter(into, strip_option), default)]
+    pub pin: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleManifestWithLegacyDangRuntimeOpts<'a> {
     /// Required engine API version. The default is the running engine version.
     #[builder(setter(into, strip_option), default)]
@@ -11782,6 +11791,46 @@ impl ModuleManifest {
     pub fn with_dang_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
         let mut query = self.selection.select("withDangEntrypoint");
         query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add or replace a module dependency.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Dependency source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_dependency(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withDependency");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add or replace a module dependency.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Dependency source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_dependency_opts<'a>(
+        &self,
+        source: impl Into<String>,
+        opts: ModuleManifestWithDependencyOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withDependency");
+        query = query.arg("source", source.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(pin) = opts.pin {
+            query = query.arg("pin", pin);
+        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -12056,6 +12105,43 @@ impl ModuleManifest {
     pub fn with_module_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
         let mut query = self.selection.select("withModuleEntrypoint");
         query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the module name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Module name.
+    pub fn with_name(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withName");
+        query = query.arg("name", name.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove all module dependencies.
+    pub fn without_dependencies(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutDependencies");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove a module dependency by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Dependency name.
+    pub fn without_dependency(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withoutDependency");
+        query = query.arg("name", name.into());
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -13036,6 +13122,15 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryModuleManifestOpts {
+    /// Optional dagger.json file to load.
+    #[builder(setter(into, strip_option), default)]
+    pub load_json: Option<Id>,
+    /// Optional dagger-module.toml file to load.
+    #[builder(setter(into, strip_option), default)]
+    pub load_toml: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
     /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
@@ -13675,14 +13770,32 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Construct a module manifest.
+    /// Construct or load a module manifest.
     ///
     /// # Arguments
     ///
-    /// * `name` - Module name.
-    pub fn module_manifest(&self, name: impl Into<String>) -> ModuleManifest {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_manifest(&self) -> ModuleManifest {
+        let query = self.selection.select("moduleManifest");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Construct or load a module manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_manifest_opts(&self, opts: QueryModuleManifestOpts) -> ModuleManifest {
         let mut query = self.selection.select("moduleManifest");
-        query = query.arg("name", name.into());
+        if let Some(load_toml) = opts.load_toml {
+            query = query.arg("loadTOML", load_toml);
+        }
+        if let Some(load_json) = opts.load_json {
+            query = query.arg("loadJSON", load_json);
+        }
         ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
@@ -15813,12 +15926,6 @@ pub struct WorkspaceConfigReadOpts<'a> {
     pub key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceDetectScopeOpts<'a> {
-    /// Optional SDK name to probe. All installed SDK modules are probed when omitted.
-    #[builder(setter(into, strip_option), default)]
-    pub sdk: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -15897,10 +16004,7 @@ pub struct WorkspaceTerminalsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceWithClientOpts<'a> {
-    /// Optional SDK name. Scope detection selects the SDK when omitted.
-    #[builder(setter(into, strip_option), default)]
-    pub sdk: Option<&'a str>,
+pub struct WorkspaceWithClientOpts {
     /// Explicit SDK-module constructor setting overrides for this scope.
     #[builder(setter(into, strip_option), default)]
     pub settings: Option<Json>,
@@ -16182,28 +16286,14 @@ impl Workspace {
         let query = self.selection.select("cwd");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Detect the most specific SDK-module scope that contains the current location.
+    /// Detect the selected SDK module's scope that contains the current location.
     ///
     /// # Arguments
     ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn detect_scope(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("detectScope");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Detect the most specific SDK-module scope that contains the current location.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn detect_scope_opts<'a>(
-        &self,
-        opts: WorkspaceDetectScopeOpts<'a>,
-    ) -> Result<String, DaggerError> {
+    /// * `sdk` - SDK name to probe. Required.
+    pub async fn detect_scope(&self, sdk: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("detectScope");
-        if let Some(sdk) = opts.sdk {
-            query = query.arg("sdk", sdk);
-        }
+        query = query.arg("sdk", sdk.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
@@ -16686,10 +16776,12 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `sdk` - SDK name to use. Required.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_client(&self, module: impl Into<String>) -> Workspace {
+    pub fn with_client(&self, module: impl Into<String>, sdk: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withClient");
         query = query.arg("module", module.into());
+        query = query.arg("sdk", sdk.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -16701,17 +16793,17 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `sdk` - SDK name to use. Required.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_client_opts<'a>(
+    pub fn with_client_opts(
         &self,
         module: impl Into<String>,
-        opts: WorkspaceWithClientOpts<'a>,
+        sdk: impl Into<String>,
+        opts: WorkspaceWithClientOpts,
     ) -> Workspace {
         let mut query = self.selection.select("withClient");
         query = query.arg("module", module.into());
-        if let Some(sdk) = opts.sdk {
-            query = query.arg("sdk", sdk);
-        }
+        query = query.arg("sdk", sdk.into());
         if let Some(settings) = opts.settings {
             query = query.arg("settings", settings);
         }

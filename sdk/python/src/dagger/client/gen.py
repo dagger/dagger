@@ -11502,6 +11502,32 @@ class ModuleManifest(Type):
         _ctx = self._select("withDangEntrypoint", _args)
         return ModuleManifest(_ctx)
 
+    def with_dependency(
+        self,
+        source: str,
+        *,
+        name: str | None = None,
+        pin: str | None = None,
+    ) -> Self:
+        """Add or replace a module dependency.
+
+        Parameters
+        ----------
+        source:
+            Dependency source address.
+        name:
+            Optional dependency name.
+        pin:
+            Optional dependency pin.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("name", name, None),
+            Arg("pin", pin, None),
+        ]
+        _ctx = self._select("withDependency", _args)
+        return ModuleManifest(_ctx)
+
     def with_legacy_dang_runtime(
         self,
         *,
@@ -11691,6 +11717,40 @@ class ModuleManifest(Type):
             Arg("source", source),
         ]
         _ctx = self._select("withModuleEntrypoint", _args)
+        return ModuleManifest(_ctx)
+
+    def with_name(self, name: str) -> Self:
+        """Set the module name.
+
+        Parameters
+        ----------
+        name:
+            Module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return ModuleManifest(_ctx)
+
+    def without_dependencies(self) -> Self:
+        """Remove all module dependencies."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDependencies", _args)
+        return ModuleManifest(_ctx)
+
+    def without_dependency(self, name: str) -> Self:
+        """Remove a module dependency by name.
+
+        Parameters
+        ----------
+        name:
+            Dependency name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutDependency", _args)
         return ModuleManifest(_ctx)
 
     def without_legacy_fields(self) -> Self:
@@ -13371,16 +13431,24 @@ class Query(Root):
         _ctx = self._select("module", _args)
         return Module(_ctx)
 
-    def module_manifest(self, name: str) -> ModuleManifest:
-        """Construct a module manifest.
+    def module_manifest(
+        self,
+        *,
+        load_toml: File | None = None,
+        load_json: File | None = None,
+    ) -> ModuleManifest:
+        """Construct or load a module manifest.
 
         Parameters
         ----------
-        name:
-            Module name.
+        load_toml:
+            Optional dagger-module.toml file to load.
+        load_json:
+            Optional dagger.json file to load.
         """
         _args = [
-            Arg("name", name),
+            Arg("loadTOML", load_toml, None),
+            Arg("loadJSON", load_json, None),
         ]
         _ctx = self._select("moduleManifest", _args)
         return ModuleManifest(_ctx)
@@ -15665,15 +15733,14 @@ class Workspace(Type):
         _ctx = self._select("cwd", _args)
         return await _ctx.execute(str)
 
-    async def detect_scope(self, *, sdk: str | None = "") -> str:
-        """Detect the most specific SDK-module scope that contains the current
+    async def detect_scope(self, sdk: str) -> str:
+        """Detect the selected SDK module's scope that contains the current
         location.
 
         Parameters
         ----------
         sdk:
-            Optional SDK name to probe. All installed SDK modules are probed
-            when omitted.
+            SDK name to probe. Required.
 
         Returns
         -------
@@ -15690,7 +15757,7 @@ class Workspace(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("sdk", sdk, ""),
+            Arg("sdk", sdk),
         ]
         _ctx = self._select("detectScope", _args)
         return await _ctx.execute(str)
@@ -16179,8 +16246,8 @@ class Workspace(Type):
     def with_client(
         self,
         module: str,
+        sdk: str,
         *,
-        sdk: str | None = "",
         settings: JSON | None = None,
     ) -> Self:
         """Return this workspace with a generated module client added to its
@@ -16192,13 +16259,13 @@ class Workspace(Type):
             Installed module name, local path, or module address to generate a
             client for.
         sdk:
-            Optional SDK name. Scope detection selects the SDK when omitted.
+            SDK name to use. Required.
         settings:
             Explicit SDK-module constructor setting overrides for this scope.
         """
         _args = [
             Arg("module", module),
-            Arg("sdk", sdk, ""),
+            Arg("sdk", sdk),
             Arg("settings", settings, None),
         ]
         _ctx = self._select("withClient", _args)

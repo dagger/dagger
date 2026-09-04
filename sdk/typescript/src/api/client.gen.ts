@@ -2308,6 +2308,18 @@ export type ModuleManifestValidateOpts = {
   targetEngineVersion?: string
 }
 
+export type ModuleManifestWithDependencyOpts = {
+  /**
+   * Optional dependency name.
+   */
+  name?: string
+
+  /**
+   * Optional dependency pin.
+   */
+  pin?: string
+}
+
 export type ModuleManifestWithLegacyDangRuntimeOpts = {
   /**
    * Module source path. The default is the manifest directory.
@@ -2741,6 +2753,18 @@ export type ClientLLMOpts = {
    * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
   provider?: string
+}
+
+export type ClientModuleManifestOpts = {
+  /**
+   * Optional dagger-module.toml file to load.
+   */
+  loadTOML?: File
+
+  /**
+   * Optional dagger.json file to load.
+   */
+  loadJSON?: File
 }
 
 export type ClientModuleSourceOpts = {
@@ -3258,13 +3282,6 @@ export type WorkspaceConfigReadOpts = {
   key?: string
 }
 
-export type WorkspaceDetectScopeOpts = {
-  /**
-   * Optional SDK name to probe. All installed SDK modules are probed when omitted.
-   */
-  sdk?: string
-}
-
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3385,11 +3402,6 @@ export type WorkspaceTerminalsOpts = {
 }
 
 export type WorkspaceWithClientOpts = {
-  /**
-   * Optional SDK name. Scope detection selects the SDK when omitted.
-   */
-  sdk?: string
-
   /**
    * Explicit SDK-module constructor setting overrides for this scope.
    */
@@ -12174,6 +12186,20 @@ export class ModuleManifest extends BaseClient {
   }
 
   /**
+   * Add or replace a module dependency.
+   * @param source Dependency source address.
+   * @param opts.name Optional dependency name.
+   * @param opts.pin Optional dependency pin.
+   */
+  withDependency = (
+    source: string,
+    opts?: ModuleManifestWithDependencyOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withDependency", { source, ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
    * Add the legacy Dang runtime.
    * @param opts.moduleSource Module source path. The default is the manifest directory.
    * @param opts.engineVersion Required engine API version. The default is the running engine version.
@@ -12274,6 +12300,32 @@ export class ModuleManifest extends BaseClient {
    */
   withModuleEntrypoint = (source: string): ModuleManifest => {
     const ctx = this._ctx.select("withModuleEntrypoint", { source })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Set the module name.
+   * @param name Module name.
+   */
+  withName = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("withName", { name })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove all module dependencies.
+   */
+  withoutDependencies = (): ModuleManifest => {
+    const ctx = this._ctx.select("withoutDependencies")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove a module dependency by name.
+   * @param name Dependency name.
+   */
+  withoutDependency = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("withoutDependency", { name })
     return new ModuleManifest(ctx)
   }
 
@@ -13655,11 +13707,12 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Construct a module manifest.
-   * @param name Module name.
+   * Construct or load a module manifest.
+   * @param opts.loadTOML Optional dagger-module.toml file to load.
+   * @param opts.loadJSON Optional dagger.json file to load.
    */
-  moduleManifest = (name: string): ModuleManifest => {
-    const ctx = this._ctx.select("moduleManifest", { name })
+  moduleManifest = (opts?: ClientModuleManifestOpts): ModuleManifest => {
+    const ctx = this._ctx.select("moduleManifest", { ...opts })
     return new ModuleManifest(ctx)
   }
 
@@ -15670,15 +15723,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Detect the most specific SDK-module scope that contains the current location.
-   * @param opts.sdk Optional SDK name to probe. All installed SDK modules are probed when omitted.
+   * Detect the selected SDK module's scope that contains the current location.
+   * @param sdk SDK name to probe. Required.
    */
-  detectScope = async (opts?: WorkspaceDetectScopeOpts): Promise<string> => {
+  detectScope = async (sdk: string): Promise<string> => {
     if (this._detectScope) {
       return this._detectScope
     }
 
-    const ctx = this._ctx.select("detectScope", { ...opts })
+    const ctx = this._ctx.select("detectScope", { sdk })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -15961,12 +16014,17 @@ export class Workspace extends BaseClient {
   /**
    * Return this workspace with a generated module client added to its detected scope.
    * @param module Installed module name, local path, or module address to generate a client for.
-   * @param opts.sdk Optional SDK name. Scope detection selects the SDK when omitted.
+   * @param sdk SDK name to use. Required.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
-  withClient = (module_: string, opts?: WorkspaceWithClientOpts): Workspace => {
+  withClient = (
+    module_: string,
+    sdk: string,
+    opts?: WorkspaceWithClientOpts,
+  ): Workspace => {
     const ctx = this._ctx.select("withClient", {
       module: module_,
+      sdk,
       ...opts,
     })
     return new Workspace(ctx)

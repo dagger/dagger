@@ -3569,6 +3569,18 @@ type ModuleManifest implements Node {
     source: String!
   ): ModuleManifest!
 
+  """Add or replace a module dependency."""
+  withDependency(
+    """Dependency source address."""
+    source: String!
+
+    """Optional dependency name."""
+    name: String
+
+    """Optional dependency pin."""
+    pin: String
+  ): ModuleManifest!
+
   """Add the legacy Dang runtime."""
   withLegacyDangRuntime(
     """Module source path. The default is the manifest directory."""
@@ -3660,6 +3672,21 @@ type ModuleManifest implements Node {
   withModuleEntrypoint(
     """Entrypoint module address."""
     source: String!
+  ): ModuleManifest!
+
+  """Set the module name."""
+  withName(
+    """Module name."""
+    name: String!
+  ): ModuleManifest!
+
+  """Remove all module dependencies."""
+  withoutDependencies: ModuleManifest!
+
+  """Remove a module dependency by name."""
+  withoutDependency(
+    """Dependency name."""
+    name: String!
   ): ModuleManifest!
 
   """

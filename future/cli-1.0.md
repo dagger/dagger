@@ -74,7 +74,7 @@ The design in this document is locked unless an item below says that a decision 
 ### Merge readiness
 
 - [x] Update the PR description after the interface work is complete.
-- [ ] Refresh generated APIs and schema fixtures.
+- [x] Refresh generated APIs and schema fixtures.
 - [ ] Resolve all remaining CI failures.
 - [x] Rebase on the current base branch.
 - [x] Run the final focused and full validation sets.

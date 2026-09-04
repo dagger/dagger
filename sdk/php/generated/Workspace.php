@@ -114,14 +114,12 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Detect the most specific SDK-module scope that contains the current location.
+     * Detect the selected SDK module's scope that contains the current location.
      */
-    public function detectScope(?string $sdk = ''): string
+    public function detectScope(string $sdk): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('detectScope');
-        if (null !== $sdk) {
         $leafQueryBuilder->setArgument('sdk', $sdk);
-        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'detectScope');
     }
 
@@ -431,13 +429,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return this workspace with a generated module client added to its detected scope.
      */
-    public function withClient(string $module, ?string $sdk = '', ?Json $settings = null): Workspace
+    public function withClient(string $module, string $sdk, ?Json $settings = null): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
         $innerQueryBuilder->setArgument('module', $module);
-        if (null !== $sdk) {
         $innerQueryBuilder->setArgument('sdk', $sdk);
-        }
         if (null !== $settings) {
         $innerQueryBuilder->setArgument('settings', $settings);
         }

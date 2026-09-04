@@ -2836,7 +2836,7 @@
 			"t": "M",
 			"n": "Dagger\\Client::moduleManifest",
 			"p": "Dagger/Client.html#method_moduleManifest",
-			"d": "<p>Construct a module manifest.</p>"
+			"d": "<p>Construct or load a module manifest.</p>"
 		},
 		{
 			"t": "M",
@@ -6482,6 +6482,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleManifest::withDependency",
+			"p": "Dagger/ModuleManifest.html#method_withDependency",
+			"d": "<p>Add or replace a module dependency.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleManifest::withLegacyDangRuntime",
 			"p": "Dagger/ModuleManifest.html#method_withLegacyDangRuntime",
 			"d": "<p>Add the legacy Dang runtime.</p>"
@@ -6533,6 +6539,24 @@
 			"n": "Dagger\\ModuleManifest::withModuleEntrypoint",
 			"p": "Dagger/ModuleManifest.html#method_withModuleEntrypoint",
 			"d": "<p>Use another module as the entrypoint.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::withName",
+			"p": "Dagger/ModuleManifest.html#method_withName",
+			"d": "<p>Set the module name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::withoutDependencies",
+			"p": "Dagger/ModuleManifest.html#method_withoutDependencies",
+			"d": "<p>Remove all module dependencies.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleManifest::withoutDependency",
+			"p": "Dagger/ModuleManifest.html#method_withoutDependency",
+			"d": "<p>Remove a module dependency by name.</p>"
 		},
 		{
 			"t": "M",
@@ -7606,7 +7630,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::detectScope",
 			"p": "Dagger/Workspace.html#method_detectScope",
-			"d": "<p>Detect the most specific SDK-module scope that contains the current location.</p>"
+			"d": "<p>Detect the selected SDK module's scope that contains the current location.</p>"
 		},
 		{
 			"t": "M",

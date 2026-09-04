@@ -103,6 +103,25 @@ defmodule Dagger.ModuleManifest do
   end
 
   @doc """
+  Add or replace a module dependency.
+  """
+  @spec with_dependency(t(), String.t(), [{:name, String.t() | nil}, {:pin, String.t() | nil}]) ::
+          Dagger.ModuleManifest.t()
+  def with_dependency(%__MODULE__{} = module_manifest, source, optional_args \\ []) do
+    query_builder =
+      module_manifest.query_builder
+      |> QB.select("withDependency")
+      |> QB.put_arg("source", source)
+      |> QB.maybe_put_arg("name", optional_args[:name])
+      |> QB.maybe_put_arg("pin", optional_args[:pin])
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
   Add the legacy Dang runtime.
   """
   @spec with_legacy_dang_runtime(t(), [
@@ -267,6 +286,48 @@ defmodule Dagger.ModuleManifest do
       module_manifest.query_builder
       |> QB.select("withModuleEntrypoint")
       |> QB.put_arg("source", source)
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
+  Set the module name.
+  """
+  @spec with_name(t(), String.t()) :: Dagger.ModuleManifest.t()
+  def with_name(%__MODULE__{} = module_manifest, name) do
+    query_builder =
+      module_manifest.query_builder |> QB.select("withName") |> QB.put_arg("name", name)
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
+  Remove all module dependencies.
+  """
+  @spec without_dependencies(t()) :: Dagger.ModuleManifest.t()
+  def without_dependencies(%__MODULE__{} = module_manifest) do
+    query_builder =
+      module_manifest.query_builder |> QB.select("withoutDependencies")
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: module_manifest.client
+    }
+  end
+
+  @doc """
+  Remove a module dependency by name.
+  """
+  @spec without_dependency(t(), String.t()) :: Dagger.ModuleManifest.t()
+  def without_dependency(%__MODULE__{} = module_manifest, name) do
+    query_builder =
+      module_manifest.query_builder |> QB.select("withoutDependency") |> QB.put_arg("name", name)
 
     %Dagger.ModuleManifest{
       query_builder: query_builder,

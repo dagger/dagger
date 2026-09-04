@@ -380,12 +380,17 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Construct a module manifest.
+     * Construct or load a module manifest.
      */
-    public function moduleManifest(string $name): ModuleManifest
+    public function moduleManifest(?File $loadTOML = null, ?File $loadJSON = null): ModuleManifest
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleManifest');
-        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $loadTOML) {
+        $innerQueryBuilder->setArgument('loadTOML', $loadTOML);
+        }
+        if (null !== $loadJSON) {
+        $innerQueryBuilder->setArgument('loadJSON', $loadJSON);
+        }
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

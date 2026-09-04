@@ -588,7 +588,7 @@
 <abbr title="Dagger\Up">Up</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>The description of the service</p></dd><dt><a href="Dagger/Workspace.html#method_detectScope">
 <abbr title="Dagger\Workspace">Workspace</abbr>::detectScope</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Detect the most specific SDK-module scope that contains the current location.</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
+                    <dd><p>Detect the selected SDK module's scope that contains the current location.</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Returns a Directory from the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_description">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -1153,7 +1153,7 @@
 <abbr title="Dagger\Client">Client</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new module.</p></dd><dt><a href="Dagger/Client.html#method_moduleManifest">
 <abbr title="Dagger\Client">Client</abbr>::moduleManifest</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Construct a module manifest.</p></dd><dt><a href="Dagger/Client.html#method_moduleRuntime">
+                    <dd><p>Construct or load a module manifest.</p></dd><dt><a href="Dagger/Client.html#method_moduleRuntime">
 <abbr title="Dagger\Client">Client</abbr>::moduleRuntime</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client.html#method_moduleSource">
 <abbr title="Dagger\Client">Client</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -2171,7 +2171,9 @@
 <abbr title="Dagger\Module">Module</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withDangEntrypoint">
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withDangEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
-                    <dd><p>Use the built-in Dang entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyDangRuntime">
+                    <dd><p>Use the built-in Dang entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withDependency">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withDependency</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add or replace a module dependency.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyDangRuntime">
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyDangRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
                     <dd><p>Add the legacy Dang runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyElixirRuntime">
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyElixirRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
@@ -2189,7 +2191,13 @@
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyTypescriptRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
                     <dd><p>Add the legacy TypeScript runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withModuleEntrypoint">
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withModuleEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
-                    <dd><p>Use another module as the entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutLegacyFields">
+                    <dd><p>Use another module as the entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withName">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Set the module name.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutDependencies">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Remove all module dependencies.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutDependency">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutDependency</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Remove a module dependency by name.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutLegacyFields">
 <abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutLegacyFields</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
                     <dd><p>Remove the legacy runtime, module source, engine version, and include paths.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withBlueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>

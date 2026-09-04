@@ -133,14 +133,12 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Detect the most specific SDK-module scope that contains the current location.
+  Detect the selected SDK module's scope that contains the current location.
   """
-  @spec detect_scope(t(), [{:sdk, String.t() | nil}]) :: {:ok, String.t()} | {:error, term()}
-  def detect_scope(%__MODULE__{} = workspace, optional_args \\ []) do
+  @spec detect_scope(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def detect_scope(%__MODULE__{} = workspace, sdk) do
     query_builder =
-      workspace.query_builder
-      |> QB.select("detectScope")
-      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+      workspace.query_builder |> QB.select("detectScope") |> QB.put_arg("sdk", sdk)
 
     Client.execute(workspace.client, query_builder)
   end
@@ -536,16 +534,14 @@ defmodule Dagger.Workspace do
   @doc """
   Return this workspace with a generated module client added to its detected scope.
   """
-  @spec with_client(t(), String.t(), [
-          {:sdk, String.t() | nil},
-          {:settings, Dagger.JSON.t() | nil}
-        ]) :: Dagger.Workspace.t()
-  def with_client(%__MODULE__{} = workspace, module, optional_args \\ []) do
+  @spec with_client(t(), String.t(), String.t(), [{:settings, Dagger.JSON.t() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_client(%__MODULE__{} = workspace, module, sdk, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withClient")
       |> QB.put_arg("module", module)
-      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+      |> QB.put_arg("sdk", sdk)
       |> QB.maybe_put_arg("settings", optional_args[:settings])
 
     %Dagger.Workspace{

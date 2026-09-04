@@ -74,6 +74,22 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
+     * Add or replace a module dependency.
+     */
+    public function withDependency(string $source, ?string $name = null, ?string $pin = null): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependency');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $name) {
+        $innerQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $pin) {
+        $innerQueryBuilder->setArgument('pin', $pin);
+        }
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Add the legacy Dang runtime.
      */
     public function withLegacyDangRuntime(?string $moduleSource = null, ?string $engineVersion = null): ModuleManifest
@@ -203,6 +219,35 @@ class ModuleManifest extends Client\AbstractObject implements Client\IdAble, Nod
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleEntrypoint');
         $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the module name.
+     */
+    public function withName(string $name): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove all module dependencies.
+     */
+    public function withoutDependencies(): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
+        return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove a module dependency by name.
+     */
+    public function withoutDependency(string $name): ModuleManifest
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependency');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\ModuleManifest($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

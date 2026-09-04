@@ -1607,13 +1607,7 @@ dagger module client [flags]
 Add and generate a module client
 
 ```
-dagger module client add <module>
-```
-
-### Options
-
-```
-      --sdk string   SDK module to use
+dagger module client add [flags]
 ```
 
 ### Options inherited from parent commands
@@ -1806,16 +1800,10 @@ Initialize a module in the workspace
 
 ### Synopsis
 
-Initialize a module in the workspace, using the named SDK.
+Initialize a module in the workspace with an installed SDK.
 
 ```
-dagger module init <sdk>
-```
-
-### Examples
-
-```
-dagger module init go
+dagger module init [flags]
 ```
 
 ### Options
@@ -1941,7 +1929,7 @@ Search for modules you can install
 
 Search the module registry by name or description.
 
-With no query, lists all known modules.
+With no query, lists all known modules and SDK modules.
 
 ```
 dagger module search [query] [flags]

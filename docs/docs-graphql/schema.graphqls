@@ -4254,6 +4254,18 @@ type ModuleManifest implements Node {
     source: String!
   ): ModuleManifest!
 
+  """Add or replace a module dependency."""
+  withDependency(
+    """Dependency source address."""
+    source: String!
+
+    """Optional dependency name."""
+    name: String
+
+    """Optional dependency pin."""
+    pin: String
+  ): ModuleManifest!
+
   """Add the legacy Dang runtime."""
   withLegacyDangRuntime(
     """Module source path. The default is the manifest directory."""
@@ -4345,6 +4357,21 @@ type ModuleManifest implements Node {
   withModuleEntrypoint(
     """Entrypoint module address."""
     source: String!
+  ): ModuleManifest!
+
+  """Set the module name."""
+  withName(
+    """Module name."""
+    name: String!
+  ): ModuleManifest!
+
+  """Remove all module dependencies."""
+  withoutDependencies: ModuleManifest!
+
+  """Remove a module dependency by name."""
+  withoutDependency(
+    """Dependency name."""
+    name: String!
   ): ModuleManifest!
 
   """
@@ -5018,10 +5045,13 @@ type Query implements Node {
   """Create a new module."""
   module: Module!
 
-  """Construct a module manifest."""
+  """Construct or load a module manifest."""
   moduleManifest(
-    """Module name."""
-    name: String!
+    """Optional dagger-module.toml file to load."""
+    loadTOML: ID @expectedType(name: "File")
+
+    """Optional dagger.json file to load."""
+    loadJSON: ID @expectedType(name: "File")
   ): ModuleManifest!
 
   """Create a new module source instance from a source ref string"""
@@ -5838,13 +5868,11 @@ type Workspace implements Node {
   cwd: String!
 
   """
-  Detect the most specific SDK-module scope that contains the current location.
+  Detect the selected SDK module's scope that contains the current location.
   """
   detectScope(
-    """
-    Optional SDK name to probe. All installed SDK modules are probed when omitted.
-    """
-    sdk: String = ""
+    """SDK name to probe. Required."""
+    sdk: String!
   ): String!
 
   """
@@ -6097,8 +6125,8 @@ type Workspace implements Node {
     """
     module: String!
 
-    """Optional SDK name. Scope detection selects the SDK when omitted."""
-    sdk: String = ""
+    """SDK name to use. Required."""
+    sdk: String!
 
     """Explicit SDK-module constructor setting overrides for this scope."""
     settings: JSON
