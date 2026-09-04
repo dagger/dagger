@@ -88,6 +88,8 @@
 (*   - res.laundered and the flushed-row verdicts dirty and ownClean       *)
 (*     (NoLaunderedServe, FlushCleanCapture)                               *)
 (*   - evals foreignCancel (NoStaleCancelError)                            *)
+(*   - evals sweep and sweepFinal, the sweep's origin and its entry-time   *)
+(*     finality observation (SweepStartsFinal and reachability probes)     *)
 (*   - the invocation ownCancel flag, set only by the actions that model   *)
 (*     that invocation's own ctx.Done arm (CancelOnlyOwn)                  *)
 (*   - TrueRequired and DataRequired, the transitive session-resource      *)
@@ -176,7 +178,7 @@ CONSTANTS
                         \* phase settling metadata before the requested group
                         \* is entered; the ordering lives before the attempt,
                         \* not inside any body.
-    ModelPartDelegation, \* enable EvalDelegateDemand: a running group body
+    ModelPartDelegation, \* enable parent demands and final copy sweeps; a body
                         \* spawns an internal evaluator for a part of a
                         \* dependency (delegation bodies evaluating the
                         \* parent's part, as real container bodies do).
@@ -289,6 +291,14 @@ ContainerGroupNeeds == {<<"gOut", "gMeta">>}
 ContainerPartsTwo == {"pMeta", "pFS"}
 ContainerPartsTwoGroupOf ==
     [p \in ContainerPartsTwo |-> IF p = "pMeta" THEN "gMeta" ELSE "gOut"]
+
+\* A metadata mutation with one snapshot copy. As in containerDelegationGroup,
+\* a delegation group's key equals the part key. Producer groups never match.
+CopyGroups == {"gMeta", "pFS"}
+CopyPartGroupOf ==
+    [p \in ContainerPartsTwo |-> IF p = "pMeta" THEN "gMeta" ELSE p]
+CopyGroupNeeds == {<<"pFS", "gMeta">>}
+DelegationParts == {p \in LazyParts : PartGroupOf[p] = p}
 
 \* Reflexive-transitive closure of GroupNeeds from one group: the set of
 \* groups an evaluator for a part of that group may legitimately touch (the
@@ -584,6 +594,9 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
      \* from the import's dependency-first recompute.
      handle |-> handleVal, required |-> requiredVal,
      lazyCb |-> [g \in LazyGroups |-> "none"],
+     lazyConsumed |-> [g \in LazyGroups |-> TRUE],
+     lazySweepOwner |-> [g \in LazyGroups |-> "none"],
+     lazySweepEval |-> [g \in LazyGroups |-> 0],
      lazyComplete |-> [g \in LazyGroups |-> FALSE],
      lazyPhase |-> [g \in LazyGroups |-> "idle"],
      lazyCancel |-> [g \in LazyGroups |-> FALSE],
@@ -607,6 +620,9 @@ DeadHusk ==
      imported |-> TRUE,
      handle |-> "none", required |-> {},
      lazyCb |-> [g \in LazyGroups |-> "none"],
+     lazyConsumed |-> [g \in LazyGroups |-> TRUE],
+     lazySweepOwner |-> [g \in LazyGroups |-> "none"],
+     lazySweepEval |-> [g \in LazyGroups |-> 0],
      lazyComplete |-> [g \in LazyGroups |-> FALSE],
      lazyPhase |-> [g \in LazyGroups |-> "idle"],
      lazyCancel |-> [g \in LazyGroups |-> FALSE],
@@ -1318,6 +1334,14 @@ PubIndexFresh(o) ==
                        imported |-> FALSE,       \* fresh, not from the store
                        \* group work armed? (the value's per-group callback)
                        lazyCb |-> [g \in LazyGroups |-> lazyArm],
+                       \* Object-side GroupConsumed is separate from the
+                       \* cached callback. After a failed sweep, the next
+                       \* demand rereads the consumed object-side state.
+                       lazyConsumed |-> [g \in LazyGroups |-> lazyArm = "none"],
+                       \* A direct copy borrows its owner's callback token
+                       \* and bookkeeping. Zero eval means no copy is active.
+                       lazySweepOwner |-> [g \in LazyGroups |-> "none"],
+                       lazySweepEval |-> [g \in LazyGroups |-> 0],
                        \* per-group completion latch
                        lazyComplete |-> [g \in LazyGroups |-> FALSE],
                        \* published attempt lifecycle, per group
@@ -2551,14 +2575,16 @@ Restart ==
 (* It is a saturating 0/1 abstraction: several overlapping tails still     *)
 (* retain one release hold, and their final exit clears it.                 *)
 (*                                                                         *)
-(* One attempt has two stages, and evaluateOne consults them before any    *)
-(* object-side lazy state: callback bodies (Directory/File/Container)      *)
+(* evaluateOne consults the attempt before any object-side lazy state.     *)
+(* Callback bodies (Directory/File/Container)                              *)
 (* clear their object-side callback pointer while the attempt is still     *)
 (* running its cache-side bookkeeping (snapshot-lease sync, lease          *)
 (* release), so object-side state is only trustworthy when no attempt is   *)
 (* published. Model phases of one attempt (res[r].lazyPhase[g]):           *)
 (*   "idle"     no attempt is published                                    *)
 (*   "running"  the callback body is running (lazyCb[g] still armed)       *)
+(*   "sweeping" the own body succeeded; final parent copies run before    *)
+(*              the callback returns and bookkeeping begins              *)
 (*   "syncing"  the body succeeded and consumed the object-side callback   *)
 (*              (lazyCb[g] now "none"); the same goroutine is running the  *)
 (*              cache-side bookkeeping                                     *)
@@ -2572,10 +2598,21 @@ Restart ==
 (* others (metadata before snapshot groups). The ordering is enforced at   *)
 (* lead/join (GroupNeedsMet), and the resolution phase                     *)
 (* (EvalResolveDemand) lets an evaluator settle a prerequisite first,     *)
-(* then re-enter demand for its part's own group. Bodies never demand      *)
-(* sibling groups of their own result; with ModelPartDelegation they may   *)
-(* demand parts of a DEPENDENCY (EvalDelegateDemand), which is what real   *)
-(* delegation bodies do.                                                   *)
+(* then re-enter demand for its part's own group. With ModelPartDelegation *)
+(* bodies may demand dependency parts (EvalDelegateDemand), as real       *)
+(* delegation bodies do. After an own body succeeds, EvalSweepDelegation  *)
+(* runs sibling copies under their own group exclusion. The sweep uses    *)
+(* the same running state and EvalBodyFinish as a demanded body. Its       *)
+(* lazySweepOwner identifies the callback whose token and bookkeeping it  *)
+(* shares. A direct copy publishes no cache attempt and has no waiters.    *)
+(* EvalJoin can publish a cache attempt waiting on that copy's mutex.     *)
+(* When the copy releases the mutex, that cache callback resumes and      *)
+(* performs its own sweep and bookkeeping. lazyRunning counts the shared  *)
+(* exclusion once while a copy and a waiting cache attempt coexist.       *)
+(* lazyConsumed models GroupConsumed independently of lazyCb: a sweep     *)
+(* failure leaves a cached callback armed after its own body succeeded.   *)
+(* Without a sweep, lazyConsumed is exactly lazyCb = "none", so the       *)
+(* singleton state encoding remains one-to-one.                           *)
 (*                                                                         *)
 (* Evaluator latched phases mean callback finish stored an attempt-local   *)
 (* outcome and retired the attempt, but that attempt's done-channel close  *)
@@ -2624,7 +2661,8 @@ EvalSpawn ==
                  curGroup |-> PartGroupOf[p],
                  phase |-> IF admitted THEN "demand" ELSE "refused",
                  opActive |-> admitted, foreignCancel |-> FALSE,
-                 fromRes |-> 0, fromGroup |-> "none"])
+                 fromRes |-> 0, fromGroup |-> "none",
+                 sweep |-> FALSE, sweepFinal |-> TRUE])
            /\ sessionRelease' = IF admitted
                 THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                 ELSE sessionRelease
@@ -2666,6 +2704,7 @@ EvalDelegateDemand(r, g) ==
     /\ Len(evals) < MaxEvals
     /\ r \in ResultIds
     /\ res[r].lazyPhase[g] = "running"
+    /\ res[r].lazySweepOwner[g] = "none"
     /\ LET s == res[r].lazyTokenSession[g] IN
        /\ s \in Sessions
        /\ \E parent \in res[r].deps, p \in LazyParts :
@@ -2677,12 +2716,117 @@ EvalDelegateDemand(r, g) ==
                         curGroup |-> PartGroupOf[p],
                         phase |-> IF admitted THEN "demand" ELSE "refused",
                         opActive |-> admitted, foreignCancel |-> FALSE,
-                        fromRes |-> r, fromGroup |-> g])
+                        fromRes |-> r, fromGroup |-> g,
+                        sweep |-> FALSE, sweepFinal |-> TRUE])
                   /\ sessionRelease' = IF admitted
                        THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                        ELSE sessionRelease
     /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, epoch, flushed>>
+
+\* containerParentPartFinal reads the op before its part mapping. An op
+\* with every body consumed represents the nil-pointer case. Otherwise a
+\* refined parent must have consumed metadata before PartGroupOf is read.
+\* Object consumption is sufficient even while cache bookkeeping is owed:
+\* the ordinary parent demand below joins or retries that bookkeeping.
+ParentMetadataFinal(parent) ==
+    \/ \A h \in LazyGroups : res[parent].lazyConsumed[h]
+    \/ IF "gMeta" \in LazyGroups
+       THEN res[parent].lazyConsumed["gMeta"] ELSE FALSE
+
+ParentPartFinal(parent, p) ==
+    IF \A h \in LazyGroups : res[parent].lazyConsumed[h]
+    THEN TRUE
+    ELSE IF ParentMetadataFinal(parent)
+         THEN res[parent].lazyConsumed[PartGroupOf[p]]
+         ELSE FALSE
+
+\* Each configuration fixes one op shape. Equality of group and part keys
+\* identifies its copies, just as consumeFinalParentDelegations does.
+\* Dependency choice abstracts ContainerLazyParent, as EvalDelegateDemand
+\* already does. Busy copies remain candidates: the scan waits for their
+\* group exclusion, then observes consumption before it continues.
+SweepCandidates(r, g) ==
+    {pair \in res[r].deps \X DelegationParts :
+        /\ pair[2] # g
+        /\ ~res[r].lazyConsumed[pair[2]]
+        /\ res[pair[1]].registered
+        /\ ParentPartFinal(pair[1], pair[2])}
+
+AfterBodyPhase(r) ==
+    IF ModelPartDelegation /\ DelegationParts # {} /\ res[r].deps # {}
+    THEN "sweeping" ELSE "syncing"
+
+\* runLazyGroup -> consumeFinalParentDelegations -> EvaluateContainerGroup.
+\* The initiating body has succeeded but its callback has not returned.
+\* Enter the sibling's ordinary running state under that group's exclusion.
+\* The sweep has no external demander and takes no new callback token.
+\* It borrows the initiating callback's lifetime and bookkeeping instead.
+\*
+\* The copy demands the parent's same part through the ordinary
+\* evaluator actions. lazySweepEval records that call. EvalBodyFinish can
+\* consume the copy only after this evaluator returns done. Failure ends
+\* the initiating callback and leaves its own body consumed. EvalNoWork
+\* models prepareLazyGroupEvalLocked rereading that consumed state on the
+\* next demand. That path does not repeat the sweep or sync its leases.
+\* EvalSweepDone advances to bookkeeping only after the copies finish.
+\* EvalDoneComplete keeps its ordinary cache-return check. The copy itself
+\* does not return through Evaluate and does not set lazyComplete.
+\* LazyAttemptDefersCollection follows from the owner's retained token.
+\*
+\* LazyMutualExclusion follows from the same idle/exclusion test used by
+\* EvalStartAttempt. LazyCompleteSettled and LazySuccessPermanent follow
+\* because this action never starts a complete group or marks one complete.
+\* PartServedByItsGroup follows because the internal evaluator names the
+\* copied part and starts at PartGroupOf[p]. The owner's group is never
+\* used as the copied part's producer. SweepStartsFinal independently checks
+\* the finality observation; sweepFinal is evidence, never an action guard.
+EvalSweepDelegation(r, g) ==
+    /\ ModelPartDelegation
+    /\ res[r].lazyPhase[g] = "sweeping"
+    /\ Len(evals) < MaxEvals
+    /\ \A k \in LazyGroups : res[r].lazySweepOwner[k] # g
+    /\ \E pair \in SweepCandidates(r, g) :
+       LET parent == pair[1]
+           p == pair[2]
+           s == res[r].lazyTokenSession[g]
+           admitted == sessionRelease[s].phase = "live" /\ ~flushed.closing
+       IN /\ res[r].lazyPhase[p] = "idle"
+          /\ ~res[r].lazyComplete[p]
+          /\ ~res[r].lazySyncPending[p]
+          /\ \A h \in GroupNeedClosure(p) \ {p} : res[r].lazyConsumed[h]
+          /\ res' = [res EXCEPT
+               ![r].lazyPhase[p] = "running",
+               ![r].lazyRunning[p] = @ + 1,
+               ![r].lazySweepOwner[p] = g,
+               ![r].lazySweepEval[p] = Len(evals) + 1]
+          /\ evals' = Append(evals,
+               [target |-> parent, sess |-> s, part |-> p,
+                curGroup |-> PartGroupOf[p],
+                phase |-> IF admitted THEN "demand" ELSE "refused",
+                opActive |-> admitted, foreignCancel |-> FALSE,
+                fromRes |-> r, fromGroup |-> p,
+                sweep |-> TRUE,
+                sweepFinal |-> ParentMetadataFinal(parent) /\ ParentPartFinal(parent, p)])
+          /\ sessionRelease' = IF admitted
+               THEN [sessionRelease EXCEPT ![s].active = @ + 1]
+               ELSE sessionRelease
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, epoch, flushed>>
+
+\* The scan returns and runLazyGroup reaches clearLazyWhenConsumed. All
+\* modeled copies must return before the original callback can sync leases.
+\* MaxEvals bounds internal calls as well as external calls, as it does for
+\* EvalDelegateDemand. At that bound the remaining scan is omitted; a copy
+\* already started is never omitted. No copy sets a cache completion latch.
+EvalSweepDone(r, g) ==
+    /\ res[r].lazyPhase[g] = "sweeping"
+    /\ \A k \in LazyGroups : res[r].lazySweepOwner[k] # g
+    /\ Len(evals) = MaxEvals \/ SweepCandidates(r, g) = {}
+    /\ res' = [res EXCEPT ![r].lazyCb[g] = "none",
+                          ![r].lazyPhase[g] = "syncing"]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, sessionRelease, evals, epoch, flushed>>
 
 \* A hit loads an imported result's value and registers its lazy work:
 \* ensurePersistedHitValueLoaded calls registerLazyEvaluation after the
@@ -2714,7 +2858,8 @@ ImportedLazyArm(r) ==
          /\ ~res[r].lazyComplete[g]
          /\ ~res[r].lazySyncPending[g]
          /\ res[r].lazyPhase[g] = "idle"
-    /\ res' = [res EXCEPT ![r].lazyCb = [g \in LazyGroups |-> "armed"]]
+    /\ res' = [res EXCEPT ![r].lazyCb = [g \in LazyGroups |-> "armed"],
+                          ![r].lazyConsumed = [g \in LazyGroups |-> FALSE]]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -2728,6 +2873,10 @@ ImportedLazyArm(r) ==
 \* group this returns done; on a prerequisite group (resolution phase) it
 \* re-enters demand for the part's group instead - completing metadata is
 \* an intermediate step of EvaluateParts, never its return.
+\* prepareLazyGroupEvalLocked rereads the object before starting an attempt.
+\* After a failed sweep, the stored callback may remain armed while the
+\* group's own body is consumed. The nil reread discards that callback and
+\* records completion without running either the sweep or lease sync again.
 EvalNoWork(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target
@@ -2736,9 +2885,10 @@ EvalNoWork(e) ==
        IN
        /\ \/ res[r].lazyComplete[k]
           \/ /\ res[r].lazyPhase[k] = "idle"
-             /\ res[r].lazyCb[k] = "none"
+             /\ res[r].lazyCb[k] = "none" \/ res[r].lazyConsumed[k]
              /\ ~res[r].lazySyncPending[k]
-       /\ res' = [res EXCEPT ![r].lazyComplete[k] = TRUE]
+       /\ res' = [res EXCEPT ![r].lazyComplete[k] = TRUE,
+                             ![r].lazyCb[k] = "none"]
        /\ evals' = IF k = main
             THEN [evals EXCEPT ![e].phase = "returnDone",
                                ![e].foreignCancel = FALSE]
@@ -2769,7 +2919,8 @@ EvalStartAttempt(e) ==
        IN
        /\ ~res[r].lazyComplete[k]
        /\ res[r].lazyPhase[k] = "idle"
-       /\ res[r].lazyCb[k] = "armed" \/ res[r].lazySyncPending[k]
+       /\ (res[r].lazyCb[k] = "armed" /\ ~res[r].lazyConsumed[k])
+             \/ res[r].lazySyncPending[k]
        /\ GroupNeedsMet(res[r], k)
        /\ sessionRelease[s].phase = "live"
        /\ res' = [res EXCEPT
@@ -2792,9 +2943,12 @@ EvalStartAttemptRefused(e) ==
     /\ LET r == evals[e].target
            k == evals[e].curGroup
            s == evals[e].sess
-       IN /\ res[r].lazyCb[k] = "armed" \/ res[r].lazySyncPending[k]
+       IN /\ (res[r].lazyCb[k] = "armed" /\ ~res[r].lazyConsumed[k])
+                 \/ res[r].lazySyncPending[k]
           /\ ~res[r].lazyComplete[k]
-          /\ res[r].lazyPhase[k] = "idle"
+          /\ \/ res[r].lazyPhase[k] = "idle"
+             \/ /\ res[r].lazySweepOwner[k] # "none"
+                /\ res[r].lazyTokenSession[k] = 0
           /\ GroupNeedsMet(res[r], k)
           /\ sessionRelease[s].phase # "live"
           /\ evals' = [evals EXCEPT ![e].phase = "returnRefused",
@@ -2807,19 +2961,31 @@ EvalStartAttemptRefused(e) ==
 \* checks only that an attempt is published, and cancellation is
 \* cooperative. The joiner retains this attempt record and retries if its
 \* outcome is foreign cancellation.
+\* During a direct sweep there may be no cache attempt yet. In that case
+\* this publishes the first cache attempt and takes its token, as
+\* evaluateGroup does before its goroutine waits in LazyState.EvaluateGroup.
+\* The direct copy keeps the group exclusion until EvalBodyFinish. Later
+\* callers join this cache attempt normally. No second body starts here.
 EvalJoin(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target
            k == evals[e].curGroup
+           s == evals[e].sess
+           publish == res[r].lazyTokenSession[k] = 0
        IN
        /\ ~res[r].lazyComplete[k]
-       /\ res[r].lazyPhase[k] \in {"running", "syncing"}
+       /\ res[r].lazyPhase[k] \in {"running", "sweeping", "syncing"}
+       /\ ~publish \/ sessionRelease[s].phase = "live"
        /\ GroupNeedsMet(res[r], k)
-       /\ res' = [res EXCEPT ![r].lazyWaiters[k] = @ + 1]
+       /\ res' = [res EXCEPT ![r].lazyWaiters[k] = @ + 1,
+                             ![r].lazyTokenSession[k] = IF publish THEN s ELSE @]
        /\ evals' = [evals EXCEPT ![e].phase = "waiting",
                                  ![e].foreignCancel = FALSE]
+       /\ sessionRelease' = IF publish
+            THEN [sessionRelease EXCEPT ![s].active = @ + 1]
+            ELSE sessionRelease
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease,
+                   sessionEdges, countedEdges,
                    epoch, flushed>>
 
 \* The callback body finishes while the attempt keeps running. Success
@@ -2827,7 +2993,8 @@ EvalJoin(e) ==
 \* their Lazy pointer inside the body) and the same goroutine proceeds to
 \* the cache-side bookkeeping stage. Failure ends the whole attempt: the
 \* outcome is latched on the retained waiters and the attempt is retired,
-\* with the body left armed for a later attempt. The retry decision is
+\* with the cached callback retained until its next object-state check.
+\* The retry decision is
 \* per-error (lazyEvalErrorCausedByContext), not per-stage: a failure
 \* attributable to the attempt's canceled callback context latches as
 \* foreign cancellation, which healthy waiters retry, while a genuine body
@@ -2836,29 +3003,56 @@ EvalBodyFinish(r, g) ==
     /\ r \in ResultIds
     /\ res[r].lazyPhase[g] = "running"
     /\ res[r].lazyRunning[g] > 0
-    /\ res[r].lazyTokenSession[g] \in Sessions
     \* A body blocks on the delegation demands it issued: it cannot finish
     \* while an internal evaluator it spawned is still pending.
     /\ \A e \in EvalIds :
          (evals[e].fromRes = r /\ evals[e].fromGroup = g)
              => evals[e].phase \in EvalTerminalPhases
-    /\ LET s == res[r].lazyTokenSession[g] IN
-       \E outcome \in ({"bodyOk"}
-            \cup (IF LazyCanFail THEN {"bodyFail"} ELSE {})
-            \cup (IF res[r].lazyCancel[g] THEN {"bodyCancel"} ELSE {})) :
+    /\ LET swept == res[r].lazySweepOwner[g] # "none"
+           owner == IF swept THEN res[r].lazySweepOwner[g] ELSE g
+           s == res[r].lazyTokenSession[owner]
+           parentDone == IF swept
+                         THEN evals[res[r].lazySweepEval[g]].phase = "done"
+                         ELSE TRUE
+           parentFailed == IF swept
+                           THEN evals[res[r].lazySweepEval[g]].phase \in {"failedCallback", "refused"}
+                           ELSE FALSE
+           cacheWaiting == swept /\ res[r].lazyTokenSession[g] # 0
+           \* Releasing a direct copy's exclusion is the same body-finish
+           \* boundary as an ordinary group. Its owner still holds the
+           \* callback token. A failed copy retires that owner's attempt.
+           releasedCopy == IF swept
+                THEN [res EXCEPT ![r].lazyRunning[g] = IF cacheWaiting THEN @ ELSE @ - 1,
+                                 ![r].lazyPhase[g] = IF cacheWaiting THEN "running" ELSE "idle",
+                                 ![r].lazySweepOwner[g] = "none",
+                                 ![r].lazySweepEval[g] = 0]
+                ELSE res
+       IN
+       /\ s \in Sessions
+       /\ \E outcome \in ((IF parentDone THEN {"bodyOk"} ELSE {})
+            \cup (IF LazyCanFail \/ parentFailed THEN {"bodyFail"} ELSE {})
+            \cup (IF res[r].lazyCancel[owner] THEN {"bodyCancel"} ELSE {})) :
         IF outcome = "bodyOk"
-        THEN /\ res' = [res EXCEPT ![r].lazyCb[g] = "none",
-                                   ![r].lazyPhase[g] = "syncing"]
+        THEN /\ res' = IF swept
+                 THEN [releasedCopy EXCEPT
+                       ![r].lazyCb[g] = IF cacheWaiting /\ AfterBodyPhase(r) = "sweeping"
+                                       THEN @ ELSE "none",
+                       ![r].lazyConsumed[g] = TRUE,
+                       ![r].lazyPhase[g] = IF cacheWaiting THEN AfterBodyPhase(r) ELSE @]
+                 ELSE [res EXCEPT ![r].lazyConsumed[g] = TRUE,
+                                  ![r].lazyCb[g] = IF AfterBodyPhase(r) = "syncing"
+                                                  THEN "none" ELSE @,
+                                  ![r].lazyPhase[g] = AfterBodyPhase(r)]
              \* The same goroutine continues into bookkeeping, so the
              \* callback token stays held and no exit is staged.
              /\ UNCHANGED <<evals, sessionRelease>>
-        ELSE /\ res' = [res EXCEPT
-                  ![r].lazyRunning[g] = @ - 1,
-                  ![r].lazyPhase[g] = "idle",
-                  ![r].lazyCancel[g] = FALSE,
-                  ![r].lazyWaiters[g] = 0,
-                  ![r].lazyTokenSession[g] = 0]
-             /\ evals' = LatchEvalOutcomes(r, g,
+        ELSE /\ res' = [releasedCopy EXCEPT
+                  ![r].lazyRunning[owner] = @ - 1,
+                  ![r].lazyPhase[owner] = "idle",
+                  ![r].lazyCancel[owner] = FALSE,
+                  ![r].lazyWaiters[owner] = 0,
+                  ![r].lazyTokenSession[owner] = 0]
+             /\ evals' = LatchEvalOutcomes(r, owner,
                   IF outcome = "bodyFail"
                   THEN "latchedFail" ELSE "latchedCancel")
              /\ sessionRelease' = IF sessionRelease[s].exitingLazy = 0
@@ -2963,12 +3157,15 @@ EvalAbandon(e) ==
     \* attempt's cancel), never on its own initiative - it has no caller
     \* of its own.
     /\ evals[e].fromRes # 0 =>
-         res[evals[e].fromRes].lazyCancel[evals[e].fromGroup]
+         LET r == evals[e].fromRes
+             g == evals[e].fromGroup
+             owner == res[r].lazySweepOwner[g]
+         IN res[r].lazyCancel[IF owner = "none" THEN g ELSE owner]
     /\ LET r == evals[e].target
            k == evals[e].curGroup
            current == evals[e].phase = "waiting"
            last == current /\ res[r].lazyWaiters[k] = 1
-       IN /\ ~current \/ res[r].lazyPhase[k] \in {"running", "syncing"}
+       IN /\ ~current \/ res[r].lazyPhase[k] \in {"running", "sweeping", "syncing"}
           /\ res' = IF current
                     THEN [res EXCEPT
                          ![r].lazyWaiters[k] = @ - 1,
@@ -3050,6 +3247,7 @@ Next ==
     \/ \E r \in 1..Len(res), g \in LazyGroups :
          EvalBodyFinish(r, g) \/ EvalSyncFinish(r, g)
            \/ EvalDelegateDemand(r, g)
+           \/ EvalSweepDelegation(r, g) \/ EvalSweepDone(r, g)
     \/ \E r \in 1..Len(res) : ImportedLazyArm(r)
     \/ \E s \in Sessions : EvalCallbackTokenExit(s)
     \/ BeginClose
@@ -3135,8 +3333,15 @@ LazyCallbackCloseProgress(e) == EvalCallbackClose(e)
 \* not. Fairness sits on the disjunction of both finish shapes for the
 \* same reason it does for attachment: weak fairness on the success arm
 \* alone would wrongly forbid persistent failure.
+\* The scan is callback progress too. It starts at most MaxEvals internal
+\* calls. Each call follows EvalProgress. A busy sibling either consumes
+\* its body or releases its exclusion, so the scan eventually advances.
+\* Sources are consumed before scanning, so scans cannot wait on each other
+\* through an unconsumed sibling cycle. Dependency demands follow the acyclic
+\* result graph. EvalEventuallyTerminal therefore includes swept callbacks.
 LazyCallbackProgress(r, g) ==
     EvalBodyFinish(r, g) \/ EvalSyncFinish(r, g)
+      \/ EvalSweepDelegation(r, g) \/ EvalSweepDone(r, g)
 
 \* Publishing a release plan and consuming assigned cleanup are system
 \* progress. ReleaseSessionMark itself remains an external event.
@@ -3278,12 +3483,17 @@ TypeOK ==
     /\ \A r \in ResultIds :
          /\ \A g \in LazyGroups :
               /\ res[r].lazyWaiters[g] >= 0 /\ res[r].lazyRunning[g] >= 0
-              /\ res[r].lazyPhase[g] \in {"idle", "running", "syncing"}
+              /\ res[r].lazyPhase[g] \in {"idle", "running", "sweeping", "syncing"}
               /\ res[r].lazyCb[g] \in {"none", "armed"}
+              /\ res[r].lazyConsumed[g] \in BOOLEAN
+              /\ res[r].lazySweepOwner[g] \in LazyGroups \cup {"none"}
+              /\ res[r].lazySweepEval[g] \in 0..Len(evals)
+              /\ (res[r].lazySweepOwner[g] = "none") = (res[r].lazySweepEval[g] = 0)
               /\ res[r].lazyCancel[g] \in BOOLEAN
               /\ res[r].lazySyncPending[g] \in BOOLEAN
               /\ res[r].lazyTokenSession[g] \in Sessions \cup {0}
-              /\ (res[r].lazyRunning[g] = 0) = (res[r].lazyTokenSession[g] = 0)
+              /\ (res[r].lazyRunning[g] = 0) =
+                   (res[r].lazyTokenSession[g] = 0 /\ res[r].lazySweepOwner[g] = "none")
          /\ res[r].imported \in BOOLEAN
          /\ res[r].decodePhase \in {"idle", "running"}
          /\ res[r].decodeErr \in {"none", "fail", "cancel"}
@@ -3309,6 +3519,8 @@ TypeOK ==
     /\ \A e \in EvalIds :
          /\ evals[e].phase \in EvalPhaseDomain
          /\ evals[e].foreignCancel \in BOOLEAN
+         /\ evals[e].sweep \in BOOLEAN
+         /\ evals[e].sweepFinal \in BOOLEAN
          /\ evals[e].sess \in Sessions
          /\ evals[e].opActive \in BOOLEAN
          /\ evals[e].part \in LazyParts
@@ -3556,6 +3768,7 @@ LazyCompleteSettled ==
     \A r \in ResultIds, g \in LazyGroups :
         res[r].lazyComplete[g] =>
             /\ res[r].lazyCb[g] = "none"
+            /\ res[r].lazyConsumed[g]
             /\ ~res[r].lazySyncPending[g]
             /\ res[r].lazyPhase[g] = "idle"
 
@@ -3584,15 +3797,42 @@ PartServedByItsGroup ==
     \A e \in EvalIds :
         evals[e].curGroup \in GroupNeedClosure(PartGroupOf[evals[e].part])
 
-\* No group attempt exists before its prerequisites completed: the
-\* metadata-first rule as an observable state property. Enforced by the
-\* GroupNeedsMet guard on lead (and vacuously on join); completion is
-\* permanent, so an attempt in flight witnesses its prerequisites'
-\* completion for its whole lifetime.
+\* Cache attempts require completed prerequisites, including bookkeeping.
+\* Direct copies require consumed prerequisites on the object instead.
+\* This lets metadata itself trigger a snapshot copy before its callback
+\* returns. A cache attempt waiting on a direct copy still uses the cache
+\* prerequisite rule. Completion is permanent throughout each attempt.
 GroupOrderRespected ==
     \A r \in ResultIds, g \in LazyGroups :
-        res[r].lazyPhase[g] \in {"running", "syncing"} =>
-            GroupNeedsMet(res[r], g)
+        res[r].lazyPhase[g] \in {"running", "sweeping", "syncing"} =>
+            IF res[r].lazyTokenSession[g] # 0
+            THEN GroupNeedsMet(res[r], g)
+            ELSE \A h \in GroupNeedClosure(g) \ {g} : res[r].lazyConsumed[h]
+
+\* A copy retains its initiating callback until the parent demand and copy
+\* finish. Its own optional token belongs to a cache caller waiting for the
+\* same exclusion. The internal demand names exactly the copied part.
+SweepOwnerActive ==
+    \A r \in ResultIds, g \in LazyGroups :
+        res[r].lazySweepOwner[g] # "none" =>
+            LET owner == res[r].lazySweepOwner[g]
+                e == res[r].lazySweepEval[g]
+            IN /\ owner # g
+               /\ res[r].lazyPhase[owner] = "sweeping"
+               /\ res[r].lazyConsumed[owner]
+               /\ res[r].lazyTokenSession[owner] \in Sessions
+               /\ res[r].lazyTokenSession[g] = 0 => res[r].lazyWaiters[g] = 0
+               /\ res[r].lazyPhase[g] = "running"
+               /\ ~res[r].lazyConsumed[g]
+               /\ e \in EvalIds
+               /\ evals[e].sweep
+               /\ evals[e].fromRes = r /\ evals[e].fromGroup = g
+               /\ evals[e].part = g
+
+\* Finality is observed at sweep entry, before evaluating the parent's part.
+\* A later parent completion cannot hide an unsolicited demand of work that
+\* was unfinished at entry. This also checks metadata before mapping.
+SweepStartsFinal == \A e \in EvalIds : evals[e].sweep => evals[e].sweepFinal
 
 \* An Evaluate caller never returns a cancellation error caused by another
 \* waiter. foreignCancel becomes true when the canceled callback's outcome is
