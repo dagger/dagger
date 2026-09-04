@@ -449,6 +449,108 @@ func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
 		if err := waitLazyRetryError(t, eval, "parts evaluation"); err != nil {
 			t.Fatal(err)
 		}
+
+		// Once every concurrent attempt is retired, the result-wide state is
+		// complete regardless of which attempt reached retirement first.
+		shared := res.cacheSharedResult()
+		shared.lazyMu.Lock()
+		partial := lazyPartsEvaluationPartialLocked(shared, res)
+		shared.lazyMu.Unlock()
+		if partial {
+			t.Fatal("fully evaluated parts result must not report partial work")
+		}
+	})
+}
+
+func TestEvaluatePartsAbandonedSiblingMarksResumeBlocked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, c := newPartsTestCache(t, nil)
+		spanExporter := &cacheTestSpanExporter{}
+		tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+		defer tracerProvider.Shutdown(t.Context())
+
+		producerCtx, producerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "parts producer")
+		injected := errors.New("metadata body exploded")
+		outEntered := make(chan struct{})
+		var outCtx context.Context
+		attempts := make(chan *lazyEvalAttempt, 2)
+		c.testAfterLazyEvalFinish = func(attempt *lazyEvalAttempt) {
+			attempts <- attempt
+		}
+
+		obj := &cacheTestPartsObject{Value: 1}
+		obj.resolveFn = partsTestDirectResolve
+		obj.groupEval = map[LazyGroupKey]LazyEvalFunc{
+			partsTestGroupMeta: func(context.Context) error {
+				<-outEntered
+				return injected
+			},
+			partsTestGroupOut: func(ctx context.Context) error {
+				outCtx = ctx
+				close(outEntered)
+				<-ctx.Done()
+				return context.Cause(ctx)
+			},
+		}
+		res := newPartsTestResult(t, c, producerCtx, obj)
+
+		consumerCtx, consumerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "parts consumer")
+		err := c.EvaluateParts(consumerCtx, res, partsTestPartMeta, partsTestPartFS)
+		if !errors.Is(err, injected) {
+			t.Fatalf("parts evaluation returned %v, want %v", err, injected)
+		}
+		consumerSpan.End()
+
+		var abandonedAttempt *lazyEvalAttempt
+		for range 2 {
+			attempt := <-attempts
+			if attempt.retry {
+				if abandonedAttempt != nil {
+					t.Fatal("more than one attempt was abandoned")
+				}
+				abandonedAttempt = attempt
+			}
+		}
+		if abandonedAttempt == nil {
+			t.Fatal("output attempt was not marked for retry")
+		}
+		if outCtx == nil || context.Cause(outCtx) == nil {
+			t.Fatal("output attempt context was not canceled")
+		}
+		if !errors.Is(abandonedAttempt.err, context.Cause(outCtx)) {
+			t.Fatalf("output attempt returned %v, want its context cancellation %v", abandonedAttempt.err, context.Cause(outCtx))
+		}
+		if !lazyEvalErrorCausedByContext(outCtx, abandonedAttempt.err) {
+			t.Fatal("output attempt error must be classified as its own context cancellation")
+		}
+
+		producerSpan.End()
+		if err := tracerProvider.ForceFlush(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+
+		spanExporter.mu.Lock()
+		spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+		spanExporter.mu.Unlock()
+		var sawOutputResume bool
+		for _, span := range spans {
+			if span.Name() != "resume parts-test (out)" {
+				continue
+			}
+			sawOutputResume = true
+			var blocked bool
+			for _, attr := range span.Attributes() {
+				if string(attr.Key) == telemetryattrs.DagBlockedAttr {
+					blocked = attr.Value.AsBool()
+				}
+			}
+			if !blocked {
+				t.Fatal("abandoned output resume span must report that it was blocked")
+			}
+		}
+		if !sawOutputResume {
+			t.Fatal("output resume span was not recorded")
+		}
 	})
 }
 
