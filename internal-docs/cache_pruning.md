@@ -752,10 +752,11 @@ detailed response for disk-stage removals.
 
 ## Persistence And Restart
 
-Structural pruning uses graph state already stored by persistence schema 17.
-It does not change `cachePersistenceSchemaVersion` or add persisted fields.
+Structural pruning uses the existing persisted graph state and adds no fields.
+Container part persistence now uses schema 18; older stores are wiped under the
+ordinary format-version policy. This format change does not alter pruning.
 
-A schema-17 cache imports normally. The startup GC scheduled after one second
+A current-format cache imports normally. The startup GC scheduled after one second
 can then trim cold roots if the imported estimate exceeds the maximum. The
 oversized graph is necessarily loaded before that pass, so an upgrade can have
 a temporary import-memory peak. This is a known limitation, not a schema hard

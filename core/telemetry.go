@@ -376,7 +376,7 @@ func normalizeRef(ref string) string {
 
 // recordStatus records the status of a call on a span.
 func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
-	if cached && !dagql.HasPendingLazyEvaluation(res) {
+	if cached && !dagql.HasPendingLazyComputation(res) {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 
@@ -411,7 +411,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 }
 
 func recordPending(res dagql.AnyResult, span trace.Span) {
-	if dagql.HasPendingLazyEvaluation(res) {
+	if dagql.HasPendingLazyComputation(res) {
 		span.SetAttributes(attribute.Bool(telemetry.PendingAttr, true))
 	}
 }

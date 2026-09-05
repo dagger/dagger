@@ -417,10 +417,10 @@ func (container *Container) LazyEvalFuncForGroup(group dagql.LazyGroupKey) dagql
 }
 
 // runLazyGroup runs one group's body and clears container.Lazy once the
-// op's last group is consumed, which keeps the two existing whole-result
-// signals truthful: LazyEvalFunc() != nil means "something is still
-// deferred", and persistence's ready-form selection (Lazy == nil) keeps
-// meaning "fully materialized".
+// op's last group is consumed. LazyEvalFunc() != nil continues to mean that
+// computation or opening a saved output is still deferred. Persistence captures
+// completion separately from consumed groups and immutable saved descriptors;
+// clearing this operational pointer is not its completion boundary.
 func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerParts, group dagql.LazyGroupKey) error {
 	if err := op.EvaluateContainerGroup(ctx, container, group); err != nil {
 		return err
