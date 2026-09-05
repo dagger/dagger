@@ -279,6 +279,27 @@ func ContextWithClientScope(ctx context.Context, scope ClientScope) (context.Con
 	return ContextWithClientMetadata(ctx, metadata), nil
 }
 
+// NestedClientParentID returns the client that may create a nested client
+// from this context: the one whose scope it holds. Client metadata may name a
+// workspace-owning ancestor while the held scope names the client actually
+// executing the operation, and only the held scope is authority to create a
+// child; deriving the parent from metadata would let cache or workspace
+// metadata choose the transport's parent.
+func NestedClientParentID(ctx context.Context, sessionID string) (string, error) {
+	parentScope, ok := ClientScopeFromContext(ctx)
+	if !ok {
+		return "", errors.New("nested client setup requires a held parent client scope")
+	}
+	if parentScope.SessionID() != sessionID {
+		return "", fmt.Errorf(
+			"nested client parent scope session %q does not match nested session %q",
+			parentScope.SessionID(),
+			sessionID,
+		)
+	}
+	return parentScope.ClientID(), nil
+}
+
 func ClientScopeFromContext(ctx context.Context) (ClientScope, bool) {
 	scope, ok := ctx.Value(clientScopeContextKey{}).(ClientScope)
 	return scope, ok

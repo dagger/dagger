@@ -1078,11 +1078,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.nestedClientMetadata.ClientStableID = randid.NewID()
 
-	// Client metadata may deliberately name a workspace-owning ancestor while
-	// the held scope names the client actually executing this operation. Only
-	// the held scope is authority to create a child; using callerClientID here
-	// would let cache/workspace metadata choose the transport's parent.
-	parentClientID, err := nestedClientParentID(ctx, state.nestedClientMetadata.SessionID)
+	parentClientID, err := engine.NestedClientParentID(ctx, state.nestedClientMetadata.SessionID)
 	if err != nil {
 		return err
 	}
@@ -1173,21 +1169,6 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}))
 
 	return nil
-}
-
-func nestedClientParentID(ctx context.Context, sessionID string) (string, error) {
-	parentScope, ok := engine.ClientScopeFromContext(ctx)
-	if !ok {
-		return "", errors.New("nested client setup requires a held parent client scope")
-	}
-	if parentScope.SessionID() != sessionID {
-		return "", fmt.Errorf(
-			"nested client parent scope session %q does not match nested session %q",
-			parentScope.SessionID(),
-			sessionID,
-		)
-	}
-	return parentScope.ClientID(), nil
 }
 
 // nestedClientTransportManager is the process-level proxy capability for one
