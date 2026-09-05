@@ -180,6 +180,7 @@ CONSTANTS
                         \* phase settling metadata before the requested group
                         \* is entered; the ordering lives before the attempt,
                         \* not inside any body.
+    ModelContainerPartPersistence, \* preserve consumed parts and defer saved opens
     ModelPartDelegation, \* enable parent demands and final copy sweeps; a body
                         \* spawns an internal evaluator for a part of a
                         \* dependency (delegation bodies evaluating the
@@ -301,6 +302,57 @@ CopyPartGroupOf ==
     [p \in ContainerPartsTwo |-> IF p = "pMeta" THEN "gMeta" ELSE p]
 CopyGroupNeeds == {<<"pFS", "gMeta">>}
 DelegationParts == {p \in LazyParts : PartGroupOf[p] = p}
+
+\* The optional container persistence shape adds local opening groups. They
+\* are reserved, inactive groups on fresh results. The direct metadata key
+\* represents a caller's scan lifetime, never a cache attempt or a producer.
+OpenGroup(p) == "open:" \o p
+DirectMetadataGroup == "directMetadata"
+OriginalGroups == {PartGroupOf[p] : p \in LazyParts}
+StoredGroups == {OpenGroup(p) : p \in LazyParts \ {"pMeta"}}
+RestoreGroups == ContainerGroups \cup StoredGroups \cup {DirectMetadataGroup}
+RestoreCopyGroups == {"gMeta"} \cup (LazyParts \ {"pMeta"}) \cup StoredGroups \cup {DirectMetadataGroup}
+RestoreCopyPartGroupOf == [p \in LazyParts |-> IF p = "pMeta" THEN "gMeta" ELSE p]
+RestoreGroupNeeds == {<<g, "gMeta">> : g \in LazyGroups \ {"gMeta", DirectMetadataGroup}}
+GroupParts(g) == {p \in LazyParts : PartGroupOf[p] = g}
+MappedGroup(rec, p) ==
+    IF ModelContainerPartPersistence /\ p # "pMeta" /\ p \in rec.savedParts
+    THEN OpenGroup(p) ELSE PartGroupOf[p]
+OpeningParts(rec, g) ==
+    IF ModelContainerPartPersistence
+    THEN {p \in rec.savedParts \ {"pMeta"} : OpenGroup(p) = g} ELSE {}
+IsCopyCandidate(rec, p) == MappedGroup(rec, p) = p
+IsStoredOpen(rec, g) ==
+    ModelContainerPartPersistence /\ g \in {OpenGroup(p) : p \in rec.savedParts \ {"pMeta"}}
+
+\* Independent semantic evidence: partComputed changes only at original body
+\* success. The encoder instead reads saved descriptors and GroupConsumed.
+\* Envelope-only rows have no live object and carry their original records.
+LiveComputed(rec) ==
+    IF rec.payload = "envelope" THEN rec.savedParts
+    ELSE {p \in LazyParts : p \in rec.savedParts \/ rec.lazyConsumed[PartGroupOf[p]]}
+CapturedParts(rec) ==
+    IF ~ModelContainerPartPersistence THEN {}
+    ELSE IF "pMeta" \notin LiveComputed(rec) THEN {}
+    ELSE LiveComputed(rec)
+
+\* Legal imported completion is uniform within an original joint group.
+\* Only rootfs and exec metadata can be absent. An absence is a completed
+\* value, so it is seeded and never needs an opening callback.
+LegalSavedParts ==
+    {ps \in SUBSET LazyParts :
+        /\ ps = {} \/ "pMeta" \in ps
+        /\ \A g \in OriginalGroups : GroupParts(g) \subseteq ps \/ GroupParts(g) \cap ps = {}}
+
+InstallContainerParts(rec) ==
+    IF ~ModelContainerPartPersistence THEN rec
+    ELSE LET consumed == [g \in LazyGroups |->
+                  IF g \in OriginalGroups THEN GroupParts(g) \subseteq rec.savedParts
+                  ELSE IF IsStoredOpen(rec, g)
+                       THEN \E p \in rec.absentParts : OpenGroup(p) = g
+                       ELSE TRUE]
+         IN [rec EXCEPT !.lazyConsumed = consumed,
+                        !.lazyCb = [g \in LazyGroups |-> IF consumed[g] THEN "none" ELSE "armed"]]
 
 \* Reflexive-transitive closure of GroupNeeds from one group: the set of
 \* groups an evaluator for a part of that group may legitimately touch (the
@@ -579,8 +631,8 @@ DecAndCascade(rf, r) == Cascade([rf EXCEPT ![r].own = @ - 1])
 (***************************************************************************)
 
 ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFlag,
-               handleVal, requiredVal) ==
-    [call |-> c, registered |-> TRUE, released |-> FALSE,
+               handleVal, requiredVal, savedVal, absentVal) ==
+    LET rec == [call |-> c, registered |-> TRUE, released |-> FALSE,
      own |-> ownVal, deps |-> depsSet,
      \* The persistence schema records deps with no kind distinction, so a
      \* pre-restart retention edge comes back as an ordinary dep: imported
@@ -597,6 +649,10 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      \* the import row (env.SessionResourceHandle), required is the STORED set
      \* from the import's dependency-first recompute.
      handle |-> handleVal, required |-> requiredVal,
+     savedParts |-> savedVal, partComputed |-> savedVal, absentParts |-> absentVal,
+     openDemand |-> {}, badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
+     successfulOpens |-> {},
+     directVisited |-> FALSE,
      lazyCb |-> [g \in LazyGroups |-> "none"],
      lazyConsumed |-> [g \in LazyGroups |-> TRUE],
      lazySweepOwner |-> [g \in LazyGroups |-> "none"],
@@ -608,6 +664,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      lazyWaiters |-> [g \in LazyGroups |-> 0],
      lazyRunning |-> [g \in LazyGroups |-> 0],
      lazyTokenSession |-> [g \in LazyGroups |-> 0]]
+    IN IF payloadVal = "decoded" THEN InstallContainerParts(rec) ELSE rec
 
 \* A collected result's ID is never reused, so after a restart the slots of
 \* results that were not in the snapshot stay as dead husks - present in
@@ -623,6 +680,10 @@ DeadHusk ==
      dirtyAtSnapshot |-> FALSE,
      imported |-> TRUE,
      handle |-> "none", required |-> {},
+     savedParts |-> {}, partComputed |-> {}, absentParts |-> {},
+     openDemand |-> {}, badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
+     successfulOpens |-> {},
+     directVisited |-> FALSE,
      lazyCb |-> [g \in LazyGroups |-> "none"],
      lazyConsumed |-> [g \in LazyGroups |-> TRUE],
      lazySweepOwner |-> [g \in LazyGroups |-> "none"],
@@ -643,7 +704,20 @@ ImportRowChoices(pos) ==
     [call : Calls, persisted : BOOLEAN,
      deps : {{}} \cup {{d} : d \in 1..(pos-1)},
      payload : {"decoded", "envelope"},
-     handle : {"none"} \cup Handles]
+     handle : {"none"} \cup Handles,
+     saved : IF ModelContainerPartPersistence THEN LegalSavedParts ELSE {{}},
+     absent : IF ModelContainerPartPersistence THEN SUBSET (LazyParts \cap {"pFS", "pXMeta"}) ELSE {{}}]
+
+\* Focus the two-result opening/sweep question on a completed parent and
+\* a child with one saved sibling and one pending copy. The empty initial
+\* graph remains available, so fresh publication, sweep, and capture are
+\* still explored. This scopes input rows, not transitions or completion.
+ContainerSweepImportRows(pos) ==
+    [call : Calls, persisted : {TRUE},
+     deps : IF pos = 1 THEN {{}} ELSE {{1}},
+     payload : {"decoded"}, handle : {"none"},
+     saved : IF pos = 1 THEN {LazyParts} ELSE {{"pMeta", "pXMeta"}},
+     absent : {{}}]
 
 \* Own-handle contribution of a row: {handle} unless the row has none.
 OwnHandleReq(h) == IF h = "none" THEN {} ELSE {h}
@@ -664,7 +738,12 @@ ImportRequiredFinal(D, handleOf, depsOf) ==
 \* Every row must be retained: a persisted root, or a dependency of some
 \* row. (A flushed store contains only the retained graph.)
 ImportGraphRetained(g) ==
-    \A x \in 1..Len(g) :
+    /\ \A x \in 1..Len(g) :
+         /\ g[x].absent \subseteq g[x].saved
+         /\ ModelContainerPartPersistence =>
+              \A d \in g[x].deps, p \in DelegationParts :
+                   p \in g[x].saved => p \in g[d].saved
+    /\ \A x \in 1..Len(g) :
         g[x].persisted \/ \E y \in 1..Len(g) : x \in g[y].deps
 
 ImportOwn(g, x) ==
@@ -679,7 +758,7 @@ ImportGraphState(g) ==
     IN [x \in 1..n |->
         ImportedResult(g[x].call, g[x].persisted, g[x].deps,
                        ImportOwn(g, x), g[x].payload, FALSE,
-                       g[x].handle, required[x])]
+                       g[x].handle, required[x], g[x].saved, g[x].absent)]
 
 InitialResStates ==
     IF ModelPersistence /\ ImportInit
@@ -688,7 +767,8 @@ InitialResStates ==
                         \cup {<<a>> : a \in ImportRowChoices(1)}
                         \cup {<<a, b>> : a \in ImportRowChoices(1),
                                          b \in ImportRowChoices(2)} :
-                    ImportGraphRetained(h)}}
+                    /\ ImportGraphRetained(h)
+                    /\ ~ModelContainerPartPersistence \/ Len(h) <= MaxResults}}
     ELSE {<<>>}
 
 RegisteredResultIds == {r \in ResultIds : res[r].registered}
@@ -1337,11 +1417,19 @@ PubIndexFresh(o) ==
                        \* on sharedResult (cache.go:2032-2041), per group:
                        imported |-> FALSE,       \* fresh, not from the store
                        \* group work armed? (the value's per-group callback)
-                       lazyCb |-> [g \in LazyGroups |-> lazyArm],
+                       savedParts |-> {}, absentParts |-> {}, openDemand |-> {},
+                       partComputed |-> IF ModelContainerPartPersistence /\ lazyArm = "none"
+                                        THEN LazyParts ELSE {},
+                       badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
+                       successfulOpens |-> {}, directVisited |-> FALSE,
+                       lazyCb |-> [g \in LazyGroups |->
+                            IF ModelContainerPartPersistence /\ g \notin OriginalGroups
+                            THEN "none" ELSE lazyArm],
                        \* Object-side GroupConsumed is separate from the
                        \* cached callback. After a failed sweep, the next
                        \* demand rereads the consumed object-side state.
-                       lazyConsumed |-> [g \in LazyGroups |-> lazyArm = "none"],
+                       lazyConsumed |-> [g \in LazyGroups |-> lazyArm = "none"
+                            \/ (ModelContainerPartPersistence /\ g \notin OriginalGroups)],
                        \* A direct copy borrows its owner's callback token
                        \* and bookkeeping. Zero eval means no copy is active.
                        lazySweepOwner |-> [g \in LazyGroups |-> "none"],
@@ -1360,7 +1448,9 @@ PubIndexFresh(o) ==
                        lazyRunning |-> [g \in LazyGroups |-> 0],
                        \* active callback token owner, per group
                        lazyTokenSession |-> [g \in LazyGroups |-> 0]]
-        IN /\ res' = Append(withDeps, newRes)
+        IN /\ (ModelContainerPartPersistence /\ lazyArm = "none") =>
+                  \A d \in deps, p \in DelegationParts : p \in res[d].partComputed
+           /\ res' = Append(withDeps, newRes)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
                                  ![o].resId = Len(res) + 1]
@@ -2027,7 +2117,7 @@ DecodeInstall(i) ==
        \* to import and publication and is read under egraphMu. (The install
        \* used to copy both fields from the shell, which reduced a non-leaf's
        \* stored set to its own handle and raced the lookup filter's read.)
-       /\ res' = [res EXCEPT ![r].payload = "decoded"]
+       /\ res' = [res EXCEPT ![r] = InstallContainerParts([res[r] EXCEPT !.payload = "decoded"])]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -2442,7 +2532,7 @@ KeptByPersistedRoot(r) ==
 \* point. This atomic closing flag rejects every later cache admission.
 BeginClose ==
     /\ ModelPersistence
-    /\ epoch = 1
+    /\ epoch = 1 \/ ModelContainerPartPersistence
     /\ ~flushed.done
     /\ ~flushed.closing
     /\ \A s \in Sessions :
@@ -2453,7 +2543,7 @@ BeginClose ==
 
 Flush ==
     /\ ModelPersistence
-    /\ epoch = 1
+    /\ epoch = 1 \/ ModelContainerPartPersistence
     /\ ~flushed.done
     /\ flushed.closing
     \* Quiescence includes the operation counters and completed deferred
@@ -2463,6 +2553,16 @@ Flush ==
     /\ flushed' = [flushed EXCEPT !.done = TRUE,
          !.rows = [r \in 1..Len(res) |->
          [keep      |-> KeptByPersistedRoot(r),
+          parts     |-> CapturedParts(res[r]),
+          observed  |-> IF ModelContainerPartPersistence THEN res[r].partComputed ELSE {},
+          absent    |-> res[r].absentParts,
+          closureRequired |-> IF ModelContainerPartPersistence
+              THEN \E root \in ResultIds :
+                  /\ res[root].persisted
+                  /\ DepReachable(res, root, r)
+                  /\ \A d \in ResultIds : DepReachable(res, root, d) =>
+                       res[d].registered /\ res[d].barrier \in {"none", "closedOk"}
+              ELSE FALSE,
           call      |-> res[r].call,
           persisted |-> res[r].persisted,
           deps      |-> res[r].deps,
@@ -2515,7 +2615,7 @@ Restart ==
                     pm[x],
                     flushed.rows[x].dirty,
                     flushed.rows[x].handle,
-                    required[x])
+                    required[x], flushed.rows[x].parts, flushed.rows[x].absent)
              ELSE DeadHusk]
     /\ invocations' = invocations
     /\ ongoingCalls' = [o \in OngoingCallIds |->
@@ -2541,7 +2641,8 @@ Restart ==
     /\ sessionRelease' = [s \in Sessions |->
          [phase |-> "live", snap |-> {}, active |-> 0, exitingLazy |-> 0,
           handles |-> {}]]
-    /\ flushed' = [flushed EXCEPT !.closing = FALSE]
+    /\ flushed' = [flushed EXCEPT !.closing = FALSE,
+         !.done = IF ModelContainerPartPersistence THEN FALSE ELSE @]
 
 ---------------------------------------------------------------------------
 (***************************************************************************)
@@ -2659,13 +2760,17 @@ EvalSpawn ==
     /\ Len(evals) < MaxEvals
     /\ ~flushed.closing
     /\ \E r \in ResultIds, s \in Sessions, p \in LazyParts :
+       \E wanted \in (IF ModelContainerPartPersistence THEN {{p}, LazyParts} ELSE {{p}}) :
         /\ res[r].registered
+        /\ ~ModelContainerPartPersistence \/ res[r].payload = "decoded"
         /\ res[r].barrier \notin {"open", "closedErr"}
         /\ <<s, r>> \in sessionEdges
         /\ LET admitted == sessionRelease[s].phase = "live" IN
+           /\ res' = IF ModelContainerPartPersistence /\ admitted
+                     THEN [res EXCEPT ![r].openDemand = @ \cup wanted] ELSE res
            /\ evals' = Append(evals,
                 [target |-> r, sess |-> s, part |-> p,
-                 curGroup |-> PartGroupOf[p],
+                 curGroup |-> MappedGroup(res[r], p),
                  phase |-> IF admitted THEN "demand" ELSE "refused",
                  opActive |-> admitted, foreignCancel |-> FALSE,
                  fromRes |-> 0, fromGroup |-> "none",
@@ -2673,7 +2778,7 @@ EvalSpawn ==
            /\ sessionRelease' = IF admitted
                 THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                 ELSE sessionRelease
-    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, epoch, flushed>>
 
 \* The resolution phase: an evaluator in demand whose current group has an
@@ -2711,16 +2816,20 @@ EvalDelegateDemand(r, g) ==
     /\ Len(evals) < MaxEvals
     /\ r \in ResultIds
     /\ res[r].lazyPhase[g] = "running"
+    /\ ~ModelContainerPartPersistence \/ g \in OriginalGroups
     /\ res[r].lazySweepOwner[g] = "none"
     /\ LET s == res[r].lazyTokenSession[g] IN
        /\ s \in Sessions
        /\ \E parent \in res[r].deps, p \in LazyParts :
             /\ res[parent].registered
+            /\ ~ModelContainerPartPersistence \/ res[parent].payload = "decoded"
             /\ LET admitted == /\ sessionRelease[s].phase = "live"
                                /\ ~flushed.closing
-               IN /\ evals' = Append(evals,
+               IN /\ res' = IF ModelContainerPartPersistence /\ admitted
+                            THEN [res EXCEPT ![parent].openDemand = @ \cup {p}] ELSE res
+                  /\ evals' = Append(evals,
                        [target |-> parent, sess |-> s, part |-> p,
-                        curGroup |-> PartGroupOf[p],
+                        curGroup |-> MappedGroup(res[parent], p),
                         phase |-> IF admitted THEN "demand" ELSE "refused",
                         opActive |-> admitted, foreignCancel |-> FALSE,
                         fromRes |-> r, fromGroup |-> g,
@@ -2728,7 +2837,7 @@ EvalDelegateDemand(r, g) ==
                   /\ sessionRelease' = IF admitted
                        THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                        ELSE sessionRelease
-    /\ UNCHANGED <<invocations, res, ongoingCalls, ongoingCallIndex,
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
                    sessionEdges, countedEdges, epoch, flushed>>
 
 \* containerParentPartFinal reads the op before its part mapping. An op
@@ -2737,15 +2846,17 @@ EvalDelegateDemand(r, g) ==
 \* Object consumption is sufficient even while cache bookkeeping is owed:
 \* the ordinary parent demand below joins or retries that bookkeeping.
 ParentMetadataFinal(parent) ==
-    \/ \A h \in LazyGroups : res[parent].lazyConsumed[h]
-    \/ IF "gMeta" \in LazyGroups
-       THEN res[parent].lazyConsumed["gMeta"] ELSE FALSE
+    /\ ~ModelContainerPartPersistence \/ res[parent].payload = "decoded"
+    /\ \/ \A h \in LazyGroups : res[parent].lazyConsumed[h]
+       \/ IF "gMeta" \in LazyGroups
+          THEN res[parent].lazyConsumed["gMeta"] ELSE FALSE
 
 ParentPartFinal(parent, p) ==
-    IF \A h \in LazyGroups : res[parent].lazyConsumed[h]
+    IF ModelContainerPartPersistence /\ res[parent].payload # "decoded" THEN FALSE
+    ELSE IF \A h \in LazyGroups : res[parent].lazyConsumed[h]
     THEN TRUE
     ELSE IF ParentMetadataFinal(parent)
-         THEN res[parent].lazyConsumed[PartGroupOf[p]]
+         THEN res[parent].lazyConsumed[MappedGroup(res[parent], p)]
          ELSE FALSE
 
 \* Each configuration fixes one op shape. Equality of group and part keys
@@ -2756,7 +2867,8 @@ ParentPartFinal(parent, p) ==
 SweepCandidates(r, g) ==
     {pair \in res[r].deps \X DelegationParts :
         /\ pair[2] # g
-        /\ ~res[r].lazyConsumed[pair[2]]
+        /\ IsCopyCandidate(res[r], pair[2])
+        /\ ~res[r].lazyConsumed[MappedGroup(res[r], pair[2])]
         /\ res[pair[1]].registered
         /\ ParentPartFinal(pair[1], pair[2])}
 
@@ -2796,26 +2908,34 @@ EvalSweepDelegation(r, g) ==
     /\ \E pair \in SweepCandidates(r, g) :
        LET parent == pair[1]
            p == pair[2]
+           k == MappedGroup(res[r], p)
+           opening == IsStoredOpen(res[r], k)
            s == res[r].lazyTokenSession[g]
            admitted == sessionRelease[s].phase = "live" /\ ~flushed.closing
-       IN /\ res[r].lazyPhase[p] = "idle"
-          /\ ~res[r].lazyComplete[p]
-          /\ ~res[r].lazySyncPending[p]
-          /\ \A h \in GroupNeedClosure(p) \ {p} : res[r].lazyConsumed[h]
+       IN /\ res[r].lazyPhase[k] = "idle"
+          /\ ~res[r].lazyComplete[k]
+          /\ ~res[r].lazySyncPending[k]
+          /\ \A h \in GroupNeedClosure(k) \ {k} : res[r].lazyConsumed[h]
           /\ res' = [res EXCEPT
-               ![r].lazyPhase[p] = "running",
-               ![r].lazyRunning[p] = @ + 1,
-               ![r].lazySweepOwner[p] = g,
-               ![r].lazySweepEval[p] = Len(evals) + 1]
-          /\ evals' = Append(evals,
+               ![r].badCompute = @ \/ (ModelContainerPartPersistence
+                   /\ k \in OriginalGroups /\ p \in res[r].partComputed),
+               ![r].badOpen = @ \/ ~OpeningParts(res[r], k) \subseteq res[r].openDemand,
+               ![r].badReopen = @ \/ OpeningParts(res[r], k) \cap res[r].successfulOpens # {},
+               ![r].lazyPhase[k] = "running",
+               ![r].lazyRunning[k] = @ + 1,
+               ![r].lazySweepOwner[k] = g,
+               ![r].lazySweepEval[k] = IF opening THEN 0 ELSE Len(evals) + 1,
+               ![parent].openDemand = IF ModelContainerPartPersistence /\ ~opening /\ admitted
+                                     THEN @ \cup {p} ELSE @]
+          /\ evals' = IF opening THEN evals ELSE Append(evals,
                [target |-> parent, sess |-> s, part |-> p,
-                curGroup |-> PartGroupOf[p],
+                curGroup |-> MappedGroup(res[parent], p),
                 phase |-> IF admitted THEN "demand" ELSE "refused",
                 opActive |-> admitted, foreignCancel |-> FALSE,
-                fromRes |-> r, fromGroup |-> p,
+                fromRes |-> r, fromGroup |-> k,
                 sweep |-> TRUE,
                 sweepFinal |-> ParentMetadataFinal(parent) /\ ParentPartFinal(parent, p)])
-          /\ sessionRelease' = IF admitted
+          /\ sessionRelease' = IF ~opening /\ admitted
                THEN [sessionRelease EXCEPT ![s].active = @ + 1]
                ELSE sessionRelease
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
@@ -2830,10 +2950,38 @@ EvalSweepDone(r, g) ==
     /\ res[r].lazyPhase[g] = "sweeping"
     /\ \A k \in LazyGroups : res[r].lazySweepOwner[k] # g
     /\ Len(evals) = MaxEvals \/ SweepCandidates(r, g) = {}
-    /\ res' = [res EXCEPT ![r].lazyCb[g] = "none",
-                          ![r].lazyPhase[g] = "syncing"]
+    /\ IF ModelContainerPartPersistence /\ g = DirectMetadataGroup
+       THEN /\ res' = [res EXCEPT ![r].lazyPhase[g] = "idle",
+                                  ![r].lazyRunning[g] = 0,
+                                  ![r].lazyTokenSession[g] = 0]
+            /\ sessionRelease' = FinishSessionOperation(sessionRelease, res[r].lazyTokenSession[g])
+       ELSE /\ res' = [res EXCEPT ![r].lazyCb[g] = "none",
+                                  ![r].lazyPhase[g] = "syncing"]
+            /\ UNCHANGED sessionRelease
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
-                   sessionEdges, countedEdges, sessionRelease, evals, epoch, flushed>>
+                   sessionEdges, countedEdges, evals, epoch, flushed>>
+
+\* A direct Container runner still scans after its metadata no-op. Cache
+\* metadata no-body returns use EvalNoWork and do not enter this action.
+\* The reserved key owns only this caller lifetime; no part maps to it.
+EvalDirectMetadata ==
+    /\ ModelContainerPartPersistence
+    /\ ~flushed.closing
+    /\ \E r \in ResultIds, s \in Sessions :
+        /\ res[r].registered /\ res[r].payload = "decoded"
+        /\ res[r].barrier \notin {"open", "closedErr"}
+        /\ <<s, r>> \in sessionEdges
+        /\ sessionRelease[s].phase = "live"
+        /\ res[r].lazyConsumed["gMeta"]
+        /\ ~res[r].directVisited
+        /\ res[r].lazyPhase[DirectMetadataGroup] = "idle"
+        /\ res' = [res EXCEPT ![r].directVisited = TRUE,
+             ![r].lazyPhase[DirectMetadataGroup] = "sweeping",
+             ![r].lazyRunning[DirectMetadataGroup] = 1,
+             ![r].lazyTokenSession[DirectMetadataGroup] = s]
+        /\ sessionRelease' = [sessionRelease EXCEPT ![s].active = @ + 1]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, evals, epoch, flushed>>
 
 \* A hit loads an imported result's value and registers its lazy work:
 \* ensurePersistedHitValueLoaded calls registerLazyEvaluation after the
@@ -2850,6 +2998,7 @@ EvalSweepDone(r, g) ==
 \* payload still carries its recipe.
 ImportedLazyArm(r) ==
     /\ ModelLazy
+    /\ ~ModelContainerPartPersistence
     /\ r \in ResultIds
     /\ res[r].registered
     /\ res[r].imported
@@ -2888,7 +3037,7 @@ EvalNoWork(e) ==
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target
            k == evals[e].curGroup
-           main == PartGroupOf[evals[e].part]
+           main == MappedGroup(res[evals[e].target], evals[e].part)
        IN
        /\ \/ res[r].lazyComplete[k]
           \/ /\ res[r].lazyPhase[k] = "idle"
@@ -2933,6 +3082,13 @@ EvalStartAttempt(e) ==
        /\ res' = [res EXCEPT
             ![r].lazyPhase[k] = IF res[r].lazyCb[k] = "armed"
                                 THEN "running" ELSE "syncing",
+            ![r].badCompute = @ \/ (ModelContainerPartPersistence
+                /\ ~res[r].lazySyncPending[k] /\ k \in OriginalGroups
+                /\ GroupParts(k) \cap res[r].partComputed # {}),
+            ![r].badOpen = @ \/ (~res[r].lazySyncPending[k]
+                /\ ~OpeningParts(res[r], k) \subseteq res[r].openDemand),
+            ![r].badReopen = @ \/ (~res[r].lazySyncPending[k]
+                /\ OpeningParts(res[r], k) \cap res[r].successfulOpens # {}),
             ![r].lazyCancel[k] = FALSE,
             ![r].lazyWaiters[k] = @ + 1,
             ![r].lazyRunning[k] = @ + 1,
@@ -3019,10 +3175,13 @@ EvalBodyFinish(r, g) ==
            owner == IF swept THEN res[r].lazySweepOwner[g] ELSE g
            s == res[r].lazyTokenSession[owner]
            parentDone == IF swept
-                         THEN evals[res[r].lazySweepEval[g]].phase = "done"
-                         ELSE TRUE
+                         THEN res[r].lazySweepEval[g] = 0 \/ evals[res[r].lazySweepEval[g]].phase = "done"
+                         ELSE IF ModelContainerPartPersistence /\ g \in DelegationParts /\ res[r].deps # {}
+                              THEN \E parent \in res[r].deps :
+                                  g \in res[parent].partComputed /\ ParentPartFinal(parent, g)
+                              ELSE TRUE
            parentFailed == IF swept
-                           THEN evals[res[r].lazySweepEval[g]].phase \in {"failedCallback", "refused"}
+                           THEN res[r].lazySweepEval[g] # 0 /\ evals[res[r].lazySweepEval[g]].phase \in {"failedCallback", "refused"}
                            ELSE FALSE
            cacheWaiting == swept /\ res[r].lazyTokenSession[g] # 0
            \* Releasing a direct copy's exclusion is the same body-finish
@@ -3044,9 +3203,16 @@ EvalBodyFinish(r, g) ==
                  THEN [releasedCopy EXCEPT
                        ![r].lazyCb[g] = IF cacheWaiting /\ AfterBodyPhase(r) = "sweeping"
                                        THEN @ ELSE "none",
+                       ![r].partComputed = IF ModelContainerPartPersistence
+                           THEN @ \cup GroupParts(g) ELSE @,
+                       ![r].successfulOpens = @ \cup OpeningParts(res[r], g),
                        ![r].lazyConsumed[g] = TRUE,
                        ![r].lazyPhase[g] = IF cacheWaiting THEN AfterBodyPhase(r) ELSE @]
-                 ELSE [res EXCEPT ![r].lazyConsumed[g] = TRUE,
+                 ELSE [res EXCEPT
+                                  ![r].successfulOpens = @ \cup OpeningParts(res[r], g),
+                                  ![r].partComputed = IF ModelContainerPartPersistence /\ g \in OriginalGroups
+                                      THEN @ \cup GroupParts(g) ELSE @,
+                                  ![r].lazyConsumed[g] = TRUE,
                                   ![r].lazyCb[g] = IF AfterBodyPhase(r) = "syncing"
                                                   THEN "none" ELSE @,
                                   ![r].lazyPhase[g] = AfterBodyPhase(r)]
@@ -3139,7 +3305,7 @@ EvalCallbackClose(e) ==
 \* one.
 EvalWake(e) ==
     /\ evals[e].phase \in EvalWakePhases
-    /\ LET main == PartGroupOf[evals[e].part] IN
+    /\ LET main == MappedGroup(res[evals[e].target], evals[e].part) IN
        evals' = [evals EXCEPT
          ![e].phase = CASE @ = "wakeDone" ->
                               IF evals[e].curGroup = main
@@ -3246,6 +3412,7 @@ Next ==
     \/ BindResource
     \/ AddDepLate
     \/ EvalSpawn
+    \/ EvalDirectMetadata
     \/ \E e \in EvalIds :
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
          \/ EvalJoin(e) \/ EvalCallbackClose(e) \/ EvalWake(e)
@@ -3498,12 +3665,21 @@ TypeOK ==
               /\ res[r].lazyConsumed[g] \in BOOLEAN
               /\ res[r].lazySweepOwner[g] \in LazyGroups \cup {"none"}
               /\ res[r].lazySweepEval[g] \in 0..Len(evals)
-              /\ (res[r].lazySweepOwner[g] = "none") = (res[r].lazySweepEval[g] = 0)
+              /\ IF IsStoredOpen(res[r], g) THEN res[r].lazySweepEval[g] = 0
+                 ELSE (res[r].lazySweepOwner[g] = "none") = (res[r].lazySweepEval[g] = 0)
               /\ res[r].lazyCancel[g] \in BOOLEAN
               /\ res[r].lazySyncPending[g] \in BOOLEAN
               /\ res[r].lazyTokenSession[g] \in Sessions \cup {0}
               /\ (res[r].lazyRunning[g] = 0) =
                    (res[r].lazyTokenSession[g] = 0 /\ res[r].lazySweepOwner[g] = "none")
+         /\ res[r].savedParts \subseteq LazyParts
+         /\ res[r].partComputed \subseteq LazyParts
+         /\ res[r].absentParts \subseteq res[r].savedParts
+         /\ res[r].openDemand \subseteq LazyParts
+         /\ res[r].badCompute \in BOOLEAN /\ res[r].badOpen \in BOOLEAN
+         /\ res[r].badReopen \in BOOLEAN
+         /\ res[r].successfulOpens \subseteq res[r].savedParts
+         /\ res[r].directVisited \in BOOLEAN
          /\ res[r].imported \in BOOLEAN
          /\ res[r].decodePhase \in {"idle", "running"}
          /\ res[r].decodeErr \in {"none", "fail", "cancel"}
@@ -3767,7 +3943,7 @@ LazyMutualExclusion ==
 EvalDoneComplete ==
     \A e \in EvalIds :
         evals[e].phase = "done" =>
-            res[evals[e].target].lazyComplete[PartGroupOf[evals[e].part]]
+            res[evals[e].target].lazyComplete[MappedGroup(res[evals[e].target], evals[e].part)]
 
 \* Completion is only ever recorded with every stage of THAT group
 \* settled: the object-side callback consumed, no bookkeeping pending, no
@@ -3805,7 +3981,7 @@ LazyAttemptDefersCollection ==
 \* group is remapped to a run group.
 PartServedByItsGroup ==
     \A e \in EvalIds :
-        evals[e].curGroup \in GroupNeedClosure(PartGroupOf[evals[e].part])
+        evals[e].curGroup \in GroupNeedClosure(MappedGroup(res[evals[e].target], evals[e].part))
 
 \* Cache attempts require completed prerequisites, including bookkeeping.
 \* Direct copies require consumed prerequisites on the object instead.
@@ -3834,10 +4010,11 @@ SweepOwnerActive ==
                /\ res[r].lazyTokenSession[g] = 0 => res[r].lazyWaiters[g] = 0
                /\ res[r].lazyPhase[g] = "running"
                /\ ~res[r].lazyConsumed[g]
-               /\ e \in EvalIds
-               /\ evals[e].sweep
-               /\ evals[e].fromRes = r /\ evals[e].fromGroup = g
-               /\ evals[e].part = g
+               /\ IF IsStoredOpen(res[r], g) THEN e = 0
+                  ELSE /\ e \in EvalIds
+                       /\ evals[e].sweep
+                       /\ evals[e].fromRes = r /\ evals[e].fromGroup = g
+                       /\ MappedGroup(res[r], evals[e].part) = g
 
 \* Finality is observed at sweep entry, before evaluating the parent's part.
 \* A later parent completion cannot hide an unsolicited demand of work that
@@ -3923,5 +4100,40 @@ DeferredReleaseEventuallyCompletes ==
 EventuallyTerminal ==
     \A i \in 1..MaxInvocations :
         (i \in InvocationIds) ~> (i \in InvocationIds /\ invocations[i].phase \in TerminalPhases)
+
+\* Compare the encoder's projection to independent body-success evidence.
+\* This detects both dropped completion (including swept copies without a
+\* cache completion latch) and invented completion from pending pre-seeds.
+ContainerCaptureExact ==
+    ModelContainerPartPersistence /\ flushed.done =>
+        \A r \in DOMAIN flushed.rows : flushed.rows[r].keep =>
+            flushed.rows[r].parts = flushed.rows[r].observed
+ContainerJointCompletion ==
+    ModelContainerPartPersistence /\ flushed.done =>
+        \A r \in DOMAIN flushed.rows : flushed.rows[r].keep =>
+            flushed.rows[r].parts \in LegalSavedParts
+StoredPartsNeverComputed == \A r \in ResultIds : ~res[r].badCompute
+StoredOpenRequiresDemand == \A r \in ResultIds : ~res[r].badOpen
+StoredOpenNotRepeated == \A r \in ResultIds : ~res[r].badReopen
+ContainerDecodePreserves ==
+    ModelContainerPartPersistence =>
+        \A r \in ResultIds : res[r].registered =>
+            /\ res[r].savedParts \subseteq res[r].partComputed
+            /\ LiveComputed(res[r]) = res[r].partComputed
+ContainerClosureComplete ==
+    ModelContainerPartPersistence /\ flushed.done =>
+        \A r \in DOMAIN flushed.rows :
+            flushed.rows[r].keep = flushed.rows[r].closureRequired
+
+\* A stored value must be available when its part returns, independently of
+\* the dispatch mapping under test. This catches a stale producer latch that
+\* reports success without opening the saved snapshot.
+ContainerPartReturnedReady ==
+    ModelContainerPartPersistence =>
+        \A e \in EvalIds :
+            LET r == evals[e].target
+                p == evals[e].part
+            IN (evals[e].phase = "done" /\ p \in res[r].savedParts \ {"pMeta"}) =>
+                res[r].lazyConsumed[OpenGroup(p)]
 
 =============================================================================

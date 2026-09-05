@@ -76,3 +76,26 @@ to that map; cheap ones belong in `quickConfigs` too). On failure, the
 message names the configuration and how its outcome diverged from the
 expectation. Because CI no longer runs any of this, the full suite
 before pushing is the only line of defense: do not skip it.
+
+Container part persistence is opt-in through `ModelContainerPartPersistence`.
+Existing configurations set it to false. Their new fields have one fixed inert
+value, and routing reduces to the original part mapping. The enabled model
+compares the encoder's consumed-group projection with separate body-success
+evidence, retains saved descriptors across two process epochs, and routes saved
+snapshots to independent local opening groups. A second flush can preserve an
+unopened typed value or an encoded envelope.
+
+The direct metadata owner represents the caller's operation lifetime while it
+scans parent copies. It has no part, cache completion, or bookkeeping callback.
+Demand evidence belongs to the requested container and part. The explicit parent
+request made by a copy records demand on the parent; selecting the child copy
+records no demand on that child. This distinction lets an incorrect stored-copy
+selection fail the opening assertion itself.
+
+For this feature, the approved bounded validation plan supersedes the full-suite
+instruction above: use `quick`, the exact `lazy` anchor, the affected `lazy_parts`,
+`lazy_parts_prereq`, and `lazy_parts_delegate` shapes, and the three new
+`container_part_restart`, `container_sweep_restart`, and `container_joint_restore`
+shapes. Record exhaustive counts separately from simulation, reachability probes,
+and deliberately broken variants. The new configuration costs and final probe
+results are still being measured; none is added to `quickConfigs` yet.
