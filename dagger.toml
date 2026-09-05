@@ -119,10 +119,12 @@ source = "github.com/dagger/go-sdk"
 source = ".dagger/modules/engine-lab"
 
 [modules.engine-lab.settings]
+
 # Dagger Cloud auth for the from-source CLI, so commands that talk to Cloud
 # run logged in as you. Resolved from the host on use; commands still work
 # (logged out) when the file isn't there.
 cloudCredentials = "file://~/.config/dagger/credentials.json"
+
 # LLM provider config for clients that connect to the nested dev engine.
 daggerConfig = "file://~/.config/dagger/config.toml"
 
@@ -131,6 +133,7 @@ source = ".dagger/modules/tui-qa"
 
 [modules.tui-qa.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
+
 # LLM provider config for clients that connect to the nested dev engine.
 daggerConfig = "file://~/.config/dagger/config.toml"
 
@@ -149,6 +152,9 @@ source = "github.com/vito/agents/contributor"
 [modules.contributor.settings]
 githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
+
+[modules.go-cli]
+source = ".dagger/modules/go-cli"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
