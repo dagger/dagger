@@ -2736,6 +2736,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::currentTimestamp",
+			"p": "Dagger/Client.html#method_currentTimestamp",
+			"d": "<p>The current UTC time in RFC3339 format. Never cached.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::currentTypeDefs",
 			"p": "Dagger/Client.html#method_currentTypeDefs",
 			"d": "<p>The TypeDef representations of the objects currently being served in the session.</p>"

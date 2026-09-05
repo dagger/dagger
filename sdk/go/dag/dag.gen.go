@@ -104,6 +104,12 @@ func CurrentNode() dagger.Node {
 	return client.CurrentNode()
 }
 
+// The current UTC time in RFC3339 format. Never cached.
+func CurrentTimestamp(ctx context.Context) (string, error) {
+	client := initClient()
+	return client.CurrentTimestamp(ctx)
+}
+
 // The TypeDef representations of the objects currently being served in the session.
 func CurrentTypeDefs(ctx context.Context, opts ...dagger.CurrentTypeDefsOpts) ([]dagger.TypeDef, error) {
 	client := initClient()
