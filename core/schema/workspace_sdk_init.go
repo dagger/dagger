@@ -72,7 +72,7 @@ func effectiveSDKModuleSettings(
 	if err != nil {
 		return nil, err
 	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
 		effective, err = workspace.ApplyEnvOverlay(effective, envName)
 		if err != nil {
 			return nil, err

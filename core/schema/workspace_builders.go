@@ -141,7 +141,7 @@ func (s *workspaceSchema) withConfigValue(
 	}
 
 	writeKey := args.Key
-	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok && !isExplicitEnvConfigKey(args.Key) {
 		writeKey, err = envScopedConfigKey(staged.Config, envName, args.Key, workspaceConfigInitIfMissing)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -178,7 +178,7 @@ func (s *workspaceSchema) withoutConfigValue(
 	}
 
 	unsetKey := args.Key
-	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok && !isExplicitEnvConfigKey(args.Key) {
 		unsetKey, err = envScopedConfigKey(staged.Config, envName, args.Key, workspaceConfigMustExist)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -289,7 +289,7 @@ func (s *workspaceSchema) withModuleInstall(
 	}
 
 	var plan workspaceInstallConfigPlan
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		plan, err = planWorkspaceEnvInstallConfig(staged.Config, envName, args, resolved.Name, resolved.ConfigSource)
 	} else {
 		plan, err = planWorkspaceInstallConfig(staged.Config, args, resolved.Name, resolved.ConfigSource)
@@ -328,7 +328,7 @@ func (s *workspaceSchema) withSDK(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	// Reject before the ref is resolved and fetched; the plan keeps the same
 	// check as a backstop for other callers.
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs cannot be installed in env %q; install SDKs in the base workspace config", envName)
 	}
 	return s.withModuleInstall(ctx, parent, workspaceInstallArgs{
@@ -353,7 +353,7 @@ func (s *workspaceSchema) withoutModule(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		if _, installed := staged.Config.Modules[args.Name]; installed {
 			if _, isSDK := workspace.SDKNameForModule(staged.Config, args.Name); isSDK {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
@@ -455,7 +455,7 @@ func (s *workspaceSchema) withoutSDK(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceUninstallArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	if _, ok := selectedWorkspaceEnv(ctx); ok {
+	if _, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; uninstall SDKs in the base workspace config")
 	}
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent.Self(), workspaceConfigMustExist, args.Here)
@@ -592,7 +592,7 @@ func (s *workspaceSchema) withUpdatedModules(
 	}
 
 	effective := staged.Config
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
 		effective, err = workspace.ApplyEnvOverlay(effective, envName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err

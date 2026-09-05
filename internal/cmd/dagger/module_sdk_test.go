@@ -81,7 +81,7 @@ func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
 		{args: []string{"module", "init", "go", "--starter", "empty"}, wantSDK: "go"},
 		{args: []string{"module", "client", "add", "go", "database", "--runtime", "bun"}, wantSDK: "go"},
 	} {
-		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(test.args))
+		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(rootCmd, test.args))
 		require.True(t, ok, test.args)
 		require.Equal(t, test.wantSDK, sdk, test.args)
 	}
