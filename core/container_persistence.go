@@ -496,9 +496,7 @@ func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.Pa
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		if stored.Path != "" {
-			dir.Dir.setValue(stored.Path)
-		}
+		dir.Dir.setValue(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
 			dir.Snapshot.setValue(ref)
 			dest.setValue(dir)
@@ -514,9 +512,7 @@ func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.Pa
 			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 			Platform: stored.Platform, Services: slices.Clone(stored.Services),
 		}
-		if stored.Path != "" {
-			file.File.setValue(stored.Path)
-		}
+		file.File.setValue(stored.Path)
 		publish = func(ref bkcache.ImmutableRef) {
 			file.Snapshot.setValue(ref)
 			mnt.FileSource.setValue(file)

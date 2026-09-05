@@ -132,6 +132,10 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
+// 18: container payloads retain completion and snapshot descriptors per part,
+// replacing the whole-container ready/recipe split. Older payloads cannot
+// express that distinction and are wiped on import.
+//
 // 17: module object private-field handles became tracked dependency results
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been

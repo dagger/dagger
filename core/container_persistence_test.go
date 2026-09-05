@@ -8,6 +8,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -22,13 +30,14 @@ type containerPersistenceTestSnapshots struct {
 	mu         sync.Mutex
 	opens      map[string]int
 	releases   map[string]int
+	owners     map[string]string
 	beforeOpen func(context.Context, string) error
 }
 
 func newContainerPersistenceTestSnapshots() *containerPersistenceTestSnapshots {
 	return &containerPersistenceTestSnapshots{
 		cacheVolumeTestSnapshotManager: &cacheVolumeTestSnapshotManager{},
-		opens:                          map[string]int{}, releases: map[string]int{},
+		opens:                          map[string]int{}, releases: map[string]int{}, owners: map[string]string{},
 	}
 }
 
@@ -61,12 +70,14 @@ func (m *containerPersistenceTestSnapshots) openCount(id string) int {
 func (m *containerPersistenceTestSnapshots) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.owners[leaseID] = snapshotID
 	return m.cacheVolumeTestSnapshotManager.AttachLease(ctx, leaseID, snapshotID)
 }
 
 func (m *containerPersistenceTestSnapshots) RemoveLease(ctx context.Context, leaseID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.owners, leaseID)
 	return m.cacheVolumeTestSnapshotManager.RemoveLease(ctx, leaseID)
 }
 
@@ -386,4 +397,314 @@ func TestContainerPersistedPartsRejectMissingCompletedValue(t *testing.T) {
 	parts[ContainerPartFS] = persistedContainerPart{Kind: containerPartPending}
 	err = ctr.installContainerParts(t.Context(), nil, true, parts, nil, nil)
 	require.ErrorContains(t, err, "has no recipe")
+}
+
+func containerPersistenceSpanAttrs(attrs []attribute.KeyValue) map[string]attribute.Value {
+	out := map[string]attribute.Value{}
+	for _, attr := range attrs {
+		out[string(attr.Key)] = attr.Value
+	}
+	return out
+}
+
+func TestContainerRestoreReportingAndBookkeepingRetry(t *testing.T) {
+	for _, pendingSibling := range []bool{false, true} {
+		t.Run(map[bool]string{false: "stored only", true: "pending sibling"}[pendingSibling], func(t *testing.T) {
+			manager := newContainerPersistenceTestSnapshots()
+			ctx, cache, srv := containerPersistenceTestCache(t, "", manager, "reporting")
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context()))) })
+			tracer := provider.Tracer("stored-container-reporting")
+			producerCtx, producer := tracer.Start(ctx, "produce container")
+			stored := map[dagql.PartKey]containerStoredPart{
+				ContainerPartFS: {Kind: containerPartDirectory, Role: "fs", SnapshotID: "saved", Path: "/"},
+			}
+			var recipe LazyContainerParts
+			if pendingSibling {
+				op := &containerPartsTestBaseOp{LazyState: NewLazyState()}
+				op.seedConsumedGroups(ContainerLazyGroupMetadata, containerDelegationGroup(ContainerPartFS))
+				recipe = op
+			} else {
+				stored[ContainerPartExecMeta] = containerStoredPart{Kind: containerPartAbsent}
+			}
+			ctr := containerPersistenceTestRestore(stored, recipe)
+			res := attachContainerPartsTestResult(t, producerCtx, cache, srv, "reporting", "restored-reporting", ctr)
+			producer.End()
+			installCtx, install := tracer.Start(ctx, "return existing container")
+			res = attachContainerPartsTestResult(t, installCtx, cache, srv, "reporting", "restored-reporting", ctr)
+			install.End()
+			require.True(t, dagql.HasPendingLazyEvaluation(res))
+			require.Equal(t, pendingSibling, dagql.HasPendingLazyComputation(res))
+			pending := &telemetryTestSpan{}
+			recordPending(res, pending)
+			require.Equal(t, pendingSibling, containerPersistenceSpanAttrs(pending.attrs)[telemetry.PendingAttr].AsBool())
+			status := &telemetryTestSpan{}
+			recordStatus(ctx, res, status, true, nil)
+			require.Equal(t, !pendingSibling, containerPersistenceSpanAttrs(status.attrs)[telemetry.CachedAttr].AsBool())
+
+			cleanupErr := errors.New("operation lease release failed")
+			var releases atomic.Int32
+			ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
+				return ctx, func(context.Context) error {
+					if releases.Add(1) == 1 {
+						return cleanupErr
+					}
+					return nil
+				}, nil
+			}))
+			consumerCtx, consumer := tracer.Start(ctx, "read saved filesystem")
+			require.ErrorIs(t, cache.EvaluateParts(consumerCtx, res, ContainerPartFS), cleanupErr)
+			require.Equal(t, 1, manager.openCount("saved"))
+			require.Equal(t, pendingSibling, ctr.lazyOpForRouting() != nil)
+			require.Equal(t, pendingSibling, dagql.HasPendingLazyComputation(res))
+			require.True(t, dagql.HasPendingLazyEvaluation(res), "bookkeeping remains retryable after body consumption")
+			require.NoError(t, cache.EvaluateParts(consumerCtx, res, ContainerPartFS))
+			consumer.End()
+			require.Equal(t, 1, manager.openCount("saved"), "bookkeeping retry must not reopen")
+			var opens []sdktrace.ReadOnlySpan
+			for _, span := range recorder.Ended() {
+				if span.Name() == "open stored part (fs)" {
+					opens = append(opens, span)
+				}
+			}
+			require.Len(t, opens, 2, "purpose survives clearing the recipe pointer")
+			require.Equal(t, codes.Error, opens[0].Status().Code)
+			require.False(t, containerPersistenceSpanAttrs(opens[0].Attributes())[telemetry.CachedAttr].AsBool())
+			attrs := containerPersistenceSpanAttrs(opens[1].Attributes())
+			require.True(t, attrs[telemetry.CachedAttr].AsBool())
+			require.Equal(t, pendingSibling, attrs[telemetryattrs.DagPartialAttr].AsBool())
+			for _, span := range opens {
+				foundCause := false
+				for _, link := range span.Links() {
+					if link.SpanContext.SpanID() == install.SpanContext().SpanID() && containerPersistenceSpanAttrs(link.Attributes)[telemetry.LinkPurposeAttr].AsString() == telemetry.LinkPurposeCause {
+						foundCause = true
+					}
+				}
+				require.True(t, foundCause, "stored attempts retain their install call's failure attribution")
+			}
+			if pendingSibling {
+				require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartExecMeta))
+			}
+			require.False(t, dagql.HasPendingLazyComputation(res))
+			require.False(t, dagql.HasPendingLazyEvaluation(res))
+		})
+	}
+}
+
+func TestContainerRestoreSnapshotOwnershipAndRelease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		manager := newContainerPersistenceTestSnapshots()
+		ctx, cache, srv := containerPersistenceTestCache(t, "", manager, "owner-a")
+		newOwner := func() *Container {
+			return containerPersistenceTestRestore(map[dagql.PartKey]containerStoredPart{
+				ContainerPartFS:       {Kind: containerPartDirectory, Role: "fs", SnapshotID: "shared", Path: "/"},
+				ContainerPartExecMeta: {Kind: containerPartSnapshot, Role: "meta", SnapshotID: "closed-meta"},
+			}, nil)
+		}
+		first, second := newOwner(), newOwner()
+		firstRes := attachContainerPartsTestResult(t, ctx, cache, srv, "owner-a", "first-owner", first)
+		secondCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "owner-b", SessionID: "owner-b"})
+		secondRes := attachContainerPartsTestResult(t, secondCtx, cache, srv, "owner-b", "second-owner", second)
+		counts := func(snapshotID string) (int, int) {
+			manager.mu.Lock()
+			defer manager.mu.Unlock()
+			owners := 0
+			for _, id := range manager.owners {
+				if id == snapshotID {
+					owners++
+				}
+			}
+			return owners, manager.releases[snapshotID]
+		}
+		owners, released := counts("shared")
+		require.Equal(t, 2, owners, "closed descriptors own snapshots independently")
+		require.Zero(t, released)
+		require.Zero(t, manager.openCount("shared"))
+		require.NoError(t, cache.EvaluateParts(ctx, firstRes, ContainerPartFS))
+		require.NoError(t, cache.ReleaseSession(ctx, "owner-a"))
+		synctest.Wait()
+		owners, released = counts("shared")
+		require.Equal(t, 1, owners)
+		require.Equal(t, 1, released, "only the opened handle is released")
+		owners, released = counts("closed-meta")
+		require.Equal(t, 1, owners)
+		require.Zero(t, released)
+		require.NoError(t, cache.EvaluateParts(secondCtx, secondRes, ContainerPartFS))
+		require.Equal(t, 2, manager.openCount("shared"))
+		require.NoError(t, cache.ReleaseSession(secondCtx, "owner-b"))
+		synctest.Wait()
+		owners, released = counts("shared")
+		require.Zero(t, owners)
+		require.Equal(t, 2, released)
+		owners, released = counts("closed-meta")
+		require.Zero(t, owners)
+		require.Zero(t, released, "closed descriptors have no accessor handle to release")
+		require.Zero(t, manager.openCount("closed-meta"))
+	})
+}
+
+func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	ctx, cache, srv := containerPersistenceTestCache(t, dbPath, newContainerPersistenceTestSnapshots(), "paths")
+	platform := Platform{OS: "linux", Architecture: "arm64"}
+	original := NewContainer(platform)
+	rootInput := containerPersistenceTestDirectory("root", "")
+	rootInput.Dir.setValue("")
+	original.FS.setValue(rootInput)
+	file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform}
+	file.File.setValue("/nested/source.txt")
+	file.Snapshot.setValue(&cacheVolumeTestImmutableRef{id: "file", snapshotID: "file"})
+	fileSource := new(LazyAccessor[*File, *Container])
+	fileSource.setValue(file)
+	dirSource := new(LazyAccessor[*Directory, *Container])
+	dirSource.setValue(containerPersistenceTestDirectory("dir", "/nested/tree"))
+	original.Mounts = ContainerMounts{
+		{Target: "/tmp", TmpfsSource: &TmpfsMountSource{}},
+		{Target: "/file", FileSource: fileSource},
+		{Target: "/dir", DirectorySource: dirSource},
+	}
+	encoded, err := original.EncodePersistedObject(ctx, cache)
+	require.NoError(t, err)
+	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "container", Type: dagql.NewResultCallType(original.Type())}
+	res, err := cache.GetOrInitCall(ctx, "paths", srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(original, srv, frame)
+	})
+	require.NoError(t, err)
+	id, err := cache.PersistedResultID(res)
+	require.NoError(t, err)
+	require.NoError(t, cache.ReleaseSession(ctx, "paths"))
+	require.NoError(t, cache.Close(ctx))
+	manager := newContainerPersistenceTestSnapshots()
+	ctx, cache, srv = containerPersistenceTestCache(t, dbPath, manager, "restored-paths")
+	res, err = cache.LoadResultByResultID(ctx, "restored-paths", srv, id)
+	require.NoError(t, err)
+	restored, ok := dagql.UnwrapAs[*Container](res)
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"root", "file", "dir"}, restored.CacheUsageIdentities())
+	manager.snapshotSizes = map[string]int64{"root": 10, "file": 20, "dir": 30}
+	for id, want := range manager.snapshotSizes {
+		size, found, err := restored.CacheUsageSize(ctx, manager, id)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, want, size)
+	}
+	require.Zero(t, manager.openCount("root"))
+	require.Zero(t, manager.openCount("file"))
+	require.Zero(t, manager.openCount("dir"))
+	require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartMount("/file")))
+	openedFile, ok := restored.Mounts[1].FileSource.Peek()
+	require.True(t, ok)
+	path, ok := openedFile.File.Peek()
+	require.True(t, ok)
+	require.Equal(t, "/nested/source.txt", path)
+	require.Equal(t, platform, openedFile.Platform)
+	require.Nil(t, openedFile.Lazy)
+	require.Zero(t, manager.openCount("dir"))
+	require.Zero(t, manager.openCount("root"))
+	require.NoError(t, cache.Evaluate(ctx, res))
+	openedDir, ok := restored.Mounts[2].DirectorySource.Peek()
+	require.True(t, ok)
+	path, ok = openedDir.Dir.Peek()
+	require.True(t, ok)
+	require.Equal(t, "/nested/tree", path)
+	root, ok := restored.FS.Peek()
+	require.True(t, ok)
+	path, ok = root.Dir.Peek()
+	require.True(t, ok, "a recorded empty path is an available value")
+	require.Empty(t, path)
+	require.Empty(t, restored.storedParts[ContainerPartFS].Path)
+	reencoded, err := restored.EncodePersistedObject(ctx, cache)
+	require.NoError(t, err)
+	require.JSONEq(t, string(encoded.JSON), string(reencoded.JSON))
+	require.ElementsMatch(t, encoded.SnapshotLinks, reencoded.SnapshotLinks)
+}
+
+func TestContainerRestoreAttemptLifetime(t *testing.T) {
+	for _, releaseSession := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel leader with healthy waiter", true: "release during open"}[releaseSession], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				manager := newContainerPersistenceTestSnapshots()
+				started, allow := make(chan struct{}), make(chan struct{})
+				manager.beforeOpen = func(ctx context.Context, _ string) error {
+					close(started)
+					select {
+					case <-allow:
+						return nil
+					case <-ctx.Done():
+						return context.Cause(ctx)
+					}
+				}
+				ctx, cache, srv := containerPersistenceTestCache(t, "", manager, "lifetime")
+				recorder := tracetest.NewSpanRecorder()
+				provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+				t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context()))) })
+				tracer := provider.Tracer("stored-container-lifetime")
+				ctx, producer := tracer.Start(ctx, "produce stored container")
+				ctr := containerPersistenceTestRestore(map[dagql.PartKey]containerStoredPart{
+					ContainerPartFS:       {Kind: containerPartDirectory, Role: "fs", SnapshotID: "saved", Path: "/"},
+					ContainerPartExecMeta: {Kind: containerPartAbsent},
+				}, nil)
+				res := attachContainerPartsTestResult(t, ctx, cache, srv, "lifetime", "stored-lifetime", ctr)
+				producer.End()
+				leaderCtx, leader := tracer.Start(ctx, "lead saved filesystem demand")
+				defer leader.End()
+				leaderCtx, cancel := context.WithCancelCause(leaderCtx)
+				defer cancel(nil)
+				leaderDone := make(chan error, 1)
+				go func() { leaderDone <- cache.EvaluateParts(leaderCtx, res, ContainerPartFS) }()
+				<-started
+				var waiterDone chan error
+				waiterCtx, waiter := tracer.Start(ctx, "consume saved filesystem")
+				if releaseSession {
+					require.NoError(t, cache.ReleaseSession(ctx, "lifetime"))
+					synctest.Wait()
+					require.Greater(t, cache.Size(), 0, "attempt retains the owner while opening")
+				} else {
+					waiterDone = make(chan error, 1)
+					go func() { waiterDone <- cache.EvaluateParts(waiterCtx, res, ContainerPartFS) }()
+					synctest.Wait()
+					cause := errors.New("leader stopped waiting")
+					cancel(cause)
+					require.ErrorIs(t, <-leaderDone, cause)
+				}
+				close(allow)
+				if releaseSession {
+					require.ErrorIs(t, <-leaderDone, dagql.ErrCacheSessionReleased)
+				} else {
+					require.NoError(t, <-waiterDone)
+				}
+				synctest.Wait()
+				waiter.End()
+				require.Equal(t, 1, manager.openCount("saved"))
+				if releaseSession {
+					require.Zero(t, cache.Size())
+					manager.mu.Lock()
+					require.Equal(t, 1, manager.releases["saved"])
+					require.Empty(t, manager.owners)
+					manager.mu.Unlock()
+				} else {
+					var open, waiting sdktrace.ReadOnlySpan
+					for _, span := range recorder.Ended() {
+						if span.Name() == "open stored part (fs)" {
+							open = span
+						}
+						if span.Name() == "consume saved filesystem" {
+							waiting = span
+						}
+					}
+					require.NotNil(t, open)
+					require.NotNil(t, waiting)
+					found := false
+					for _, link := range waiting.Links() {
+						attrs := containerPersistenceSpanAttrs(link.Attributes)
+						if attrs[telemetry.LinkPurposeAttr].AsString() == telemetryattrs.LinkPurposeWait && link.SpanContext.SpanID() == open.SpanContext().SpanID() {
+							found = true
+						}
+					}
+					require.True(t, found, "healthy waiter targets the shared stored-open attempt")
+				}
+			})
+		})
+	}
 }
