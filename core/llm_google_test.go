@@ -61,7 +61,7 @@ func TestGenaiThinkingConfig(t *testing.T) {
 }
 
 // TestGenaiThinkingRoundTrip exercises the send path: a captured thinking block
-// and a tool call with a thought signature must be replayed to Gemini as a
+// and a tool call with a thought signature must be resubmitted to Gemini as a
 // thought part and a function-call part carrying their signatures.
 func TestGenaiThinkingRoundTrip(t *testing.T) {
 	c := &GenaiClient{endpoint: &LLMEndpoint{}}
@@ -94,7 +94,7 @@ func TestGenaiThinkingRoundTrip(t *testing.T) {
 	assert.Equal(t, "model", model.Role)
 	require.Len(t, model.Parts, 3)
 
-	// thought part, replayed with signature and Thought=true
+	// thought part, resubmitted with signature and Thought=true
 	assert.True(t, model.Parts[0].Thought)
 	assert.Equal(t, "let me think", model.Parts[0].Text)
 	assert.Equal(t, thinkSig, model.Parts[0].ThoughtSignature)
@@ -103,7 +103,7 @@ func TestGenaiThinkingRoundTrip(t *testing.T) {
 	assert.False(t, model.Parts[1].Thought)
 	assert.Equal(t, "on it", model.Parts[1].Text)
 
-	// function call, replayed with its thought signature
+	// function call, resubmitted with its thought signature
 	require.NotNil(t, model.Parts[2].FunctionCall)
 	assert.Equal(t, "do_thing", model.Parts[2].FunctionCall.Name)
 	assert.Equal(t, toolSig, model.Parts[2].ThoughtSignature)
@@ -209,7 +209,7 @@ func TestGenaiToolCallUsesProvidedID(t *testing.T) {
 }
 
 // TestGenaiToolCallIDRoundTrip covers B4: the CallID assigned on the response is
-// replayed as both the function-call ID and the matching function-response ID,
+// reused as both the function-call ID and the matching function-response ID,
 // while the response still carries the real tool name.
 func TestGenaiToolCallIDRoundTrip(t *testing.T) {
 	c := &GenaiClient{endpoint: &LLMEndpoint{}}
@@ -242,7 +242,7 @@ func TestGenaiToolCallIDRoundTrip(t *testing.T) {
 }
 
 // TestGenaiTextAnswerSignature covers B3(a): a thought signature on a
-// text-answer part is captured on the TEXT block and replayed on the text part.
+// text-answer part is captured on the TEXT block and resubmitted on the text part.
 func TestGenaiTextAnswerSignature(t *testing.T) {
 	c := &GenaiClient{endpoint: &LLMEndpoint{}}
 
@@ -267,7 +267,7 @@ func TestGenaiTextAnswerSignature(t *testing.T) {
 	assert.Equal(t, "the answer", blocks[0].Text)
 	assert.Equal(t, base64.StdEncoding.EncodeToString(answerSig), blocks[0].Signature, "text-answer signature must be captured")
 
-	// And it round-trips onto the replayed text part.
+	// And it round-trips onto the resubmitted text part.
 	history := []*LLMMessage{
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "hi"}}},
 		{Role: LLMMessageRoleAssistant, Content: blocks},

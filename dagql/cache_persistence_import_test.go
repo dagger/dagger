@@ -1201,43 +1201,43 @@ func TestCachePersistenceImportedDecodeStaleReaderDoesNotLeadAfterSuccess(t *tes
 	assert.NilError(t, cB.ReleaseSession(staleCtx, staleSessionID))
 }
 
-type persistGatedObj struct {
+type persistResourceScopedObj struct {
 	Name              string
 	dependencyResults []AnyResult
 }
 
-type persistedPersistGatedObj struct {
+type persistedResourceScopedObj struct {
 	Name string `json:"name"`
 }
 
-func (*persistGatedObj) Type() *ast.Type {
+func (*persistResourceScopedObj) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "PersistGatedObj",
+		NamedType: "PersistResourceScopedObj",
 		NonNull:   true,
 	}
 }
 
-func (obj *persistGatedObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (obj *persistResourceScopedObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
-	payload, err := json.Marshal(persistedPersistGatedObj{Name: obj.Name})
+	payload, err := json.Marshal(persistedResourceScopedObj{Name: obj.Name})
 	if err != nil {
 		return PersistedObjectEncoding{}, err
 	}
 	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
-func (*persistGatedObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
+func (*persistResourceScopedObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
 	_ = ctx
 	_ = dag
-	var persisted persistedPersistGatedObj
+	var persisted persistedResourceScopedObj
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, err
 	}
-	return &persistGatedObj{Name: persisted.Name}, nil
+	return &persistResourceScopedObj{Name: persisted.Name}, nil
 }
 
-func (obj *persistGatedObj) AttachDependencyResults(
+func (obj *persistResourceScopedObj) AttachDependencyResults(
 	_ context.Context,
 	_ AnyResult,
 	attach func(AnyResult) (AnyResult, error),
@@ -1260,48 +1260,48 @@ func (obj *persistGatedObj) AttachDependencyResults(
 	return deps, nil
 }
 
-// newPersistGatedTestServer serves gatedChain(level): level 0 is an object
+// newPersistResourceScopedTestServer serves resourceScopedChain(level): level 0 is an object
 // depending on a session-resource handle leaf, and each higher level is an
 // object depending on the level below it, so the transitive requirement
 // {handle} must reach every row through the dependency chain.
-func newPersistGatedTestServer(handle SessionResourceHandle) *Server {
+func newPersistResourceScopedTestServer(handle SessionResourceHandle) *Server {
 	srv, err := NewServer(context.Background(), &persistCodecRoot{})
 	if err != nil {
 		panic(err)
 	}
-	srv.InstallObject(NewClass(srv, ClassOpts[*persistGatedObj]{}))
-	Fields[*persistGatedObj]{
-		// A persistable scalar over a gated object: its row decodes eagerly
+	srv.InstallObject(NewClass(srv, ClassOpts[*persistResourceScopedObj]{}))
+	Fields[*persistResourceScopedObj]{
+		// A persistable scalar over an object with a session-resource requirement: its row decodes eagerly
 		// at import and transitively requires the handle through its
 		// structural receiver dep.
-		Func("name", func(ctx context.Context, self *persistGatedObj, _ struct{}) (String, error) {
+		Func("name", func(ctx context.Context, self *persistResourceScopedObj, _ struct{}) (String, error) {
 			return String(self.Name), nil
 		}).IsPersistable(),
 	}.Install(srv)
-	type gatedChainArgs struct {
+	type resourceScopedChainArgs struct {
 		Level Int `name:"level"`
 	}
 	Fields[*persistCodecRoot]{
-		NodeFunc("gatedChain", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], args gatedChainArgs) (ObjectResult[*persistGatedObj], error) {
+		NodeFunc("resourceScopedChain", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], args resourceScopedChainArgs) (ObjectResult[*persistResourceScopedObj], error) {
 			level := int(args.Level)
 			var deps []AnyResult
 			if level == 0 {
 				leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
 				if err != nil {
-					return ObjectResult[*persistGatedObj]{}, err
+					return ObjectResult[*persistResourceScopedObj]{}, err
 				}
 				deps = []AnyResult{leaf}
 			} else {
-				var below ObjectResult[*persistGatedObj]
+				var below ObjectResult[*persistResourceScopedObj]
 				if err := srv.Select(ctx, srv.root, &below, Selector{
-					Field: "gatedChain",
+					Field: "resourceScopedChain",
 					Args:  []NamedInput{{Name: "level", Value: NewInt(level - 1)}},
 				}); err != nil {
-					return ObjectResult[*persistGatedObj]{}, err
+					return ObjectResult[*persistResourceScopedObj]{}, err
 				}
 				deps = []AnyResult{below}
 			}
-			return NewObjectResultForCurrentCall(ctx, srv, &persistGatedObj{
+			return NewObjectResultForCurrentCall(ctx, srv, &persistResourceScopedObj{
 				Name:              fmt.Sprintf("level-%d", level),
 				dependencyResults: deps,
 			})
@@ -1373,7 +1373,7 @@ func TestCachePersistenceImportRecomputesRequiredDepsFirst(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
-	srvA := newPersistGatedTestServer(handle)
+	srvA := newPersistResourceScopedTestServer(handle)
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
@@ -1387,7 +1387,7 @@ func TestCachePersistenceImportRecomputesRequiredDepsFirst(t *testing.T) {
 	// results map in iteration order is only correct when it happens to
 	// visit the whole chain leaf-first.
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{
-		Field: "gatedChain",
+		Field: "resourceScopedChain",
 		Args:  []NamedInput{{Name: "level", Value: NewInt(5)}},
 	})
 	assert.NilError(t, err)
@@ -1428,7 +1428,7 @@ func TestCachePersistenceDecodeInstallPreservesRequiredSessionResources(t *testi
 
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
-	srvA := newPersistGatedTestServer(handle)
+	srvA := newPersistResourceScopedTestServer(handle)
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
@@ -1438,9 +1438,9 @@ func TestCachePersistenceDecodeInstallPreservesRequiredSessionResources(t *testi
 	rootCtxA = srvToContext(rootCtxA, srvA)
 	assert.NilError(t, cacheA.BindSessionResource(rootCtxA, "test-session", "dagql-test-client", handle, "bound"))
 
-	var topA ObjectResult[*persistGatedObj]
+	var topA ObjectResult[*persistResourceScopedObj]
 	assert.NilError(t, srvA.Select(rootCtxA, srvA.Root(), &topA, Selector{
-		Field: "gatedChain",
+		Field: "resourceScopedChain",
 		Args:  []NamedInput{{Name: "level", Value: NewInt(1)}},
 	}))
 	topID := uint64(topA.cacheSharedResult().id)
@@ -1448,7 +1448,7 @@ func TestCachePersistenceDecodeInstallPreservesRequiredSessionResources(t *testi
 
 	var nameA String
 	assert.NilError(t, srvA.Select(rootCtxA, srvA.Root(), &nameA, Selector{
-		Field: "gatedChain",
+		Field: "resourceScopedChain",
 		Args:  []NamedInput{{Name: "level", Value: NewInt(1)}},
 	}, Selector{Field: "name"}))
 	assert.Equal(t, "level-1", string(nameA))
@@ -1471,11 +1471,11 @@ func TestCachePersistenceDecodeInstallPreservesRequiredSessionResources(t *testi
 
 	// The object payload waits for a hit: load it by result ID so the
 	// decode install runs, then check the stored sets again.
-	srvB := newPersistGatedTestServer(handle)
+	srvB := newPersistResourceScopedTestServer(handle)
 	assert.NilError(t, cacheB.BindSessionResource(ctx, "test-session", "dagql-test-client", handle, "bound"))
 	loaded, err := cacheB.LoadResultByResultID(ctx, "test-session", srvB, topID)
 	assert.NilError(t, err)
-	obj, ok := UnwrapAs[*persistGatedObj](loaded.Unwrap())
+	obj, ok := UnwrapAs[*persistResourceScopedObj](loaded.Unwrap())
 	assert.Assert(t, ok)
 	assert.Equal(t, "level-1", obj.Name)
 
@@ -1495,23 +1495,23 @@ func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
 
 	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	handle := cacheTestVolatileSessionResourceHandle("persist-load-gated")
+	handle := cacheTestVolatileSessionResourceHandle("persist-load-resource-check")
 
 	cacheA, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
-	srvA := newPersistGatedTestServer(handle)
+	srvA := newPersistResourceScopedTestServer(handle)
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
-		Field: "persist-load-gated-root",
+		Field: "persist-load-resource-check-root",
 	})
 	rootCtxA = ContextWithCache(rootCtxA, cacheA)
 	rootCtxA = srvToContext(rootCtxA, srvA)
 	assert.NilError(t, cacheA.BindSessionResource(rootCtxA, "test-session", "dagql-test-client", handle, "bound"))
 
-	var topA ObjectResult[*persistGatedObj]
+	var topA ObjectResult[*persistResourceScopedObj]
 	assert.NilError(t, srvA.Select(rootCtxA, srvA.Root(), &topA, Selector{
-		Field: "gatedChain",
+		Field: "resourceScopedChain",
 		Args:  []NamedInput{{Name: "level", Value: NewInt(1)}},
 	}))
 	topID := uint64(topA.cacheSharedResult().id)
@@ -1526,16 +1526,16 @@ func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
 		assert.NilError(t, cacheB.Close(context.Background()))
 	}()
 	assert.Equal(t, CachePersistenceResetNone, cacheB.PersistenceResetReason())
-	srvB := newPersistGatedTestServer(handle)
+	srvB := newPersistResourceScopedTestServer(handle)
 
-	// A session that never bound the handle replays the stored result ID:
+	// A session that never bound the handle loads the stored result ID:
 	// the load must refuse instead of falling back to the exact result.
-	_, err = cacheB.LoadResultByResultID(ctx, "gate-unbound-session", srvB, topID)
+	_, err = cacheB.LoadResultByResultID(ctx, "unbound-session", srvB, topID)
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "has not bound the session resources")
 
 	cacheB.sessionMu.Lock()
-	_, recorded := cacheB.sessionResultIDsBySession["gate-unbound-session"][sharedResultID(topID)]
+	_, recorded := cacheB.sessionResultIDsBySession["unbound-session"][sharedResultID(topID)]
 	cacheB.sessionMu.Unlock()
 	assert.Assert(t, !recorded, "refused load must not leave a session edge")
 	cacheB.egraphMu.RLock()
@@ -1545,19 +1545,19 @@ func TestCacheLoadResultByResultIDRefusesUnboundSession(t *testing.T) {
 	assert.Assert(t, !topDecoded, "refused load must not decode the payload")
 	assertCacheOwnershipExact(t, cacheB)
 
-	// Call-frame loads serve the recipe, not the value, and stay ungated.
-	frame, err := cacheB.ResultCallByResultID(ctx, "gate-unbound-session", topID)
+	// Call-frame loads serve the recipe, not the value, without checking resource requirements.
+	frame, err := cacheB.ResultCallByResultID(ctx, "unbound-session", topID)
 	assert.NilError(t, err)
 	assert.Assert(t, frame != nil)
-	assert.NilError(t, cacheB.ReleaseSession(ctx, "gate-unbound-session"))
+	assert.NilError(t, cacheB.ReleaseSession(ctx, "unbound-session"))
 
 	// A session that bound the handle is served as before.
-	assert.NilError(t, cacheB.BindSessionResource(ctx, "gate-bound-session", "gate-bound-client", handle, "bound"))
-	loaded, err := cacheB.LoadResultByResultID(ctx, "gate-bound-session", srvB, topID)
+	assert.NilError(t, cacheB.BindSessionResource(ctx, "bound-session", "bound-client", handle, "bound"))
+	loaded, err := cacheB.LoadResultByResultID(ctx, "bound-session", srvB, topID)
 	assert.NilError(t, err)
-	obj, ok := UnwrapAs[*persistGatedObj](loaded.Unwrap())
+	obj, ok := UnwrapAs[*persistResourceScopedObj](loaded.Unwrap())
 	assert.Assert(t, ok)
 	assert.Equal(t, "level-1", obj.Name)
 	assertCacheRequiredSessionResourcesExact(t, cacheB)
-	assert.NilError(t, cacheB.ReleaseSession(ctx, "gate-bound-session"))
+	assert.NilError(t, cacheB.ReleaseSession(ctx, "bound-session"))
 }

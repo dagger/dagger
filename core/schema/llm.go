@@ -129,7 +129,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("object").Doc("The object whose methods become tools.").
 					Directive(dagql.ExpectedTypeDirective("Node")).
 					// The bound object's value is not needed to reconstruct the
-					// conversation on replay — only its type, to expose its methods
+					// conversation when loaded — only its type, to expose its methods
 					// as tools — so carry it by reference and load it lazily. This
 					// keeps restoring a persisted session from re-running the call
 					// that produced the object (which may have side effects or may
@@ -183,7 +183,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
 				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
 				"including any pending, un-exported edits — is preserved."),
-		dagql.NodeFunc("replay", s.replay).
+		dagql.NodeFunc("emitHistory", s.emitHistory).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
 			Doc("Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI."),
@@ -225,7 +225,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	// The content-block message model is only visible to v1+ module views;
-	// installing the classes with a view gate also gates their generated
+	// installing the classes with a view filter also filters their generated
 	// ID/load fields and Env/Binding extensions.
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
@@ -485,8 +485,8 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 	return parent.Self().Step(ctx, parent, int(args.MaxTokens.Value))
 }
 
-func (s *llmSchema) replay(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
-	parent.Self().Replay(ctx)
+func (s *llmSchema) emitHistory(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
+	parent.Self().EmitHistory(ctx)
 	id, err := parent.ID()
 	if err != nil {
 		return res, err

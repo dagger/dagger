@@ -3734,6 +3734,11 @@ type LLM implements Node & Syncer {
   contextWindow: Int
 
   """
+  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+  """
+  emitHistory: ID! @expectedType(name: "LLM")
+
+  """
   Fork the conversation, so that otherwise-identical follow-ups evaluate
   independently instead of deduplicating to a single cached result.
   """
@@ -3802,11 +3807,6 @@ type LLM implements Node & Syncer {
   The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
   """
   reasoningEffort: String!
-
-  """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  replay: ID! @expectedType(name: "LLM")
 
   """
   The skills visible to the model, exactly as the ListSkills tool serves them:

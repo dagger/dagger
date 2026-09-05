@@ -4,7 +4,7 @@ package dagql
 // beginOTelPublishResult / EmitOTelWait) against an in-memory SDK tracer and assert
 // the exported spans/links carry exactly the wcprof OTel attribute/link shape the
 // offline analyzer consumes — so the emit contract is machine-checked, not just
-// code-reviewed. (The offline loader/gate that consume this shape live in the
+// code-reviewed. (The offline loader and validator that consume this shape live in the
 // closed-source analyzer; their end-to-end coverage is exercised there via fixtures.)
 
 import (
@@ -168,14 +168,14 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	}
 }
 
-// TestEmitWaitGateObservableOnMissingTarget covers review finding A: a *recording*
+// TestEmitWaitVisibleToValidationOnMissingTarget covers review finding A: a *recording*
 // waiter that joins an execution whose call_exec span was never minted (a mixed /
 // cross-session untraced executor) must NOT drop its wait edge silently. It emits a
-// targetless wait link — an all-zero target span id — that the offline gate counts
+// targetless wait link — an all-zero target span id — that the offline validation counts
 // as an unresolved wait and fails loud on, mirroring native's targetless
 // wcprof.BeginWait. Here we assert the emit shape (the observable link is present
-// with a zero target); the gate's reaction to it is covered in the analyzer's tests.
-func TestEmitWaitGateObservableOnMissingTarget(t *testing.T) {
+// with a zero target); validation's reaction to it is covered in the analyzer's tests.
+func TestEmitWaitVisibleToValidationOnMissingTarget(t *testing.T) {
 	sr, rootCtx, root := newRecordingRoot("POST /query")
 	base := time.Now().UnixNano()
 	// invalid target = the executor minted no call_exec span (oc.execSpanCtx zero).
@@ -185,7 +185,7 @@ func TestEmitWaitGateObservableOnMissingTarget(t *testing.T) {
 
 	rootSpan := spanByName(t, ended, "POST /query")
 	if len(rootSpan.Links()) != 1 {
-		t.Fatalf("a missing target on a recording waiter must still emit a gate-observable wait link, got %d links", len(rootSpan.Links()))
+		t.Fatalf("a missing target on a recording waiter must still emit a wait link visible to validation, got %d links", len(rootSpan.Links()))
 	}
 	link := rootSpan.Links()[0]
 	la := map[string]string{}
@@ -195,7 +195,7 @@ func TestEmitWaitGateObservableOnMissingTarget(t *testing.T) {
 	if la[telemetry.LinkPurposeAttr] != telemetryattrs.LinkPurposeWait {
 		t.Fatalf("emitted link must be a wait link: %v", la)
 	}
-	// The target is deliberately all-zero so the offline gate flags it as an
+	// The target is deliberately all-zero so the offline validation flags it as an
 	// unresolved wait rather than silently dropping the edge.
 	if link.SpanContext.SpanID().IsValid() {
 		t.Fatalf("a missing-target wait must emit an all-zero target span id, got %s", link.SpanContext.SpanID())

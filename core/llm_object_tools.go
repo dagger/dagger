@@ -78,7 +78,7 @@ func (b boundTool) typeName() string {
 // is kept: binding an object whose type is already bound replaces it in place.
 // That is the state-update shape — a method returning the bound type rebinds
 // through here — so the binding list stays bounded and a recorded withTools
-// selector replays to the same state deterministically.
+// selector reconstructs the same state deterministically.
 func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
@@ -1190,8 +1190,7 @@ func directLogs(lines []capturedLine) string {
 
 // toolSpanHasDescendants reports whether anything ran beneath the tool-call
 // span. It is a pure in-memory index lookup on the client's telemetry store --
-// no queries, no subtree walk -- so it is cheap enough to gate every tool
-// result on.
+// no queries, no subtree walk -- so it is cheap enough to run for every tool result.
 func toolSpanHasDescendants(ctx context.Context, spanID string) bool {
 	root, err := CurrentQuery(ctx)
 	if err != nil {

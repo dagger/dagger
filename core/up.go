@@ -26,7 +26,7 @@ type UpGroup struct {
 	// it into the context (WorkspaceToContext) so each service leaf's auto-injected
 	// Workspace! (and any currentWorkspace read) resolves against it, rather than
 	// the session's frozen current workspace. Transient (not persisted): it is
-	// re-established when `services` re-runs on replay.
+	// re-established when `services` re-runs after loading the ID.
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 

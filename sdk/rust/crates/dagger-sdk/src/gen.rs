@@ -10420,6 +10420,20 @@ impl Llm {
         let query = self.selection.select("contextWindow");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+    pub async fn emit_history(&self) -> Result<Llm, DaggerError> {
+        let query = self.selection.select("emitHistory");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Llm {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("LLM"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
     /// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
     ///
     /// # Arguments
@@ -10517,20 +10531,6 @@ impl Llm {
     pub async fn reasoning_effort(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("reasoningEffort");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-    pub async fn replay(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("replay");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
-        Ok(Llm {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("LLM"),
-            graphql_client: self.graphql_client.clone(),
-        })
     }
     /// The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
     pub async fn skills(&self) -> Result<Vec<LlmSkill>, DaggerError> {

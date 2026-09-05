@@ -17,9 +17,9 @@ import (
 )
 
 // fakeOAuthServer stands in for a provider's token endpoint. It rotates the
-// refresh token on every successful grant and rejects a replayed one with
+// refresh token on every successful grant and rejects a reused one with
 // invalid_grant, mirroring the single-use refresh tokens Anthropic and OpenAI
-// issue: replaying a spent token is precisely the permanent logout the refresh
+// issue: reusing a spent token is precisely the permanent logout the refresh
 // path has to avoid.
 type fakeOAuthServer struct {
 	mu sync.Mutex

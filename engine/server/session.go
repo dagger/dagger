@@ -753,7 +753,7 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // loader drops it from the compiled ops — then ends AND synchronously force-flushes
 // it so the live exporter ships it before the per-client telemetry is shut down. A
 // trace that never ran a traced main query, or whose count is zero, gets no carrier
-// and so fails the loader's gate by default (unverifiable → refused).
+// and so fails the loader's completeness check by default (unverifiable → refused).
 func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
 		return
@@ -793,7 +793,7 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 	// Shutdown below — and removeDaggerSession runs under the session-closing
 	// cancellation (withClosingCancel), so on a heavy build the bulk of spans ship
 	// live but this one last span is left queued and dropped once the ctx cancels,
-	// leaving the loader unable to certify completeness (marker absent → gate refuses).
+	// leaving the loader unable to certify completeness (marker absent → completeness check refuses).
 	// Force it through the exporter synchronously, under a context detached from the
 	// closing cancellation with a bounded timeout, so the count reliably reaches the
 	// client DB the CLI drains toward Cloud regardless of build size.
@@ -1111,7 +1111,7 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 		return nil, err
 	}
 
-	// Gate on the session's lifecycle state via a lock-free atomic read (never
+	// Check the session's lifecycle state via a lock-free atomic read (never
 	// lifecycleMu), so this lookup can't block on a session that is initializing
 	// or tearing down. A client is inserted into sess.clients only after it is
 	// fully initialized, so a clientMu read can't observe a half-initialized one.
@@ -1271,7 +1271,7 @@ func (srv *Server) getOrInitClient(
 			clientMetadata: opts.ClientMetadata,
 		}
 
-		// Open the store outside clientMu because replaying persisted streams can
+		// Open the store outside clientMu because restoring persisted streams can
 		// take time and must not block observers reading the clients map.
 		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
 			slog.Warn("failed to open client DB; continuing without keepalive",

@@ -1,0 +1,11 @@
+kind: Experimental
+body: |
+  Rename the LLM history display API from `replay` to `emitHistory`.
+  Use `EmitHistory` in Go and `emit_history` in Python, Rust, and Elixir.
+  The previous name is removed without a deprecated alias.
+  Recorded-response test model prefixes change from `replay/` and `replay-`
+  to `recording/` and `recording-`.
+time: 2026-09-05T00:38:00.000000000Z
+custom:
+    Author: sipsma
+    PR: "14049"

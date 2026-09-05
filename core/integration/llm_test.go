@@ -2,7 +2,7 @@ package core
 
 // These tests cover module functions that call Dagger's LLM API. They verify
 // direct calls, `dagger shell` argument handling, API limit errors, and the
-// `--allow-llm` permission gate.
+// `--allow-llm` permission check.
 
 import (
 	"context"
@@ -32,8 +32,8 @@ import (
 /* NOTE: These tests use canned conversations rather than live providers: each
 test constructs the exact message history it needs through the LLM API itself
 (withPrompt/withResponse/withToolResult), exports it with the same messages
-selection a real recording would use, and replays it via a replay/ model (see
-cannedReplayModel). Deriving the recording from the engine on every run keeps
+selection a real recording would use, and runs it via a recording/ model (see
+cannedRecordingModel). Deriving the recording from the engine on every run keeps
 it in lockstep with the export/decode format by construction — there are no
 stored recordings to go stale, and no API keys are needed. */
 
@@ -47,7 +47,7 @@ type LLMTestCase struct {
 	Ref   string
 	Name  string
 	Flags []LLMTestCaseFlag
-	// Conversation constructs the canned message history this case replays,
+	// Conversation constructs the canned message history this case consumes,
 	// through the LLM API itself (no live provider).
 	Conversation func(*dagger.Client) *dagger.LLM
 }
@@ -77,8 +77,8 @@ const (
 	indirectModuleRef = indirectModuleSymbolic + "@" + testModulesVersion
 )
 
-// llmMessagesSelection selects everything a replay recording needs from a
-// conversation: the same JSON shape core.decodeReplayMessages consumes.
+// llmMessagesSelection selects everything a conversation recording needs from a
+// conversation: the same JSON shape core.decodeRecordedMessages consumes.
 const llmMessagesSelection = `role content{kind text callId toolName arguments errored signature} tokenUsage{inputTokens outputTokens cachedTokenReads cachedTokenWrites totalTokens}`
 
 type recordedTokenUsage struct {
@@ -106,7 +106,7 @@ type recordedMessage struct {
 }
 
 // messagesGolden extracts the messages array at the given gjson path in a
-// `dagger query` result and renders it as a replay recording.
+// `dagger query` result and renders it as a conversation recording.
 func messagesGolden(t *testctx.T, queryOutput string, path string) []byte {
 	t.Helper()
 	raw := gjson.Get(queryOutput, path)
@@ -125,7 +125,7 @@ func messagesGolden(t *testctx.T, queryOutput string, path string) []byte {
 }
 
 // recordMessages runs a raw GraphQL query that drives a conversation and
-// renders the messages export at the given gjson path as a replay recording.
+// renders the messages export at the given gjson path as a conversation recording.
 // The query should select messages{llmMessagesSelection}.
 func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[string]any, path string) []byte {
 	t.Helper()
@@ -140,12 +140,12 @@ func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[strin
 	return messagesGolden(t, string(raw), path)
 }
 
-// cannedReplayModel derives a replay/ model from a conversation constructed
+// cannedRecordingModel derives a recording/ model from a conversation constructed
 // through the LLM API itself (withPrompt/withResponse/withToolResult) — no
 // live provider involved. The recording round-trips through the same messages
 // export a real conversation would use, so its shape cannot drift from what
-// the replay decoder expects: both come from the engine under test.
-func cannedReplayModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) string {
+// the recording decoder expects: both come from the engine under test.
+func cannedRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) string {
 	t.Helper()
 	llmID, err := llm.ID(ctx)
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func cannedReplayModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm 
 		fmt.Sprintf(`query($llm: ID!){node(id:$llm){... on LLM{messages{%s}}}}`, llmMessagesSelection),
 		map[string]any{"llm": llmID},
 		"node.messages")
-	return "replay/" + base64.StdEncoding.EncodeToString(recording)
+	return "recording/" + base64.StdEncoding.EncodeToString(recording)
 }
 
 func (flag LLMTestCaseFlag) ToCall() []string {
@@ -180,9 +180,9 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 			},
 			// Mirrors the conversation GoProgrammer.drive starts: the first
 			// user message must match the module's withPrompt text byte for
-			// byte (the replayer diffs TEXT blocks), while tool results are
-			// placeholders — the real read/write/build tools run during
-			// replay and their live results flow through.
+			// byte (the recorded-response provider diffs TEXT blocks), while tool
+			// results are placeholders — the real read/write/build tools run while
+			// consuming the recording and their live results flow through.
 			Conversation: func(c *dagger.Client) *dagger.LLM {
 				return c.LLM().
 					WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
@@ -228,10 +228,10 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				flags = append(flags, flag.ToCall()...)
 			}
 
-			model := cannedReplayModel(ctx, t, c, tc.Conversation(c))
+			model := cannedRecordingModel(ctx, t, c, tc.Conversation(c))
 
 			t.Run("call", func(ctx context.Context, t *testctx.T) {
-				// run drives the replayed conversation and returns the final
+				// run drives the recorded conversation and returns the final
 				// main.go contents from the LLM's workspace.
 				cmd := []string{"--model=" + model, "run"}
 				cmd = append(cmd, flags...)
@@ -289,8 +289,9 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 	// The write tool overlays input.txt=B-OVERLAY onto the bound workspace,
 	// then the generate tool runs the workspace generators against that
 	// overlay. The tool results are placeholders — the real write/generate
-	// tools run during replay and their live results flow through.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	// tools run while the recording is consumed and their live results flow
+	// through.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent operating on a workspace.\n"+
 			"Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n"+
 			"\n"+
@@ -334,14 +335,14 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 
 	// Mirrors GoProgrammer.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): write main.go, then build it. Tool
-	// results are placeholders — the real tools run during replay.
+	// results are placeholders — the real tools run while consuming the recording.
 	// Give the workspace a fresh digest so the nested execs actually run. If
 	// they hit the shared cache, there is no live stdout for captureLogs to
 	// surface and the build result correctly collapses to "(done)".
 	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", identity.NewID())
 	writeArgs, err := json.Marshal(map[string]string{"content": source})
 	require.NoError(t, err)
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
 			"Use the read, write, build tools to complete the following assignment.\n"+
 			"Do not try to access the container directly.\n"+
@@ -396,8 +397,8 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 	// Mirrors SvcAgent.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): start the noisy service, then
 	// stop it. Tool results are placeholders — the real tools run during
-	// replay.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	// the recording-driven run.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that manages a service.\n"+
 			"Use the start tool to start the service, then the stop tool to stop it.\n"+
 			"\n"+
@@ -458,9 +459,10 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 
 	// Mirrors ReportAgent.drive's conversation (the first user message must
 	// match its withPrompt text byte for byte). Tool results are placeholders —
-	// the real tool runs during replay. Give its nested exec a fresh cache key:
-	// a shared-cache hit has no live stdout for the tool result to abridge.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	// the real tool runs while consuming the recording. Give its nested exec a
+	// fresh cache key: a shared-cache hit has no live stdout for the tool result
+	// to abridge.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
@@ -498,7 +500,7 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 // name comes back as an actionable error rather than an empty result.
 //
 // The happy path (a span/check name that exists) can't be canned: the span IDs
-// of a replayed run aren't known when the conversation is recorded, and no
+// of a recording-driven run aren't known when the conversation is recorded, and no
 // check runs in this fixture. The rendering half is covered by the unit tests
 // in core (resolution) and dagql/idtui (report shape).
 func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
@@ -510,7 +512,7 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
@@ -555,7 +557,7 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	// really dispatches against the bound alpine container), leaving its
 	// result pending, so a --max-steps=1 loop trips the limit before the
 	// closing text turn.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("tell me the value of PATH").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindThinking, Text: "Retrieving the PATH environment variable."},
@@ -579,7 +581,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	// A canned conversation shared amongst subtests: they all drive the same
 	// "greet me" prompt through the llm/direct module.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("greet me").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Hello! How can I help you today?"},
@@ -913,9 +915,9 @@ func (LLMSuite) TestDefaultModelPinnedInID(ctx context.Context, t *testctx.T) {
 // re-emits the session as a flat, data-only recipe: the conversation survives
 // byte-for-byte, but the workspace overlays recorded during the session
 // (withWorkspace nodes carrying withChanges derivations) are superseded by the
-// current binding and dropped, so a persisted ID no longer replays workspace
+// current binding and dropped, so a persisted ID no longer reapplies workspace
 // edits when loaded. This is what makes ctrl+s (export + rebind) durable:
-// replaying an edit chain against already-updated files fails with "search
+// reapplying an edit chain against already-updated files fails with "search
 // string not found" or silently re-applies.
 func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
@@ -977,7 +979,7 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty,
-		"a reloaded session must not replay already-exported workspace edits")
+		"a reloaded session must not reapply already-exported workspace edits")
 
 	// The reloaded session reloads with the conversation intact.
 	reply, err := reloaded.LastReply(ctx)
@@ -1050,7 +1052,7 @@ func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *te
 	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty,
-		"a reloaded session must not replay already-exported workspace edits")
+		"a reloaded session must not reapply already-exported workspace edits")
 
 	// The conversation survives the rebind byte-for-byte.
 	origHist, err := edited.Transcript(ctx)
@@ -1186,7 +1188,7 @@ func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *te
 	// Config on the session's main client (this test process): the router
 	// resolves env:// through the client's session attachables at load time,
 	// so a plain os.Setenv is all it takes (same pattern as
-	// AddressSuite/TestSecret). The values are inert for other tests: replay
+	// AddressSuite/TestSecret). The values are inert for other tests: recording
 	// models ignore credentials, and an anthropic model only routes when
 	// nothing higher-priority is configured.
 	sessionModel := "claude-session-wide-model"

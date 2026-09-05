@@ -180,7 +180,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 	}
 
-	// load the withExec receiver and use it as the base container, then replay
+	// load the withExec receiver and use it as the base container, then reapply
 	// any later container-returning selectors on top so the final service keeps
 	// post-withExec mutations such as WithExposedPort.
 	receiver, err := cur.Receiver(ctx, srv)
@@ -254,7 +254,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	}
 
 	// create a service based on that withExec, but run it against the rebuilt
-	// container state after replaying the post-withExec container mutations.
+	// container state after reapplying the post-withExec container mutations.
 	svc, err := rebuilt.Self().AsService(ctx, rebuilt, core.ContainerAsServiceArgs{
 		Args:                          expandedArgs,
 		UseEntrypoint:                 withExecArgs.UseEntrypoint,

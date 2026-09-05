@@ -337,7 +337,7 @@ type SpanSnapshot struct {
 
 	// Progress holds streaming-progress items attributed directly to this
 	// span, folded from progress log records. It lives in the snapshot so
-	// remote frontends receive it without replaying the raw records.
+	// remote frontends receive it without reprocessing the raw records.
 	Progress *SpanProgress `json:",omitempty"`
 
 	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`

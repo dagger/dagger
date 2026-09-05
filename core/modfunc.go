@@ -579,7 +579,7 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	// - NO cascading: $FOO always means the system env var FOO, never another config key
 	// - Resolution should go through the Workspace type (gateway for client context access)
 	// - The Workspace type should expose a method for resolving system env vars,
-	//   which can later be gated by interactive prompts, allow/deny policies, value injection
+	//   which can later require approval through interactive prompts, allow/deny policies, value injection
 	// - Consider docker-compose's variable substitution spec as reference for syntax
 	// - For now, string values pass through as-is (no expansion)
 
@@ -1251,7 +1251,7 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// This bound-workspace preference MUST be checked before the
 	// callerInModuleFunction guard below: a generator/check leaf's
 	// auto-injected Workspace! is resolved while running inside the module
-	// runtime, so gating on callerInModuleFunction first would reject the
+	// runtime, so checking callerInModuleFunction first would reject the
 	// seeded workspace and leave the leaf reading stale source. The workspace
 	// is still explicit here — the group threaded it via WorkspaceToContext —
 	// so this does not silently inherit a caller's workspace across modules.

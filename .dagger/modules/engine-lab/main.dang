@@ -160,7 +160,7 @@ type EngineLab {
   # NOTE: every tool that talks to the live engine MUST be
   # @cache(policy: FunctionCachePolicy.Never). Without it, dagql memoizes the
   # function result by (object id + field + args) across tool-call queries in
-  # the session, so a repeated call would replay the first call's output
+  # the session, so a repeated call would reuse the first call's output
   # instead of re-running. The nonce env var busts the exec cache underneath
   # for the same reason (same trick as tui-qa).
   """

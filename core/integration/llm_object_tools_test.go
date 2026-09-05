@@ -93,7 +93,7 @@ type Editor {
 }
 `)
 	ws := source.AsWorkspace()
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("track it").
 		WithResponse([]dagger.LLMContentBlockInput{{
 			Kind:      dagger.LLMContentBlockKindToolCall,
@@ -121,7 +121,7 @@ func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *t
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("make both changes").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "addFirst"},
@@ -152,7 +152,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("scaffold the project").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "addScaffold"},
@@ -232,7 +232,7 @@ func (LLMSuite) TestParallelChangesetToolsPreserveConflicts(ctx context.Context,
 		for _, callID := range results {
 			llm = llm.WithToolResult(callID, "", false)
 		}
-		return cannedReplayModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
+		return cannedRecordingModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 		}))
 	}
@@ -260,7 +260,7 @@ func (LLMSuite) TestParallelChangesetToolsPreserveConflicts(ctx context.Context,
 		require.Contains(t, shared, ">>>>>>>")
 		require.NotContains(t, shared, "placeholder")
 
-		// An add/add conflict gets the same treatment. A patch replay cannot
+		// An add/add conflict gets the same treatment. Reapplying a patch cannot
 		// express it: git apply --reject skips a file that already exists,
 		// silently keeping only the first side's version.
 		added := loopThen(ctx, t, model, "workspace | file NEW.txt | contents")
@@ -326,7 +326,7 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 
 	// The assistant calls the swap tool (its Workspace! arg is auto-injected, so
 	// no arguments are passed); swap returns currentWorkspace + SWAPPED.txt.
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("swap the workspace").
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"},
@@ -369,7 +369,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
 	t.Run("the loop resumes from the returned conversation", func(ctx context.Context, t *testctx.T) {
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("continue").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
@@ -392,7 +392,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("the conversation survives the swap", func(ctx context.Context, t *testctx.T) {
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("continue").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
@@ -420,7 +420,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("a conversation that replaces the current one is adopted", func(ctx context.Context, t *testctx.T) {
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("start fresh").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "startFresh"},
@@ -430,27 +430,27 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 			}))
 
-		// The adopted conversation replays a *second* script: after adoption its
+		// The adopted conversation consumes a *second* recording: after adoption its
 		// history is not the one the outer script recorded, but the engine's
 		// degraded continuation notice (toolResultSelectors' plain-message arm,
 		// carrying summarizeContinuation's summary as the tool result). The
 		// fixture's startFresh points the fresh conversation at this model, read
 		// from the workspace file written below. If summarizeContinuation's
 		// wording — or the swapper's tool count — changes, this string has to
-		// change with it; the replay provider compares message text exactly.
+		// change with it; the recorded-response provider compares message text exactly.
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
 			"Toolset unchanged (15 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
-		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().
+		continuationModel := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt(continued).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 			}))
 
-		// startFresh wipes the history it was handed. There is no lineage gate, so
+		// startFresh wipes the history it was handed. There is no lineage requirement, so
 		// it is adopted like any other continuation (self-compaction and
 		// summarize-and-restart have exactly this shape) — and the model is TOLD,
 		// which is what makes the swap safe. The turn's tool result has no matching
@@ -470,7 +470,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("at most one continuation per turn", func(ctx context.Context, t *testctx.T) {
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("continue twice").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
@@ -535,7 +535,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			model := cannedReplayModel(ctx, t, c, c.LLM().
+			model := cannedRecordingModel(ctx, t, c, c.LLM().
 				WithPrompt("edit and continue").
 				WithResponse(tc.calls).
 				WithToolResult("call_1", "", false).
@@ -566,7 +566,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		// it — on a workspace the adopted conversation will never see. The
 		// changeset call is refused rather than silently dropped, the model is
 		// told to re-issue it, and the loop carries on from the continuation.
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("continue then edit").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "Timeout",
@@ -630,14 +630,14 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("an image ref lifts into a real container", func(ctx context.Context, t *testctx.T) {
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("what OS is the sandbox running?").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",
 					Arguments: dagger.JSON(fmt.Sprintf(`{"cmd":["cat","/etc/os-release"],"sandbox":%q}`, alpineImage))},
 			}).
-			// Placeholder result: the real tool runs during replay (tool
-			// results are excluded from the replayer's history matching), so
+			// Placeholder result: the real tool runs while consuming the recording (tool
+			// results are excluded from the recorded-response provider's history matching), so
 			// the live stdout flows through.
 			WithToolResult("call_1", "", false).
 			WithResponse([]dagger.LLMContentBlockInput{
@@ -667,7 +667,7 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 		})
 		require.NoError(t, err)
 
-		model := cannedReplayModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("read the marker").
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "exec",

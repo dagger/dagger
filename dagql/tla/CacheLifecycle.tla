@@ -41,7 +41,7 @@
 (*     duplicate-execution window (getOrInitCallInner, cache.go:4511).     *)
 (*   - MODEL AXIOM, assumed and never verified here: results the cache     *)
 (*     considers equivalent are interchangeable.                           *)
-(*   - Session-resource gating IS modeled (the Handles constant):          *)
+(*   - Session-resource validation IS modeled (the Handles constant):      *)
 (*     each result carries handle (mirrors sessionResourceHandle)          *)
 (*     and required (the STORED requiredSessionResources set,              *)
 (*     maintained where the code maintains it: publication and             *)
@@ -51,15 +51,15 @@
 (*     subset-of bound. Serve paths re-validate a selected hit by the      *)
 (*     result's requirement generation, modeled as the selection-time      *)
 (*     stored-set capture selRequired (see ReadBarrierOk).                 *)
-(*     TrueRequired, DataRequired, RequiredExact, ReturnedGated and        *)
+(*     TrueRequired, DataRequired, RequiredExact, ReturnedResourcesBound   *)
+(*     and                                                                 *)
 (*     ReturnedHitSatisfied encode intent - see the PROPERTIES header      *)
 (*     for their contract provenance.                                      *)
 (*   - Not yet modeled, each for a stated reason and none forbidden:       *)
 (*     TTL/expiry and DoNotCache (candidate-selection refinements folded   *)
 (*     into the lookup-miss over-approximation above; model them when an   *)
-(*     effort changes their behavior); recipe-replay taint (excluded by    *)
-(*     ruling G31: not an input to this effort); the arbitrary-value       *)
-(*     cache (acquireSessionArbitraryLocked - the same atomic              *)
+(*     effort changes their behavior); the arbitrary-value cache           *)
+(*     (acquireSessionArbitraryLocked - the same atomic                    *)
 (*     record-and-count claim as the modeled result claim, under callsMu   *)
 (*     with sessionMu nested; it follows the same operation-accounting     *)
 (*     and deferred-release contract; Go tests carry its coverage).        *)
@@ -82,19 +82,21 @@
 (* contract rather than code:                                              *)
 (*   - DerivedOwn, the ownership recount (OwnershipExact)                  *)
 (*   - the invocation ret* flags, return-time evidence (ReturnedLive,      *)
-(*     ReturnedOwned, NoHalfAttachedRead, NoLaunderedServe)                *)
+(*     ReturnedOwned, NoHalfAttachedRead, NoDirtySnapshotResultServed)     *)
 (*   - lookupBarrierAtSelection and refusedEpoch                           *)
 (*     (NoErroredLookupSelection, RefusedOnlyAfterRelease)                 *)
-(*   - res.laundered and the flushed-row verdicts dirty and ownClean       *)
-(*     (NoLaunderedServe, FlushCleanCapture)                               *)
+(*   - res.dirtyAtSnapshot and the flushed-row verdicts dirty and ownClean *)
+(*     (NoDirtySnapshotResultServed, FlushCleanCapture)                    *)
 (*   - evals foreignCancel (NoStaleCancelError)                            *)
 (*   - evals sweep and sweepFinal, the sweep's origin and its entry-time   *)
 (*     finality observation (SweepStartsFinal and reachability probes)     *)
 (*   - the invocation ownCancel flag, set only by the actions that model   *)
 (*     that invocation's own ctx.Done arm (CancelOnlyOwn)                  *)
 (*   - TrueRequired and DataRequired, the transitive session-resource      *)
-(*     recounts, and the invocation retGated and retHitSatisfied flags     *)
-(*     (RequiredExact, ReturnedGated, ReturnedHitSatisfied); their         *)
+(*     recounts, and the invocation retResourcesBound and retHitSatisfied  *)
+(*     flags                                                               *)
+(*     (RequiredExact, ReturnedResourcesBound, ReturnedHitSatisfied);      *)
+(*     their                                                               *)
 (*     contract is in the DerivedOwn-adjacent block and session_resources  *)
 (*     .md. res.handle, res.required, res.lateDeps, each session's bound   *)
 (*     handle set, and the invocation selRequired capture are real state   *)
@@ -116,7 +118,7 @@ CONSTANTS
                         \* With Handles = {} the machinery is inert:
                         \* BindResource never fires, every result's handle
                         \* stays "none" and required stays {}, the lookup
-                        \* filter is vacuous, and each gating field is
+                        \* filter is vacuous, and each resource-check field is
                         \* constant, so a configuration's distinct-state
                         \* count is unchanged by it. Handles = {h1} costs
                         \* roughly six to ten times the states; enable it
@@ -443,10 +445,12 @@ DerivedOwn(r) ==
 (* requirements" so that a container depending on a secret propagates the  *)
 (* handle transitively.                                                    *)
 (*                                                                         *)
-(* DataRequired is the harm-facing recount used by the retGated ghost: it  *)
+(* DataRequired is the harm-facing recount used by the retResourcesBound   *)
+(* ghost: it                                                               *)
 (* follows only data edges (deps minus lateDeps), because a retention      *)
 (* edge keeps its dep alive without the parent's payload depending on it.  *)
-(* See the ReturnedGated comment for the split between the harm property   *)
+(* See the ReturnedResourcesBound comment for the split between the harm   *)
+(* property                                                                *)
 (* and the conservative stored-set properties.                             *)
 (***************************************************************************)
 
@@ -476,7 +480,7 @@ TrueRequired(r) == TrueRequiredIn(res, r)
 \* not explicit retention edges (res[r].lateDeps, the AddDepLate edges).
 \* A retention edge keeps its dep alive; the parent's payload was computed
 \* without it, so the dep's handles are not needed to produce or refresh
-\* the parent. ReturnedGated judges harm over this closure; the stored set
+\* the parent. ReturnedResourcesBound judges harm over this closure; the stored set
 \* and the lookup filter stay conservative over every edge kind.
 DataDepClosureIn(rf, r) ==
     LET RECURSIVE Cl(_, _)
@@ -574,7 +578,7 @@ DecAndCascade(rf, r) == Cascade([rf EXCEPT ![r].own = @ - 1])
 (* the edges exactly as import's increments do.                            *)
 (***************************************************************************)
 
-ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
+ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFlag,
                handleVal, requiredVal) ==
     [call |-> c, registered |-> TRUE, released |-> FALSE,
      own |-> ownVal, deps |-> depsSet,
@@ -587,9 +591,9 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, launderedFlag,
      attachErrRefusal |-> FALSE,
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
-     laundered |-> launderedFlag,
+     dirtyAtSnapshot |-> dirtyAtSnapshotFlag,
      imported |-> TRUE,
-     \* session-resource gating: handle mirrors sessionResourceHandle set by
+     \* session-resource validation: handle mirrors sessionResourceHandle set by
      \* the import row (env.SessionResourceHandle), required is the STORED set
      \* from the import's dependency-first recompute.
      handle |-> handleVal, required |-> requiredVal,
@@ -616,7 +620,7 @@ DeadHusk ==
      attachErrRefusal |-> FALSE,
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
-     laundered |-> FALSE,
+     dirtyAtSnapshot |-> FALSE,
      imported |-> TRUE,
      handle |-> "none", required |-> {},
      lazyCb |-> [g \in LazyGroups |-> "none"],
@@ -739,7 +743,7 @@ NewInvocation(s, c, p, o, admitted) ==
      \* own ctx.Done arm has fired. See CancelOnlyOwn.
      ownCancel |-> FALSE,
      retLive |-> TRUE, retOwned |-> TRUE,
-     retBarrierOK |-> TRUE, retClean |-> TRUE, retGated |-> TRUE,
+     retBarrierOK |-> TRUE, retClean |-> TRUE, retResourcesBound |-> TRUE,
      \* Property-only ghost, captured at the hit serve (ReadBarrierOk):
      \* whether the served result's CURRENT stored required set was a
      \* subset of the session's bound handles at that instant. See
@@ -1130,7 +1134,7 @@ WaiterCancel(i) ==
 
 \* FnWindDown: the cancel-requested executor finally exits. Until it does,
 \* its resolver can still issue nested cache calls (SpawnNested) - that
-\* window is the drain escape. Gated by ModelNestedCalls so unrelated
+\* window permits a nested call during drain. Enabled by ModelNestedCalls so unrelated
 \* scenarios do not pay for nested-executor states.
 FnWindDown(o) ==
     /\ ModelNestedCalls
@@ -1321,14 +1325,14 @@ PubIndexFresh(o) ==
                        payload |-> "decoded",
                        decodePhase |-> "idle", decodeErr |-> "none",
                        decodeGen |-> 0, persistSyncPending |-> FALSE,
-                       \* session-resource gating: own handle chosen above;
+                       \* session-resource validation: own handle chosen above;
                        \* required is {own handle} union the deps' STORED
                        \* required sets (initCompletedResult's recompute, one
                        \* level deep off each dep's stored set).
                        handle |-> handleChoice,
                        required |-> OwnHandleReq(handleChoice)
                                       \cup UNION {res[d].required : d \in deps},
-                       laundered |-> FALSE,
+                       dirtyAtSnapshot |-> FALSE,
                        \* lazy-evaluation state, mirroring the lazyMu block
                        \* on sharedResult (cache.go:2032-2041), per group:
                        imported |-> FALSE,       \* fresh, not from the store
@@ -1774,7 +1778,8 @@ WaiterReleaseHold(i) ==
 (* exactly when the stored set changes, so the model expresses the         *)
 (* comparison as set equality with the selection capture (selRequired). A  *)
 (* hit that fails the re-validation falls through to the singleflight      *)
-(* (ReadBarrierGatedMiss below); result-ID value loads refuse instead,     *)
+(* (ReadBarrierResourceMismatchMiss below); result-ID value loads refuse   *)
+(* instead,                                                                *)
 (* which is equally a non-serve. Waiter returns are the producing          *)
 (* session's own results and are not re-checked in the code either.        *)
 (*                                                                         *)
@@ -1820,7 +1825,7 @@ ReadBarrierOk(i) ==
 \* the session owns the result but was never handed its value; held-result
 \* choices never consult the recorded edges, so the kept edge cannot
 \* masquerade as possession.
-ReadBarrierGatedMiss(i) ==
+ReadBarrierResourceMismatchMiss(i) ==
     /\ invocations[i].phase = "readBarrier"
     /\ invocations[i].path = "hit"
     /\ LET r == invocations[i].resId
@@ -1866,7 +1871,7 @@ ReadBarrierErrHit(i) ==
 \* The barrier closed with the classified producer-release refusal: the
 \* parked hit reader is innocent (its own session may still be live and a
 \* fresh execution would succeed), so its serve converts to a miss and
-\* falls through to the singleflight, exactly like ReadBarrierGatedMiss.
+\* falls through to the singleflight, exactly like ReadBarrierResourceMismatchMiss.
 \* The recorded session edge stays until session release. Result-ID value
 \* loads keep propagating the (classified) error in the code: they name
 \* one exact result and have no call to re-execute, and the model already
@@ -2217,7 +2222,7 @@ InvocationOperationExit(i) ==
                     THEN ProtectedReturn(s, r) ELSE @,
                ![i].retBarrierOK = IF success
                     THEN res[r].barrier \in {"none", "closedOk"} ELSE @,
-               ![i].retClean = IF success THEN ~res[r].laundered ELSE @,
+               ![i].retClean = IF success THEN ~res[r].dirtyAtSnapshot ELSE @,
                \* the DATA-closure requirement of the returned result is a
                \* subset of the session's bound handles: the session was never
                \* handed a result whose payload-producing closure depends on
@@ -2228,7 +2233,7 @@ InvocationOperationExit(i) ==
                \* held or produced the parent before the edge existed. The
                \* data closure of a settled result is frozen, so this exit-
                \* time recount equals the serve-time one.
-               ![i].retGated = IF success
+               ![i].retResourcesBound = IF success
                     THEN DataRequired(r) \subseteq sessionRelease[s].handles ELSE @]
     /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, evals, epoch, flushed>>
@@ -2481,8 +2486,10 @@ Flush ==
 (* increments), payloads nondeterministically decoded-eagerly or left as   *)
 (* envelopes, and numeric IDs rebuilt from retained row IDs. Omitted       *)
 (* record slots stay as dead husks for property bookkeeping.               *)
-(* The laundered flag carries each row's dirty verdict forward so the      *)
-(* NoLaunderedServe property can see what the restarted engine cannot.     *)
+(* The dirtyAtSnapshot flag carries each row's dirty verdict forward so    *)
+(* the                                                                     *)
+(* NoDirtySnapshotResultServed property can see what the restarted engine  *)
+(* cannot.                                                                 *)
 (***************************************************************************)
 
 Restart ==
@@ -3212,7 +3219,7 @@ Next ==
          \/ WaiterDropHoldCanceled(i)
          \/ WaiterClaim(i)
          \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-         \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
+         \/ ReadBarrierOk(i) \/ ReadBarrierResourceMismatchMiss(i) \/ PersistHit(i)
          \/ ReadBarrierRefusalMiss(i)
          \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
          \/ ReadBarrierCancelHit(i) \/ ReadBarrierCancelWait(i)
@@ -3307,7 +3314,7 @@ WaiterProgress(i) ==
     \/ WaiterDropHoldPubErr(i) \/ WaiterDropHoldCanceled(i)
     \/ WaiterClaim(i)
     \/ WaiterDepart(i) \/ WaiterReleaseHold(i)
-    \/ ReadBarrierOk(i) \/ ReadBarrierGatedMiss(i) \/ PersistHit(i)
+    \/ ReadBarrierOk(i) \/ ReadBarrierResourceMismatchMiss(i) \/ PersistHit(i)
     \/ ReadBarrierRefusalMiss(i)
     \/ ReadBarrierErrHit(i) \/ ReadBarrierErrWait(i)
     \/ DecodeLead(i) \/ DecodeInstall(i) \/ DecodeLeadFinish(i)
@@ -3385,17 +3392,19 @@ LiveSpec ==
 (* exercises one failure could drown the property under test in violations *)
 (* of unrelated properties.                                                *)
 (*                                                                         *)
-(* GUARANTEE (session-resource gating). Every path that hands a session a  *)
+(* GUARANTEE (session-resource validation). Every path that hands a        *)
+(* session a                                                               *)
 (* result VALUE filters on the session's bound set: request and digest     *)
 (* lookups (LookupHit), publication-adoption picks (CanonicalPick /        *)
 (* FnComplete's reuse), waits for a result the session itself produced,    *)
 (* and result-ID value loads, which refuse the session when neither a      *)
 (* clean canonical candidate nor the exact result satisfies it             *)
-(* (sharedResultLookupCanonicalEquivalentGated,                            *)
+(* (sharedResultLookupCanonicalEquivalentForSession,                       *)
 (* cache_persistence_resolver.go; before that check existed, the exact     *)
 (* fallback bypassed the filter). The filter runs at selection AND is      *)
 (* re-validated at the serve (the ReadBarrierOk disjunct /                 *)
-(* ReadBarrierGatedMiss; Go sessionStillSatisfiesResourceRequirements):    *)
+(* ReadBarrierResourceMismatchMiss; Go                                     *)
+(* sessionStillSatisfiesResourceRequirements):                             *)
 (* a live result's stored required set can grow after selection, through   *)
 (* an attached dep while its attachment is in flight or through a          *)
 (* requirement-carrying retention edge (AddDepLate) after it settled.      *)
@@ -3430,7 +3439,8 @@ LiveSpec ==
 (* (waiter returns, adoption fallback) can hand back a result whose        *)
 (* CURRENT stored set the session does not cover - by design: the stored   *)
 (* set is hit-eligibility bookkeeping, and the value's data closure is     *)
-(* what the holder needed and had. ReturnedGated therefore judges the      *)
+(* what the holder needed and had. ReturnedResourcesBound therefore judges *)
+(* the                                                                     *)
 (* data closure (DataRequired), and ReturnedHitSatisfied holds hit serves  *)
 (* - the paths the re-validation covers - to the conservative stored set. *)
 (* A requirement-checked ID load needs no action of its own: refusal      *)
@@ -3536,7 +3546,7 @@ TypeOK ==
               \in {"none", "open", "closedOk", "closedErr"}
          /\ invocations[i].ownCancel \in BOOLEAN
          /\ invocations[i].joinedGen \in 0..MaxInvocations
-         /\ invocations[i].retGated \in BOOLEAN
+         /\ invocations[i].retResourcesBound \in BOOLEAN
          /\ invocations[i].selRequired \subseteq Handles
          /\ invocations[i].retHitSatisfied \in BOOLEAN
     /\ \A s \in Sessions : sessionRelease[s].handles \subseteq Handles
@@ -3552,7 +3562,7 @@ OwnershipExact ==
 \* STORED required set equals the transitive recount. The same relationship
 \* OwnershipExact has to DerivedOwn. It held only outside persistence until
 \* the import recompute became dependency-first and the decode installs
-\* stopped overwriting the stored set; it is a regression gate on both.
+\* stopped overwriting the stored set; it is a regression check on both.
 RequiredExact ==
     \A r \in ResultIds :
         res[r].registered => res[r].required = TrueRequired(r)
@@ -3578,15 +3588,15 @@ ReturnedOwned ==
 \* No session is ever handed a result whose payload-producing closure
 \* depends, directly or transitively, on a handle leaf it never bound:
 \* every returned invocation satisfies the DATA-closure requirement of its
-\* result (DataRequired; see the retGated capture in
+\* result (DataRequired; see the retResourcesBound capture in
 \* InvocationOperationExit for why retention edges are excluded). This is
 \* the session-resource rule's purpose: the concrete harm is a session
 \* holding a value it could not produce or refresh, and only data edges
 \* carry that. The conservative stored set - which also counts retention
 \* edges - is judged separately: RequiredExact for the accounting, and
 \* ReturnedHitSatisfied for the serve paths that enforce the stored set.
-ReturnedGated ==
-    \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retGated
+ReturnedResourcesBound ==
+    \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retResourcesBound
 
 \* Every completed hit-path invocation was serving, at the instant of its
 \* hit serve (ReadBarrierOk), a stored required set its session's bound
@@ -3724,7 +3734,7 @@ RefusedOnlyAfterRelease ==
 \* Attachment failure never gains a persisted edge. A concurrent hit may
 \* have claimed a session edge while the barrier was open, so the errored
 \* result can remain registered until that session releases it.
-NoRetainedPoisonedEntry ==
+NoPersistedAttachErroredResult ==
     \A r \in ResultIds :
         (res[r].registered /\ res[r].barrier = "closedErr") =>
             ~res[r].persisted
@@ -3887,7 +3897,7 @@ FlushReferentialIntegrity ==
 \* A result that was open or attachment-errored at snapshot time is never
 \* imported and served. Flush rejects every persisted root whose dependency
 \* closure contains such a result.
-NoLaunderedServe ==
+NoDirtySnapshotResultServed ==
     \A i \in InvocationIds :
         invocations[i].phase = "done" => invocations[i].retClean
 

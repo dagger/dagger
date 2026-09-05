@@ -173,7 +173,7 @@ type frontendPretty struct {
 	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
 	// single LLM tool call) rather than describing the whole run. The
 	// surfacing sections no longer need it -- they roll up relative to the
-	// zoom (see surfaceRoot) -- so it now gates exactly two things: the TRACE
+	// zoom (see surfaceRoot) -- so it now controls exactly two things: the TRACE
 	// verdict header (the enclosing run's verdict, not the subtree's) and the
 	// live-tree promotions, which would reshape the shared, cached DB around
 	// the whole run instead of the subtree being reported on.
@@ -1854,7 +1854,7 @@ func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
 // makes requestSpans treat them as leaves and never fetch. An explicit zoom is
 // the user asking to see exactly this subtree, so fetch it regardless, mirroring
 // what `dagger trace --span` does (it calls loader.listen directly, bypassing
-// the gate). The requestedSpans dedup still prevents repeat fetches.
+// the child-count check). The requestedSpans dedup still prevents repeat fetches.
 func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 	if fe.spanProvider == nil || !id.IsValid() {
 		return
@@ -2166,8 +2166,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			if fe.reportOnly {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
-				// output from before it failed), so still replay it.
-				if err := replayPrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
+				// output from before it failed), so still write it.
+				if err := writePrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
 					return err
 				}
 			}
@@ -2186,16 +2186,16 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		}
 	}
 
-	// Replay the primary output log to stdout/stderr.
+	// Write the primary output log to stdout/stderr.
 	if fe.reportOnly {
 		// In report mode a failed run's root cause is already rendered above
 		// (renderRootCauseSection); the primary span's stderr stream is that
 		// same output wrapped by the engine as `Error: ... Stdout: ... Stderr:
-		// ...`. Replaying it here would duplicate the root cause (and reprint
+		// ...`. Writing it here would duplicate the root cause (and reprint
 		// the raw, un-vterm'd stream). But the stdout stream is the command's
 		// own result — e.g. a shell script's output from before it failed —
-		// so replay that, matching the streaming frontends. A passing run
-		// still replays both streams.
+		// so write that, matching the streaming frontends. A passing run
+		// still writes both streams.
 		//
 		// Only drop stderr when the root cause actually rendered, though:
 		// client-side failures carry no span origins (e.g. cobra usage
@@ -2203,7 +2203,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
 		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
+			return writePrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
 		}
 	}
 	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
@@ -3129,7 +3129,7 @@ func reportSectionLines(out TermOutput, agent bool, title string, body []string)
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
 // tests. Returns nil when there's nothing to drill into or no trace ID to build
-// a command from. Gated by traceRenderPolicy.showSuggestions at the call site.
+// a command from. Controlled by traceRenderPolicy.showSuggestions at the call site.
 func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string {
 	if fe.db == nil || fe.traceID == "" {
 		return nil
@@ -3208,7 +3208,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
-// no failed check applies. Gated by showSuggestions at the call site.
+// no failed check applies. Controlled by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
@@ -3474,7 +3474,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
 	// straight to a failure shows its detail. ChildCount is unreliable for
-	// externally-loaded spans, so the ChildCount-gated requestSpans (via
+	// externally-loaded spans, so the ChildCount-dependent requestSpans (via
 	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
 	// Report mode already fetches the pinned subtree up front (trace.go --span),
 	// so this is interactive-only; requestSubtree dedups against that.
@@ -3483,7 +3483,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	}
 
 	if fe.logProvider != nil {
-		// The primary output is replayed at end of run from OUTSIDE the render
+		// The primary output is written at end of run from OUTSIDE the render
 		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the

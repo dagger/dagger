@@ -30,7 +30,7 @@ import (
 // analyzer reads the override. This is emit, never inference: the loader only
 // reads the attribute the engine writes here.
 //
-// Like the other OTel-profiling hooks (otelprof_hooks.go) this is gated only on
+// Like the other OTel-profiling hooks (otelprof_hooks.go) this is enabled only by
 // telemetry being active, not on wcprof.Enabled — the OTel source must be
 // reconstructable from a Cloud trace alone, with no native recorder running.
 

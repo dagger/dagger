@@ -21,7 +21,7 @@ func TestHistoryPreserved(t *testing.T) {
 		textMsg(LLMMessageRoleAssistant, "hi"),
 	}
 
-	// historyPreserved is not a gate — nothing is rejected for failing it. It
+	// historyPreserved does not control acceptance — nothing is rejected for failing it. It
 	// only decides whether the adoption summary tells the model its history
 	// changed shape.
 	t.Run("identical history is preserved", func(t *testing.T) {

@@ -2217,7 +2217,7 @@ func frameProfileSkip(frame *ResultCall) bool {
 }
 
 // profileSkip reports the producer result's wcprof profile-skip decision, read off
-// its stored call frame. Lazy gating reads the PRODUCER's flag here (the forcer is
+// its stored call frame. Lazy profiling reads the PRODUCER's flag here (the forcer is
 // a different recipe than the producer, so a waiter's own bit must not be used) —
 // keep it so, or a cross-recipe wait can dangle.
 func (res *sharedResult) profileSkip() bool {
@@ -2461,7 +2461,7 @@ type ongoingCall struct {
 	execSpanCtx trace.SpanContext
 
 	// profSkip snapshots the target call's frame ProfileSkip at claim time (oc.res
-	// is not yet set when joiners wait). Every singleflight wait gates on this
+	// is not yet set when joiners wait). Every singleflight wait checks this
 	// TARGET flag — never the waiter's own — so a wait is emitted iff the target's
 	// call_exec/native op was, keeping mint and wait consistent and dangle-proof.
 	profSkip bool
@@ -3995,7 +3995,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// (target-before-primitive). A recording leader stores a valid target;
 			// an unrecorded leader leaves this fresh attempt record's zero value
 			// invalid. A joiner therefore cannot inherit a target from an earlier
-			// attempt, and mixed-recording waits remain gate-observable rather than
+			// attempt, and mixed-recording waits remain observable by validation rather than
 			// silently linking to the wrong lazy operation.
 			lazyOpSpanCtx := attempt.spanCtx
 			attempt.waiters++
@@ -4010,14 +4010,14 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// OTel joiner wait edge: the load-bearing edge — the lazy op is in the
 			// leader's subtree, not this joiner's, so this wait is the joiner's only
 			// causal link to the eval. EmitOTelWait is a no-op when the waiter is
-			// non-recording, and gate-observable (targetless) when the target is
+			// non-recording, and observable by validation (targetless) when the target is
 			// genuinely invalid (a non-uniform cross-session trace).
 			//
-			// LOAD-BEARING: gate this on the PRODUCER's stored skip flag, never the
+			// LOAD-BEARING: check the PRODUCER's stored skip flag, never the
 			// joiner's own bit. Elsewhere the profile-skip decision is safe to read
 			// off the waiter because a call and its singleflight joiners share one
 			// recipe and agree on it; a lazy forcer is a DIFFERENT recipe than the
-			// producer, so that agreement does NOT hold here. Gating on the
+			// producer, so that agreement does NOT hold here. Checking the
 			// producer's flag keeps a non-skipped forcer of a skipped-producer value
 			// from emitting an OTel wait into the deliberately absent producer span.
 			// Do NOT "simplify" this to the waiter's bit; that creates a dangling
@@ -4068,7 +4068,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 		//
 		// producerSkip drives ONLY the OTel lazy span and OTel lazy waits. When
 		// the producer is a reflection/introspection recipe, the OTel source mints
-		// no lazy span and all waiters use the same producer-derived gate. Native
+		// no lazy span and all waiters use the same producer-derived condition. Native
 		// profiling remains full detail and mints its operation unconditionally.
 		producerSkip := frameProfileSkip(resultCall)
 		var lazyOp *wcprof.Op
@@ -4172,7 +4172,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 
 		// Native profiling is full detail and emits the leader wait
 		// unconditionally. The OTel leader wait follows lazySpan != nil, which the
-		// producer's profile-skip gate above already controls.
+		// producer's profile-skip condition above already controls.
 		profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
 		otelWaitStartNS := time.Now().UnixNano()
 		waitErr, retry := c.waitForLazyEvaluation(stackCtx, shared, attempt)
@@ -4687,11 +4687,11 @@ func (c *Cache) getOrInitCall(
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
-	// Native wcprof is deliberately NOT profile-skip-gated: it is opt-in / dev-only,
+	// Native wcprof is deliberately NOT filtered by profile-skip: it is opt-in / dev-only,
 	// off the volume-constrained always-on path, and its value is full detail — so it
 	// records the reflection/introspection class too. Only the OTel second source
 	// (volume-constrained, always-on) skips that class. ProfileSkip never reaches a
-	// native gate.
+	// native profiling check.
 	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
 		return c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, nil)
 	}
@@ -4886,7 +4886,7 @@ func (c *Cache) getOrInitCallInner(
 	var execOp *wcprof.Op
 	if wcprof.Enabled(ctx) {
 		// the shared execution of this call's resolver; all singleflighted
-		// callers wait on this op (native: full detail, not profile-skip-gated)
+		// callers wait on this op (native: full detail, not filtered by profile-skip)
 		callCtx, execOp = wcprof.BeginOp(callCtx, wcprof.OpKindCallExec, profCallClass(req.ResultCall), wcprof.OpOpts{
 			Ident:    callKey,
 			ClientID: profClientID(ctx),
@@ -4921,8 +4921,8 @@ func (c *Cache) getOrInitCallInner(
 		sharedWorkCtx:            sharedWorkCtx,
 		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
 		profOpID:                 execOp.ID(),
-		// snapshot the target's skip decision for the OTel wait gating (oc.res is not
-		// set yet when joiners wait). Gating on the TARGET's flag keeps the OTel
+		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
+		// set yet when joiners wait). Checking the TARGET's flag keeps the OTel
 		// source dangle-proof: a skipped target never minted its call_exec span, so a
 		// joiner must not emit a wait into it. Native is unaffected (full detail).
 		profSkip: req.ResultCall.ProfileSkip,
@@ -5110,7 +5110,7 @@ func (c *Cache) wait(
 	}
 	var profWait *wcprof.Wait
 	if wcprof.Enabled(ctx) {
-		// native: full detail, not profile-skip-gated
+		// native: full detail, not filtered by profile-skip
 		profWait = wcprof.BeginWait(ctx, oc.profOpID, reason)
 	}
 	// OTel wait edge: record the blocked interval as a span
@@ -5130,9 +5130,9 @@ func (c *Cache) wait(
 	}
 	profWait.End()
 	if !oc.profSkip {
-		// gate on the TARGET's flag (oc.profSkip): a skipped target never minted
+		// check the TARGET's flag (oc.profSkip): a skipped target never minted
 		// oc.execSpanCtx, so a recording joiner must not emit a targetless wait that
-		// the structural gate would count as unresolved (distinct from a genuine
+		// the structural validation would count as unresolved (distinct from a genuine
 		// invalid target, which we DO emit so mixed-recording loss still fails loud)
 		EmitOTelWait(ctx, oc.execSpanCtx, reason, otelWaitStartNS, time.Now().UnixNano())
 	}

@@ -369,11 +369,11 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 //
 // Checkouts created by `git worktree` and `git submodule` have a .git pointer
 // file whose gitdir target lives on the client host; inside the engine that
-// pointer is dangling by construction, and its only effect is to poison git's
+// pointer is dangling by construction, and its only effect is to break git's
 // repository discovery for anything that runs near the synced tree. Module
 // contexts and workspaces represent a checkout's work tree -- git-ness is
 // provided canonically via MaterializeHostGitCheckout -- so the raw pointer
-// is dropped at load time rather than shipped as a landmine.
+// is dropped at load time to prevent discovery failures in the engine.
 func DropRootGitPointerFile(
 	ctx context.Context,
 	dag *dagql.Server,

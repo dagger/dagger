@@ -1,7 +1,7 @@
 // TLA+ model checking for the dagql cache spec (dagql/tla).
 //
 // Runs every TLC configuration of CacheLifecycle.tla. Green configurations
-// are regression gates: any violation fails the check. A configuration may
+// are regression checks: any violation fails the check. A configuration may
 // name an expected invariant only while it deliberately tracks an accepted
 // model finding.
 package main
@@ -28,33 +28,33 @@ const (
 // "" means the run must complete with no error found; a non-empty value
 // names the one invariant that must be violated.
 var expectedOutcome = map[string]string{
-	// green: regression gates over the modeled cache behavior. (The
+	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
-	"release_prune":     "",
-	"liveness":          "",
-	"lazy":              "",
-	"lazy_liveness":     "",
-	"lazy_stale_cancel": "",
-	"lazy_import":       "",
-	"persist":           "",
-	"persist_liveness":  "",
-	"flush_roundtrip":   "",
-	"orphan_edges":      "",
-	"release_steal":     "",
-	"drain_orphan":      "",
-	"rollback":          "",
-	"rollback_decode":   "",
-	"lost_cancel":       "",
-	"poisoned":          "",
-	"poisoned_adoption": "",
-	"poisoned_restart":  "",
-	"flush_closure":     "",
-	"release_inflight":  "",
-	"drain_escape":      "",
-	"flush_inflight":    "",
-	"flush_drained":     "",
-	"lazy_release":      "",
+	"release_prune":         "",
+	"liveness":              "",
+	"lazy":                  "",
+	"lazy_liveness":         "",
+	"lazy_stale_cancel":     "",
+	"lazy_import":           "",
+	"persist":               "",
+	"persist_liveness":      "",
+	"flush_roundtrip":       "",
+	"orphan_edges":          "",
+	"release_claim_race":    "",
+	"drain_orphan":          "",
+	"rollback":              "",
+	"rollback_decode":       "",
+	"lost_cancel":           "",
+	"attach_error":          "",
+	"attach_error_adoption": "",
+	"attach_error_restart":  "",
+	"flush_closure":         "",
+	"release_inflight":      "",
+	"drain_nested_call":     "",
+	"flush_inflight":        "",
+	"flush_drained":         "",
+	"lazy_release":          "",
 
 	// green: per-part evaluation (stage 2). Attempts are per
 	// (result, group); parts map to groups; the metadata-first ordering is
@@ -75,10 +75,10 @@ var expectedOutcome = map[string]string{
 	"decode_cancel":          "",
 	"decode_cancel_liveness": "",
 
-	// green: session-resource gating (the filter in
+	// green: session-resource validation (the filter in
 	// LookupHit/CanonicalPick/FnComplete, PubIndexFresh/PubAttachAddDep
-	// maintenance, BindResource, RequiredExact and ReturnedGated).
-	// resources_restart additionally gates the import-time accounting:
+	// maintenance, BindResource, RequiredExact and ReturnedResourcesBound).
+	// resources_restart additionally checks the import-time accounting:
 	// the dependency-first required recompute at import and the decode
 	// installs leaving the stored set alone; see the config headers.
 	"resources":         "",
@@ -94,13 +94,13 @@ var expectedOutcome = map[string]string{
 	// attachment is in flight, or a requirement-carrying retention edge
 	// after settling); the serve re-validates by the requirement
 	// generation captured at selection and converts a stale hit to a
-	// miss. resources_gated_growth covers the attachment window,
+	// miss. resources_requirement_growth covers the attachment window,
 	// resources_latedep_recheck the retention-edge window and
 	// resources_latedep_cascade the ancestor cascade, each from an
 	// imported starting graph; see the config headers.
-	"resources_gated_growth":    "",
-	"resources_latedep_recheck": "",
-	"resources_latedep_cascade": "",
+	"resources_requirement_growth": "",
+	"resources_latedep_recheck":    "",
+	"resources_latedep_cascade":    "",
 
 	// green: a session's release can no longer manufacture a failure for
 	// a live, innocent caller through the attachment machinery. The
@@ -142,7 +142,7 @@ func (m *TlaCheck) base() *dagger.Container {
 // for the big state spaces. Keep it in sync when configurations are added
 // or their costs change materially.
 var quickConfigs = []string{
-	"drain_escape",
+	"drain_nested_call",
 	"drain_orphan",
 	"flush_closure",
 	"flush_drained",
@@ -156,10 +156,10 @@ var quickConfigs = []string{
 	"liveness",
 	"lost_cancel",
 	"orphan_edges",
-	"poisoned",
-	"poisoned_restart",
+	"attach_error",
+	"attach_error_restart",
 	"release_inflight",
-	"release_steal",
+	"release_claim_race",
 }
 
 // CacheLifecycle model-checks every configuration of the dagql cache spec

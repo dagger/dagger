@@ -1067,19 +1067,19 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 }
 
 // renderPrimaryOutputFor is renderPrimaryOutput for an explicit primary span,
-// so a scoped report can replay ITS root's output without the DB's global
+// so a scoped report can write ITS root's output without the DB's global
 // primary span having to be mutated to point at it.
 func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID) error {
-	return replayPrimaryOutput(w, db, primary, true)
+	return writePrimaryOutput(w, db, primary, true)
 }
 
-// replayPrimaryOutput replays the primary span's log records to the CLI's
-// stdout/stderr. With includeStderr false only the stdout stream is replayed:
+// writePrimaryOutput writes the primary span's log records to the CLI's
+// stdout/stderr. With includeStderr false only the stdout stream is written:
 // report mode uses this for failed runs, whose stderr stream carries the
 // engine-wrapped failure output the rendered report already covers, while
 // stdout still carries the command's own results (e.g. a shell script's
 // output from before it failed).
-func replayPrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
+func writePrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr bool) error {
 	logs := db.PrimaryLogs[primary]
 	if !includeStderr {
 		var stdout []sdklog.Record

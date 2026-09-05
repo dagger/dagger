@@ -320,14 +320,14 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 					if err != nil {
 						return err
 					}
-					// Replay the resumed conversation at the level above the
+					// Emit the resumed conversation at the level above the
 					// ".resume" command span so it surfaces as the top-level
 					// transcript rather than nested under ".resume".
-					replayCtx := h.cmdParentCtx
-					if replayCtx == nil {
-						replayCtx = ctx
+					historyCtx := h.cmdParentCtx
+					if historyCtx == nil {
+						historyCtx = ctx
 					}
-					if err := llm.LoadSession(ctx, replayCtx, args[0]); err != nil {
+					if err := llm.LoadSession(ctx, historyCtx, args[0]); err != nil {
 						return err
 					}
 					// Start a fresh save file for subsequent prompts, leaving
@@ -393,13 +393,13 @@ func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Replay the resumed conversation above the ".resume" command span so it
+	// Emit the resumed conversation above the ".resume" command span so it
 	// surfaces as the top-level transcript rather than nested under ".resume".
-	replayCtx := h.cmdParentCtx
-	if replayCtx == nil {
-		replayCtx = ctx
+	historyCtx := h.cmdParentCtx
+	if historyCtx == nil {
+		historyCtx = ctx
 	}
-	if err := llm.LoadSession(ctx, replayCtx, selected); err != nil {
+	if err := llm.LoadSession(ctx, historyCtx, selected); err != nil {
 		return err
 	}
 	h.initialPrompt = ""

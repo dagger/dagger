@@ -7086,7 +7086,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 		Slot String `name:"slot"`
 	}
 	Fields[cacheTestQuery]{
-		NodeFunc("gatedLeafParent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+		NodeFunc("resourceRequiringParent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
 			leaf, err := cacheTestSessionResourceLeaf(ctx, handle)
 			if err != nil {
 				return Result[*cacheTestObject]{}, err
@@ -7126,7 +7126,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 		return res
 	}
 
-	gated := sel("gatedLeafParent", "")
+	resourceRequiring := sel("resourceRequiringParent", "")
 	middle := sel("plain", "a")
 	plainDep := sel("plain", "b")
 	top := sel("wrap", "a")
@@ -7148,12 +7148,12 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	// on middle, middle now depends on the requirement-carrying parent, so
 	// both stored sets must grow to {handle} and both requirement
 	// generations must move.
-	assert.NilError(t, c.AddExplicitDependency(ctx, middle, gated, "test_late_dep"))
+	assert.NilError(t, c.AddExplicitDependency(ctx, middle, resourceRequiring, "test_late_dep"))
 
-	gatedShared := gated.cacheSharedResult()
-	assert.Assert(t, gatedShared != nil && gatedShared.id != 0)
+	resourceRequiringShared := resourceRequiring.cacheSharedResult()
+	assert.Assert(t, resourceRequiringShared != nil && resourceRequiringShared.id != 0)
 	c.egraphMu.RLock()
-	_, edgeAdded := middleShared.deps[gatedShared.id]
+	_, edgeAdded := middleShared.deps[resourceRequiringShared.id]
 	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
 	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
 	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
@@ -7337,7 +7337,7 @@ func TestCacheHitRechecksSessionResourcesAfterAttachBarrier(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	// Let attachment finish: the gated leaf lands and the parent's required
+	// Let attachment finish: the resource-requiring leaf lands and the parent's required
 	// set grows to {handle} before the barrier opens for B.
 	close(obj.attachRelease)
 
@@ -7429,7 +7429,7 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 		bDone <- callOutcome{res: res, err: err}
 	}()
 
-	// The gated pre-check in sharedResultByResultID passes while the required
+	// The resource pre-check in sharedResultByResultID passes while the required
 	// set is still empty and records the session edge; the load then parks at
 	// the attach barrier.
 	deadline := time.Now().Add(10 * time.Second)
@@ -7441,7 +7441,7 @@ func TestCacheLoadResultByResultIDRechecksAfterAttachBarrier(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for session B's load to pass the gated pre-check")
+			t.Fatal("timed out waiting for session B's load to pass the resource pre-check")
 		}
 		time.Sleep(time.Millisecond)
 	}

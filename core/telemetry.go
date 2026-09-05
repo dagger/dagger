@@ -44,7 +44,7 @@ func AroundFunc(
 	// hideCtx) are still classified by their OWN recipe: a reflection-receiver call
 	// is skipped, while real shared work (clone / dep-load, whose receiver is NOT a
 	// reflection type) stays profiled. The bit homes on the frame so it travels
-	// through clone()/fork()/persistence; only cache.go's OTel emit gates read it
+	// through clone()/fork()/persistence; only cache.go's OTel emission checks read it
 	// (native wcprof keeps full detail). ReceiverTypeName was stamped lookup-free at
 	// the object call site.
 	req.ResultCall.ProfileSkip = profileSkip(req.ReceiverTypeName, req.Field)
@@ -196,7 +196,7 @@ func AroundFunc(
 // (dagql.CacheDecision) exactly when this call's span records and the call is
 // not ProfileSkip-classified — the same volume class the OTel profiling source
 // uses — so suppressed/deduplicated/introspection/profile-skipped calls record
-// nothing and dagql needs no gating logic of its own (nil carrier ⇒ no-op).
+// nothing and dagql needs no filtering logic of its own (nil carrier ⇒ no-op).
 func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 	if span == nil || !span.IsRecording() {
 		return
@@ -536,22 +536,22 @@ var reflectionTypeNames = map[string]struct{}{
 // profileSkip reports whether the wcprof OTel second source must skip profiling
 // this call. Native wcprof is opt-in / dev-only, off the volume-constrained
 // always-on path, and its value is full detail — so it keeps profiling this class
-// and is NOT gated by this predicate. It targets the reflection / schema-walk class
+// and is NOT filtered by this predicate. It targets the reflection / schema-walk class
 // that normal telemetry already hides and that, when profiled by the OTel source,
 // emits a call_exec + publishResult pair per cache miss, dominating OTel volume on
 // a module-load workload (the regression that overflows the BatchSpanProcessor and
-// drops the parent/target spans the offline analyzer's structural gate hard-fails on).
+// drops the parent/target spans the offline analyzer's structural validation hard-fails on).
 //
 // It is a pure function of the recipe (immediate receiver type name + field, both
 // in the call digest), so a call and any caller that singleflights it agree by
-// construction — which is what lets the loader/replay stay UNCHANGED (no inference;
+// construction — which is what lets ID loading stay UNCHANGED (no inference;
 // the engine just emits a smaller, self-consistent graph). The decision is stamped
 // onto the call frame (ResultCall.ProfileSkip) and travels with it through
 // clone/fork/persistence, so derived (nth-element), adopted, copied and imported
 // results carry it without a per-site provenance audit.
 //
 // It is deliberately:
-//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-gated receiver-type
+//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-dependent receiver-type
 //     cases), so the volume amplifier never returns in the very mode used to
 //     capture a trace for debugging; and
 //   - SEPARATE from introspectionInfo (the UI/normal-telemetry decision), which is

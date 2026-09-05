@@ -604,7 +604,7 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 // this turn's tool results to the RETURNED LLM instead of the one that made the
 // call, so the swap takes effect mid-turn without restarting the session.
 //
-// ANY LLM may be adopted — there is no lineage gate. This mirrors
+// ANY LLM may be adopted — there is no lineage requirement. This mirrors
 // rebindWorkspace, the sibling ring of the same convention: a tool may return
 // any workspace at all, and what makes that safe is not prevention but
 // VISIBILITY (a patch summary the model reads). Continuations are written by
@@ -716,8 +716,8 @@ func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Ser
 // current's, unchanged, as a prefix — i.e. the conversation was transformed
 // (install/reload) rather than replaced.
 //
-// This is NOT a gate: it is an input to the adoption summary, so the model is
-// told when its history changed shape. Comparing histories by VALUE rather
+// This is NOT an acceptance condition: it informs the adoption summary, so
+// the model is told when its history changed shape. Comparing histories by VALUE rather
 // than chasing the dagql ID chain is deliberate: a Result's ID is an opaque
 // runtime handle, and an LLM is usually transformed by being PASSED to
 // something (`agents.compose(base: llm)`) rather than received by it, so ID
@@ -861,11 +861,11 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // changes = after.changes(from: before).
 //
 // A tool-built changeset's After is an operation chain (e.g.
-// File.withReplaced) rooted at live workspace reads. Replaying those
+// File.withReplaced) rooted at live workspace reads. Reapplying those
 // operations when a saved session is loaded fails once the files have moved
 // on (the search text is gone), or silently re-applies them when it hasn't.
 // Capturing the patch now — while the content the operations ran against is
-// known — makes the recorded overlay pure data, and its replay a tolerant
+// known — makes the recorded overlay pure data, and its restoration a tolerant
 // application: hunks that fit apply, hunks that don't leave conflict markers
 // for the agent to resolve.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
@@ -928,7 +928,7 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 // file-level residue means the patch did not reproduce the changeset, and
 // normalization is abandoned (the caller falls back to the raw changeset).
 func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], patched dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
-	// Cheap gate: the changeset's own paths are already computed (memoized by
+	// Quick check: the changeset's own paths are already computed (memoized by
 	// asPatch). Directories carry a trailing slash; if none changed, the patch
 	// covered everything and there is no residue to look for.
 	origPaths, err := changes.Self().ComputePaths(ctx)
@@ -960,7 +960,7 @@ func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dag
 		}
 	}
 	// Recorded as selectors on the overlay chain, so they are pure data like
-	// the patch itself, and replay tolerantly: withNewDirectory is mkdir -p,
+	// the patch itself, and reapply tolerantly: withNewDirectory is mkdir -p,
 	// withoutDirectory ignores an already-missing path.
 	for _, dir := range paths.Added {
 		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
@@ -1279,9 +1279,9 @@ func guardToolResult(res string) string {
 // grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
 // into, so the tool's execution nests beneath it. Every provider — including
-// replay — builds one display span per tool call (see displayPhases), so the
-// fallback to ctx only applies to a provider that returns no display spans at
-// all (none today) or a call ID the provider never announced.
+// the recorded-response provider — builds one display span per tool call (see
+// displayPhases), so the fallback to ctx only applies when a provider returns
+// no display spans (none today) or never announced the call ID.
 func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callID string) context.Context {
 	if tc, ok := displays[callID]; ok {
 		return tc.Ctx
@@ -1642,7 +1642,7 @@ func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []da
 // unresolved, so every kind of conflict gets git's own treatment — markers for
 // overlapping edits and for a file added on both sides, the modified version
 // for a modify/delete pair — instead of the hunk-level best effort of a patch
-// replay, which can only mark what git apply rejects and skips a file it
+// reapplication, which can only mark what git apply rejects and skips a file it
 // cannot patch at all.
 //
 // Merging through the withChangeset field rather than the raw Go method keeps

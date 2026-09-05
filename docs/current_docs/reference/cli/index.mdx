@@ -15,7 +15,7 @@ dagger [options] [subcommand | file...]
 ### Options
 
 ```
-      --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
   -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -c, --command string               Execute a dagger shell command
   -d, --debug                        Show debug logs and full verbosity
@@ -204,7 +204,7 @@ dagger api call [options] [function]...
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
   -j, --json                 Present result as JSON
   -m, --load-module string   Use a one-off module (local path or git ref)
@@ -396,7 +396,7 @@ dagger api functions [options] [function]...
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
   -m, --load-module string   Use a one-off module (local path or git ref)
 ```
@@ -462,7 +462,7 @@ EOF
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --doc string           Read query from file (defaults to reading from stdin)
       --eager-runtime        load module runtime eagerly
   -m, --load-module string   Use a one-off module (local path or git ref)
@@ -581,7 +581,7 @@ dagger check [options] [pattern...]
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --eager-runtime        load module runtime eagerly
       --failfast             Cancel remaining checks on first failure
       --generate             Only run generate-as-checks, skip annotated check functions

@@ -150,8 +150,8 @@ type shellCallHandler struct {
 	// cmdParentCtx is the context active just above the per-command span
 	// created in Handle. Builtins whose telemetry should surface as siblings of
 	// the command itself -- rather than nested under the command's own span --
-	// replay against this instead of the command ctx (e.g. .resume, whose
-	// replayed conversation belongs at the top level, not buried under the
+	// emit history against this instead of the command ctx (e.g. .resume, whose
+	// restored conversation belongs at the top level, not buried under the
 	// ".resume" span).
 	cmdParentCtx context.Context
 }
@@ -500,7 +500,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
-	// Remember the context above the per-command span so builtins that replay
+	// Remember the context above the per-command span so builtins that emit
 	// conversation telemetry (.resume) can surface it at this level rather than
 	// nested under their own command span.
 	h.cmdParentCtx = ctx
