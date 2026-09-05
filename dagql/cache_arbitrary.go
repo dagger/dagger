@@ -126,6 +126,14 @@ func (c *Cache) getOrInitArbitrary(
 
 	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	// The initializer can finish after every waiter leaves. Keep its value
+	// handoff and any late release visible to Close independently of waiters.
+	callbackOp, err := c.beginCacheOperation()
+	if err != nil {
+		cancel(err)
+		c.callsMu.Unlock()
+		return nil, err
+	}
 	c.nextArbitraryResultID++
 	res := &sharedArbitraryResult{
 		id:      c.nextArbitraryResultID,
@@ -138,14 +146,21 @@ func (c *Cache) getOrInitArbitrary(
 	c.ongoingArbitraryCalls[callKey] = res
 
 	go func() {
-		defer close(res.waitCh)
+		defer callbackOp.finish(false)
 		val, err := fn(callCtx)
+		c.callsMu.Lock()
 		res.err = err
 		if err == nil {
 			res.value = val
 			if onReleaser, ok := val.(OnReleaser); ok {
 				res.onRelease = onReleaser.OnRelease
 			}
+		}
+		close(res.waitCh)
+		onRelease := c.removeUnownedArbitraryLocked(res)
+		c.callsMu.Unlock()
+		if err := runArbitraryOnRelease(callCtx, onRelease); err != nil {
+			c.recordReleaseCleanupError(sessionID, true, err)
 		}
 	}()
 
@@ -203,10 +218,10 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 		return ret, nil
 	}
 
-	c.removeUnownedArbitraryLocked(res)
+	onRelease := c.removeUnownedArbitraryLocked(res)
 
 	c.callsMu.Unlock()
-	return nil, err
+	return nil, errors.Join(err, runArbitraryOnRelease(ctx, onRelease))
 }
 
 // removeUnownedArbitraryLocked drops an arbitrary value that has neither a
@@ -215,19 +230,18 @@ func (c *Cache) removeUnownedArbitraryLocked(res *sharedArbitraryResult) OnRelea
 	if res == nil || res.ownerSessionCount != 0 || res.waiters != 0 {
 		return nil
 	}
-	removed := false
 	if existing := c.ongoingArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.ongoingArbitraryCalls, res.callKey)
-		removed = true
 	}
 	if existing := c.completedArbitraryCalls[res.callKey]; existing != nil && existing.id == res.id {
 		delete(c.completedArbitraryCalls, res.callKey)
-		removed = true
 	}
-	if !removed {
-		return nil
-	}
-	return res.onRelease
+	// Cancellation may have removed the entry before its value arrived.
+	// Taking the callback once also covers that late completion without
+	// touching a newer entry with the same call key.
+	onRelease := res.onRelease
+	res.onRelease = nil
+	return onRelease
 }
 
 func runArbitraryOnRelease(ctx context.Context, onRelease OnReleaseFunc) error {
