@@ -88,6 +88,60 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 	}
 }
 
+func TestEnvModuleAsSDKRoundTrip(t *testing.T) {
+	original := []byte(`# keep this comment
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[modules.go-sdk.as-sdk]
+name = "go"
+
+[env.dev]
+`)
+	cfg, err := ParseConfig(original)
+	if err != nil {
+		t.Fatalf("ParseConfig: %v", err)
+	}
+	env := cfg.Env["dev"]
+	env.Modules = map[string]EnvModuleOverlay{
+		"go-sdk": {
+			AsSDK: &ModuleAsSDK{
+				Name:    "go",
+				Modules: []SDKManagedModule{{Path: ".dagger/modules/dev"}},
+				Clients: []SDKManagedClient{{Path: "clients/dev", Module: ".dagger/modules/dev"}},
+			},
+		},
+	}
+	cfg.Env["dev"] = env
+
+	updated, err := UpdateConfigBytes(original, cfg)
+	if err != nil {
+		t.Fatalf("UpdateConfigBytes: %v", err)
+	}
+	if !strings.Contains(string(updated), "# keep this comment") {
+		t.Fatalf("comment was not preserved:\n%s", updated)
+	}
+	for _, want := range []string{
+		"[[env.dev.modules.go-sdk.as-sdk.modules]]",
+		"[[env.dev.modules.go-sdk.as-sdk.clients]]",
+		`path = ".dagger/modules/dev"`,
+		`path = "clients/dev"`,
+	} {
+		if !strings.Contains(string(updated), want) {
+			t.Errorf("missing %q in updated config:\n%s", want, updated)
+		}
+	}
+
+	parsed, err := ParseConfig(updated)
+	if err != nil {
+		t.Fatalf("ParseConfig(updated): %v", err)
+	}
+	role := parsed.Env["dev"].Modules["go-sdk"].AsSDK
+	if role == nil || len(role.Modules) != 1 || len(role.Clients) != 1 {
+		t.Fatalf("environment SDK role did not round-trip: %#v", role)
+	}
+}
+
 // TestModuleAsSDKPreservesCommentsOutside verifies that comments and
 // formatting in non-as-sdk regions survive a write that touches as-sdk.
 func TestModuleAsSDKPreservesCommentsOutside(t *testing.T) {

@@ -3666,6 +3666,10 @@ func sdkOwnersByModulePath(ctx context.Context, ws *core.Workspace) (map[string]
 	if err != nil {
 		return nil, err
 	}
+	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+	if err != nil {
+		return nil, err
+	}
 	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
 		return nil, err

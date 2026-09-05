@@ -11,7 +11,7 @@ export _EXPERIMENTAL_DAGGER_CLI_BIN=$DAGGER_BIN_ROOT/dagger
 if [[ "$(uname -s)" != "Linux" ]]; then
     export _TEST_DAGGER_CLI_LINUX_BIN=$DAGGER_BIN_ROOT/dagger-linux
 fi
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+export DAGGER_ENGINE=container://dagger-engine.dev
 export _DAGGER_TESTS_ENGINE_TAR=$DAGGER_BIN_ROOT/engine.tar
 export PATH=$DAGGER_BIN_ROOT:$PATH
 

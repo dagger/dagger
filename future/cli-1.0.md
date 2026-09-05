@@ -71,7 +71,7 @@ OPTIONS
       --env string               Apply (or write to) a named env overlay. Envs are
                                  paths under env.<name>.* in workspace config; see
                                  `dagger workspace config env`
-  -i, --interactive              Spawn a terminal on container exec failure
+  -i, --shell-on-error           Open a shell when a container exec fails
   -m, --load-module string       Use a one-off module (local path or git ref)
       --no-load-module           Don't load any module for this command
   -W, --workspace string         Select the workspace location to load from

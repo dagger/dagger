@@ -56,6 +56,7 @@ func main() {
 	buf := new(bytes.Buffer)
 	if err := cobradocs.Markdown(root, buf, cobradocs.MarkdownOptions{
 		Frontmatter: frontmatter,
+		IncludeFlag: daggercmd.FlagAvailableForCommand,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "generate markdown: %v\n", err)
 		os.Exit(1)
@@ -65,7 +66,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "create output dir: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(output, []byte(escapeMDXAngles(buf.String())), 0o600); err != nil {
+	generated := escapeMDXAngles(buf.String())
+	lines := strings.Split(generated, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+	generated = strings.Join(lines, "\n")
+	if err := os.WriteFile(output, []byte(generated), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", output, err)
 		os.Exit(1)
 	}

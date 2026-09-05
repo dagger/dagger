@@ -19,7 +19,7 @@ func (s *workspaceSchema) workspaceModules(
 	if ws.ConfigFile == "" {
 		// An env selection has nowhere to resolve from without a config, and
 		// silently listing nothing would read as "the env is empty".
-		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+		if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
 			return nil, fmt.Errorf("workspace env %q requires dagger.toml", envName)
 		}
 		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
@@ -31,20 +31,11 @@ func (s *workspaceSchema) workspaceModules(
 	}
 	// The listing is the effective view, merged in the same order as module
 	// loading (base, user-level overlay, selected env overlay), so modules an
-	// overlay adds are discoverable — with or without an env selected, since
-	// loading applies the user overlay unconditionally too. It inherits the
-	// env overlay's strictness — a missing or broken env fails listing instead
-	// of silently falling back to the base config, deliberately matching
-	// env-selected config reads.
-	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	// overlay adds are discoverable. A missing or broken selected env fails the
+	// read instead of falling back to the base config.
+	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
-		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	configDir, err := workspaceConfigDirectory(ws)
@@ -207,15 +198,9 @@ func (s *workspaceSchema) moduleSettings(
 	// Values come from the user-level overlay and the selected env overlay,
 	// merged in the same order as module loading. The entry lookup is also
 	// effective so modules an overlay itself adds resolve their settings.
-	effectiveCfg, err := workspace.ApplyUserOverlay(cfg, ws.Self().UserConfigOverlay())
+	effectiveCfg, _, err := effectiveWorkspaceConfig(ctx, ws.Self(), cfg)
 	if err != nil {
 		return nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
-		effectiveCfg, err = workspace.ApplyEnvOverlay(effectiveCfg, envName)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	entry, ok := effectiveCfg.Modules[parent.Self().Name]

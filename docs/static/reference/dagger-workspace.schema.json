@@ -53,6 +53,10 @@
         },
         "settings": {
           "type": "object"
+        },
+        "as-sdk": {
+          "$ref": "#/$defs/ModuleAsSDK",
+          "description": "AsSDK replaces the base SDK role in this environment. A nil value inherits the base role. This lets environment-scoped authoring commands change their managed module and client lists without changing the base workspace configuration."
         }
       },
       "additionalProperties": false,

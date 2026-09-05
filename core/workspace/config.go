@@ -113,7 +113,8 @@ type EnvOverlay struct {
 // An overlay may override the [modules.<name>.settings] of a module already
 // installed in the base config, and/or *add* a module that only exists in this
 // environment by giving it a Source (and optional Pin). An overlay that names a
-// module missing from the base config without a Source is an error.
+// module missing from the base config without a Source is an error. AsSDK, when
+// present, replaces the base module's SDK role in this environment.
 type EnvModuleOverlay struct {
 	// Source, when set, installs a module scoped to this environment. It mirrors
 	// [modules.<name>.source]: a workspace-relative path or a canonical ref.
@@ -121,6 +122,11 @@ type EnvModuleOverlay struct {
 	// Pin is the resolved version for Source, mirroring [modules.<name>.pin].
 	Pin      string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+	// AsSDK replaces the base SDK role in this environment. A nil value
+	// inherits the base role. This lets environment-scoped authoring commands
+	// change their managed module and client lists without changing the base
+	// workspace configuration.
+	AsSDK *ModuleAsSDK `json:"as-sdk,omitempty" toml:"as-sdk,omitempty"`
 }
 
 // ResolveModuleEntrySource converts a workspace-config module source into the
@@ -252,10 +258,10 @@ func clientOptionsFromTree(tree *toml.Tree) map[string]string {
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
 // applied on top of the base module config.
 //
-// Environments may override [modules.<name>.settings] of an installed module
-// and may add modules that only exist in the environment (by providing a
-// source). Naming a module that is neither installed in the base config nor
-// given a source is an error.
+// Environments may override [modules.<name>.settings] and the as-sdk role of an
+// installed module. They may also add modules that only exist in the
+// environment by providing a source. Naming a module that is neither installed
+// in the base config nor given a source is an error.
 func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	if cfg == nil {
 		if envName == "" {
@@ -308,6 +314,9 @@ func applyModuleOverlays(applied *Config, overlays map[string]EnvModuleOverlay, 
 		}
 		for key, value := range overlay.Settings {
 			entry.Settings[key] = value
+		}
+		if overlay.AsSDK != nil {
+			entry.AsSDK = cloneModuleAsSDK(overlay.AsSDK)
 		}
 		applied.Modules[moduleName] = entry
 	}
@@ -476,6 +485,7 @@ func cloneConfig(cfg *Config) *Config {
 						Source:   overlay.Source,
 						Pin:      overlay.Pin,
 						Settings: cloneConfigMap(overlay.Settings),
+						AsSDK:    cloneModuleAsSDK(overlay.AsSDK),
 					}
 				}
 			}
@@ -675,6 +685,7 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 			} else {
 				writeConfigTable(b, modulePath+".settings", overlay.Settings, false)
 			}
+			writeModuleAsSDK(b, modulePath, overlay.AsSDK)
 		}
 	}
 
@@ -1292,6 +1303,11 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 				module.Settings = map[string]any{}
 			}
 			module.Settings[parts[5]] = value
+		case parts[4] == "as-sdk" && len(parts) == 6 && parts[5] == "name":
+			if module.AsSDK == nil {
+				module.AsSDK = &ModuleAsSDK{}
+			}
+			module.AsSDK.Name = fmt.Sprint(value)
 		default:
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}

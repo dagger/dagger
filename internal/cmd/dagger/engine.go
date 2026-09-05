@@ -25,8 +25,17 @@ import (
 )
 
 const (
-	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+
+	// engineEnv is the environment form of --engine. It takes the same values.
+	engineEnv = "DAGGER_ENGINE"
+
+	// cloudEngineEnv and RunnerHostEnv are soft-deprecated, like the --cloud
+	// flag: --engine and DAGGER_ENGINE replace them, but they still work as a
+	// fallback.
+	cloudEngineEnv = "DAGGER_CLOUD_ENGINE"
+	RunnerHostEnv  = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+
 	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
 	TraceNameEnv         = "DAGGER_TRACE_NAME"
 )
@@ -155,10 +164,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		params.LogLevel = slog.LevelDebug
 	}
 
-	if useCloudEngine {
-		params.RunnerHost = engine.DefaultCloudRunnerHost
-	} else if params.RunnerHost == "" {
-		params.RunnerHost = RunnerHost
+	if selectedEngine() != "" || params.RunnerHost == "" {
+		params.RunnerHost = configuredRunnerHost()
 	}
 
 	if RunnerImageLoader != "" {
@@ -185,8 +192,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.WithTerminal = withTerminal
 
-	params.Interactive = interactive
-	params.InteractiveCommand = interactiveCommandParsed
+	params.Interactive = shellOnError
+	params.InteractiveCommand = shellCommandOnErrorParsed
 
 	if hasTTY {
 		params.PromptHandler = Frontend
@@ -199,6 +206,44 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.CloudAuth = ca
 
 	return params, nil
+}
+
+// selectedEngine returns the engine selector, or "" when nothing selects an
+// engine. Flags outrank the environment, and the current inputs outrank the
+// deprecated ones:
+//
+//  1. --engine
+//  2. --cloud            (deprecated flag)
+//  3. DAGGER_ENGINE
+//  4. DAGGER_CLOUD_ENGINE (deprecated)
+//
+// _EXPERIMENTAL_DAGGER_RUNNER_HOST is deprecated too, but it reaches the CLI
+// as RunnerHost, so configuredRunnerHost handles it below all of these.
+func selectedEngine() string {
+	if engineFlag != "" {
+		return engineFlag
+	}
+	if cloudFlag {
+		return "cloud"
+	}
+	if value := os.Getenv(engineEnv); value != "" {
+		return value
+	}
+	if cloudEngineEnvSet {
+		return "cloud"
+	}
+	return ""
+}
+
+func configuredRunnerHost() string {
+	switch selected := selectedEngine(); selected {
+	case "":
+		return RunnerHost
+	case "cloud":
+		return engine.DefaultCloudRunnerHost
+	default:
+		return selected
+	}
 }
 
 // withSetupSessions runs fn under a single Frontend (one live TUI) while letting

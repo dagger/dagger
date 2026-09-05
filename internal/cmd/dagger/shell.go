@@ -37,8 +37,13 @@ var (
 )
 
 func shellAddFlags(cmd *cobra.Command) {
+	// -c stays ungated: on the root command it is how a user reaches the shell
+	// at all, so the root usage message must keep naming it.
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
+
+	// The model is an engine session parameter.
 	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')")
+	setFlagCapabilities(cmd.Flags().Lookup("model"), mayCallEngine)
 }
 
 var shellCmd = &cobra.Command{

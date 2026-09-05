@@ -207,6 +207,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.NotContains(t, help, "function, fn")
 	require.NotContains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
+	require.Contains(t, help, "terminal, tty")
 	require.NotContains(t, help, "exec, run")
 
 	names := rootHelpCommandNames(help)
@@ -371,7 +372,7 @@ func commandIndex(names []string, name string) int {
 	return -1
 }
 
-func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
+func TestInstallGlobalFlags(t *testing.T) {
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	installGlobalFlags(flags)
 
@@ -388,6 +389,10 @@ func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
 	webFlag := flags.Lookup("web")
 	require.NotNil(t, webFlag)
 	require.Equal(t, "w", webFlag.Shorthand)
+
+	xReleaseFlag := flags.Lookup("x-release")
+	require.NotNil(t, xReleaseFlag)
+	require.True(t, xReleaseFlag.Hidden)
 }
 
 func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
@@ -401,10 +406,48 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	workdir = "."
 	workspaceRef = ""
 
-	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call"}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	parseGlobalFlags(root, []string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
 
 	require.Equal(t, "/work/shell", workdir)
 	require.Equal(t, "./ws", workspaceRef)
+}
+
+// Cobra owns --help. The early global pass shares the real flag values, so it
+// must not apply --help: Cobra reads that value even for a command that
+// disables flag parsing, and a dynamic command such as `dagger call` would
+// then print its static usage instead of loading the module and listing its
+// functions.
+func TestParseGlobalFlagsLeavesHelpToCobra(t *testing.T) {
+	oldWorkdir := workdir
+	t.Cleanup(func() { workdir = oldWorkdir })
+	workdir = "."
+
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call", DisableFlagParsing: true}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	root.PersistentFlags().BoolP("help", "h", false, "Print usage")
+
+	for _, args := range [][]string{
+		{"call", "--help"},
+		{"call", "-h"},
+		{"--help", "call"},
+		{"call", "build", "--help"},
+	} {
+		require.NoError(t, root.PersistentFlags().Set("help", "false"))
+		parseGlobalFlags(root, args)
+		help, err := root.PersistentFlags().GetBool("help")
+		require.NoError(t, err, args)
+		require.False(t, help, args)
+	}
+
+	// The other global flags still apply.
+	parseGlobalFlags(root, []string{"call", "--workdir", "/work/help"})
+	require.Equal(t, "/work/help", workdir)
 }
 
 func TestWorkspaceFlagPolicy(t *testing.T) {

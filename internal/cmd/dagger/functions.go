@@ -254,6 +254,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		})
 
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
+		setFlagCapabilities(fc.cmd.PersistentFlags().Lookup("output"), mayProduceOutput)
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}

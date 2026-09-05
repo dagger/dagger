@@ -76,7 +76,7 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	if err != nil {
 		return nil, err
 	}
-	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
 		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
 		if err != nil {
 			return nil, err

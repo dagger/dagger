@@ -178,7 +178,7 @@ func (s *workspaceSchema) configRead(
 	args configReadArgs,
 ) (dagql.String, error) {
 	if parent.ConfigFile == "" {
-		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+		if envName, ok := selectedWorkspaceEnv(ctx, parent); ok {
 			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 		}
 		result, err := workspace.ReadConfigValue(nil, args.Key)
@@ -188,7 +188,7 @@ func (s *workspaceSchema) configRead(
 		return dagql.String(result), nil
 	}
 
-	envName, envSelected := selectedWorkspaceEnv(ctx)
+	envName, envSelected := selectedWorkspaceEnv(ctx, parent)
 	overlay := parent.UserConfigOverlay()
 	switch {
 	case envSelected && !isExplicitEnvConfigKey(args.Key):
@@ -255,12 +255,15 @@ type workspaceConfigKeyArgs struct {
 	Here bool `default:"false"`
 }
 
-func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
+func selectedWorkspaceEnv(ctx context.Context, ws *core.Workspace) (string, bool) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil || clientMetadata.WorkspaceEnv == nil || *clientMetadata.WorkspaceEnv == "" {
-		return "", false
+	if err == nil && clientMetadata.WorkspaceEnv != nil && *clientMetadata.WorkspaceEnv != "" {
+		return *clientMetadata.WorkspaceEnv, true
 	}
-	return *clientMetadata.WorkspaceEnv, true
+	if ws != nil && ws.SelectedEnv() != "" {
+		return ws.SelectedEnv(), true
+	}
+	return "", false
 }
 
 func isExplicitEnvConfigKey(key string) bool {

@@ -302,6 +302,36 @@ source = "github.com/acme/custom-sdk"
 	require.NotContains(t, out, "\tM\tC")
 }
 
+func TestRunSDKListUsesSelectedEnv(t *testing.T) {
+	oldEnv := workspaceEnv
+	workspaceEnv = "dev"
+	t.Cleanup(func() { workspaceEnv = oldEnv })
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, workspace.ConfigFileName), []byte(`
+[modules.custom-sdk]
+source = "github.com/acme/custom-sdk"
+
+[modules.custom-sdk.as-sdk]
+name = "base"
+
+[env.dev.modules.custom-sdk]
+source = "./sdk/dev"
+
+[env.dev.modules.custom-sdk.as-sdk]
+name = "dev"
+`), 0o600))
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	require.NoError(t, runSDKList(cmd, nil))
+	require.Contains(t, buf.String(), "dev")
+	require.Contains(t, buf.String(), "./sdk/dev")
+	require.NotContains(t, buf.String(), "base")
+}
+
 // Conventional SDK short-name derivation is now in core/workspace as
 // ConventionalSDKShortName (shared with the engine's migration code). Tests
 // for it live there.

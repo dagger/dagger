@@ -1,9 +1,13 @@
 package daggercmd
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
@@ -67,4 +71,55 @@ func TestIsUndefinedEnvError(t *testing.T) {
 	require.True(t, isUndefinedEnvError(plain, "dev"))
 	require.False(t, isUndefinedEnvError(plain, "prod"))
 	require.False(t, isUndefinedEnvError(nil, "dev"))
+}
+
+func TestWriteWorkspaceSettingsTableFitsViewWidth(t *testing.T) {
+	settings := []workspaceSetting{
+		{
+			Module:      "module-with-a-name-that-is-too-long",
+			Key:         "setting-with-a-key-that-is-too-long",
+			Value:       strings.Repeat("value", 20),
+			Description: strings.Repeat("A long description. ", 10),
+		},
+		{
+			Module:      "short",
+			Key:         "multiline",
+			Value:       "first\nsecond\tthird",
+			Description: "First description line.\nSecond description line.",
+		},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 60))
+
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	require.Len(t, lines, len(settings)+1)
+	for _, line := range lines {
+		require.LessOrEqual(t, ansi.StringWidth(line), 60, line)
+	}
+	require.Contains(t, out.String(), "…")
+	require.NotContains(t, out.String(), settings[0].Value)
+	require.Contains(t, out.String(), "first second third")
+	require.Contains(t, out.String(), "First description line.")
+	require.NotContains(t, out.String(), "Second description line.")
+}
+
+func TestWriteWorkspaceSettingsTableMeasuresUnicodeWidth(t *testing.T) {
+	settings := []workspaceSetting{
+		{
+			Module:      "unicode",
+			Key:         "emoji",
+			Value:       strings.Repeat("界", 30),
+			Description: strings.Repeat("Configuration 🚀 ", 10),
+		},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, writeWorkspaceSettingsTableAtWidth(&out, settings, 48))
+
+	for _, line := range strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n") {
+		require.LessOrEqual(t, ansi.StringWidth(line), 48, line)
+		require.True(t, utf8.ValidString(line))
+	}
+	require.Contains(t, out.String(), "…")
 }

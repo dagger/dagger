@@ -93,7 +93,10 @@ func (s *workspaceSchema) initModuleChanges(
 		relPath = filepath.Join(staged.ConfigDir, ".dagger", "modules", args.Name)
 	}
 
-	cfg := staged.Config
+	cfg, envName, err := workspaceConfigForInit(ctx, ws, staged)
+	if err != nil {
+		return res, scope, err
+	}
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, scope, err
@@ -155,9 +158,22 @@ func (s *workspaceSchema) initModuleChanges(
 	if usingDefaultPath {
 		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: configPath}
 	}
+	configToWrite := cfg
+	if envName != "" {
+		setEnvSDKRole(staged.Config, envName, sdkName, cfg.Modules[sdkName].AsSDK)
+		if usingDefaultPath {
+			env := staged.Config.Env[envName]
+			if env.Modules == nil {
+				env.Modules = map[string]workspace.EnvModuleOverlay{}
+			}
+			env.Modules[args.Name] = workspace.EnvModuleOverlay{Source: configPath}
+			staged.Config.Env[envName] = env
+		}
+		configToWrite = staged.Config
+	}
 
 	// Render new dagger.toml bytes through the format-preserving editor.
-	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
+	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, configToWrite)
 	if err != nil {
 		return res, scope, fmt.Errorf("update workspace config: %w", err)
 	}

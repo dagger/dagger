@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -321,26 +321,116 @@ func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) strin
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {
+	return writeWorkspaceSettingsTableAtWidth(out, settings, getViewWidth())
+}
+
+const (
+	workspaceSettingsColumnPadding = 2
+	workspaceSettingsModuleMax     = 20
+	workspaceSettingsKeyMax        = 24
+	workspaceSettingsValueMax      = 32
+	workspaceSettingsValueReserve  = 18
+	workspaceSettingsDescReserve   = 24
+)
+
+var workspaceSettingsHeaders = []string{"MODULE", "KEY", "VALUE", "DESCRIPTION"}
+
+func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetting, viewWidth int) error {
 	if len(settings) == 0 {
 		_, err := fmt.Fprintln(out, "(no settings)")
 		return err
 	}
 
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "MODULE\tKEY\tVALUE\tDESCRIPTION"); err != nil {
-		return err
-	}
+	rows := make([][]string, 0, len(settings)+1)
+	rows = append(rows, workspaceSettingsHeaders)
 	for _, setting := range settings {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			setting.Module,
-			setting.Key,
-			setting.Value,
-			workspaceSettingShortDescription(setting.Description),
-		); err != nil {
+		rows = append(rows, []string{
+			workspaceSettingSingleLine(setting.Module),
+			workspaceSettingSingleLine(setting.Key),
+			workspaceSettingSingleLine(setting.Value),
+			workspaceSettingSingleLine(workspaceSettingShortDescription(setting.Description)),
+		})
+	}
+
+	widths := workspaceSettingsColumnWidths(rows, viewWidth)
+	for _, row := range rows {
+		var line strings.Builder
+		for column, cell := range row {
+			cell = ansi.Truncate(cell, widths[column], "…")
+			line.WriteString(cell)
+			if column < len(row)-1 {
+				padding := widths[column] - ansi.StringWidth(cell) + workspaceSettingsColumnPadding
+				line.WriteString(strings.Repeat(" ", padding))
+			}
+		}
+		if _, err := fmt.Fprintln(out, line.String()); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	return nil
+}
+
+func workspaceSettingsColumnWidths(rows [][]string, viewWidth int) []int {
+	minimums := make([]int, len(workspaceSettingsHeaders))
+	desired := make([]int, len(workspaceSettingsHeaders))
+	for column, header := range workspaceSettingsHeaders {
+		minimums[column] = ansi.StringWidth(header)
+		desired[column] = minimums[column]
+	}
+	for _, row := range rows[1:] {
+		for column, cell := range row {
+			desired[column] = max(desired[column], ansi.StringWidth(cell))
+		}
+	}
+	desired[0] = min(desired[0], workspaceSettingsModuleMax)
+	desired[1] = min(desired[1], workspaceSettingsKeyMax)
+	desired[2] = min(desired[2], workspaceSettingsValueMax)
+
+	paddingWidth := workspaceSettingsColumnPadding * (len(workspaceSettingsHeaders) - 1)
+	minimumContentWidth := 0
+	for _, width := range minimums {
+		minimumContentWidth += width
+	}
+	contentWidth := max(viewWidth-paddingWidth, minimumContentWidth)
+
+	valueAndDescriptionReserve := min(desired[2], workspaceSettingsValueReserve) +
+		min(desired[3], workspaceSettingsDescReserve)
+	moduleAndKeyMinimum := minimums[0] + minimums[1]
+	moduleAndKeyWidth := max(contentWidth-valueAndDescriptionReserve, moduleAndKeyMinimum)
+	moduleWidth, keyWidth := workspaceSettingsFitColumns(
+		desired[0], desired[1], minimums[0], minimums[1], moduleAndKeyWidth,
+	)
+	valueAndDescriptionWidth := contentWidth - moduleWidth - keyWidth
+	valueWidth, descriptionWidth := workspaceSettingsFitColumns(
+		desired[2], desired[3], minimums[2], minimums[3], valueAndDescriptionWidth,
+	)
+
+	return []int{moduleWidth, keyWidth, valueWidth, descriptionWidth}
+}
+
+// workspaceSettingsFitColumns reduces two columns fairly until they fit the
+// available width. Each column always remains wide enough for its header.
+func workspaceSettingsFitColumns(first, second, firstMinimum, secondMinimum, available int) (int, int) {
+	if first+second <= available {
+		return first, second
+	}
+
+	extra := available - firstMinimum - secondMinimum
+	firstExtra := min(first-firstMinimum, (extra+1)/2)
+	secondExtra := min(second-secondMinimum, extra-firstExtra)
+	extra -= firstExtra + secondExtra
+
+	secondExtraMore := min(second-secondMinimum-secondExtra, extra)
+	secondExtra += secondExtraMore
+	extra -= secondExtraMore
+	firstExtra += min(first-firstMinimum-firstExtra, extra)
+
+	return firstMinimum + firstExtra, secondMinimum + secondExtra
+}
+
+func workspaceSettingSingleLine(value string) string {
+	replacer := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ")
+	return replacer.Replace(value)
 }
 
 func workspaceSettingShortDescription(description string) string {
