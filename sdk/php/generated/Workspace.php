@@ -105,6 +105,24 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+     *
+     * Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+     */
+    public function commitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitsFrom');
+        $leafQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $leafQueryBuilder->setArgument('commits', $commits);
+        }
+        if (null !== $maxCommits) {
+        $leafQueryBuilder->setArgument('maxCommits', $maxCommits);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'commitsFrom');
+    }
+
+    /**
      * Selected native workspace config file relative to the workspace cwd, if any.
      */
     public function configFile(): string
@@ -494,6 +512,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $authorEmail) {
         $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+     *
+     * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+     *
+     * Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+     */
+    public function withCommitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommitsFrom');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $innerQueryBuilder->setArgument('commits', $commits);
+        }
+        if (null !== $maxCommits) {
+        $innerQueryBuilder->setArgument('maxCommits', $maxCommits);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

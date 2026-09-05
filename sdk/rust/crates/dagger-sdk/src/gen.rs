@@ -15427,6 +15427,15 @@ pub struct WorkspaceChecksOpts<'a> {
     pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceCommitsFromOpts<'a> {
+    /// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+    #[builder(setter(into, strip_option), default)]
+    pub commits: Option<Vec<&'a str>>,
+    /// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub max_commits: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
     /// Dotted key path (e.g. modules.greeter.source). Empty for full config.
     #[builder(setter(into, strip_option), default)]
@@ -15527,6 +15536,15 @@ pub struct WorkspaceWithCommitOpts<'a> {
     /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithCommitsFromOpts<'a> {
+    /// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+    #[builder(setter(into, strip_option), default)]
+    pub commits: Option<Vec<&'a str>>,
+    /// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub max_commits: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithClientOpts<'a> {
@@ -15820,6 +15838,79 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+    /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Frozen source workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn commits_from(
+        &self,
+        source: impl IntoID<Id>,
+    ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
+        let mut query = self.selection.select("commitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceCommitPick {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceCommitPick"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+    /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Frozen source workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn commits_from_opts<'a>(
+        &self,
+        source: impl IntoID<Id>,
+        opts: WorkspaceCommitsFromOpts<'a>,
+    ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
+        let mut query = self.selection.select("commitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(commits) = opts.commits {
+            query = query.arg("commits", commits);
+        }
+        if let Some(max_commits) = opts.max_commits {
+            query = query.arg("maxCommits", max_commits);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceCommitPick {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceCommitPick"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Selected native workspace config file relative to the workspace cwd, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
@@ -16457,6 +16548,62 @@ impl Workspace {
         }
         if let Some(author_email) = opts.author_email {
             query = query.arg("authorEmail", author_email);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+    /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Frozen source workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commits_from(&self, source: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withCommitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+    /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Frozen source workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commits_from_opts<'a>(
+        &self,
+        source: impl IntoID<Id>,
+        opts: WorkspaceWithCommitsFromOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withCommitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(commits) = opts.commits {
+            query = query.arg("commits", commits);
+        }
+        if let Some(max_commits) = opts.max_commits {
+            query = query.arg("maxCommits", max_commits);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -17277,6 +17424,73 @@ impl Node for Workspace {
     }
 }
 #[derive(Clone)]
+pub struct WorkspaceCommitPick {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceCommitPick {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceCommitPick {
+    fn graphql_type() -> &'static str {
+        "WorkspaceCommitPick"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceCommitPick {
+    /// The commit in the source workspace.
+    pub fn commit(&self) -> GitCommit {
+        let query = self.selection.select("commit");
+        GitCommit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+    pub async fn conflict_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("conflictPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this WorkspaceCommitPick.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Why the commit conflicts, or NONE.
+    pub async fn reason(&self) -> Result<WorkspaceCommitPickReason, DaggerError> {
+        let query = self.selection.select("reason");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether this commit can be applied.
+    pub async fn status(&self) -> Result<WorkspaceCommitPickStatus, DaggerError> {
+        let query = self.selection.select("status");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for WorkspaceCommitPick {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct WorkspaceGit {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -17923,4 +18137,24 @@ pub enum TypeDefKind {
     Void,
     #[serde(rename = "VOID_KIND")]
     VoidKind,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum WorkspaceCommitPickReason {
+    #[serde(rename = "CONTENT")]
+    Content,
+    #[serde(rename = "DIRTY")]
+    Dirty,
+    #[serde(rename = "NONE")]
+    None,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum WorkspaceCommitPickStatus {
+    #[serde(rename = "CONFLICT")]
+    Conflict,
+    #[serde(rename = "PICKABLE")]
+    Pickable,
+    #[serde(rename = "PICKED")]
+    Picked,
+    #[serde(rename = "REDUNDANT")]
+    Redundant,
 }

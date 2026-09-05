@@ -1647,6 +1647,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	if err != nil {
 		return nil, err
 	}
+	defer newRef.Release(context.WithoutCancel(ctx))
 
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, baseSelector)

@@ -464,13 +464,19 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::checkpoint</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace as a frozen value.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_commitsFrom">
+<abbr title="Dagger\Workspace">Workspace</abbr>::commitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace cwd, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Read a configuration value from dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_cwd">
 <abbr title="Dagger\Workspace">Workspace</abbr>::cwd</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Current location within the workspace root.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
+                    <dd><p>Current location within the workspace root.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_commit">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>The commit in the source workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_conflictPaths">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::conflictPaths</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
                     <dd><p>Filesystem changes for the full migration plan.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_changes">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -1055,7 +1061,9 @@
 <abbr title="Dagger\Volume">Volume</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Volume.</p></dd><dt><a href="Dagger/Workspace.html#method_id">
 <abbr title="Dagger\Workspace">Workspace</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
+                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_id">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this WorkspaceCommitPick.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
 <abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceGit.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -1460,7 +1468,9 @@
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
                     <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/Workspace.html#method_reloaded">
 <abbr title="Dagger\Workspace">Workspace</abbr>::reloaded</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
+                    <dd><p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_reason">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::reason</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Why the commit conflicts, or NONE.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>The module reference this SDK was installed from.</p></dd>        </dl><h2 id="letterS">S</h2>
         <dl id="indexS"><dt><a href="Dagger/Address.html#method_secret">
@@ -1627,7 +1637,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::search</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Searches for content matching the given regular expression or literal string.</p></dd><dt><a href="Dagger/Workspace.html#method_services">
 <abbr title="Dagger\Workspace">Workspace</abbr>::services</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_steps">
+                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_status">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::status</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Whether this commit can be applied.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_steps">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::steps</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
                     <dd><p>Logical migration steps, each identified by a stable code.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_settings">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::settings</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
@@ -2237,7 +2249,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a generated module client added to one SDK scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withCommit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
+                    <dd><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommitsFrom">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withCommitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnvironment">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnvironment</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2287,7 +2301,8 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a module removed from its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A source commit classified against the receiving workspace.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Local git state for a workspace.</p></dd><dt><a href="Dagger/WorkspaceGitId.html"><abbr title="Dagger\WorkspaceGitId">WorkspaceGitId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>

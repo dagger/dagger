@@ -3211,6 +3211,18 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
+export type WorkspaceCommitsFromOpts = {
+  /**
+   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   */
+  commits?: string[]
+
+  /**
+   * Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  maxCommits?: number
+}
+
 export type WorkspaceConfigReadOpts = {
   /**
    * Dotted key path (e.g. modules.greeter.source). Empty for full config.
@@ -3364,6 +3376,18 @@ export type WorkspaceWithCommitOpts = {
    * Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
    */
   authorEmail?: string
+}
+
+export type WorkspaceWithCommitsFromOpts = {
+  /**
+   * Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   */
+  commits?: string[]
+
+  /**
+   * Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  maxCommits?: number
 }
 
 export type WorkspaceWithClientOpts = {
@@ -3523,6 +3547,129 @@ export type WorkspaceWithoutSdkOpts = {
   here?: boolean
 }
 
+/**
+ * Why a source commit cannot be pulled.
+ */
+export enum WorkspaceCommitPickReason {
+  /**
+   * The patch conflicts with committed content.
+   */
+  Content = "CONTENT",
+
+  /**
+   * The commit touches uncommitted paths in the receiving workspace.
+   */
+  Dirty = "DIRTY",
+
+  /**
+   * No conflict.
+   */
+  None = "NONE",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickReasonValueToName(
+  value: WorkspaceCommitPickReason,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickReason.Content:
+      return "CONTENT"
+    case WorkspaceCommitPickReason.Dirty:
+      return "DIRTY"
+    case WorkspaceCommitPickReason.None:
+      return "NONE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickReason name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickReasonNameToValue(
+  name: string,
+): WorkspaceCommitPickReason {
+  switch (name) {
+    case "CONTENT":
+      return WorkspaceCommitPickReason.Content
+    case "DIRTY":
+      return WorkspaceCommitPickReason.Dirty
+    case "NONE":
+      return WorkspaceCommitPickReason.None
+    default:
+      return name as WorkspaceCommitPickReason
+  }
+}
+/**
+ * Whether a source commit can be pulled.
+ */
+export enum WorkspaceCommitPickStatus {
+  /**
+   * The commit cannot be applied; see reason and conflictPaths.
+   */
+  Conflict = "CONFLICT",
+
+  /**
+   * The commit can be applied.
+   */
+  Pickable = "PICKABLE",
+
+  /**
+   * The commit is already present by hash or cherry-pick origin.
+   */
+  Picked = "PICKED",
+
+  /**
+   * The patch is already present, or applying it would be empty.
+   */
+  Redundant = "REDUNDANT",
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function WorkspaceCommitPickStatusValueToName(
+  value: WorkspaceCommitPickStatus,
+): string {
+  switch (value) {
+    case WorkspaceCommitPickStatus.Conflict:
+      return "CONFLICT"
+    case WorkspaceCommitPickStatus.Pickable:
+      return "PICKABLE"
+    case WorkspaceCommitPickStatus.Picked:
+      return "PICKED"
+    case WorkspaceCommitPickStatus.Redundant:
+      return "REDUNDANT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a WorkspaceCommitPickStatus name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function WorkspaceCommitPickStatusNameToValue(
+  name: string,
+): WorkspaceCommitPickStatus {
+  switch (name) {
+    case "CONFLICT":
+      return WorkspaceCommitPickStatus.Conflict
+    case "PICKABLE":
+      return WorkspaceCommitPickStatus.Pickable
+    case "PICKED":
+      return WorkspaceCommitPickStatus.Picked
+    case "REDUNDANT":
+      return WorkspaceCommitPickStatus.Redundant
+    default:
+      return name as WorkspaceCommitPickStatus
+  }
+}
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -15428,6 +15575,36 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+   *
+   * Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+   * @param source Frozen source workspace.
+   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  commitsFrom = async (
+    source: Workspace,
+    opts?: WorkspaceCommitsFromOpts,
+  ): Promise<WorkspaceCommitPick[]> => {
+    type commitsFrom = {
+      id: ID
+    }
+
+    const ctx = this._ctx
+      .select("commitsFrom", { source, ...opts })
+      .select("id")
+
+    const response: Awaited<commitsFrom[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceCommitPick(
+          ctx.copy().selectNode(r.id, "WorkspaceCommitPick"),
+        ),
+    )
+  }
+
+  /**
    * Selected native workspace config file relative to the workspace cwd, if any.
    */
   configFile = async (): Promise<string> => {
@@ -15806,6 +15983,24 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+   *
+   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+   *
+   * Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+   * @param source Frozen source workspace.
+   * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+   * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+   */
+  withCommitsFrom = (
+    source: Workspace,
+    opts?: WorkspaceWithCommitsFromOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withCommitsFrom", { source, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a generated module client added to one SDK scope.
    *
    * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
@@ -16147,6 +16342,95 @@ export class Workspace extends BaseClient {
    */
   with = (arg: (param: Workspace) => Workspace) => {
     return arg(this)
+  }
+}
+
+/**
+ * A source commit classified against the receiving workspace.
+ */
+export class WorkspaceCommitPick extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _reason?: WorkspaceCommitPickReason = undefined
+  private readonly _status?: WorkspaceCommitPickStatus = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _reason?: WorkspaceCommitPickReason,
+    _status?: WorkspaceCommitPickStatus,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._reason = _reason
+    this._status = _status
+  }
+
+  /**
+   * A unique identifier for this WorkspaceCommitPick.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The commit in the source workspace.
+   */
+  commit = (): GitCommit => {
+    const ctx = this._ctx.select("commit")
+    return new GitCommit(ctx)
+  }
+
+  /**
+   * Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+   */
+  conflictPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("conflictPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Why the commit conflicts, or NONE.
+   */
+  reason = async (): Promise<WorkspaceCommitPickReason> => {
+    if (this._reason) {
+      return this._reason
+    }
+
+    const ctx = this._ctx.select("reason")
+
+    const response: Awaited<WorkspaceCommitPickReason> = await ctx.execute()
+
+    return WorkspaceCommitPickReasonNameToValue(response)
+  }
+
+  /**
+   * Whether this commit can be applied.
+   */
+  status = async (): Promise<WorkspaceCommitPickStatus> => {
+    if (this._status) {
+      return this._status
+    }
+
+    const ctx = this._ctx.select("status")
+
+    const response: Awaited<WorkspaceCommitPickStatus> = await ctx.execute()
+
+    return WorkspaceCommitPickStatusNameToValue(response)
   }
 }
 

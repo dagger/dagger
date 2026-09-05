@@ -5718,6 +5718,29 @@ type Workspace implements Node {
   ): CheckGroup!
 
   """
+  Classify source commits oldest first, as if earlier pickable commits had been
+  applied. Both workspaces must be frozen; call checkpoint first.
+
+  Planning is bounded and fails rather than truncating. Source uncommitted
+  changes are ignored. Divergent merge commits require manual integration.
+  """
+  commitsFrom(
+    """Frozen source workspace."""
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Full commit hashes to select, in any order. Empty selects all new source
+    commits. Explicit hashes must be within the source's latest 10000 commits.
+    """
+    commits: [String!] = []
+
+    """
+    Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    """
+    maxCommits: Int = 100
+  ): [WorkspaceCommitPick!]!
+
+  """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   configFile: String!
@@ -6036,6 +6059,35 @@ type Workspace implements Node {
     Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
     """
     authorEmail: String
+  ): Workspace!
+
+  """
+  Pull commits from a frozen workspace, preserving this workspace's uncommitted
+  changes and metadata. Both inputs must be frozen; call checkpoint first.
+
+  Fast-forward when the selected commits include all new ancestors of their tip;
+  otherwise cherry-pick in order with origin trailers, skipping already-picked
+  or redundant commits. Any conflict fails the whole pull. Source uncommitted
+  changes are not pulled.
+
+  Cherry-picks preserve the source author and author date, use this workspace's
+  default committer identity, and reuse the source committer date for
+  reproducible hashes. Divergent merge commits require manual integration.
+  """
+  withCommitsFrom(
+    """Frozen source workspace."""
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Full commit hashes to select, in any order. Empty selects all new source
+    commits. Explicit hashes must be within the source's latest 10000 commits.
+    """
+    commits: [String!] = []
+
+    """
+    Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    """
+    maxCommits: Int = 100
   ): Workspace!
 
   """
@@ -6402,6 +6454,53 @@ type Workspace implements Node {
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
   ): Workspace!
+}
+
+"""A source commit classified against the receiving workspace."""
+type WorkspaceCommitPick implements Node {
+  """The commit in the source workspace."""
+  commit: GitCommit!
+
+  """
+  Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+  """
+  conflictPaths: [String!]!
+
+  """A unique identifier for this WorkspaceCommitPick."""
+  id: ID!
+
+  """Why the commit conflicts, or NONE."""
+  reason: WorkspaceCommitPickReason!
+
+  """Whether this commit can be applied."""
+  status: WorkspaceCommitPickStatus!
+}
+
+"""Why a source commit cannot be pulled."""
+enum WorkspaceCommitPickReason {
+  """No conflict."""
+  NONE
+
+  """The patch conflicts with committed content."""
+  CONTENT
+
+  """The commit touches uncommitted paths in the receiving workspace."""
+  DIRTY
+}
+
+"""Whether a source commit can be pulled."""
+enum WorkspaceCommitPickStatus {
+  """The commit can be applied."""
+  PICKABLE
+
+  """The commit is already present by hash or cherry-pick origin."""
+  PICKED
+
+  """The patch is already present, or applying it would be empty."""
+  REDUNDANT
+
+  """The commit cannot be applied; see reason and conflictPaths."""
+  CONFLICT
 }
 
 """Local git state for a workspace."""

@@ -1828,6 +1828,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\WorkspaceCommitPick",
+			"p": "Dagger/WorkspaceCommitPick.html",
+			"d": "<p>A source commit classified against the receiving workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\WorkspaceGit",
 			"p": "Dagger/WorkspaceGit.html",
 			"d": "<p>Local git state for a workspace.</p>",
@@ -7486,6 +7496,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::commitsFrom",
+			"p": "Dagger/Workspace.html#method_commitsFrom",
+			"d": "<p>Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::configFile",
 			"p": "Dagger/Workspace.html#method_configFile",
 			"d": "<p>Selected native workspace config file relative to the workspace cwd, if any.</p>"
@@ -7648,6 +7664,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCommitsFrom",
+			"p": "Dagger/Workspace.html#method_withCommitsFrom",
+			"d": "<p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withClient",
 			"p": "Dagger/Workspace.html#method_withClient",
 			"d": "<p>Return this workspace with a generated module client added to one SDK scope.</p>"
@@ -7801,6 +7823,36 @@
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::commit",
+			"p": "Dagger/WorkspaceCommitPick.html#method_commit",
+			"d": "<p>The commit in the source workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::conflictPaths",
+			"p": "Dagger/WorkspaceCommitPick.html#method_conflictPaths",
+			"d": "<p>Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::id",
+			"p": "Dagger/WorkspaceCommitPick.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceCommitPick.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::reason",
+			"p": "Dagger/WorkspaceCommitPick.html#method_reason",
+			"d": "<p>Why the commit conflicts, or NONE.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::status",
+			"p": "Dagger/WorkspaceCommitPick.html#method_status",
+			"d": "<p>Whether this commit can be applied.</p>"
 		},
 		{
 			"t": "M",

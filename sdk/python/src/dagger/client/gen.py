@@ -340,6 +340,35 @@ class TypeDefKind(Enum):
     """
 
 
+class WorkspaceCommitPickReason(Enum):
+    """Why a source commit cannot be pulled."""
+
+    CONTENT = "CONTENT"
+    """The patch conflicts with committed content."""
+
+    DIRTY = "DIRTY"
+    """The commit touches uncommitted paths in the receiving workspace."""
+
+    NONE = "NONE"
+    """No conflict."""
+
+
+class WorkspaceCommitPickStatus(Enum):
+    """Whether a source commit can be pulled."""
+
+    CONFLICT = "CONFLICT"
+    """The commit cannot be applied; see reason and conflictPaths."""
+
+    PICKABLE = "PICKABLE"
+    """The commit can be applied."""
+
+    PICKED = "PICKED"
+    """The commit is already present by hash or cherry-pick origin."""
+
+    REDUNDANT = "REDUNDANT"
+    """The patch is already present, or applying it would be empty."""
+
+
 @typecheck
 @dataclass(slots=True)
 class BuildArg(Input):
@@ -15337,6 +15366,41 @@ class Workspace(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
+    async def commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+        max_commits: int | None = 100,
+    ) -> list["WorkspaceCommitPick"]:
+        """Classify source commits oldest first, as if earlier pickable commits
+        had been applied. Both workspaces must be frozen; call checkpoint
+        first.
+
+        Planning is bounded and fails rather than truncating. Source
+        uncommitted changes are ignored. Divergent merge commits require
+        manual integration.
+
+        Parameters
+        ----------
+        source:
+            Frozen source workspace.
+        commits:
+            Full commit hashes to select, in any order. Empty selects all new
+            source commits. Explicit hashes must be within the source's latest
+            10000 commits.
+        max_commits:
+            Maximum commits in either differing history, from 1 to 1000.
+            Exceeding the limit fails; nothing is silently omitted.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+            Arg("maxCommits", max_commits, 100),
+        ]
+        _ctx = self._select("commitsFrom", _args)
+        return await _ctx.execute_object_list(WorkspaceCommitPick)
+
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace cwd,
         if any.
@@ -16037,6 +16101,47 @@ class Workspace(Type):
         _ctx = self._select("withCommit", _args)
         return Workspace(_ctx)
 
+    def with_commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+        max_commits: int | None = 100,
+    ) -> Self:
+        """Pull commits from a frozen workspace, preserving this workspace's
+        uncommitted changes and metadata. Both inputs must be frozen; call
+        checkpoint first.
+
+        Fast-forward when the selected commits include all new ancestors of
+        their tip; otherwise cherry-pick in order with origin trailers,
+        skipping already-picked or redundant commits. Any conflict fails the
+        whole pull. Source uncommitted changes are not pulled.
+
+        Cherry-picks preserve the source author and author date, use this
+        workspace's default committer identity, and reuse the source committer
+        date for reproducible hashes. Divergent merge commits require manual
+        integration.
+
+        Parameters
+        ----------
+        source:
+            Frozen source workspace.
+        commits:
+            Full commit hashes to select, in any order. Empty selects all new
+            source commits. Explicit hashes must be within the source's latest
+            10000 commits.
+        max_commits:
+            Maximum commits in either differing history, from 1 to 1000.
+            Exceeding the limit fails; nothing is silently omitted.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+            Arg("maxCommits", max_commits, 100),
+        ]
+        _ctx = self._select("withCommitsFrom", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -16639,6 +16744,105 @@ class Workspace(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class WorkspaceCommitPick(Type):
+    """A source commit classified against the receiving workspace."""
+
+    def commit(self) -> GitCommit:
+        """The commit in the source workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("commit", _args)
+        return GitCommit(_ctx)
+
+    async def conflict_paths(self) -> list[str]:
+        """Workspace-root-relative conflicting paths. Empty unless the status is
+        CONFLICT.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("conflictPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceCommitPick.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def reason(self) -> WorkspaceCommitPickReason:
+        """Why the commit conflicts, or NONE.
+
+        Returns
+        -------
+        WorkspaceCommitPickReason
+            Why a source commit cannot be pulled.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reason", _args)
+        return await _ctx.execute(WorkspaceCommitPickReason)
+
+    async def status(self) -> WorkspaceCommitPickStatus:
+        """Whether this commit can be applied.
+
+        Returns
+        -------
+        WorkspaceCommitPickStatus
+            Whether a source commit can be pulled.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("status", _args)
+        return await _ctx.execute(WorkspaceCommitPickStatus)
 
 
 @typecheck
@@ -17299,6 +17503,9 @@ __all__ = [
     "Void",
     "Volume",
     "Workspace",
+    "WorkspaceCommitPick",
+    "WorkspaceCommitPickReason",
+    "WorkspaceCommitPickStatus",
     "WorkspaceGit",
     "WorkspaceMigration",
     "WorkspaceMigrationStep",

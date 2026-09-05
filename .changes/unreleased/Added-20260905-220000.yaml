@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Add Workspace.commitsFrom and Workspace.withCommitsFrom to preview and pull
+  commits between frozen workspaces. Pulls fast-forward complete ancestry or
+  cherry-pick selected commits, skip already-picked and redundant patches, and
+  preserve receiver uncommitted changes and metadata. Conflicts fail the whole
+  pull. History is bounded to 100 commits by default (maximum 1,000), with an
+  error instead of silent truncation.
+time: 2026-09-05T22:00:00Z
+custom:
+  Author: vito
+  PR: ""

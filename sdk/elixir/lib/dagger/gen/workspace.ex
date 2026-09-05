@@ -116,6 +116,39 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+
+  Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+  """
+  @spec commits_from(t(), Dagger.Workspace.t(), [
+          {:commits, [String.t()]},
+          {:max_commits, integer() | nil}
+        ]) :: {:ok, [Dagger.WorkspaceCommitPick.t()]} | {:error, term()}
+  def commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("commitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
+      |> QB.maybe_put_arg("maxCommits", optional_args[:max_commits])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceCommitPick{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceCommitPick"),
+           client: workspace.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   @spec config_file(t()) :: {:ok, String.t()} | {:error, term()}
@@ -619,6 +652,31 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("module", module)
       |> QB.maybe_put_arg("sdk", optional_args[:sdk])
       |> QB.maybe_put_arg("settings", optional_args[:settings])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+
+  Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+
+  Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+  """
+  @spec with_commits_from(t(), Dagger.Workspace.t(), [
+          {:commits, [String.t()]},
+          {:max_commits, integer() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
+      |> QB.maybe_put_arg("maxCommits", optional_args[:max_commits])
 
     %Dagger.Workspace{
       query_builder: query_builder,

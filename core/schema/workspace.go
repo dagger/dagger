@@ -48,6 +48,23 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.",
+				"Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Frozen source workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.",
+				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.",
+				"Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Frozen source workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__pullRepository", s.pullRepository).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Open the pulled repository, preserving its logical origin."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Checkpoints host-backed receivers before committing").
@@ -499,6 +516,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
