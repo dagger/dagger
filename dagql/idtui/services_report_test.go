@@ -114,3 +114,79 @@ func TestServicesReportSurfacesInstances(t *testing.T) {
 		t.Fatalf("failed service line = %q, want ERROR", line)
 	}
 }
+
+// TestPromoteServicesGatedOnServicesPrimary covers the live-tree promotion
+// for runs that are ABOUT their services (`dagger up`). Service spans are
+// ambient -- any run that binds a service has one -- so without the command's
+// declaration (SetServicesPrimary) the tree must stay untouched; with it, the
+// zoomed span leads with each service's display span, auto-expanded to its
+// readiness marker.
+func TestPromoteServicesGatedOnServicesPrimary(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	build := func() (*dagui.DB, dagui.SpanID, dagui.SpanID, dagui.SpanID) {
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		servicesID := prettyTestSpanID(2)
+		loadID := prettyTestSpanID(3)
+		runID := prettyTestSpanID(4)
+		displayID := prettyTestSpanID(5)
+		starterID := prettyTestSpanID(6)
+		execID := prettyTestSpanID(7)
+		readyID := prettyTestSpanID(8)
+		start := time.Unix(100, 0)
+		at := func(n int) time.Time { return start.Add(time.Duration(n) * time.Second) }
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			// the CLI root; still running (an ended root would cancel the
+			// running service on import)
+			{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger up web", StartTime: start},
+			// the CLI's `services` zoom span: passthrough, set primary --
+			// exactly what internal/cmd/dagger/up.go's runServices creates
+			{ID: servicesID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "services", Passthrough: true, StartTime: at(1)},
+			// setup noise that promotion must hide
+			{ID: loadID, TraceID: prettyTestTraceID(), ParentID: servicesID, Name: "Workspace.services", StartTime: at(1), EndTime: at(2), Final: true},
+			{ID: runID, TraceID: prettyTestTraceID(), ParentID: servicesID, Name: "UpGroup.run", Passthrough: true, StartTime: at(2)},
+			// the per-service display span RunUp starts
+			{ID: displayID, TraceID: prettyTestTraceID(), ParentID: runID, Name: "hello:web :80", ServiceName: "hello:web", RollUpLogs: true, StartTime: at(3)},
+			{ID: starterID, TraceID: prettyTestTraceID(), ParentID: displayID, Name: "service.start", Passthrough: true, StartTime: at(4)},
+			{ID: execID, TraceID: prettyTestTraceID(), ParentID: starterID, Name: "exec nginx", Service: true, ServiceName: "web.dagger.local", Passthrough: true, StartTime: at(4)},
+			{ID: readyID, TraceID: prettyTestTraceID(), ParentID: displayID, Name: "ready http://localhost:80", ServiceURLs: []string{"http://localhost:80"}, StartTime: at(5)},
+		})
+		db.SetPrimarySpan(servicesID)
+		return db, servicesID, displayID, readyID
+	}
+
+	// Without the declaration: no promotion, no reveals -- the ordinary tree.
+	db, servicesID, _, _ := build()
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	if got := db.Spans.Map[servicesID].RevealedSpans.Order; len(got) != 0 {
+		t.Fatalf("undeclared run revealed spans on the primary: %+v", got)
+	}
+
+	// With it: the zoomed span leads with the display span, expanded to its
+	// readiness marker, and the setup noise is gone.
+	db, servicesID, displayID, readyID := build()
+	fe = NewWithDB(io.Discard, db)
+	fe.servicesPrimary = true
+	fe.ZoomedSpan = servicesID
+	fe.recalculateViewLocked()
+	if got := db.Spans.Map[servicesID].RevealedSpans.Order; len(got) != 1 || got[0].ID != displayID {
+		t.Fatalf("promoted revealed spans = %+v, want just the display span", got)
+	}
+	rows := fe.rows.Order
+	if len(rows) != 2 {
+		names := make([]string, len(rows))
+		for i, row := range rows {
+			names[i] = row.Span.Name
+		}
+		t.Fatalf("rows = %v, want [display ready]", names)
+	}
+	if rows[0].Span.ID != displayID || rows[0].Depth != 0 || !rows[0].Expanded {
+		t.Fatalf("row 0 = %q depth=%d expanded=%v, want the auto-expanded display span at the top level",
+			rows[0].Span.Name, rows[0].Depth, rows[0].Expanded)
+	}
+	if rows[1].Span.ID != readyID || rows[1].Depth != 1 {
+		t.Fatalf("row 1 = %q depth=%d, want the readiness marker beneath the display span",
+			rows[1].Span.Name, rows[1].Depth)
+	}
+}

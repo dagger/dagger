@@ -132,6 +132,16 @@ type CommandFrontend interface {
 	Live() bool
 }
 
+// ServicesFrontend is implemented by frontends that can lead with the
+// services a run starts. `dagger up` declares itself through this: service
+// spans are ambient (any run that binds a service has one), so "this run is
+// ABOUT its services" cannot be inferred from span data — the command owns
+// that call, the way it already owns its primary span. Commands treat it as
+// an optional capability; streaming frontends simply don't implement it.
+type ServicesFrontend interface {
+	SetServicesPrimary(bool)
+}
+
 // ViewFactory constructs a command screen using services owned by the pretty
 // frontend. It is invoked on the Tuist event loop.
 type ViewFactory func(ViewContext) CommandView

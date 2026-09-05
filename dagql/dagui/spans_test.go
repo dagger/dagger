@@ -270,6 +270,143 @@ func TestLogTargetSpanIDWaitsForMatchingTraceCreator(t *testing.T) {
 	}
 }
 
+// TestLogTargetSpanIDFallsBackToServiceSpan covers the warm-trace routing
+// gap: a running service's stdio names the call that created it (its
+// DagDigestAttr), but a fully cached trace never emits that call's span, so
+// no creator would ever arrive to claim parked lines. When the record's own
+// span is the service's long-lived exec span, the stream attaches there
+// instead of parking forever; a non-service span still parks awaiting its
+// creator.
+func TestLogTargetSpanIDFallsBackToServiceSpan(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	execID := trace.SpanID{9}
+	plainID := trace.SpanID{10}
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:          SpanID{SpanID: execID},
+			TraceID:     TraceID{TraceID: traceID},
+			Name:        "exec nginx",
+			Service:     true,
+			ServiceName: "web.dagger.local",
+			Passthrough: true,
+			StartTime:   time.Unix(1, 0),
+		},
+		{
+			ID:        SpanID{SpanID: plainID},
+			TraceID:   TraceID{TraceID: traceID},
+			Name:      "exec build",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+
+	record := newTestLogRecord(
+		traceID,
+		execID,
+		"nginx: ready",
+		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+	)
+	if got := db.LogTargetSpanID(record); got != (SpanID{SpanID: execID}) {
+		t.Fatalf("expected the service exec span fallback, got %s", got)
+	}
+
+	other := newTestLogRecord(
+		traceID,
+		plainID,
+		"hello",
+		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+	)
+	if got := db.LogTargetSpanID(other); got.IsValid() {
+		t.Fatalf("expected unresolved target for non-service span, got %s", got)
+	}
+}
+
+// TestPendingDigestLogsResolveWhenServiceSpanArrives covers the other half
+// of the warm-trace routing gap: the service's stdio can arrive BEFORE its
+// exec span snapshot does. routeLog then finds neither a creator span nor a
+// known Service span, so the record parks under its digest — and on a fully
+// cached trace no creator will ever arrive to claim it. When the exec span
+// shows up flagged as a Service, it must claim its own parked records.
+func TestPendingDigestLogsResolveWhenServiceSpanArrives(t *testing.T) {
+	db := NewDB()
+
+	traceID := trace.TraceID{2}
+	execID := SpanID{SpanID: trace.SpanID{9}}
+	otherID := trace.SpanID{10}
+	outputDig := "xxh3:never-created"
+
+	record := newTestLogRecord(
+		traceID,
+		execID.SpanID,
+		"nginx: ready",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+	// a record from a different span sharing the digest must stay parked
+	other := newTestLogRecord(
+		traceID,
+		otherID,
+		"unrelated",
+		otellog.String(telemetry.DagDigestAttr, outputDig),
+	)
+
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record, other}); err != nil {
+		t.Fatalf("export logs: %v", err)
+	}
+
+	if got := db.DrainResolvedLogs(execID); len(got) != 0 {
+		t.Fatalf("expected no resolved logs before exec span, got %d", len(got))
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:          execID,
+			TraceID:     TraceID{TraceID: traceID},
+			Name:        "exec nginx",
+			Service:     true,
+			ServiceName: "web.dagger.local",
+			Passthrough: true,
+			StartTime:   time.Unix(1, 0),
+		},
+	})
+
+	resolved := db.DrainResolvedLogs(execID)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved log, got %d", len(resolved))
+	}
+	if resolved[0].Body().AsString() != "nginx: ready" {
+		t.Fatalf("expected resolved log body %q, got %q", "nginx: ready", resolved[0].Body().AsString())
+	}
+
+	exec := db.Spans.Map[execID]
+	if exec == nil {
+		t.Fatal("expected exec span")
+	}
+	if !exec.HasLogs {
+		t.Fatal("expected exec span to have logs")
+	}
+
+	// the other span's record still awaits its creator
+	creatorID := SpanID{SpanID: trace.SpanID{3}}
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:         creatorID,
+			TraceID:    TraceID{TraceID: traceID},
+			StartTime:  time.Unix(3, 0),
+			EndTime:    time.Unix(4, 0),
+			CallDigest: "xxh3:live-call",
+			Output:     outputDig,
+		},
+	})
+	remaining := db.DrainResolvedLogs(creatorID)
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 log resolved to creator, got %d", len(remaining))
+	}
+	if remaining[0].Body().AsString() != "unrelated" {
+		t.Fatalf("expected creator-resolved log body %q, got %q", "unrelated", remaining[0].Body().AsString())
+	}
+}
+
 func TestPendingDigestLogsResolveWhenCreatorArrives(t *testing.T) {
 	db := NewDB()
 

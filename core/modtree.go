@@ -319,7 +319,12 @@ const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
 // RunUp starts the service and returns a result that must be cleaned up.
 // It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
-func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward) (*runUpStartResult, error) {
+//
+// gate, when non-nil, is the up group's start barrier (see upStartGate):
+// after evaluating the service value beneath this service's own span, the
+// service reports its host ports and waits for the group-wide port-collision
+// verdict before creating tunnels or starting anything.
+func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward, gate *upStartGate) (*runUpStartResult, error) {
 	var result *runUpStartResult
 	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsUp },
@@ -334,7 +339,7 @@ func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, p
 				telemetry.EndWithCause(span, &rerr)
 			}()
 			var err error
-			result, err = n.runUpLocally(ctx, span, portMappings)
+			result, err = n.runUpLocally(ctx, span, portMappings, gate)
 			return err
 		},
 		include, exclude)
@@ -347,33 +352,78 @@ type runUpStartResult struct {
 	ReadySpan trace.Span
 }
 
-// runUpLocally evaluates the +up function, creates a host tunnel, starts the
-// service, and returns immediately. It does NOT block — the caller is
-// responsible for blocking on ctx.Done() after all services have started.
-// This two-phase design ensures that if one service fails to start, sibling
-// goroutines are not left hanging on <-ctx.Done() forever.
-func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward) (*runUpStartResult, error) {
+// runUpLocally evaluates the +up function, parks at the group's start gate
+// (when part of a group), creates a host tunnel, starts the service, and
+// returns immediately. It does NOT block — the caller is responsible for
+// blocking on ctx.Done() after all services have started. This two-phase
+// design ensures that if one service fails to start, sibling goroutines are
+// not left hanging on <-ctx.Done() forever.
+//
+// The evaluation deliberately happens beneath parentSpan (this service's
+// display span): the API spans it creates are where dagui routes the
+// service's stdio, so this is what puts the service's log stream under its
+// own row in `dagger up`.
+func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward, gate *upStartGate) (*runUpStartResult, error) {
+	// Until this service reports its ports, a failure here (evaluation, span
+	// rename plumbing) must release the gate, or waiting siblings would hang.
+	arrived := false
+	if gate != nil {
+		defer func() {
+			if !arrived {
+				gate.abort()
+			}
+		}()
+	}
+
 	// Evaluate the +up function to get the Service
 	var svcResult dagql.ObjectResult[*Service]
 	if err := node.DagqlValue(ctx, &svcResult); err != nil {
 		return nil, err
 	}
 
-	// Update parent span name with port info.
-	var portStrs []string
+	// Collect the service's host ports: the explicit mappings' host side, or
+	// the container's exposed ports tunneled 1:1.
+	var hostPorts []upHostPort
 	if len(portMappings) > 0 {
-		portStrs = make([]string, 0, len(portMappings))
+		hostPorts = make([]upHostPort, 0, len(portMappings))
 		for _, pf := range portMappings {
-			portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
+			hostPorts = append(hostPorts, upHostPort{
+				port:     pf.FrontendOrBackendPort(),
+				protocol: pf.Protocol,
+			})
 		}
 	} else if svc := svcResult.Self(); svc != nil && svc.Container.Self() != nil {
-		portStrs = make([]string, 0, len(svc.Container.Self().Ports))
+		hostPorts = make([]upHostPort, 0, len(svc.Container.Self().Ports))
 		for _, p := range svc.Container.Self().Ports {
-			portStrs = append(portStrs, fmt.Sprintf(":%d", p.Port))
+			hostPorts = append(hostPorts, upHostPort{
+				port:     p.Port,
+				protocol: p.Protocol,
+			})
 		}
 	}
-	if len(portStrs) > 0 {
+
+	// Update parent span name with port info.
+	if len(hostPorts) > 0 {
+		portStrs := make([]string, 0, len(hostPorts))
+		if len(portMappings) > 0 {
+			for _, pf := range portMappings {
+				portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
+			}
+		} else {
+			for _, p := range hostPorts {
+				portStrs = append(portStrs, fmt.Sprintf(":%d", p.port))
+			}
+		}
 		parentSpan.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
+	}
+
+	// Report to the group and wait for the collision-free verdict before
+	// starting anything.
+	if gate != nil {
+		arrived = true
+		if err := gate.arrive(ctx, node.PathString(), hostPorts); err != nil {
+			return nil, err
+		}
 	}
 
 	// Set up the host tunnel
@@ -420,7 +470,14 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	} else {
 		tunnelArgs = append(tunnelArgs, dagql.NamedInput{Name: "native", Value: dagql.Boolean(true)})
 	}
-	err = srv.Select(ctx, srv.Root(), &hostSvc,
+	// Select non-internal: dagui routes the service's stdio to the most
+	// recent creator span for its call digest, and the service ID load
+	// inside host.tunnel presents exactly such a span. Server.Select would
+	// mark the tunnel span internal (it's an engine-side call), and internal
+	// spans block the log roll-up walk — which would strand the service's
+	// stdio beneath machinery instead of rolling it up into the service's
+	// display row (parentSpan, see above).
+	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &hostSvc,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{
 			Field: "tunnel",
@@ -465,7 +522,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	}
 	_, readySpan := Tracer(ctx).Start(ctx, readyName,
 		trace.WithAttributes(
-			attribute.StringSlice("service.urls", urls),
+			attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls),
 		),
 	)
 

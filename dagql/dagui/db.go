@@ -1002,6 +1002,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.resolvePendingLogs(span.Output, span.TraceID)
 	}
 
+	if span.Service {
+		db.resolvePendingServiceLogs(span)
+	}
+
 	db.maybeResumeOutput(span)
 
 	// finally, install the span if we don't already have it
@@ -1110,6 +1114,44 @@ func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
 	}
 }
 
+// resolvePendingServiceLogs claims parked digest-routed log records whose own
+// span is this service's exec span. A service's stdio names the call that
+// created it (DagDigestAttr, see routeLog), but the records can arrive before
+// the exec span's snapshot does: routeLog then finds neither a creator span
+// nor a known Service span and parks the record under its digest. On a warm,
+// fully-cached trace the creator's span is never emitted, so nothing else
+// will ever claim them — do it here, when the exec span shows up. Records
+// from other spans sharing the digest stay parked for the creator path.
+func (db *DB) resolvePendingServiceLogs(span *Span) {
+	for key, records := range db.pendingLogsByOutput {
+		if key.TraceID != span.TraceID {
+			continue
+		}
+		var kept []sdklog.Record
+		var claimed bool
+		for _, record := range records {
+			if (SpanID{SpanID: record.SpanID()}) != span.ID {
+				kept = append(kept, record)
+				continue
+			}
+			claimed = true
+			if span.ID == db.PrimarySpan {
+				db.PrimaryLogs[span.ID] = append(db.PrimaryLogs[span.ID], record)
+			}
+			db.resolvedLogsBySpan[span.ID] = append(db.resolvedLogsBySpan[span.ID], record)
+		}
+		if !claimed {
+			continue
+		}
+		span.HasLogs = true
+		if len(kept) == 0 {
+			delete(db.pendingLogsByOutput, key)
+		} else {
+			db.pendingLogsByOutput[key] = kept
+		}
+	}
+}
+
 func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
 	logs := db.resolvedLogsBySpan[spanID]
 	delete(db.resolvedLogsBySpan, spanID)
@@ -1134,6 +1176,20 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 
 	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
 		return creator.ID, nil
+	}
+
+	// A service's stdio names the call that created the service (the engine
+	// stamps DagDigestAttr with e.g. the asService call digest) so the stream
+	// renders beneath the API call that installed it. On a warm, fully-cached
+	// trace that call's span is never emitted, so no creator will ever arrive
+	// to claim parked lines. The record's own span is the service's
+	// long-lived exec span: attach the stream there, keeping it beneath the
+	// service instance — and, via log roll-up, in whatever row displays it,
+	// e.g. `dagger up`'s per-service display span — instead of parking it
+	// forever. (On a cold trace a record can win a race against the creator
+	// span's arrival and land here too; it stays in the same subtree.)
+	if span, ok := db.Spans.Map[fallback]; ok && span.Service {
+		return fallback, nil
 	}
 
 	key := resumeOutputKey{

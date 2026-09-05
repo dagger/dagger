@@ -34,6 +34,28 @@ func (node *ServiceNode) Origin() *Span {
 	return nil
 }
 
+// DisplaySpan returns the row that best represents this service in the live
+// tree: the nearest displayable (received, non-passthrough, non-internal)
+// ancestor of the service exec span, stopping at host. The exec span itself
+// is deliberately passthrough (its logs are routed away and its failure
+// propagates to its origin), so revealing it directly would render nothing
+// useful; for `dagger up` the walk lands on the per-service display span
+// core/modtree.go's RunUp starts — the row carrying the port-suffixed name,
+// the rolled-up health-check and service logs, and the `ready <url>` child.
+// When no ancestor below host qualifies, fall back to the origin API span,
+// then to the exec span itself.
+func (node *ServiceNode) DisplaySpan(host *Span) *Span {
+	for s := node.Span; s != nil && s != host; s = s.ParentSpan {
+		if s.Received && !s.Passthrough && !s.Internal {
+			return s
+		}
+	}
+	if origin := node.Origin(); origin != nil {
+		return origin
+	}
+	return node.Span
+}
+
 // SurfacedServices returns the whole trace's service instances as a tree. It
 // is SurfacedServicesForSpan relative to the trace root.
 func (db *DB) SurfacedServices() []*ServiceNode {
@@ -121,4 +143,57 @@ func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 	}
 	sortNodes(roots)
 	return roots
+}
+
+// HasServices reports whether the trace's surfaced service view is non-empty.
+func (db *DB) HasServices() bool {
+	return db.HasServicesForSpan(nil)
+}
+
+// HasServicesForSpan reports whether the root-relative surfaced service view
+// is non-empty. A nil root means the live trace root.
+func (db *DB) HasServicesForSpan(root *Span) bool {
+	return len(db.SurfacedServicesForSpan(root)) > 0
+}
+
+// PromoteServicesTo wires each surfaced service's display span into
+// host.RevealedSpans (and each nested service's into its parent's display
+// span) so the live tree can lead with a run's services — the service analog
+// of PromoteConversationTo. Unlike checks or the conversation, service spans
+// are ambient (any run that binds a service has one), so this is NOT applied
+// to every trace: only a command that declares itself to be about its
+// services (`dagger up`, see idtui's promoteServicesLocked) promotes them.
+// Idempotent: re-adds are no-ops on the set.
+//
+// A service's readiness markers — the `ready <url>` spans `dagger up` starts
+// beneath the display span once a health check passes, recognized by
+// ServiceURLs — are wired into the display span's own RevealedSpans. The
+// display span rolls up its logs, so its expansion shows exactly its
+// revealed spans (see TraceTree.ShouldShowRevealedSpans) — the readiness
+// URL beneath the rolled-up health-check and service logs, with the
+// evaluation machinery staying hidden — and IsExpanded auto-expands a
+// service display span with revealed children to make that the default.
+//
+// Callers mark host Passthrough so RowsView iterates these revealed spans
+// instead of host's raw children.
+func (db *DB) PromoteServicesTo(host *Span) {
+	if host == nil {
+		return
+	}
+	var wire func(parent *Span, nodes []*ServiceNode)
+	wire = func(parent *Span, nodes []*ServiceNode) {
+		for _, node := range nodes {
+			display := node.DisplaySpan(host)
+			if display != parent {
+				parent.RevealedSpans.Add(display)
+			}
+			for _, child := range display.ChildSpans.Order {
+				if len(child.ServiceURLs) > 0 {
+					display.RevealedSpans.Add(child)
+				}
+			}
+			wire(display, node.Children)
+		}
+	}
+	wire(host, db.SurfacedServicesForSpan(host))
 }
