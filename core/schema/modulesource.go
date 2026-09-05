@@ -1242,7 +1242,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		// A worktree/submodule checkout has a dangling .git pointer file at
 		// the context root; the engine never interprets it (git-ness comes
 		// canonically via MaterializeHostGitCheckout), so drop it before it
-		// poisons git discovery near the synced tree.
+		// breaks git discovery near the synced tree.
 		src.ContextDirectory, err = core.DropRootGitPointerFile(ctx, dag, src.ContextDirectory)
 		if err != nil {
 			return err
@@ -1774,7 +1774,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 	// Updating a module dependency is an explicit request to resolve it live.
-	// Do not let the consuming workspace's lock replay the old resolution or
+	// Do not let the consuming workspace's lock reuse the old resolution or
 	// record this module-authoring operation back into that workspace's lock.
 	updateCtx := withoutWorkspaceLookupLock(ctx)
 
@@ -2494,7 +2494,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 // loadModuleSourceConfig builds the module config from the in-memory
 // ModuleSource and validates that the resulting engine version is loadable by
 // the running engine. Use buildModuleConfig directly to obtain the config
-// without that gate (e.g. when only persisting a declared engine version
+// without that validation (e.g. when only persisting a declared engine version
 // requirement via updatedConfigDirectory).
 func (s *moduleSourceSchema) loadModuleSourceConfig(
 	src *core.ModuleSource,
@@ -2980,7 +2980,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 // generatedContextDirectory it does NOT run codegen and does NOT validate the
 // engine version against the running engine, so it can be used to declare an
 // engine version newer than the running engine (the load/serve check at
-// moduleSourceAsModule still gates actually using such a module).
+// moduleSourceAsModule still validates the use of such a module).
 func (s *moduleSourceSchema) moduleSourceUpdatedConfigDirectory(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],

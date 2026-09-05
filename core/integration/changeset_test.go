@@ -886,13 +886,13 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 
 	// A second session derives a directory from the same parent by applying an
 	// empty changeset, evaluates it, and disconnects.
-	poisoner, err := dagger.Connect(ctx,
+	secondSession, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
 		dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
-	_, err = parentOf(poisoner).WithChanges(poisoner.Changeset()).Sync(ctx)
+	_, err = parentOf(secondSession).WithChanges(secondSession.Changeset()).Sync(ctx)
 	require.NoError(t, err)
-	require.NoError(t, poisoner.Close())
+	require.NoError(t, secondSession.Close())
 
 	// The closed session's cache refs release asynchronously, and the derived
 	// entry is only collected once a prune removes its persisted edge. Keep

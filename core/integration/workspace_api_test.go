@@ -137,22 +137,22 @@ func (WorkspaceAPISuite) TestWorkspaceFileAndDirectory(ctx context.Context, t *t
 	})
 }
 
-// TestWorkspacePathSafety should cover path normalization and traversal
-// protection on Workspace APIs.
+// TestWorkspacePathSafety covers path normalization and root-boundary
+// enforcement on Workspace APIs.
 func (WorkspaceAPISuite) TestWorkspacePathSafety(ctx context.Context, t *testctx.T) {
-	t.Run("parent-directory traversal is rejected", func(ctx context.Context, t *testctx.T) {
+	t.Run("parent paths outside the root are rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		base := workspaceFixture(t, c, "workspace-api").
 			WithNewFile("legit.txt", "legit")
 
-		t.Run("directory traversal", func(ctx context.Context, t *testctx.T) {
+		t.Run("directory outside root", func(ctx context.Context, t *testctx.T) {
 			ctr := base
 			_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "escapes workspace root")
 		})
 
-		t.Run("file traversal", func(ctx context.Context, t *testctx.T) {
+		t.Run("file outside root", func(ctx context.Context, t *testctx.T) {
 			ctr := base
 			_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 			require.Error(t, err)
@@ -824,7 +824,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 	t.Run("host workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		// Mount sources are engine-side directories, so their IDs replay in
+		// Mount sources are engine-side directories, so their IDs load in
 		// the nested session.
 		depsID, err := c.Directory().WithNewFile("vendored.txt", "needle vendored\n").ID(ctx)
 		require.NoError(t, err)
@@ -1800,7 +1800,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlaySearchAndGlob(ctx context.Conte
 	c := connect(ctx, t)
 
 	// A changeset that modifies edited.txt and removes doomed.txt. It is built
-	// from engine-side directories, so its ID replays in the nested session.
+	// from engine-side directories, so its ID loads in the nested session.
 	baseDir := c.Directory().
 		WithNewFile("edited.txt", "needle before edit\n").
 		WithNewFile("doomed.txt", "needle doomed\n")
@@ -1990,8 +1990,8 @@ func (WorkspaceAPISuite) TestWorkspaceBoundLLMAcrossSessions(ctx context.Context
 	require.NoError(t, err)
 
 	// A new session must not inherit the first session's workspace client
-	// binding from cache: the cached LLM is gated to the first session, so this
-	// call re-resolves against the new session's own workspace.
+	// binding from cache: the cached LLM requires resources bound in the first
+	// session, so this call re-resolves against the new session's own workspace.
 	out2, err := hostDaggerExec(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
 	require.NoError(t, err, "second session must not fail on a stale workspace client binding")
 	require.Equal(t, string(out1), string(out2))

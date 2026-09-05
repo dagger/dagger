@@ -105,7 +105,7 @@ func TestWorkspaceMountedPath(t *testing.T) {
 			{".refs", false},
 			{"deps", false},
 			{".", false},
-			// prefix spoofing does not match
+			// prefix-only matches are rejected
 			{"deps/vendored-extra", false},
 			{".refs/notes.txt.bak", false},
 			{"src/main.go", false},

@@ -33,7 +33,7 @@ Syncing such a tree into the engine produced two distinct failure classes:
    objects; partial clones copy promisor config the engine can't honor), and
    it required a boundary-escaping primitive — "load any absolute host path,
    `noCache`" — guarded by a hand-rolled "does this look like a gitdir"
-   check against crafted pointers smuggling host paths into snapshots.
+   check that rejects .git pointers naming unrelated host paths.
 
 ## 2. The invariant
 
@@ -196,7 +196,7 @@ very thing being fixed.)
 - **Keep flatten, ask host git for the paths** (`rev-parse
   --absolute-git-dir --git-common-dir` + `Host.directory` the results):
   deletes the pointer *parsing* but keeps the fragile parts — worktree
-  plumbing stripping, config rewriting, the smuggling guard, torn
+  plumbing stripping, config rewriting, the pointer-target validation, torn
   file-by-file syncs of a live `.git`, alternates/partial-clone breakage,
   and the out-of-boundary host read. Minimum viable deletion; the model it
   keeps is what kept biting.

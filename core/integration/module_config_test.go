@@ -28,14 +28,14 @@ import (
 func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	// Test dagger.json source configs that are part of the current supported
 	// module config surface and aren't inherently covered in other tests.
-	t.Run("malicious config", func(ctx context.Context, t *testctx.T) {
-		// verify a maliciously/incorrectly constructed dagger.json is still handled correctly
+	t.Run("out-of-root config", func(ctx context.Context, t *testctx.T) {
+		// Verify dagger.json paths outside the module root are handled correctly.
 
 		baseCtr := func(t *testctx.T, c *dagger.Client) *dagger.Container {
 			return goGitBase(t, c).
-				With(withModuleFixture(t, c, "/tmp/foo", "go/config-malicious-dep")).
-				With(withModuleFixture(t, c, "/work/dep", "go/config-malicious-dep")).
-				With(withModuleFixture(t, c, "/work", "go/config-malicious")).
+				With(withModuleFixture(t, c, "/tmp/foo", "go/config-out-of-root-dep")).
+				With(withModuleFixture(t, c, "/work/dep", "go/config-out-of-root-dep")).
+				With(withModuleFixture(t, c, "/work", "go/config-out-of-root")).
 				WithWorkdir("/work")
 		}
 
@@ -45,7 +45,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},
@@ -61,7 +61,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},
@@ -89,7 +89,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},
@@ -104,7 +104,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},
@@ -123,7 +123,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},
@@ -138,7 +138,7 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
-						Name: "evil",
+						Name: "outside-root",
 						SDK: &modules.SDK{
 							Source: "go",
 						},

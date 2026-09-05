@@ -64,7 +64,7 @@ func GetDrive(path string) string {
 	return ""
 }
 
-// SandboxedRelativePath resolves userPath relative to root, ensuring the result
+// ResolvePathWithinRoot resolves userPath relative to root, ensuring the result
 // stays within root. Absolute paths (including Windows drive-letter paths) are
 // treated as relative to root. Returns an error if the resolved path would
 // escape root via "..".
@@ -72,7 +72,7 @@ func GetDrive(path string) string {
 // Both root and the returned path use forward slashes. Backslashes in userPath
 // are normalized to forward slashes so that Windows-style paths are handled
 // correctly even though the engine always runs on Linux.
-func SandboxedRelativePath(userPath, root string) (string, error) {
+func ResolvePathWithinRoot(userPath, root string) (string, error) {
 	// Normalize backslashes (Windows clients) to forward slashes.
 	clean := strings.ReplaceAll(userPath, "\\", "/")
 	clean = normalizePath(clean)

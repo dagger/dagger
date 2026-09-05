@@ -90,7 +90,7 @@ func TestLexicalRelativePath(t *testing.T) {
 	}
 }
 
-func TestSandboxedRelativePath(t *testing.T) {
+func TestResolvePathWithinRoot(t *testing.T) {
 	tests := []struct {
 		name     string
 		userPath string
@@ -186,7 +186,7 @@ func TestSandboxedRelativePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := SandboxedRelativePath(tt.userPath, tt.root)
+			result, err := ResolvePathWithinRoot(tt.userPath, tt.root)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
