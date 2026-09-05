@@ -4179,4 +4179,41 @@ ContainerOriginalGroupsSeeded ==
             \A g \in OriginalGroups : GroupParts(g) \subseteq res[r].savedParts =>
                 res[r].lazyConsumed[g]
 
+\* A focused caller scenario: parent then child, retaining only the child;
+\* an eager fresh parent and its dependent child, or two imported rows;
+\* cached reads for imported values; one external part demand per process,
+\* reserving the second evaluator for an internal copy; direct visits only
+\* on the child. Snapshot demands after Restart read that saved child.
+\* Shape checks apply only while rows are registered, so cleanup may erase
+\* their identities and edges. No constraint reads saved/captured completion.
+\* CHOOSE fixes call roles; this configuration must not use call symmetry.
+ContainerSweepScenario ==
+    LET parentCall == CHOOSE c \in Calls : TRUE
+        childCall == CHOOSE c \in Calls \ {parentCall} : TRUE
+    IN /\ \A i \in InvocationIds :
+              /\ invocations[i].call = IF i = 1 THEN parentCall ELSE childCall
+              /\ invocations[i].persistable = (i # 1)
+       /\ Len(invocations) >= 2 => invocations[1].phase = "done"
+       /\ Len(res) >= 1 /\ res[1].registered =>
+              /\ res[1].call = parentCall
+              /\ ~res[1].imported => \A g \in OriginalGroups : res[1].lazyConsumed[g]
+       /\ Len(res) >= 2 /\ res[2].registered =>
+              /\ res[2].call = childCall
+              /\ res[2].deps = {1}
+       /\ epoch = 2 => Len(ongoingCalls) <= 2
+       /\ \A s \in Sessions : sessionRelease[s].phase # "live" =>
+              Len(invocations) >= IF epoch = 1 THEN 2 ELSE 3
+
+       /\ Len(res) >= 1 => ~res[1].directVisited
+       /\ epoch = 1 /\ Len(res) >= 1 /\ res[1].imported => Len(res) = 2
+       /\ \A e \in EvalIds : evals[e].fromRes = 0 =>
+              IF epoch = 2 THEN evals[e].target = 2 /\ evals[e].part \in {"pFS", "pXMeta"}
+              ELSE IF res[1].imported
+                   THEN evals[e].target = 1 /\ evals[e].part \in {"pFS", "pXMeta"}
+                   ELSE evals[e].target = 2 /\ evals[e].part = "pMeta"
+       /\ Cardinality({e \in EvalIds : evals[e].fromRes = 0}) <= 1
+       /\ \A i \in InvocationIds :
+              (i = 3 \/ (epoch = 1 /\ Len(res) >= 1 /\ res[1].imported)) =>
+                  invocations[i].path \in {"none", "hit"}
+
 =============================================================================

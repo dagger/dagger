@@ -92,35 +92,120 @@ request made by a copy records demand on the parent; selecting the child copy
 records no demand on that child. This distinction lets an incorrect stored-copy
 selection fail the opening assertion itself.
 
-For this feature, the approved bounded validation plan supersedes the full-suite
-instruction above: use `quick`, the exact `lazy` anchor, the affected `lazy_parts`,
-`lazy_parts_prereq`, and `lazy_parts_delegate` shapes, and the three new
-`container_part_restart`, `container_sweep_restart`, and `container_joint_restore`
-shapes. Record exhaustive counts separately from simulation, reachability probes,
-and deliberately broken variants. The new configuration costs and final probe
-results are still being measured; none is added to `quickConfigs` yet.
+For this feature, the approved selected validation plan supersedes the full-suite
+instruction above. The completed set is all 18 `quickConfigs`, the exact `lazy`
+anchor, `lazy_parts`, `lazy_parts_prereq`, `lazy_parts_delegate`, and the three
+container configurations. No full suite was run. None of the new configurations
+is added to the quick set.
 
-Model source review refinements preserve `partComputed` independently from
-`flushed.rows[r].observed` at Restart, use operational parent finality in body
-choices, and assert that decode seeds completed original groups. The direct
-metadata scenario permits one visit per result/process; Go permits repeated
-visits. A whole request records every wanted part, while one bounded evaluator
-follows one constituent. Go tests must check whole-result return readiness.
+The following evidence was recorded on 2026-09-05 UTC against model SHA-256
+`c397ada06da89afd1ea2f8e171bc93f50bb86ea8e26656b0ce2a808687a8c6b0`.
+The saved `run_tlc.py` used the module's pinned TLC 1.7.4 jar and invocation:
 
-On 2026-09-05 UTC, targeted import-boundary variants dropped and invented saved
-completion at Restart. Both failed `ContainerDecodePreserves` immediately at
-that boundary (6,368 distinct states / 1.83s and 3,249 / 2.08s respectively).
-These are deliberate-break results, not passing exhaustive checks. Final checks
-of this refinement remain pending. The exact prior source checkpoint
-`33773d09d87236df587ae839d133be282edb7a87` passed `lazy` at 6,398,997 distinct
-states / 64.49s and `container_part_restart` at 13,501,639 / 158.96s.
+```sh
+java -Xmx8g -XX:+UseParallelGC -cp /tmp/tlatools/tla2tools.jar tlc2.TLC \
+  -workers auto -deadlock -config model.cfg CacheLifecycle.tla
+```
 
-The joint shape now reserves one invocation on each side of its single Restart
-and uses one evaluator. Its fresh joint completion and independent saved-member
-opening remain reachable. Two-caller joining, retry, and release belong to the
-part shape. The intermediate joint bound passed at 3,491,003 distinct states /
-44.51s; that is not final-refinement evidence. Earlier two-evaluator joint runs
-stopped incomplete at 27,763,994 distinct states / about 6m36s (7,692,763 queued)
-and 19,795,239 / about 4m30s (5,588,393 queued). The two-result sweep cost run
-stopped incomplete at 90.32s; its last report at about 64s was 3,756,864 distinct
-states with 2,014,142 queued. Further bounded sweep evidence is pending.
+Each run has its own source/config, `command.json`, `result.json`, and
+`output.log` under
+`/tmp/per-part-persistence-implementation-20260905/implementer`.
+`final-bounded-summary.log` contains 24 passing runs; the separate
+`final-sweep-container_sweep_restart-20260905T043003` supplies the 25th.
+All finished with an empty queue and the registered successful outcome.
+
+| Configuration | Distinct states | Wall seconds |
+| --- | ---: | ---: |
+| `lazy` | 6,398,997 | 80.23 |
+| `container_part_restart` | 13,501,639 | 146.81 |
+| `container_joint_restore` | 3,491,003 | 42.09 |
+| `drain_nested_call` | 14,833 | 4.34 |
+| `drain_orphan` | 14,833 | 2.58 |
+| `flush_closure` | 119,670 | 3.50 |
+| `flush_drained` | 38,684 | 2.79 |
+| `flush_inflight` | 141,104 | 3.49 |
+| `flush_roundtrip` | 53,818 | 2.48 |
+| `lazy_liveness` | 6,977 | 3.69 |
+| `lazy_parts_liveness` | 145,457 | 43.53 |
+| `lazy_parts_release` | 238,825 | 33.53 |
+| `lazy_release` | 1,505 | 1.82 |
+| `lazy_stale_cancel` | 28,017 | 2.68 |
+| `liveness` | 5,365 | 2.99 |
+| `lost_cancel` | 45 | 1.17 |
+| `orphan_edges` | 267 | 1.17 |
+| `attach_error` | 6,999 | 1.48 |
+| `attach_error_restart` | 22,650 | 1.83 |
+| `release_inflight` | 35,565 | 7.35 |
+| `release_claim_race` | 35,565 | 2.48 |
+| `lazy_parts` | 3,821,617 | 35.77 |
+| `lazy_parts_prereq` | 8,251,257 | 75.11 |
+| `lazy_parts_delegate` | 22,518,204 | 275.96 |
+| `container_sweep_restart` | 394,070 | 14.63 |
+
+The disabled-feature anchor remains exactly 6,398,997 states. The affected
+existing shapes also retain their recorded state counts.
+
+Successful BFS reachability probes in `final-probes-summary.log` deliberately
+assert the negation of each desired witness. Each stopped at the named probe
+violation (exit 12); these are reached witnesses, not exhaustive passing checks.
+
+| Witness | Probe violated | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `fresh_sweep_roundtrip` | `NoFreshSweepRoundTrip` | 139,034 | 5.10 |
+| `direct_sweep` | `NoDirectSweep` | 1,420 | 2.24 |
+| `stored_sibling_sweep` | `NoStoredSiblingSweep` | 811 | 1.83 |
+| `stored_open` | `NoStoredOpen` | 1,441 | 1.53 |
+| `stored_open_after_restart` | `NoStoredOpenAfterRestart` | 199,203 | 4.05 |
+| `open_join` | `NoOpenJoin` | 10,205 | 3.14 |
+| `open_retry` | `NoOpenRetry` | 45,946 | 2.90 |
+| `open_release` | `NoOpenRelease` | 30,119 | 2.78 |
+| `typed_second_flush` | `NoTypedSecondFlush` | 174,346 | 4.27 |
+| `envelope_second_flush` | `NoEnvelopeSecondFlush` | 135,233 | 3.92 |
+| `joint_independent` | `NoIndependentJointOpen` | 1,306,158 | 13.61 |
+
+The fresh sweep witness reaches depth 56: an eager parent, fresh lazy child,
+actual fs copy, capture with `parts = observed = {pMeta, pFS}` while the fs copy
+has no cache completion, actual Restart, then a successful saved fs opening.
+It does not prove the real mounted mutation with a pending ancestor exec; Go
+restart evidence must establish that case.
+
+Final deliberate breaks in `final-breaks-summary.log` all stop at their intended
+assertion (exit 12). The two Restart mutations fail at the actual import
+boundary. The separate invented-completion mutation fails at an imported start.
+
+| Mutation | Assertion violated | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `restart_drop` | `ContainerDecodePreserves` | 3,541 | 2.13 |
+| `restart_invent` | `ContainerDecodePreserves` | 4,265 | 2.23 |
+| `drop_completion` | `ContainerCaptureExact` | 1,872 | 1.73 |
+| `cache_only_capture` | `ContainerSweepCaptureExact` | 19,751 | 2.28 |
+| `invent_completion` | `ContainerDecodePreserves` | initial state | 1.53 |
+| `recompute_stored` | `StoredPartsNeverComputed` | 1,497 | 1.73 |
+| `open_both` | `StoredOpenRequiresDemand` | 842,899 | 14.34 |
+| `stored_copy` | `StoredOpenRequiresDemand` | 1,139 | 2.60 |
+| `open_accessor_capture` | `ContainerCaptureExact` | 3,819 | 2.60 |
+| `drop_partial_root` | `ContainerClosureComplete` | 2,133 | 2.19 |
+| `retry_body` | `StoredOpenNotRepeated` | 33,059 | 3.54 |
+
+`recompute_stored` removes routing and original-group seeding together;
+`open_both` opens both members of a joint output; `stored_copy` treats an opening
+key as a parent copy; `retry_body` repeats a successful opening after failed
+bookkeeping. Each mutation and its trace are retained with its run.
+
+Scope limits are explicit. `ContainerSweepScenario` fixes parent/child call
+roles, eager fresh parents, child dependencies, one external evaluator per
+process, and room for an internal copy. It has no call symmetry and reads no
+saved/captured completion evidence. Imported starts include a pending child
+copy beside a closed stored sibling. Release starts after both calls exist;
+publication/release races remain in the existing release shapes. Non-final
+parent skipping remains covered by `lazy_parts_delegate` and `SweepStartsFinal`.
+The joint shape has one evaluator; joining, failure, retry, and release use the
+part shape. A direct metadata visit is bounded to once per result/process;
+Go permits repeated visits. One evaluator follows one constituent of a whole
+request; Go tests must check whole-result return readiness and two actual
+restarts, including typed and untouched-envelope middle processes.
+
+Earlier constrained simulations in `final-sweep-probes-summary.log` and
+`final-sweep-breaks-summary.log` did not reach their predicates. They are not
+positive evidence. Earlier broad-cost joint and sweep runs were stopped with
+queued states; they are incomplete cost measurements, not successful bounds.
