@@ -277,6 +277,41 @@ func (WorkspaceSuite) TestWorkspaceCheckpointPinsGitOverlayRecipe(ctx context.Co
 	}
 }
 
+func (WorkspaceSuite) TestWorkspaceCheckpointPreservesDirectories(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	tree := c.Directory().WithNewFile("last/file", "remove me")
+	daemon, url := gitService(ctx, t, c, tree)
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	dirs := c.Directory().WithNewDirectory("empty", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700}).WithNewDirectory("gone")
+	source := base.WithChanges(dirs.Changes(c.Directory())).
+		WithChanges(tree.WithoutFile("last/file").WithNewDirectory("last").Changes(tree))
+	frozen := source.Checkpoint()
+	for _, name := range []string{"empty", "gone", "last"} {
+		entries, err := frozen.Directory(name).Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	}
+	stat, err := frozen.Directory("/").Stat(ctx, "empty")
+	require.NoError(t, err)
+	permissions, err := stat.Permissions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0o700, permissions)
+	// Directory-only removals and a directory-to-file replacement survive too.
+	replacement := c.Directory().WithNewFile("empty", "replacement")
+	updated := frozen.WithChanges(replacement.Changes(dirs)).Checkpoint()
+	exists, err := updated.Directory("/").Exists(ctx, "gone")
+	require.NoError(t, err)
+	require.False(t, exists)
+	text, err := updated.File("empty").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "replacement", text)
+	recipe, err := c.LLM().WithWorkspace(updated).PortableID(ctx)
+	require.NoError(t, err)
+	var id call.ID
+	require.NoError(t, id.Decode(string(recipe)))
+	require.NotContains(t, id.Display(), "branch(name:")
+}
+
 func (WorkspaceSuite) TestWorkspaceCheckpointRejectsNestedClientCapture(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c).

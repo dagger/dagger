@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -504,23 +506,6 @@ func checkpointOverlay(
 	if err != nil {
 		return out, err
 	}
-	if len(data) == 0 {
-		return frozen, nil
-	}
-	var blob dagql.ObjectResult[*core.File]
-	if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-		Field: "blob", Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString("workspace-overlay.patch")},
-			{Name: "contents", Value: dagql.Bytes(data)},
-			{Name: "permissions", Value: dagql.NewInt(0o600)},
-		},
-	}); err != nil {
-		return out, err
-	}
-	blobID, err := blob.ID()
-	if err != nil {
-		return out, err
-	}
 	var before dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, frozen, &before, dagql.Selector{
 		Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/")}},
@@ -531,9 +516,34 @@ func checkpointOverlay(
 	if err != nil {
 		return out, err
 	}
+	after := before
+	if len(data) > 0 {
+		var blob dagql.ObjectResult[*core.File]
+		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+			Field: "blob", Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("workspace-overlay.patch")},
+				{Name: "contents", Value: dagql.Bytes(data)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return out, err
+		}
+		blobID, err := blob.ID()
+		if err != nil {
+			return out, err
+		}
+		if err := srv.Select(ctx, before, &after, dagql.Selector{
+			Field: "withPatchFile", Args: []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*core.File](blobID)}},
+		}); err != nil {
+			return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
+		}
+	}
+	after, err = checkpointOverlayDirectories(ctx, srv, after, changes.Self())
+	if err != nil {
+		return out, err
+	}
 	var delta dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, before, &delta,
-		dagql.Selector{Field: "withPatchFile", Args: []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*core.File](blobID)}}},
+	if err := srv.Select(ctx, after, &delta,
 		dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}},
 	); err != nil {
 		return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
@@ -546,6 +556,58 @@ func checkpointOverlay(
 		Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](deltaID)}},
 	})
 	return out, err
+}
+
+// Git patches cannot record empty directories. Restore directory edits with
+// literal paths and modes, without retaining the old (possibly live) recipe.
+// Include parents of deleted files: applying a patch can remove a directory
+// whose final file was deleted even when the overlay kept that directory.
+func checkpointOverlayDirectories(ctx context.Context, srv *dagql.Server, after dagql.ObjectResult[*core.Directory], changes *core.Changeset) (dagql.ObjectResult[*core.Directory], error) {
+	paths, err := changes.ComputePaths(ctx)
+	if err != nil {
+		return after, err
+	}
+	var candidates []string
+	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
+		if strings.HasSuffix(p, "/") {
+			candidates = append(candidates, strings.TrimSuffix(p, "/"))
+		}
+	}
+	for _, p := range paths.AllRemoved {
+		for parent := path.Dir(strings.TrimSuffix(p, "/")); parent != "." && parent != "/"; parent = path.Dir(parent) {
+			candidates = append(candidates, parent)
+		}
+	}
+	slices.Sort(candidates)
+	for _, p := range slices.Compact(candidates) {
+		want, err := changes.After.Self().Stat(ctx, changes.After, srv, p, true)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+			return after, err
+		}
+		actual, err := after.Self().Stat(ctx, after, srv, p, true)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+			return after, err
+		}
+		selector := dagql.Selector{Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}}}
+		switch {
+		case want != nil && want.IsDir():
+			if actual != nil && actual.IsDir() && actual.Permissions == want.Permissions {
+				continue
+			}
+			selector.Field = "withNewDirectory"
+			selector.Args = append(selector.Args, dagql.NamedInput{Name: "permissions", Value: dagql.NewInt(want.Permissions)})
+		case want == nil && actual != nil && actual.IsDir():
+			selector.Field = "withoutDirectory"
+		default:
+			continue
+		}
+		var updated dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, after, &updated, selector); err != nil {
+			return after, err
+		}
+		after = updated
+	}
+	return after, nil
 }
 
 func checkpointOptionalInt(arg dagql.Optional[dagql.Int]) int64 {
