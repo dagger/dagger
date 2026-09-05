@@ -1,0 +1,52 @@
+"""
+A module for running the `go` CLI.
+"""
+type GoCli {
+  sandbox: Container!
+
+  new(
+    base: Container! = container.from("golang:1.26"),
+  ) {
+    self.sandbox = base
+    self
+  }
+
+  @agent
+  agent(base: LLM!): LLM! {
+    base.withTools(currentNode)
+  }
+
+  """
+  Run a `go` command and keep its changes.
+  """
+  @cache(policy: FunctionCachePolicy.Never)
+  go(
+    ws: Workspace!,
+    """
+    Arguments to pass to `go`.
+    """
+    args: [String!]!,
+  ): Changeset! {
+    let before = base
+      .withDirectory(".", ws.directory("/", gitignore: true, exclude: ["tmp"]))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+    let after = before
+      .withExec(["go"] + args)
+      .sync
+    after
+      .directory(".")
+      # Discard spurious changes that Go makes to .git - not sure why this
+      # happens, maybe VCS build related? I think it was .git/index?
+      .withoutDirectory(".git")
+      .changes(before.directory(".").withoutDirectory(".git"))
+  }
+
+  base: Container! {
+    sandbox
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withEnvVariable("GOCACHE", "/root/.cache/go-build")
+      .withWorkdir("/workspace")
+  }
+}

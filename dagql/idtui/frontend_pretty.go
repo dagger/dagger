@@ -327,6 +327,26 @@ func (ctx commandViewContext) SpanList(root func() dagui.SpanID, include func() 
 	return newSpanListView(ctx.fe, root, include)
 }
 
+// ServiceList implements ViewContext: a span list led by the per-service
+// display spans discovered live beneath root() (dagui.ServiceDisplaySpans).
+// The display spans sit deep under the machinery that opened them (module
+// load, the UpGroup.run call), so the list hoists each one to the top level
+// (see SpanListView.hoist) — the rows render as if the services were root()'s
+// direct children, with everything else passed through.
+func (ctx commandViewContext) ServiceList(root func() dagui.SpanID) *SpanListView {
+	fe := ctx.fe
+	list := newSpanListView(fe, root, func() []dagui.SpanID {
+		displays := fe.db.ServiceDisplaySpans(fe.db.Spans.Map[root()])
+		ids := make([]dagui.SpanID, 0, len(displays))
+		for _, span := range displays {
+			ids = append(ids, span.ID)
+		}
+		return ids
+	})
+	list.hoist = true
+	return list
+}
+
 type commandViewHandle struct {
 	fe *frontendPretty
 }
@@ -2273,6 +2293,13 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 			if span.RollUpLogs {
 				if sr, ok := fe.spanTrees[id]; ok {
 					sr.Update()
+				}
+				// The rolled-up lines land in the roll-up span's own Vterm, so
+				// its memoized LogsView must be invalidated too — an *expanded*
+				// roll-up row (a promoted `dagger up` service) renders through
+				// it and would otherwise freeze at its first-paint content.
+				if lv, ok := fe.logsViews[id]; ok {
+					lv.Update()
 				}
 				break
 			}
@@ -6268,6 +6295,9 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// Flag how many tokens a tool call's result added to the model's
 		// context, so an outsized one stands out at a glance.
 		r.renderToolResultTokens(out, span)
+
+		// Show where a ready service is reachable, right on its own row.
+		r.renderServiceURLs(out, span)
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {

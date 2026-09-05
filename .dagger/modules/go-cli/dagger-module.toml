@@ -1,0 +1,5 @@
+name = "go-cli"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"

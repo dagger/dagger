@@ -19,6 +19,15 @@ type SpanListView struct {
 	root    func() dagui.SpanID
 	include func() []dagui.SpanID
 
+	// hoist lifts each included span to the top level of the list even when
+	// it sits deep beneath root: the walk passes through everything that is
+	// not an included span or inside one, so the rows render as if the
+	// included spans were root's direct children (used by ServiceList, whose
+	// per-service display spans live under the call machinery that opened
+	// them). While include() is still empty the list falls back to root's
+	// own children instead of rendering nothing, so setup progress shows.
+	hoist bool
+
 	scope     spanTreeScope
 	container *tuist.Container
 	visible   []dagui.SpanID
@@ -79,8 +88,33 @@ func (v *SpanListView) sync() bool {
 		return v.clear()
 	}
 
+	ids := []dagui.SpanID(nil)
+	if v.include != nil {
+		ids = v.include()
+	}
+
 	opts := v.fe.FrontendOpts
 	opts.ZoomedSpan = rootID
+	if v.hoist && len(ids) > 0 {
+		// Hoist: pass through every span that is neither an included span nor
+		// beneath one, so the included spans surface as the walk's top-level
+		// trees no matter how deep their real parents sit.
+		included := make(map[dagui.SpanID]bool, len(ids))
+		for _, id := range ids {
+			included[id] = true
+		}
+		opts.Filter = func(span *dagui.Span) dagui.WalkDecision {
+			for s := span; s != nil; s = s.ParentSpan {
+				if included[s.ID] {
+					return dagui.WalkContinue
+				}
+				if s.ID == rootID {
+					break
+				}
+			}
+			return dagui.WalkPassthrough
+		}
+	}
 	rowsView := v.fe.db.RowsView(opts)
 	if len(rowsView.Body) == 0 {
 		return v.clear()
@@ -89,12 +123,8 @@ func (v *SpanListView) sync() bool {
 	v.scope.rows = rowsView.Rows(opts)
 	v.scope.opts = opts
 
-	ids := []dagui.SpanID(nil)
-	if v.include != nil {
-		ids = v.include()
-	}
 	children := make([]tuist.Component, 0, len(rowsView.Body))
-	if v.include == nil {
+	if v.include == nil || (v.hoist && len(ids) == 0) {
 		ids = make([]dagui.SpanID, 0, len(rowsView.Body))
 		for _, tree := range rowsView.Body {
 			if tree != nil && tree.Span != nil {

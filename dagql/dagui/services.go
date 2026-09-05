@@ -122,3 +122,45 @@ func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 	sortNodes(roots)
 	return roots
 }
+
+// ServiceDisplaySpans returns the per-service display spans beneath root, in
+// start order: the spans core's ModTreeNode.PrepareUp opens for each `dagger
+// up` service, recognizable by a service name (ServiceNameAttr) WITHOUT the
+// engine's service-instance mark (ServiceAttr). Each carries the service's
+// port-suffixed name, its rolled-up evaluation/health-check/service logs, its
+// readiness URLs (ServiceURLs, stamped once the health check passes), and the
+// `ready <url>` child span.
+//
+// This is the live-dashboard anchor for `dagger up`'s command screen (see
+// idtui's ViewContext.ServiceList): unlike SurfacedServicesForSpan — which
+// anchors on the engine-marked exec span and only sees a service once it is
+// actually running — a display span exists from the moment the service's
+// evaluation begins, so the dashboard shows every service row (with its build
+// logs streaming) from the start. The same zoom-relative containment as the
+// other surfaced kinds applies. The result is cached per DB mutation and per
+// root; callers must treat the returned slice as read-only.
+func (db *DB) ServiceDisplaySpans(root *Span) []*Span {
+	r := db.surfaceRoot(root)
+	key := surfaceRootID(r)
+	if db.serviceDisplaysInit && db.serviceDisplaysAt == db.mutations && db.serviceDisplaysRoot == key {
+		return db.serviceDisplays
+	}
+	var displays []*Span
+	for span := range db.Spans.Iter() {
+		if span.ServiceName == "" || span.Service || span.Internal || !span.Received {
+			continue
+		}
+		if !spanMayRollUp(span, r, nil) {
+			continue
+		}
+		displays = append(displays, span)
+	}
+	sort.SliceStable(displays, func(i, j int) bool {
+		return displays[i].Before(displays[j])
+	})
+	db.serviceDisplays = displays
+	db.serviceDisplaysAt = db.mutations
+	db.serviceDisplaysRoot = key
+	db.serviceDisplaysInit = true
+	return displays
+}

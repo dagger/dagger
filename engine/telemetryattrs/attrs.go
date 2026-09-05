@@ -58,6 +58,15 @@ const (
 	// cannot modify. (string)
 	ServiceNameAttr = "dagger.io/service.name"
 
+	// ServiceURLsAttr marks a service-readiness marker span, carrying the
+	// local URLs at which a just-started service is reachable. `dagger up`
+	// stamps it on the `ready <url>` span it starts beneath a service's
+	// display span once the health check passes (core/modtree.go); the TUI
+	// uses it to surface readiness alongside the service when a run leads
+	// with its services. Predates the dagger.io/ attribute prefix
+	// convention. (string slice)
+	ServiceURLsAttr = "service.urls"
+
 	// Streaming progress over OTel logs.
 	//
 	// A log record carrying ProgressItemAttr is progress data, not log text:

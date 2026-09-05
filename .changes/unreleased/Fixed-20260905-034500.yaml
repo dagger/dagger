@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  `dagger up` leads with each service again, and its rows are richer than
+  before. Since v0.19.10 the TUI showed nothing at the top level for
+  `dagger up` (dagger/dagger#14001); now each service's row is front and
+  center, streaming its health checks, its `ready <url>` marker, and the
+  service's own stdout/stderr live — on warm (fully cached) runs too, where
+  the service's log stream previously had nowhere to attach.
+time: 2026-09-05T03:45:00Z
+custom:
+  Author: vito
+  PR: ""
