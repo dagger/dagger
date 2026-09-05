@@ -67,6 +67,11 @@ var expectedOutcome = map[string]string{
 	"lazy_parts_delegate": "",
 	"lazy_parts_release":  "",
 
+	// Container completion capture and independent local snapshot opening.
+	"container_part_restart":  "",
+	"container_sweep_restart": "",
+	"container_joint_restore": "",
+
 	// green: reader cancellation inside the persisted-decode singleflight.
 	// A joiner that wakes on a departed leader's cancellation retries
 	// instead of failing (persistDecodeRetry), and a post-install failure
