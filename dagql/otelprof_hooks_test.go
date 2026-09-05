@@ -168,14 +168,14 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	}
 }
 
-// TestEmitWaitGateObservableOnMissingTarget covers review finding A: a *recording*
+// TestEmitWaitVisibleToValidationOnMissingTarget covers review finding A: a *recording*
 // waiter that joins an execution whose call_exec span was never minted (a mixed /
 // cross-session untraced executor) must NOT drop its wait edge silently. It emits a
 // targetless wait link — an all-zero target span id — that the offline validation counts
 // as an unresolved wait and fails loud on, mirroring native's targetless
 // wcprof.BeginWait. Here we assert the emit shape (the observable link is present
 // with a zero target); validation's reaction to it is covered in the analyzer's tests.
-func TestEmitWaitGateObservableOnMissingTarget(t *testing.T) {
+func TestEmitWaitVisibleToValidationOnMissingTarget(t *testing.T) {
 	sr, rootCtx, root := newRecordingRoot("POST /query")
 	base := time.Now().UnixNano()
 	// invalid target = the executor minted no call_exec span (oc.execSpanCtx zero).
@@ -185,7 +185,7 @@ func TestEmitWaitGateObservableOnMissingTarget(t *testing.T) {
 
 	rootSpan := spanByName(t, ended, "POST /query")
 	if len(rootSpan.Links()) != 1 {
-		t.Fatalf("a missing target on a recording waiter must still emit a observable by validation wait link, got %d links", len(rootSpan.Links()))
+		t.Fatalf("a missing target on a recording waiter must still emit a wait link visible to validation, got %d links", len(rootSpan.Links()))
 	}
 	link := rootSpan.Links()[0]
 	la := map[string]string{}
