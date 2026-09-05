@@ -252,6 +252,7 @@ func (cr *cacheRecord) remove(ctx context.Context) (rerr error) {
 type immutableRef struct {
 	cm *snapshotManager
 	refMetadata
+	pin             *resourcePin
 	released        bool
 	mu              sync.Mutex
 	mountCache      MountableRef
@@ -650,12 +651,15 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 
 func (sr *immutableRef) Release(ctx context.Context) error {
 	sr.cm.mu.Lock()
-	defer sr.cm.mu.Unlock()
-
 	sr.mu.Lock()
-	defer sr.mu.Unlock()
-
-	return sr.release(ctx)
+	err := sr.release(ctx)
+	pin := sr.pin
+	sr.mu.Unlock()
+	sr.cm.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return pin.release(ctx)
 }
 
 func (sr *immutableRef) updateLastUsedNow() bool {

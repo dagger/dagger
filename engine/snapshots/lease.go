@@ -8,8 +8,51 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
+	cerrdefs "github.com/containerd/errdefs"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
+
+// resourcePin owns a transfer's resources until the returned ref or provider
+// is released. It is independent of a caller's ambient lease.
+type resourcePin struct {
+	cm   *snapshotManager
+	id   string
+	once sync.Once
+	err  error
+}
+
+func (cm *snapshotManager) newResourcePin(ctx context.Context) (*resourcePin, context.Context, error) {
+	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), MakeTemporary, func(l *leases.Lease) error {
+		l.Labels["containerd.io/gc.flat"] = time.Now().UTC().Format(time.RFC3339Nano)
+		return nil
+	})
+	if err != nil {
+		return nil, ctx, err
+	}
+	return &resourcePin{cm: cm, id: l.ID}, leases.WithLease(ctx, l.ID), nil
+}
+
+func (p *resourcePin) release(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	p.once.Do(func() { p.err = p.cm.RemoveLease(context.WithoutCancel(ctx), p.id) })
+	return p.err
+}
+
+// pinContent checks presence after attachment. AddResource itself accepts
+// absent targets; containerd serializes its writes with the GC mark/sweep.
+func (cm *snapshotManager) pinContent(ctx context.Context, desc ocispecs.Descriptor) (bool, error) {
+	if err := cm.linkContentToContextLease(ctx, desc); err != nil {
+		return false, err
+	}
+	_, err := cm.ContentStore.Info(ctx, desc.Digest)
+	if cerrdefs.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
 
 type lazyLeaseScopeKey struct{}
 type withoutLazyLeaseScope struct{}
