@@ -22,7 +22,6 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
-	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -82,6 +81,8 @@ type LLMSession struct {
 	// composed agent group as selected on startup (`dagger agent`). When nil,
 	// .clear resets to a plain workspace-bound LLM.
 	initialLLM *dagger.LLM
+	// Most recent bind/save/reload checkpoint, also used by .clear.
+	workspaceBaseline *dagger.Workspace
 
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
@@ -191,6 +192,9 @@ func (s *LLMSession) reset() {
 	} else {
 		llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 			WithWorkspace(s.dag.CurrentWorkspace())
+	}
+	if s.workspaceBaseline != nil {
+		llm = llm.WithWorkspace(s.workspaceBaseline)
 	}
 	s.updateLLM(llm)
 }
@@ -448,85 +452,73 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 	return nil
 }
 
-// updateChangesPreview refreshes the "Changes" notification bubble with a summary
-// of the workspace's pending overlay edits (Workspace.changes). Pressing ctrl+s
-// exports them to the local Git workspace (see ExportChanges). When there are no
-// pending edits the bubble is cleared (an empty body renders nothing).
+// Keep commit-only changes visible after the overlay has been committed.
 func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
-	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: s.dag.CurrentWorkspace()}))
+	preview, err := previewWorkspaceChanges(s.plumbingCtx, s.dag, llm.Workspace())
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	if preview.empty() {
 		s.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
 	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title: "Changes",
-		ContentFunc: func(width int) string {
-			var buf strings.Builder
-			patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
-			return buf.String()
-		},
+		Title:       "Changes",
+		ContentFunc: preview.render,
 		KeyMap: []key.Binding{
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reset")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reload")),
 		},
 	})
 	return nil
 }
 
-// ExportChanges writes the workspace's pending overlay edits to its local Git
-// workspace (Workspace.export), then refreshes the changes preview. It is the
-// ctrl+s action; export fails clearly when the workspace cannot persist (a
-// remote ref, a synthetic workspace, or a local dir with no Git root).
+// ExportChanges saves commits and pending edits to the live checkout, then
+// rebinds a fresh checkpoint. A rejected export leaves the agent state intact.
 func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	if err := s.llm.Workspace().Export(ctx); err != nil {
+	if err := s.llm.Workspace().Export(ctx, dagger.WorkspaceExportOpts{To: s.dag.CurrentWorkspace()}); err != nil {
 		return err
 	}
-	// The exported edits now live on disk, so rebind the live workspace: the
-	// overlay the agent accumulated is now redundant with the files
-	// themselves, and carrying it forward would re-diff already-saved content
-	// as pending changes. Rebinding also drops it from the next save —
-	// portableID emits only the current binding. Export bumps the client's
-	// workspace read epoch, so reads after this point see the saved content
-	// rather than a snapshot cached earlier in the session. Sync eagerly so a
-	// failure surfaces here rather than corrupting later saves.
-	rebound, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace()).Sync(ctx)
+	// Capture once, then bind by ID so future reads do not repeat host capture.
+	baseline, err := checkpointWorkspace(ctx, s.dag)
+	if err != nil {
+		return fmt.Errorf("saved to checkout, but could not refresh checkpoint: %w", err)
+	}
+	rebound, err := s.llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("rebind workspace after export: %w", err)
 	}
 	if err := s.updateLLM(rebound); err != nil {
 		return err
 	}
+	s.workspaceBaseline = baseline
 	if s.onStep != nil {
 		s.onStep(s)
 	}
 	return s.updateChangesPreview(s.llm)
 }
 
-// ResetWorkspace discards the workspace's pending overlay edits, re-binding the
-// LLM to the live workspace without exporting first.
-// It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
-// "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. The binding goes through
-// Workspace.reloaded so cached host reads from earlier in the session are
-// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
-// eagerly so a failure surfaces here rather than corrupting later saves.
+// ResetWorkspace discards the agent's unsaved commits and edits, replacing them
+// with a fresh checkpoint of the checkout. It never writes to the host.
 func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Reloaded()).Sync(ctx)
+	baseline, err := checkpointWorkspace(ctx, s.dag)
+	if err != nil {
+		return err
+	}
+	reset, err := s.llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
 	if err := s.updateLLM(reset); err != nil {
 		return err
 	}
+	s.workspaceBaseline = baseline
 	if s.onStep != nil {
 		s.onStep(s)
 	}

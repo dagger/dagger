@@ -65,8 +65,13 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-  -l, --list                      List available agents
-  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
+      --checkpoint-exclude stringArray             Exclude paths from checkpoints (repeatable)
+      --checkpoint-include stringArray             Approve nonignored untracked paths for checkpoints (repeatable)
+      --checkpoint-max-untracked-file-bytes int    Maximum bytes per untracked checkpoint file (default 16 MiB)
+      --checkpoint-max-untracked-files int         Maximum untracked checkpoint files (default 4096)
+      --checkpoint-max-untracked-total-bytes int   Maximum total untracked checkpoint bytes (default 64 MiB)
+  -l, --list                                       List available agents
+  -r, --resume session[=picker]                    Resume a saved session (interactive picker if no id given)
 ```
 
 ### Options inherited from parent commands
