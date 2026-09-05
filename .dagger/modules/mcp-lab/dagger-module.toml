@@ -11,3 +11,7 @@ engineVersion = "v1.0.0-0"
 [[dependencies]]
   name = "engine-dev"
   source = "../engine-dev"
+
+[[dependencies]]
+  name = "go-cli"
+  source = "../go-cli"

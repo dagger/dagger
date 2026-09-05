@@ -101,12 +101,8 @@ type McpLab {
     # Build the HTTP<->stdio bridge from the workspace tree: it lives in the
     # repo's root Go module, so it compiles against the exact mcp-go version
     # the CLI serves.
-    let bridgeBin = engineDev(ws: source)
-      .goContainer
-      .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
-      .withEnvVariable("GOCACHE", "/root/.cache/go-build")
-      .withMountedCache("/go/pkg/mod", cacheVolume("mcp-lab-gomod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("mcp-lab-gobuild"))
+    let bridgeBin = goCli
+      .base
       .withMountedDirectory("/src", srcDir)
       .withWorkdir("/src")
       .withExec(["go", "build", "-o", "/out/mcp-bridge", "./.dagger/modules/mcp-lab/bridge"])
