@@ -2,9 +2,9 @@ package snapshots
 
 import (
 	"context"
-	cerrdefs "github.com/containerd/errdefs"
 	"slices"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
