@@ -166,6 +166,16 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_emitHistory">emitHistory</a>()
+        
+                                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_fork">fork</a>(string $label)
         
                                             <p><p>Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.</p></p>                </div>
@@ -259,16 +269,6 @@
                     <a href="#method_reasoningEffort">reasoningEffort</a>()
         
                                             <p><p>The reasoning effort in use, e.g. &quot;low&quot;, &quot;medium&quot;, or &quot;high&quot;. Empty or &quot;none&quot; when reasoning is disabled.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_replay">replay</a>()
-        
-                                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -641,8 +641,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_fork">
+                    <h3 id="method_emitHistory">
         <div class="location">at line 37</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>emitHistory</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_fork">
+        <div class="location">at line 47</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>fork</strong>(string $label)
         </code>
@@ -684,7 +716,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_hasPending">
-        <div class="location">at line 47</div>
+        <div class="location">at line 57</div>
         <code>                    bool
     <strong>hasPending</strong>()
         </code>
@@ -716,7 +748,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 56</div>
+        <div class="location">at line 66</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -748,7 +780,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_lastReply">
-        <div class="location">at line 65</div>
+        <div class="location">at line 75</div>
         <code>                    string
     <strong>lastReply</strong>()
         </code>
@@ -780,7 +812,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loop">
-        <div class="location">at line 74</div>
+        <div class="location">at line 84</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>loop</strong>(int|null $maxSteps = null, int|null $maxTokens = null)
         </code>
@@ -827,7 +859,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_messages">
-        <div class="location">at line 89</div>
+        <div class="location">at line 99</div>
         <code>                    array
     <strong>messages</strong>()
         </code>
@@ -859,7 +891,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_model">
-        <div class="location">at line 98</div>
+        <div class="location">at line 108</div>
         <code>                    string
     <strong>model</strong>()
         </code>
@@ -891,7 +923,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_portableID">
-        <div class="location">at line 107</div>
+        <div class="location">at line 117</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>portableID</strong>()
         </code>
@@ -923,7 +955,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_provider">
-        <div class="location">at line 116</div>
+        <div class="location">at line 126</div>
         <code>                    string
     <strong>provider</strong>()
         </code>
@@ -955,7 +987,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reasoningEffort">
-        <div class="location">at line 125</div>
+        <div class="location">at line 135</div>
         <code>                    string
     <strong>reasoningEffort</strong>()
         </code>
@@ -974,38 +1006,6 @@
                     <table class="table table-condensed">
         <tr>
             <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_replay">
-        <div class="location">at line 134</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>replay</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
             <td></td>
         </tr>
     </table>

@@ -38,6 +38,27 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+  """
+  @spec emit_history(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
+  def emit_history(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("emitHistory")
+
+    with {:ok, id} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       %Dagger.LLM{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("LLM"),
+         client: llm.client
+       }}
+    end
+  end
+
+  @doc """
   Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
   """
   @spec fork(t(), String.t()) :: Dagger.LLM.t()
@@ -167,27 +188,6 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("reasoningEffort")
 
     Client.execute(llm.client, query_builder)
-  end
-
-  @doc """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  @spec replay(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
-  def replay(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("replay")
-
-    with {:ok, id} <- Client.execute(llm.client, query_builder) do
-      {:ok,
-       %Dagger.LLM{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("LLM"),
-         client: llm.client
-       }}
-    end
   end
 
   @doc """

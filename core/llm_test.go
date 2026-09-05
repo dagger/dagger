@@ -485,7 +485,7 @@ func TestCodexAPIError(t *testing.T) {
 }
 
 // TestCodexReasoningRoundTrip covers B1: a streamed reasoning item is packed
-// into a THINKING block's Signature and reconstructed into a replayable
+// into a THINKING block's Signature and reconstructed into a reusable
 // reasoning input item, while non-reasoning signatures are ignored.
 func TestCodexReasoningRoundTrip(t *testing.T) {
 	r := responses.ResponseReasoningItem{
@@ -508,17 +508,17 @@ func TestCodexReasoningRoundTrip(t *testing.T) {
 	assert.Equal(t, "step one", item.Summary[0].Text)
 
 	// A signature that isn't a codex reasoning payload (e.g. an Anthropic
-	// thinking signature) is ignored rather than mis-replayed.
+	// thinking signature) is ignored rather than incorrectly resubmitted.
 	_, ok = decodeCodexReasoning("not-json-opaque-signature")
 	assert.False(t, ok)
 
-	// Without encrypted content there's nothing replayable under Store:false.
+	// Without encrypted content there's nothing to resubmit under Store:false.
 	_, noEnc := encodeCodexReasoning(responses.ResponseReasoningItem{ID: "rs_x"})
 	_, ok = decodeCodexReasoning(noEnc)
 	assert.False(t, ok)
 }
 
-// TestCodexConvertReasoningOrder covers B1: a reasoning item is replayed
+// TestCodexConvertReasoningOrder covers B1: a reasoning item is resubmitted
 // immediately before the function call it produced.
 func TestCodexConvertReasoningOrder(t *testing.T) {
 	_, sig := encodeCodexReasoning(responses.ResponseReasoningItem{

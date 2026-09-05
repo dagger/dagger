@@ -1,6 +1,6 @@
 """
 An agent whose tool function does noisy nested work and then prints a
-multi-line report, for LLM tool-log capture tests (replay-driven, no live
+multi-line report, for LLM tool-log capture tests (recording-driven, no live
 provider).
 """
 type ReportAgent {
