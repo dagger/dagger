@@ -156,11 +156,12 @@ func (cm *snapshotManager) importLayer(
 	}
 
 	lockKey := importedLayerDiffLockKey(parentSnapshotID, diffID)
-	cm.importLayerLocker.Lock(lockKey)
-	defer cm.importLayerLocker.Unlock(lockKey)
-	if err := ctx.Err(); err != nil {
+	unlock, err := cm.importLayerLocker.acquire(ctx, lockKey)
+	if err != nil {
 		return nil, err
 	}
+
+	defer unlock()
 
 	blobKey := ImportedLayerBlobKey{
 		ParentSnapshotID: parentSnapshotID,
