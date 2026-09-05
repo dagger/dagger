@@ -18,7 +18,11 @@ Workflow:
   subcommand WITHOUT a leading "dagger" (e.g. `["call", "test"]`). The
   from-source CLI is on PATH and your CURRENT workspace tree is mounted at /src,
   re-mounted fresh on every call so your edits are always visible — only the
-  engine *binary* is pinned until `restart`.
+  engine *binary* is pinned until `restart`. Commands that talk to Dagger
+  Cloud run authenticated when the module's `cloudCredentials` setting is
+  configured in dagger.toml
+  (`cloudCredentials = "file://~/.config/dagger/credentials.json"`, mounted
+  where the CLI's auth code looks); without it the CLI runs logged out.
 - `query` sends raw GraphQL straight to the engine (no module loaded).
 - `debugGet`/`debugJq` hit the engine's :6060 debug endpoints (routes in
   cmd/engine/debug.go), e.g. /debug/pprof/goroutine?debug=2 for hangs; use
@@ -27,6 +31,15 @@ Workflow:
   engine; then re-run your repro with `dagger`.
 - `engineTest(pkg, run)` runs engine tests with their own ephemeral engine (no
   `start` needed), e.g. pkg "./core/integration" with run "TestSuite/TestSub".
+- `dumpId(file, ...)` builds and runs the repo's own `cmd/dump-id` against a
+  file in your workspace — no engine session needed. `file` is a
+  workspace-relative path to a base64 call ID. Modes mirror the command's
+  flags: `stats` (per-field counts, chain depth, expansion/re-execution
+  counts — the mode for "why did this recipe run that call N times?"), `tree`,
+  `json`, `find` (regexp over Type.field names), `diff` (structural diff
+  against a second recipe file), plus `lit`/`spine`/`depth` for verbosity and
+  `limit` to cap the returned lines. The binary is rebuilt from your current
+  tree, so edits to cmd/dump-id take effect immediately.
 - Engine logs: ListServices shows the engine service's span ids;
   ReadLogs(span, grep, limit) reads them — the equivalent of
   `docker logs dagger-engine.dev | grep`.

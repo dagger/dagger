@@ -115,23 +115,40 @@ source = "github.com/dagger/dang-sdk"
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
-[env.dev.modules.engine-lab]
+[modules.engine-lab]
 source = ".dagger/modules/engine-lab"
 
-[env.dev.modules.tui-qa]
+[modules.engine-lab.settings]
+# Dagger Cloud auth for the from-source CLI, so commands that talk to Cloud
+# run logged in as you. Resolved from the host on use; commands still work
+# (logged out) when the file isn't there.
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
+
+[modules.tui-qa]
 source = ".dagger/modules/tui-qa"
 
-[env.dev.modules.mcp-lab]
-source = ".dagger/modules/mcp-lab"
+[modules.tui-qa.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+# LLM provider config for clients that connect to the nested dev engine.
+daggerConfig = "file://~/.config/dagger/config.toml"
 
-[env.dev.modules.editor]
-source = "github.com/vito/editor"
+[modules.mcp-lab]
+source = ".dagger/modules/mcp-lab"
 
 [modules.tla-check]
 source = ".dagger/modules/tla-check"
 
 [modules.editor]
 source = "github.com/vito/editor"
+
+[modules.contributor]
+source = "github.com/vito/agents/contributor"
+
+[modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"

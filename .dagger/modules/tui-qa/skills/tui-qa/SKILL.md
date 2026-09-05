@@ -30,7 +30,27 @@ Interactive prompt mode works too: starting with args: ["agent"] brings up the
 live `dagger agent` prompt. Drive it by `typeText`-ing a line into the editline
 and `key enter` to submit; `key esc` toggles nav/input mode. The runner uses
 experimentalPrivilegedNesting so it inherits the outer session's LLM auth (no
-credential setup needed).
+credential setup needed). To resume a previously auto-saved conversation, pass
+`start(session: <file>)` — the file must keep its `<uuid>.json` name (it is
+mounted where the CLI's session loader looks) — then start with
+args: ["agent", "-r=<uuid>"].
+
+Dagger Cloud auth is NOT inherited from the outer session: the CLI under test
+reads it from the module's `cloudCredentials` setting, configured in
+dagger.toml (`cloudCredentials = "file://~/.config/dagger/credentials.json"`)
+and mounted where the CLI's auth code looks
+(`$XDG_CONFIG_HOME/dagger/credentials.json`). Without it, commands that talk to
+Cloud behave as logged out.
+
+Profiling the live TUI process (for a wedged or busy input/render loop): the
+runner also serves the CLI's PPROF debug server on a separate listener, so
+these respond even when the console endpoints hang.
+
+- `goroutines` dumps every goroutine's stack — the first stop for "what is the
+  UI loop blocked on"; look for the goroutine holding consoleMu.
+- `cpuProfile(seconds)` samples CPU while you reproduce the load and returns a
+  `go tool pprof -top` table.
+- `heapProfile` snapshots the heap the same way.
 
 If engine-lab tools are available, their start tool prints a tcp://<host>:1234
 endpoint — pass it as `start(engine: ...)` to run the TUI against THAT engine
