@@ -440,16 +440,16 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		}
 		ref = &ResultCallRef{ResultID: uint64(resultID)}
 	}
-	res, _, _, err := cache.sharedResultByResultID(ctx, "", sharedResultID(ref.ResultID), sharedResultLookupExact)
+	lookup, err := cache.sharedResultByResultID(ctx, "", sharedResultID(ref.ResultID), sharedResultLookupExact)
 	if err != nil {
 		return nil, err
 	}
 	var gqlType *ast.Type
-	if frame := res.loadResultCall(); frame != nil && frame.Type != nil {
+	if frame := lookup.res.loadResultCall(); frame != nil && frame.Type != nil {
 		gqlType = frame.Type.toAST()
 	}
-	if gqlType == nil && res.self != nil {
-		gqlType = res.self.Type()
+	if gqlType == nil && lookup.res.self != nil {
+		gqlType = lookup.res.self.Type()
 	}
 	if gqlType == nil {
 		return nil, fmt.Errorf("result ref %d is missing a GraphQL type", ref.ResultID)

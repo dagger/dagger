@@ -216,9 +216,12 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		c2 := connect(ctx, t)
 		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
+		// Result-ID loads are gated on the session's bound resources, so the
+		// replay is refused at load time instead of being served and failing
+		// later at plaintext resolution.
 		_, err = dagger.Ref[*dagger.Secret](c2, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "no bound resource for session")
+		require.ErrorContains(t, err, "has not bound the session resources this result requires")
 
 		require.NoError(t, c1.Close())
 
@@ -227,7 +230,7 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 
 		_, err = dagger.Ref[*dagger.Secret](c3, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "no bound resource for session")
+		require.ErrorContains(t, err, "has not bound the session resources this result requires")
 	})
 
 	t.Run("secrets cache normally", func(ctx context.Context, t *testctx.T) {
