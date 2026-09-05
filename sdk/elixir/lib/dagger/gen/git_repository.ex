@@ -122,10 +122,12 @@ defmodule Dagger.GitRepository do
 
   Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
   """
-  @spec latest(t()) :: Dagger.GitRef.t()
-  def latest(%__MODULE__{} = git_repository) do
+  @spec latest(t(), [{:version, String.t() | nil}]) :: Dagger.GitRef.t()
+  def latest(%__MODULE__{} = git_repository, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("latest")
+      git_repository.query_builder
+      |> QB.select("latest")
+      |> QB.maybe_put_arg("version", optional_args[:version])
 
     %Dagger.GitRef{
       query_builder: query_builder,

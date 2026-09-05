@@ -72,6 +72,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".`,
 					`An address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists.`,
 				),
+				dagql.Arg("version").
+					Doc(`Version query used to select an image tag. The address must not contain a tag or digest.`).
+					View(AfterVersion(workspace.VersionQueriesVersion)),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
 					`The service will be started only for this pull.`).
@@ -1029,6 +1032,7 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 
 type containerFromArgs struct {
 	Address               string
+	Version               string `default:""`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
@@ -1132,7 +1136,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	latestRelease := shouldSelectLatestImageRelease(ctx, refName)
+	if args.Version != "" && !reference.IsNameOnly(refName) {
+		return inst, fmt.Errorf(
+			"version query %q cannot be used with image address %q because it contains a tag or digest",
+			args.Version,
+			args.Address,
+		)
+	}
+	latestRelease := args.Version != "" || shouldSelectLatestImageRelease(ctx, refName)
 	if latestRelease {
 		refName = reference.TrimNamed(refName)
 	} else {
@@ -1270,6 +1281,12 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 
 	if latestRelease {
 		latestOptions := registryLockOptions()
+		if args.Version != "" {
+			latestOptions = append(latestOptions, workspace.LookupOption{
+				Name:  "version",
+				Value: args.Version,
+			})
+		}
 		latestInputs := workspace.LookupInputs(
 			[]any{refName.String()},
 			latestOptions...,
@@ -1283,7 +1300,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		var selectedTag string
 		if latestResolution.Pin != "" {
 			selectedTag = latestResolution.Pin
-			if err := core.ValidateContainerLatestTag(selectedTag); err != nil {
+			if err := core.ValidateContainerTag(selectedTag, args.Version); err != nil {
 				return inst, fmt.Errorf("%s lock value: %w", workspace.LockOperationOCILatest, err)
 			}
 		} else {
@@ -1311,7 +1328,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
 			}
-			selectedTag, err = core.SelectLatestContainerTag(tags)
+			selectedTag, err = core.SelectContainerTag(tags, args.Version)
 			if err != nil {
 				return inst, fmt.Errorf("select latest image tag for %q: %w", refName.String(), err)
 			}

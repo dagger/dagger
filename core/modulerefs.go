@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/mod/semver"
-
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -134,6 +132,26 @@ func ParseGitRefString(ctx context.Context, refString string) (ParsedGitRefStrin
 	return ParsedGitRefString{parsed}, err
 }
 
+// SetVersion sets a separate version query on a parsed Git module reference.
+func (p *ParsedGitRefString) SetVersion(version string) error {
+	if version == "" {
+		return nil
+	}
+	if p.HasVersion {
+		return fmt.Errorf(
+			"version query %q cannot be used because the module source ref already has version %q",
+			version,
+			p.ModVersion,
+		)
+	}
+	if _, err := parseReleaseVersionQuery(version); err != nil {
+		return err
+	}
+	p.ModVersion = version
+	p.HasVersion = true
+	return nil
+}
+
 func (p *ParsedGitRefString) GitRef(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -148,34 +166,11 @@ func (p *ParsedGitRefString) GitRef(
 		return selector
 	}
 
-	var modTag string
-	if p.HasVersion && semver.IsValid(p.ModVersion) {
-		var tags dagql.Array[dagql.String]
-		err := dag.Select(ctx, dag.Root(), &tags,
-			dagql.Selector{
-				Field: "git",
-				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(p.CloneRef)},
-				},
-			},
-			dagql.Selector{
-				Field: "tags",
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to resolve git tags: %w", err)
+	versionQuery := ""
+	if p.HasVersion && Supports(ctx, workspace.VersionQueriesVersion) {
+		if IsReleaseVersionQuery(p.ModVersion) {
+			versionQuery = p.ModVersion
 		}
-
-		allTags := make([]string, len(tags))
-		for i, tag := range tags {
-			allTags[i] = tag.String()
-		}
-
-		matched, err := matchVersion(allTags, p.ModVersion, p.RepoRootSubdir)
-		if err != nil {
-			return inst, fmt.Errorf("matching version to tags: %w", err)
-		}
-		modTag = matched
 	}
 
 	repoSelector := dagql.Selector{
@@ -188,11 +183,26 @@ func (p *ParsedGitRefString) GitRef(
 
 	refSelector := moduleGitDefaultRefSelector(ctx, p)
 	switch {
-	case modTag != "":
+	case versionQuery != "" && !pinIsSHA:
+		args := []dagql.NamedInput{
+			{Name: "version", Value: dagql.String(versionQuery)},
+		}
+		if p.RepoRootSubdir != "/" {
+			args = append(args, dagql.NamedInput{
+				Name:  "tagPrefix",
+				Value: dagql.String(strings.Trim(p.RepoRootSubdir, "/")),
+			})
+		}
+		refSelector = dagql.Selector{Field: "latest", Args: args}
+	case pinIsSHA:
+		// A module config pin is authoritative over both the declared version
+		// query and the consuming workspace's git-sha lock entries. Use HEAD as
+		// a neutral ref name so a partial query such as v1.2 is not looked up as
+		// a literal tag or branch before the pinned commit is applied.
 		refSelector = withCommitArg(dagql.Selector{
-			Field: "tag",
+			Field: "ref",
 			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(modTag)},
+				{Name: "name", Value: dagql.String("HEAD")},
 			},
 		})
 	case p.HasVersion:
@@ -209,16 +219,6 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(pinCommitRef)},
 			},
 		}
-	case pinIsSHA:
-		// A module config pin is authoritative over the consuming workspace's
-		// git-sha lock entries. Pass it through ref's internal commit argument so
-		// ref resolution cannot replay a stale HEAD lock entry.
-		refSelector = withCommitArg(dagql.Selector{
-			Field: "ref",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String("HEAD")},
-			},
-		})
 	}
 
 	var gitRef dagql.ObjectResult[*GitRef]

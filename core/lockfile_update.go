@@ -141,6 +141,9 @@ func selectedSHAEntry(
 		}
 		var shaOptions []workspace.LookupOption
 		for name, optionValue := range options {
+			if name == "version" {
+				continue
+			}
 			shaOptions = append(shaOptions, workspace.LookupOption{
 				Name:  name,
 				Value: optionValue,
@@ -212,6 +215,7 @@ func updateVanityURLLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 
 type ociLockInputs struct {
 	ref               string
+	version           string
 	registryTransport serverresolver.RegistryTransport
 }
 
@@ -248,6 +252,15 @@ func parseOCILockInputs(
 
 	for name, value := range options {
 		switch name {
+		case "version":
+			version, ok := value.(string)
+			if !ok || version == "" || !latest {
+				return parsed, fmt.Errorf("invalid %s version %v", operation, value)
+			}
+			if _, err := parseReleaseVersionQuery(version); err != nil {
+				return parsed, fmt.Errorf("invalid %s version %v: %w", operation, value, err)
+			}
+			parsed.version = version
 		case "protocol":
 			protocol, ok := value.(string)
 			if !ok {
@@ -310,7 +323,7 @@ func updateOCILatestLockEntry(
 	if err != nil {
 		return "", fmt.Errorf("list image tags for %q: %w", refName.String(), err)
 	}
-	selectedTag, err := SelectLatestContainerTag(tags)
+	selectedTag, err := SelectContainerTag(tags, inputs.version)
 	if err != nil {
 		return "", fmt.Errorf("select latest image tag for %q: %w", refName.String(), err)
 	}
@@ -455,6 +468,7 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 		)
 	}
 	var tagPrefix string
+	var version string
 	for name, value := range options {
 		switch name {
 		case "tagPrefix":
@@ -466,6 +480,19 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 					workspace.LockOperationGitLatest,
 					value,
 				)
+			}
+		case "version":
+			var ok bool
+			version, ok = value.(string)
+			if !ok || version == "" {
+				return "", fmt.Errorf(
+					"invalid %s version %v",
+					workspace.LockOperationGitLatest,
+					value,
+				)
+			}
+			if _, err := parseReleaseVersionQuery(version); err != nil {
+				return "", fmt.Errorf("invalid %s version %v: %w", workspace.LockOperationGitLatest, value, err)
 			}
 		default:
 			return "", unsupportedLockOptionError(
@@ -484,6 +511,12 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	}
 
 	var latestInputs []dagql.NamedInput
+	if version != "" {
+		latestInputs = append(latestInputs, dagql.NamedInput{
+			Name:  "version",
+			Value: dagql.String(version),
+		})
+	}
 	if tagPrefix != "" {
 		latestInputs = append(latestInputs, dagql.NamedInput{
 			Name:  "tagPrefix",

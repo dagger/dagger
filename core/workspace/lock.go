@@ -22,7 +22,8 @@ const (
 	LockOperationGitSHA    = "git-sha"
 	LockOperationVanityURL = "vanity-url"
 
-	LatestReleaseVersion = "v1.0.0-beta.11"
+	LatestReleaseVersion  = "v1.0.0-beta.11"
+	VersionQueriesVersion = "v1.0.0-beta.12"
 )
 
 // CanonicalLockFilePath maps the legacy .dagger/lock path to its dagger.lock
