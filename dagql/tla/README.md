@@ -22,7 +22,7 @@ joiner finding), and by claiming the attachment target under the graph
 lock before any unlocked refresh work, with target selection pinned by
 the claim-at-acquisition invariant so no other session's release can
 collect a target out from under its claim;
-`resources_gated_growth` — a
+`resources_requirement_growth` — a
 result's stored requirement set growing after the lookup filter ran —
 fixed by a serve-time re-validation keyed on a per-result requirement
 generation captured at selection (explicit retention edges accept
@@ -53,7 +53,7 @@ dagger --env dev call tla-check one --config=resources
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
-# (resources_gated_growth ~114M, resources_restart ~110M,
+# (resources_requirement_growth ~114M, resources_restart ~110M,
 # lazy_import ~62M, resources_latedep_cascade ~57M, persist ~47M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
