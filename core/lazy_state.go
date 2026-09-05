@@ -165,6 +165,23 @@ func (lazy *LazyState) GroupConsumed(group dagql.LazyGroupKey) bool {
 	return lazy.groupConsumedLocked(group)
 }
 
+// seedConsumedGroups initializes restored body completion before publication.
+// It leaves the whole-op latch unset so saved snapshots can still open.
+// Callers must own construction of this state; it must have no runners yet.
+func (lazy *LazyState) seedConsumedGroups(groups ...dagql.LazyGroupKey) {
+	if lazy.groups == nil {
+		lazy.groups = make(map[dagql.LazyGroupKey]*lazyGroupOnce, len(groups))
+	}
+	for _, group := range groups {
+		g := lazy.groups[group]
+		if g == nil {
+			g = new(lazyGroupOnce)
+			lazy.groups[group] = g
+		}
+		g.done.Store(true)
+	}
+}
+
 // groupConsumedLocked requires LazyMu held. done is read atomically, not
 // under g.mu, so a consumption check never blocks on a sibling runner's
 // in-flight body; a stale false only costs a no-op re-entry into

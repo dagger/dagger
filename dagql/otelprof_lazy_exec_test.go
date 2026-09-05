@@ -51,7 +51,7 @@ func TestLazyTriggeredExecComposesUnderLazyOp(t *testing.T) {
 		SessionID: sessionID,
 		ClientID:  "client-exec",
 	})
-	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "withExec"})
+	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "withExec"}, "")
 	if !isResume {
 		t.Fatal("producer context captured ⇒ must be the resume re-point case")
 	}

@@ -10,6 +10,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -103,6 +106,206 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 		}
 	}
+
+	t.Run("container parts preserve mutations and unopened snapshots", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "container-parts-" + identity.NewID()
+		opts := []func(*dagger.Container) *dagger.Container{
+			engineWithPersistenceTestGC(ctx, t),
+			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+				cfg.GRPC.DebugAddress = "0.0.0.0:6060"
+				return cfg
+			}),
+			func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithEnvVariable("_DAGGER_TEST_CONTAINER_PART_DIAGNOSTICS", "1")
+			},
+		}
+		type partState struct {
+			Computed         bool   `json:"computed"`
+			Consumed         bool   `json:"consumed"`
+			StoredKind       string `json:"storedKind"`
+			StoredSnapshotID string `json:"storedSnapshotID"`
+			OpenSnapshotID   string `json:"openSnapshotID"`
+		}
+		type rowState struct {
+			ID        uint64                          `json:"shared_result_id"`
+			Payload   string                          `json:"payload_state"`
+			Persisted bool                            `json:"has_persisted_edge"`
+			Links     []struct{ RefKey, Role string } `json:"snapshot_links"`
+			Value     *struct {
+				Parts  map[string]partState `json:"parts"`
+				Counts map[string]uint64    `json:"counts"`
+			} `json:"value_state"`
+		}
+		readRows := func(svc *dagger.Service) map[uint64]rowState {
+			t.Helper()
+			raw, err := c.Container().From(alpineImage).
+				WithServiceBinding("part-engine", svc).
+				WithEnvVariable("READ_NUMBER", identity.NewID()).
+				WithExec([]string{"wget", "-qO-", "http://part-engine:6060/debug/dagql/cache"}).Stdout(ctx)
+			require.NoError(t, err)
+			var snapshot struct {
+				Results []rowState `json:"results"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+			rows := make(map[uint64]rowState, len(snapshot.Results))
+			for _, row := range snapshot.Results {
+				rows[row.ID] = row
+			}
+			return rows
+		}
+		resultID := func(id dagger.ContainerID) uint64 {
+			t.Helper()
+			var decoded call.ID
+			require.NoError(t, decoded.Decode(string(id)))
+			require.True(t, decoded.IsHandle(), "observe the actual retained row")
+			return decoded.EngineResultID()
+		}
+		checkClosed := func(row rowState, part, snapshotID string) {
+			t.Helper()
+			require.NotNil(t, row.Value)
+			value := row.Value.Parts[part]
+			require.True(t, value.Computed)
+			require.Equal(t, snapshotID, value.StoredSnapshotID)
+			require.Empty(t, value.OpenSnapshotID)
+			require.Zero(t, row.Value.Counts["storedOpen:"+part])
+		}
+		logRow := func(checkpoint string, row rowState) {
+			t.Helper()
+			data, err := json.Marshal(row)
+			require.NoError(t, err)
+			t.Logf("%s: %s", checkpoint, data)
+		}
+
+		upstreamA, tunnelA, clientA := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamA, tunnelA, clientA) })
+		parent := clientA.Container().From(alpineImage).WithExec([]string{"sh", "-ec", "printf ancestor > /exec-ran"})
+		base := clientA.Directory().WithNewFile("base.txt", "base")
+		payload := clientA.Directory()
+		for i := range 32 {
+			payload = payload.WithNewFile(fmt.Sprintf("file-%02d.txt", i), strings.Repeat(fmt.Sprintf("payload-%02d\n", i), 512))
+		}
+		mounted := parent.WithMountedDirectory("/work", base)
+		typed := mounted.WithDirectory("/work/typed", payload)
+		envelope := mounted.WithDirectory("/work/envelope", payload)
+		parentID, err := parent.ID(ctx)
+		require.NoError(t, err)
+		typedID, err := typed.ID(ctx)
+		require.NoError(t, err)
+		envelopeID, err := envelope.ID(ctx)
+		require.NoError(t, err)
+		for _, ctr := range []*dagger.Container{typed, envelope} {
+			path := "/work/typed/file-00.txt"
+			if ctr == envelope {
+				path = "/work/envelope/file-00.txt"
+			}
+			contents, err := ctr.File(path).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, strings.Repeat("payload-00\n", 512), contents)
+		}
+		joint, err := clientA.Container().From(alpineImage).WithMountedDirectory("/joint", base).
+			WithExec([]string{"sh", "-ec", "printf joint > /joint/output; printf completed"}).Sync(ctx)
+		require.NoError(t, err)
+		jointID, err := joint.ID(ctx)
+		require.NoError(t, err)
+		pid, xid, yid, jid := resultID(parentID), resultID(typedID), resultID(envelopeID), resultID(jointID)
+		rowsA := readRows(upstreamA)
+		mountIDs := map[uint64]string{}
+		for _, id := range []uint64{xid, yid} {
+			row := rowsA[id]
+			require.True(t, row.Persisted)
+			require.NotNil(t, row.Value)
+			require.EqualValues(t, 1, row.Value.Counts["writerBody"])
+			require.EqualValues(t, 1, row.Value.Counts["directoryCommit"])
+			require.False(t, row.Value.Parts["fs"].Computed)
+			require.False(t, row.Value.Parts["execMeta"].Computed)
+			require.True(t, row.Value.Parts["mount:/work"].Computed)
+			mountIDs[id] = row.Value.Parts["mount:/work"].OpenSnapshotID
+			require.NotEmpty(t, mountIDs[id])
+			logRow("before first shutdown", row)
+		}
+		require.Zero(t, rowsA[pid].Value.Counts["execRun"])
+		require.EqualValues(t, 1, rowsA[jid].Value.Counts["execRun"])
+		jointParts := rowsA[jid].Value.Parts
+		stopEngine(ctx, t, upstreamA, tunnelA, clientA)
+		upstreamA, tunnelA, clientA = nil, nil, nil
+
+		upstreamB, tunnelB, clientB := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamB, tunnelB, clientB) })
+		_, err = clientB.LoadContainerFromID(typedID).User(ctx)
+		require.NoError(t, err)
+		stdout, err := clientB.LoadContainerFromID(jointID).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "completed", stdout)
+		rowsB := readRows(upstreamB)
+		checkClosed(rowsB[xid], "mount:/work", mountIDs[xid])
+		require.Equal(t, "imported_lazy_envelope", rowsB[yid].Payload)
+		require.Nil(t, rowsB[yid].Value)
+		require.Contains(t, rowsB[yid].Links, struct{ RefKey, Role string }{mountIDs[yid], "mount_dir:0"})
+		checkClosed(rowsB[jid], "fs", jointParts["fs"].OpenSnapshotID)
+		checkClosed(rowsB[jid], "mount:/joint", jointParts["mount:/joint"].OpenSnapshotID)
+		require.EqualValues(t, 1, rowsB[jid].Value.Counts["storedOpen:execMeta"])
+		require.Zero(t, rowsB[jid].Value.Counts["execRun"])
+		for _, id := range []uint64{xid, yid, jid} {
+			logRow("middle engine", rowsB[id])
+		}
+		stopEngine(ctx, t, upstreamB, tunnelB, clientB)
+		upstreamB, tunnelB, clientB = nil, nil, nil
+
+		upstreamC, tunnelC, clientC := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamC, tunnelC, clientC) })
+		typedC := clientC.LoadContainerFromID(typedID)
+		envelopeC := clientC.LoadContainerFromID(envelopeID)
+		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
+			_, err := ctr.User(ctx)
+			require.NoError(t, err)
+		}
+		rowsC := readRows(upstreamC)
+		for _, id := range []uint64{xid, yid} {
+			checkClosed(rowsC[id], "mount:/work", mountIDs[id])
+		}
+		for _, item := range []struct {
+			ctr  *dagger.Container
+			path string
+		}{{typedC, "/work/typed"}, {envelopeC, "/work/envelope"}} {
+			// This selector was never queried on either earlier engine.
+			contents, err := item.ctr.File(item.path + "/file-31.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, strings.Repeat("payload-31\n", 512), contents)
+		}
+		jointC := clientC.LoadContainerFromID(jointID)
+		contents, err := jointC.File("/joint/output").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "joint", contents)
+		rowsC = readRows(upstreamC)
+		checkClosed(rowsC[jid], "fs", jointParts["fs"].OpenSnapshotID)
+		checkClosed(rowsC[jid], "execMeta", jointParts["execMeta"].OpenSnapshotID)
+		require.EqualValues(t, 1, rowsC[jid].Value.Counts["storedOpen:mount:/joint"])
+		for _, id := range []uint64{xid, yid} {
+			row := rowsC[id]
+			require.Equal(t, mountIDs[id], row.Value.Parts["mount:/work"].OpenSnapshotID)
+			require.EqualValues(t, 1, row.Value.Counts["storedOpen:mount:/work"])
+			require.Zero(t, row.Value.Counts["writerBody"])
+			require.Zero(t, row.Value.Counts["directoryCommit"])
+			require.False(t, row.Value.Parts["fs"].Computed)
+			logRow("saved mounted output opened", row)
+		}
+		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
+			contents, err := ctr.File("/exec-ran").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ancestor", contents)
+		}
+		rowsC = readRows(upstreamC)
+		require.EqualValues(t, 1, rowsC[pid].Value.Counts["execRun"])
+		for _, id := range []uint64{xid, yid} {
+			row := rowsC[id]
+			require.Equal(t, mountIDs[id], row.Value.Parts["mount:/work"].OpenSnapshotID)
+			require.EqualValues(t, 1, row.Value.Counts["storedOpen:mount:/work"])
+			require.Zero(t, row.Value.Counts["writerBody"])
+			require.Zero(t, row.Value.Counts["directoryCommit"])
+			logRow("pending ancestor completed", row)
+		}
+	})
 
 	t.Run("local cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
