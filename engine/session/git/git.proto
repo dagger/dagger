@@ -11,6 +11,32 @@ service Git {
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
   rpc PackUncommitted(PackUncommittedRequest) returns (stream PackUncommittedResponse);
   rpc CaptureGit(CaptureGitRequest) returns (stream CaptureGitResponse);
+  rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
+}
+
+// Import a workspace's committed HEAD and fast-forward the destination under
+// a lease. A failed fast-forward leaves the commits on a hand-off ref; it never
+// rebases, resets, or writes the workspace's uncommitted overlay.
+message ApplyBundleRequest {
+  oneof msg {
+    ApplyBundleMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message ApplyBundleMetadata {
+  string checkout_path = 1;
+  string target_sha = 2;
+  string expected_state_digest = 3;
+  string bundle_ref = 4;
+  // Empty bundles are allowed when the checkout already contains target_sha.
+  // Nonempty bundles must advertise target_sha under bundle_ref.
+}
+
+message ApplyBundleResponse {
+  string head_sha = 1;
+  string parked_ref = 2;
+  ErrorInfo error = 3;
 }
 
 message GitCredentialRequest {

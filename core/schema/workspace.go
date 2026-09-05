@@ -410,9 +410,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the calling client's host").
-			Doc("Write this workspace's pending changes to its local Git workspace on the current client's host.",
-				"Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host."),
+			DoNotCache("Writes workspace commits and changes to the calling client's host").
+			Doc("Write this workspace's commits and uncommitted changes to a local Git checkout.",
+				"The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.",
+				"Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.").
+			Args(dagql.Arg("to").Doc("Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.")),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -2326,15 +2328,57 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
+	args workspaceExportArgs,
 ) (core.Void, error) {
 	ws := parent.Self()
-	hostPath, err := ws.ExportHostPath()
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return core.Void{}, err
 	}
+	target := ws
+	if args.To.Valid {
+		result, err := args.To.Value.Load(ctx, srv)
+		if err != nil {
+			return core.Void{}, fmt.Errorf("load export target: %w", err)
+		}
+		target = result.Self()
+	}
+	hostPath, err := target.ExportHostPath()
+	if err != nil {
+		return core.Void{}, fmt.Errorf("%w; pass a local Git workspace with to", err)
+	}
 
 	changes, ok := ws.OverlayChanges()
+	wrote := false
+	defer func() {
+		if wrote {
+			invalidateExportedWorkspace(ctx)
+		}
+	}()
+	// A live workspace exported to itself has no engine-side commits to land.
+	// Preserve its file-only export behavior (including unborn repositories).
+	// Frozen values and explicit destinations transfer committed history first.
+	if args.To.Valid || !ws.ClientLocalBase() {
+		frozen, err := s.checkpoint(ctx, parent, workspaceCheckpointArgs{})
+		if err != nil {
+			return core.Void{}, err
+		}
+		if err := srv.Select(ctx, frozen, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
+			return core.Void{}, err
+		}
+		ok = changes.Self() != nil
+		// Evaluate the overlay before mutating the checkout. Ref invalidation
+		// must also happen if filesync later fails, since HEAD already moved.
+		if ok {
+			if _, err := changes.Self().IsEmpty(ctx); err != nil {
+				return core.Void{}, err
+			}
+		}
+		wrote = true // A transport error can follow a completed client-side write.
+		if err := s.exportWorkspaceGit(ctx, frozen, hostPath); err != nil {
+			return core.Void{}, err
+		}
+	}
 	if !ok || changes.Self() == nil {
 		return core.Void{}, nil
 	}
@@ -2367,9 +2411,14 @@ func (s *workspaceSchema) export(
 	// Deliberately no withWorkspaceClientContext here: export is a side
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
+	wrote = true // Filesync can partially write before returning an error.
 	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
 	}
+	return core.Void{}, nil
+}
+
+func invalidateExportedWorkspace(ctx context.Context) {
 	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
 		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
@@ -2386,7 +2435,6 @@ func (s *workspaceSchema) export(
 	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
 		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
-	return core.Void{}, nil
 }
 
 // reloaded returns the workspace unchanged, having invalidated the workspace

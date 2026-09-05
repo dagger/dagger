@@ -15445,6 +15445,12 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceExportOpts {
+    /// Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.
+    #[builder(setter(into, strip_option), default)]
+    pub to: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindRootsOpts<'a> {
     /// Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
     #[builder(setter(into, strip_option), default)]
@@ -15917,10 +15923,29 @@ impl Workspace {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write this workspace's pending changes to its local Git workspace on the current client's host.
-    /// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+    /// Write this workspace's commits and uncommitted changes to a local Git checkout.
+    /// The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+    /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Write this workspace's commits and uncommitted changes to a local Git checkout.
+    /// The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+    /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_opts(&self, opts: WorkspaceExportOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("export");
+        if let Some(to) = opts.to {
+            query = query.arg("to", to);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a File from the workspace.

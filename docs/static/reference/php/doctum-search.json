@@ -7524,7 +7524,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::export",
 			"p": "Dagger/Workspace.html#method_export",
-			"d": "<p>Write this workspace's pending changes to its local Git workspace on the current client's host.</p>"
+			"d": "<p>Write this workspace's commits and uncommitted changes to a local Git checkout.</p>"
 		},
 		{
 			"t": "M",

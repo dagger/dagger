@@ -16590,14 +16590,28 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace on the current client's host.
+// WorkspaceExportOpts contains options for Workspace.Export
+type WorkspaceExportOpts struct {
+	// Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.
+	To *Workspace
+}
+
+// Write this workspace's commits and uncommitted changes to a local Git checkout.
 //
-// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
-func (r *Workspace) Export(ctx context.Context) error {
+// The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+//
+// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
 	if r.export != nil {
 		return nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+	}
 
 	return q.Execute(ctx)
 }

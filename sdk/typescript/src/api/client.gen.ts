@@ -3235,6 +3235,13 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
+export type WorkspaceExportOpts = {
+  /**
+   * Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.
+   */
+  to?: Workspace
+}
+
 export type WorkspaceFindRootsOpts = {
   /**
    * Directory to start from. Relative paths resolve from the workspace cwd.
@@ -15518,16 +15525,19 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write this workspace's pending changes to its local Git workspace on the current client's host.
+   * Write this workspace's commits and uncommitted changes to a local Git checkout.
    *
-   * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+   * The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+   *
+   * Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+   * @param opts.to Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.
    */
-  export = async (): Promise<void> => {
+  export = async (opts?: WorkspaceExportOpts): Promise<void> => {
     if (this._export) {
       return
     }
 
-    const ctx = this._ctx.select("export")
+    const ctx = this._ctx.select("export", { ...opts })
 
     await ctx.execute()
   }

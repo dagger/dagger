@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add Workspace.export(to:) to save frozen Git workspaces to a local checkout.
+  Commits fast-forward without rewriting history; divergence or conflicting
+  local edits retain the commits on refs/dagger/checkpoints/<short-sha> and
+  report that ref for manual integration. Remaining uncommitted changes are
+  written as files after the fast-forward succeeds.
+time: 2026-09-05T20:00:00Z
+custom:
+  Author: vito
+  PR: ""
