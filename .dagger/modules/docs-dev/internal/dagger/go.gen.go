@@ -682,9 +682,9 @@ type GoOpts struct {
 	//
 	// The engine only auto-injects a Workspace on a *direct* client call;
 	// module-runtime callers don't inherit it. Rather than forward the
-	// Workspace (a session-scoped resource that would taint this build's cache
-	// key and break disk-cache reuse across engine restarts), parent
-	// toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
+	// Workspace (a session-scoped resource that would make this build's cache
+	// key session-specific and prevent disk-cache reuse across engine restarts),
+	// parent toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
 	// precedence over ws. Omitted → no stamping.
 	//
 	Ws *Workspace // go (../../../../../.dagger/modules/go/main.go:97:2)
