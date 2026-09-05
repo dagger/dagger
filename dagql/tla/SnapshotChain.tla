@@ -20,9 +20,20 @@
 (*                                                                     *)
 (* Selection evidence is captured at lookup, not at later I/O entry:    *)
 (* an export may publish while an importer already holds a valid miss.   *)
-(* snapshotChoice, blobChoice, seen and bad are evidence only. No action  *)
+(* Choice fields, owner expected bytes, seen and bad are evidence only. No action  *)
 (* guard reads them. Bounds                                             *)
 (* limit external requests and physical creations, never property state. *)
+(*                                                                     *)
+(* Go mapping: ImportChain/ImportImage own one private resourcePin.       *)
+(* importLayer holds importLayerLocker through Lookup, Apply and Commit. *)
+(* Attach/Validate split AttachLease around its resource writes and      *)
+(* final snapshot Stats. Blob actions split pinContent and               *)
+(* importLayerContent; Apply is Applier.Apply. Advance keeps operation    *)
+(* pins; Adopt represents caller AttachLease then returned Ref.Release.  *)
+(* Export actions map to ExportChain, ensureExportBlob,                   *)
+(* recordSnapshotContent and registerExportLayer. Consume ends only when *)
+(* the provider consumer releases ExportChain/ExportedImage. One producer*)
+(* abstracts export exclusion; concurrent cancellation needs Go evidence.*)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS MaxStarts, MaxSnapshots, LocalBuild, SourceCanFail
@@ -67,7 +78,9 @@ Init ==
     /\ index = [k \in Keys |-> 0]
     /\ workers = [i \in Importers |-> EmptyWorker]
     /\ locks = [k \in Keys |-> 0]
-    /\ owners = [o \in Owners |-> [tip |-> 0, pins |-> EmptyPins]]
+    /\ owners = [o \in Owners |-> IF LocalBuild /\ o = 1
+         THEN [tip |-> 2, pins |-> [snaps |-> {1, 2}, bytes |-> {}], expected |-> {}]
+         ELSE [tip |-> 0, pins |-> EmptyPins, expected |-> {}]]
     /\ producer = [phase |-> IF LocalBuild THEN "select" ELSE "done",
                     tip |-> IF LocalBuild THEN 2 ELSE 0,
                     layer |-> 1, pins |-> EmptyPins]
@@ -197,7 +210,8 @@ Advance(i) ==
 Adopt(i, o) ==
     /\ workers[i].phase = "returned"
     /\ owners' = [owners EXCEPT ![o] =
-         [tip |-> workers[i].prefix, pins |-> Pin(EmptyPins, workers[i].prefix)]]
+         [tip |-> workers[i].prefix, pins |-> Pin(EmptyPins, workers[i].prefix),
+          expected |-> Recorded(workers[i].prefix) \cap blobs]]
     /\ workers' = [workers EXCEPT ![i].phase = "done", ![i].pins = EmptyPins,
                                   ![i].prefix = 0, ![i].handle = 0]
     /\ seen' = seen \cup {"adopt"}
@@ -205,7 +219,7 @@ Adopt(i, o) ==
 
 Release(o) ==
     /\ owners[o].tip # 0
-    /\ owners' = [owners EXCEPT ![o] = [tip |-> 0, pins |-> EmptyPins]]
+    /\ owners' = [owners EXCEPT ![o] = [tip |-> 0, pins |-> EmptyPins, expected |-> {}]]
     /\ UNCHANGED <<snapshots, blobs, index, workers, locks, producer, starts, seen, bad>>
 
 (* Failure includes a canceled source/apply or a caller abandoning a ref. *)
@@ -281,7 +295,8 @@ ExportRegister ==
        /\ index' = [index EXCEPT ![<<snapshots[s].parent, snapshots[s].layer>>] = s]
        /\ snapshots' = [snapshots EXCEPT ![s].content = TRUE]
        /\ owners' = [o \in Owners |-> IF s \in owners[o].pins.snaps
-            THEN [owners[o] EXCEPT !.pins.bytes = @ \cup {producer.layer}] ELSE owners[o]]
+            THEN [owners[o] EXCEPT !.pins.bytes = @ \cup {producer.layer},
+                                  !.expected = @ \cup {producer.layer}] ELSE owners[o]]
        /\ workers' = [i \in Importers |-> IF s \in workers[i].pins.snaps
             THEN [workers[i] EXCEPT !.pins.bytes = @ \cup {producer.layer}] ELSE workers[i]]
     /\ producer' = [producer EXCEPT !.phase = IF producer.layer = 2 THEN "provider" ELSE "blob",
@@ -330,6 +345,11 @@ RetainedAncestry ==
          /\ Ancestry(workers[i].prefix) \subseteq Present \cap workers[i].pins.snaps
          /\ workers[i].phase = "advance" =>
               Ancestry(workers[i].handle) \subseteq Present \cap workers[i].pins.snaps
+(* A new owner need not recover missing historical bytes from a usable   *)
+(* snapshot. Continuing owners must retain present content recorded for  *)
+(* them, including content first produced by a later local export.        *)
+OwnerHasRecordedContent == \A o \in Owners :
+    owners[o].expected \subseteq blobs \cap owners[o].pins.bytes
 ApplyHasBytes == \A i \in Importers : workers[i].phase \in {"ready", "applying"} =>
     workers[i].layer \in blobs \cap workers[i].pins.bytes
 ProviderHasResources == producer.phase = "provider" =>
