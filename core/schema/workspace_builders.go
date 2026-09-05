@@ -84,6 +84,26 @@ func (s *workspaceSchema) loadWorkspaceConfigForOverlay(
 	}, nil
 }
 
+func effectiveWorkspaceConfig(
+	ctx context.Context,
+	ws *core.Workspace,
+	cfg *workspace.Config,
+) (*workspace.Config, string, error) {
+	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, "", err
+	}
+	envName, ok := selectedWorkspaceEnv(ctx, ws)
+	if !ok {
+		return applied, "", nil
+	}
+	applied, err = workspace.ApplyEnvOverlay(applied, envName)
+	if err != nil {
+		return nil, "", err
+	}
+	return applied, envName, nil
+}
+
 func (s *workspaceSchema) stageWorkspaceConfigBytes(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
