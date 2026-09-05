@@ -2,6 +2,7 @@
 
 A TLC-checked model of the dagql cache's concurrency kernel: lookup,
 in-flight call deduplication, publication, session ownership and release,
+per-session release completion waits,
 the read barrier, lazy evaluation, persistence (import, decode, flush,
 restart), and calls issued by detached call executors.
 
@@ -10,8 +11,11 @@ explains the modeling rules, and every action's comment names the Go code
 it models. Each `CacheLifecycle_*.cfg` checks one scenario; the comment
 at the top of each config says what the scenario is and whether the run
 is expected to pass or to violate one named invariant. Expected
-violations are reserved for deliberately accepted model findings; the
-current configuration set consists entirely of green regression gates.
+violations are reserved for deliberate mutations that prove a gate can
+fail: `CacheLifecycle_orphaned_lease.cfg` restores the release rule under
+which a completed call's operation and client leases were orphaned when
+its last waiter left through cancellation, and must violate
+`SharedLeaseReleasedWhenRetired`.
 
 Run the check:
 

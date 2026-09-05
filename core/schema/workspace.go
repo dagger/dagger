@@ -4057,9 +4057,10 @@ func filterNodesByInclude[T any](
 	return filtered, nil
 }
 
-// withWorkspaceClientContext overrides the client metadata in context to the
-// workspace's owning client ID. This ensures host filesystem operations route
-// through the correct client session, even when called from a module context.
+// withWorkspaceClientContext stamps the workspace owner's immutable client
+// metadata for host/resource routing, even from a module context. It does not
+// replace ClientScope, so runtime-backed operations remain authorized by the
+// caller's held scope rather than metadata selecting another executable runtime.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
 }
@@ -4085,9 +4086,8 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
-// withWorkspaceClientContext overrides the client metadata in context to the
-// workspace's owning client ID. This ensures host filesystem operations route
-// through the correct client session, even when called from a module context.
+// withWorkspaceClientContext stamps owner metadata for host/resource routing;
+// the caller's ClientScope remains the only runtime execution authority.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return nil, fmt.Errorf("workspace has no client ID")
