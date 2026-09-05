@@ -99,3 +99,28 @@ instruction above: use `quick`, the exact `lazy` anchor, the affected `lazy_part
 shapes. Record exhaustive counts separately from simulation, reachability probes,
 and deliberately broken variants. The new configuration costs and final probe
 results are still being measured; none is added to `quickConfigs` yet.
+
+Model source review refinements preserve `partComputed` independently from
+`flushed.rows[r].observed` at Restart, use operational parent finality in body
+choices, and assert that decode seeds completed original groups. The direct
+metadata scenario permits one visit per result/process; Go permits repeated
+visits. A whole request records every wanted part, while one bounded evaluator
+follows one constituent. Go tests must check whole-result return readiness.
+
+On 2026-09-05 UTC, targeted import-boundary variants dropped and invented saved
+completion at Restart. Both failed `ContainerDecodePreserves` immediately at
+that boundary (6,368 distinct states / 1.83s and 3,249 / 2.08s respectively).
+These are deliberate-break results, not passing exhaustive checks. Final checks
+of this refinement remain pending. The exact prior source checkpoint
+`33773d09d87236df587ae839d133be282edb7a87` passed `lazy` at 6,398,997 distinct
+states / 64.49s and `container_part_restart` at 13,501,639 / 158.96s.
+
+The joint shape now reserves one invocation on each side of its single Restart
+and uses one evaluator. Its fresh joint completion and independent saved-member
+opening remain reachable. Two-caller joining, retry, and release belong to the
+part shape. The intermediate joint bound passed at 3,491,003 distinct states /
+44.51s; that is not final-refinement evidence. Earlier two-evaluator joint runs
+stopped incomplete at 27,763,994 distinct states / about 6m36s (7,692,763 queued)
+and 19,795,239 / about 4m30s (5,588,393 queued). The two-result sweep cost run
+stopped incomplete at 90.32s; its last report at about 64s was 3,756,864 distinct
+states with 2,014,142 queued. Further bounded sweep evidence is pending.
