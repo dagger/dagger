@@ -61,6 +61,8 @@ var expectedOutcome = map[string]string{
 	"flush_inflight":    "",
 	"flush_drained":     "",
 	"lazy_release":      "",
+	// mutation: the last canceling waiter must release a completed fn's leases
+	"orphaned_lease": "SharedLeaseReleasedWhenRetired",
 }
 
 var clientExpectedOutcome = map[string]string{

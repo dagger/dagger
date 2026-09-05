@@ -112,6 +112,8 @@ CONSTANTS
     LeaseCanFail,       \* withOperationLease may fail. Its error branch
                         \* discharges the local cancel and returns without
                         \* publishing shared state.
+    DelegatedReleaseOnly, \* mutation: a completed fn never releases its
+                          \* shared leases through a canceling last waiter
     ReaderCanCancel,    \* a caller's context may cancel while it waits at
                         \* the read barrier (ensurePersistedHitValueLoaded's
                         \* ctx.Done arms, cache_persistence_import.go:562,
@@ -527,7 +529,11 @@ CreateOc(i) ==
              \* final-handoff persistence bookkeeping; see PubUnregister:
              needsPersistedEdge |-> FALSE,
              pubState |-> "none", pubBy |-> 0, hold |-> FALSE, resId |-> 0,
-             inIndex |-> TRUE])
+             inIndex |-> TRUE,
+             \* the callback goroutine holds the operation lease and the
+             \* client shared-work lease from creation; see
+             \* SharedLeaseReleasedWhenRetired
+             sharedLease |-> TRUE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -563,13 +569,20 @@ CreateOcLeaseFail(i) ==
 (***************************************************************************)
 FnComplete(o) ==
     /\ ongoingCalls[o].fnState = "running"
-    /\ \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh"]
+    \* Go: the callback releases its shared leases itself only on error or
+    \* when no waiter remains (getOrInitCallInner's goroutine); otherwise
+    \* release is delegated to the waiters.
+    /\ LET keepLease == ongoingCalls[o].waiters # 0 IN
+       \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh",
+                                               ![o].sharedLease = keepLease]
        \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
             /\ res[r].barrier \in {"none", "closedOk"}
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
-                                  ![o].outcome = "reuse", ![o].reuseFrom = r]
+                                  ![o].outcome = "reuse", ![o].reuseFrom = r,
+                                  ![o].sharedLease = keepLease]
        \/ /\ FnCanFail
-          /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE]
+          /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE,
+                                                  ![o].sharedLease = FALSE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -615,7 +628,9 @@ WaiterCancel(i) ==
 FnWindDown(o) ==
     /\ ModelNestedCalls
     /\ ongoingCalls[o].fnState = "canceled"
-    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited"]
+    \* the canceled executor returns with no waiter left, so it releases
+    /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "exited",
+                                            ![o].sharedLease = FALSE]
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
@@ -664,9 +679,16 @@ WaiterCancelLate(i) ==
           /\ \/ ongoingCalls[o].waiters >= 2
              \/ ongoingCalls[o].pubState = "none"
              \/ postOnce
-          /\ ongoingCalls' = [ongoingCalls EXCEPT
+          \* The fn finished successfully with this waiter admitted, so it
+          \* delegated release to the waiters. If nobody published, the last
+          \* waiter leaving must release the shared leases or they are
+          \* orphaned; the DelegatedReleaseOnly mutation reproduces the bug.
+          /\ LET orphanRelease == last /\ ongoingCalls[o].pubState = "none"
+                                  /\ ~DelegatedReleaseOnly IN
+             ongoingCalls' = [ongoingCalls EXCEPT
                 ![o].waiters = @ - 1,
-                ![o].inIndex = @ /\ ~last]
+                ![o].inIndex = @ /\ ~last,
+                ![o].sharedLease = @ /\ ~orphanRelease]
           /\ ongoingCallIndex' = IF last /\ ongoingCalls[o].inIndex
                         THEN [ongoingCallIndex EXCEPT
                                 ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
@@ -939,6 +961,9 @@ PubUnregister(o) ==
     /\ ongoingCalls[o].inIndex
     /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![<<ongoingCalls[o].call, ongoingCalls[o].sess>>] = 0]
     /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].inIndex = FALSE,
+          \* the Once's deferred release runs whether publication succeeded
+          \* or failed
+          ![o].sharedLease = FALSE,
           ![o].needsPersistedEdge =
               /\ ongoingCalls[o].pubState = "done"
               /\ ongoingCalls[o].resId # 0
@@ -1489,6 +1514,7 @@ Restart ==
                                  !.pubBy = 0,
                                  !.hold = FALSE, !.inIndex = FALSE,
                                  !.needsPersistedEdge = FALSE,
+                                 !.sharedLease = FALSE,
                                  !.waiters = 0]]
     /\ ongoingCallIndex' = [k \in Calls \X Sessions |-> 0]
     \* A restart kills the process: evaluator goroutines die with it, so no
@@ -2065,6 +2091,7 @@ TypeOK ==
          /\ sessionRelease[s].phase = "released"
               => sessionRelease[s].snap = {}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
+    /\ \A o \in OngoingCallIds : ongoingCalls[o].sharedLease \in BOOLEAN
     /\ \A r \in ResultIds :
          /\ res[r].lazyWaiters >= 0 /\ res[r].lazyRunning >= 0
          /\ res[r].imported \in BOOLEAN
@@ -2147,6 +2174,20 @@ LeaseFailureClean ==
 \* Racing alone never manufactures an execution failure: if no failure
 \* injection is enabled, no invocation ends in "failed". Cancellation and a
 \* released-session refusal have their own terminal phases.
+\* A call that has fully retired (its fn returned, every waiter left, and
+\* it is no longer joinable) must have released the operation lease and the
+\* client shared-work lease its callback held. The callback releases them
+\* only on error or with no waiters; otherwise the publishing waiter's Once
+\* does, and if no waiter publishes, the last waiter leaving must. Session
+\* teardown waits for these leases without a deadline, so an orphaned one
+\* wedges the session.
+SharedLeaseReleasedWhenRetired ==
+    \A o \in OngoingCallIds :
+        (/\ ongoingCalls[o].fnState \in {"done", "exited"}
+         /\ ongoingCalls[o].waiters = 0
+         /\ ~ongoingCalls[o].inIndex)
+          => ~ongoingCalls[o].sharedLease
+
 NoSpuriousErrors ==
     (~FnCanFail /\ ~AttachCanFail /\ ~LeaseCanFail /\ ~DecodeCanFail) =>
         \A i \in InvocationIds : invocations[i].phase # "failed"
