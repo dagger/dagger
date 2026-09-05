@@ -170,9 +170,9 @@ const (
 	LinkPurposeWait = "wait"
 
 	// Completeness checksum (leaf-drop detection). The reference-based
-	// gate signals (OrphanedParents/UnresolvedWaitTargets) catch loss that breaks an
+	// validation signals (OrphanedParents/UnresolvedWaitTargets) catch loss that breaks an
 	// EDGE, but a dropped LEAF span that nothing references leaves no evidence — so a
-	// large Cloud trace with the residual CLI→Cloud export drop could gate-pass while
+	// large Cloud trace with the residual CLI→Cloud export drop could pass validation while
 	// silently incomplete. The producer therefore declares how many spans it emitted,
 	// and the loader refuses a trace that received fewer (faithful data or refuse,
 	// never a wrong answer). A dropped leaf is otherwise undetectable from the trace.
@@ -200,7 +200,7 @@ const (
 	// messenger, NOT a unit of work and NOT a counted engine span: the producer's
 	// span-count processor skips it (so it is excluded from the total it carries —
 	// no chicken-and-egg) and the loader drops it from the compiled ops (so the
-	// graph/replay is untouched) after reading its count.
+	// graph and simulation are untouched) after reading its count.
 	WcprofSessionCompleteAttr = "wcprof.session_complete"
 )
 
@@ -229,7 +229,7 @@ const (
 // index is a decimal-string. The array value survives the same trip as a
 // JSON array of strings, which is exactly how consumers read it back.
 //
-// Producer gating: the attributes are stamped by core.AroundFunc's completion
+// Producer condition: the attributes are stamped by core.AroundFunc's completion
 // callback from a request-only evidence carrier (dagql.CacheDecision) that
 // core allocates only when the call's span records and the call is not
 // ProfileSkip-classified — so suppressed, deduplicated, introspection and

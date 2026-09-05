@@ -16,7 +16,7 @@ import (
 
 // This file holds the Cloud check query, selection, and listing helpers that
 // 'dagger cloud rerun' depends on. They used to live in cloud_checks.go and back
-// the old 'dagger check' Cloud-replay path; that path was removed (see
+// the old 'dagger check' stored-result rendering path; that path was removed (see
 // future/done/simplify-dagger-check.md), which slimmed loadCloudCheckRowsForWorkspace
 // down to a rows-only query for the workspace commands. 'dagger cloud rerun' needs
 // more than rows — it needs the owning org and Cloud client to trigger the re-run,

@@ -1510,7 +1510,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		entrypoints := pendingWorkspaceEntrypointIndexes(mods)
 		// The fallback is a guess that the unrecognized field might be an
 		// entrypoint function. A module already recorded as failed can't serve
-		// anything, so selecting it would only replay its load error — breaking
+		// anything, so selecting it would only reproduce its load error — breaking
 		// requests that deliberately proceeded without it, like `dagger
 		// generate`'s follow-up queries after the generators listing skipped
 		// the broken entrypoint best-effort. Leave it pending and let GraphQL

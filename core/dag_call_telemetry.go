@@ -103,7 +103,7 @@ func recordCallPayloads(
 		return
 	}
 	// A handle-form ID is an engine-local result reference, not a recipe:
-	// there are no frames to publish and no client could replay them anyway.
+	// there are no frames to publish and no client could rebuild them anyway.
 	recipe := dagPB.GetRecipe()
 	if recipe == nil {
 		return

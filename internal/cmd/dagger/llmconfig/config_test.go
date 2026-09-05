@@ -514,7 +514,7 @@ func TestRefreshOAuthProviderConcurrent(t *testing.T) {
 	ConfigFile = filepath.Join(ConfigRoot, ConfigFileName)
 
 	// Fake OAuth server: the token endpoint rotates the refresh token on each
-	// successful grant, so a replayed (already-spent) refresh token gets
+	// successful grant, so a reused (already-spent) refresh token gets
 	// invalid_grant — mirroring Anthropic's one-time refresh token behavior.
 	var (
 		mu                  sync.Mutex

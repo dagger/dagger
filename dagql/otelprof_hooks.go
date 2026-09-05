@@ -17,10 +17,10 @@ import (
 // mirror, on the engine's ordinary OTel spans, the shared-execution op and the
 // per-caller wait edges the native wcprof recorder records inline
 // (wcprof_hooks.go) — so the offline analyzer can compile a
-// Dagger Cloud trace into the same wcprof IR and the unchanged replay can rank
+// Dagger Cloud trace into the same wcprof IR and the unchanged simulation can rank
 // wall-clock bottlenecks.
 //
-// Unlike the native hooks, these are gated only on telemetry being active, NOT
+// Unlike the native hooks, these are enabled only when telemetry is active, NOT
 // on wcprof.Enabled: the OTel source must be reconstructable from a Cloud trace
 // alone, with no native recorder running, so the call_exec span / wait links /
 // publishResult span are part of the engine's normal telemetry whenever a
@@ -35,7 +35,7 @@ const publishResultSpanName = "dagql.publishResult"
 // telemetry is on). Mirrors how core.AroundFunc only emits under an active
 // tracer and keeps the telemetry-off path allocation-free.
 //
-// Exported so the choke points that live outside this package can gate on the
+// Exported so the choke points that live outside this package can check the
 // same condition: the executor exec-split (engine/engineutil) and
 // service start (core). One definition keeps "is the OTel source
 // recording here?" answered identically everywhere.
@@ -71,7 +71,7 @@ func beginOTelCallExec(callCtx context.Context, callKey, class string) (context.
 // beginOTelPublishResult starts the dagql.publishResult span as a child of the
 // call_exec span carried by ctx. It is a native-parity diagnostic,
 // not a counterfactual-attribution fix: publication runs after call_exec and the
-// caller wait both close, so the replay charges it to the caller class — but
+// caller wait both close, so the simulation charges it to the caller class — but
 // native emits the same row, so the OTel per-class table must too. The caller
 // passes a context derived from the shared-work context (which carries the
 // already-ended call_exec span) and ends the returned span when publication
@@ -195,7 +195,7 @@ func EndProfSpan(span trace.Span, errPtr *error) {
 // time to land. Attaching to the waiter (never fanning links onto the target) is
 // what keeps a high-fan-in target under the link cap. One
 // implementation so every source's wait edge is byte-identical on the wire and
-// the loader/gate read them uniformly.
+// the loader and validator read them uniformly.
 //
 // Timestamps are absolute Unix nanoseconds as decimal strings: the engine only
 // knows wall-clock at emit time (the trace epoch is unknowable until ingest, so
@@ -216,12 +216,12 @@ func EmitOTelWait(ctx context.Context, target trace.SpanContext, reason wcprof.W
 	// / mixed-recording trace — e.g. a recording waiter joining shared work started
 	// by an *untraced* session (ongoingCalls / lazy state are shared across
 	// sessions, not session-keyed). We must not drop the edge silently: a
-	// never-emitted wait is the under-serialization the offline structural gate
+	// never-emitted wait is the under-serialization the offline structural validation
 	// exists to catch. Emitting it with a zero target still carries
 	// attributes, so the SDK retains the link (recordingSpan.AddLink keeps any
 	// attributed link), the loader resolves no target and counts an unresolved
-	// wait, and the structural gate fails loud — exactly mirroring native, whose
-	// targetless wcprof.BeginWait the gate also sees as unresolved. Such a trace
+	// wait, and the structural validation fails loud — exactly mirroring native, whose
+	// targetless wcprof.BeginWait validation also sees as unresolved. Such a trace
 	// mixes recorded and unrecorded in-flight work and cannot be faithfully
 	// analyzed anyway, so failing loud is the correct outcome.
 	span.AddLink(trace.Link{

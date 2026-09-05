@@ -94,7 +94,7 @@ func TestStoreRegistryGC(t *testing.T) {
 	require.NoError(t, setStoreFileTimes(root, "fresh", old))
 	require.NoError(t, os.Chtimes(filepath.Join(root, "fresh.spans.log"), time.Now(), time.Now()))
 	require.NoError(t, registry.GC(nil))
-	// One fresh stream keeps the whole client store replayable.
+	// One fresh stream keeps the whole client store reconstructable.
 	requireStoreFilesExist(t, root, "fresh")
 
 	for _, name := range []string{"legacy.db", "legacy.db-wal", "legacy.db-shm"} {

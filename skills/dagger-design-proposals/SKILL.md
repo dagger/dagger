@@ -163,7 +163,7 @@ gh api --method POST /gists/GIST_ID/comments -f body="## Changelog
 
 Check for other Dagger skills that may help with research:
 
-- `engine-debugging` - Engine debugging workflows, trace replay, cache snapshots
+- `engine-debugging` - Engine debugging workflows, trace inspection, cache snapshots
 - `internal-docs/dagger-codegen.md` - SDK codegen, templates, bindings
 - `internal-docs/version-gating.md` - schema views and public API version gates
 - `internal-docs/` - Cache and engine implementation references

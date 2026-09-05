@@ -22,7 +22,7 @@ Artifact meanings:
 - `report.json`: machine-readable timings, findings, and artifact paths
 - `report.md`: short human-readable QA summary
 
-Use `.cast` for time-sensitive behavior. Use text snapshots for "what the user saw at time T". If terminal control behavior itself is suspect, inspect the `.cast` replay rather than relying on `.txt`.
+Use `.cast` for time-sensitive behavior. Use text snapshots for "what the user saw at time T". If terminal control behavior itself is suspect, inspect the `.cast` playback rather than relying on `.txt`.
 
 ## Workflow
 

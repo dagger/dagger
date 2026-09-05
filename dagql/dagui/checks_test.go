@@ -188,9 +188,9 @@ func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
 // EVERY tool call's work -- including any check it runs -- nests beneath a
 // Boundary.
 //
-// Replay-driven integration tests never create this span (toolCallCtx falls
-// back to the shared ctx), which is exactly why the containment bug was
-// invisible to them; a regression test has to inject it explicitly.
+// Recording-driven integration tests historically omitted this span, which is
+// why the containment bug was invisible to them. The provider now emits it;
+// this unit test injects the equivalent snapshot directly.
 func toolCallSnapshot(id, parent byte, toolName string) SpanSnapshot {
 	snap := checkSnapshot(id, toolName, SpanID{SpanID: trace.SpanID{parent}}, "")
 	snap.Boundary = true

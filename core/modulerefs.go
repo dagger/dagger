@@ -204,7 +204,7 @@ func (p *ParsedGitRefString) GitRef(
 	case pinIsSHA:
 		// A module config pin is authoritative over the consuming workspace's
 		// git-sha lock entries. Pass it through ref's internal commit argument so
-		// ref resolution cannot replay a stale HEAD lock entry.
+		// ref resolution cannot reuse a stale HEAD lock entry.
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{

@@ -147,8 +147,8 @@ func TestResolveTraceTargetChecksUnderToolBoundary(t *testing.T) {
 			Final:     true,
 		}
 	}
-	// Mirrors StartToolCall's attributes: the bug is invisible without them,
-	// since replay-driven runs create no display span at all.
+	// Mirrors StartToolCall's attributes: the bug was invisible to
+	// recording-driven tests before their provider created display spans.
 	tool := snap(toolID, "check", traceTargetSpanID(rootID))
 	tool.Boundary = true
 	tool.RollUpLogs = true
