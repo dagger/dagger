@@ -263,3 +263,17 @@ Commands, source/config hashes, logs, mutation copies, and traces are under
 scratch probes are recorded as errors, not evidence. The model has a normalized
 root already; root omission and requested compression require Go controls.
 No completed production validation is claimed by this model checkpoint.
+
+The local-build shape now starts with one ordinary owner of the original
+snapshot ancestry. Its first export must attach new content to that continuing
+owner. Evidence records present content at adoption and extends that expectation
+on export registration. It does not demand missing historical bytes merely to
+reuse a usable snapshot. The revised export shape passes 5,185,181 distinct
+states in 24.80 seconds; import remains 475,119 states in 4.51 seconds.
+The continuing-owner witness reaches provider consumption and producer release
+with both new blobs still owned (40,429 states, 1.72 seconds). Omitting the
+owner content update violates `OwnerHasRecordedContent` (8,130 states, 1.53
+seconds). All prior eleven controls and nine basic probes were repeated on
+this source and reached their intended assertions. The single producer does
+not establish concurrent export cancellation; the changed Go exclusion and
+provider ownership paths require that focused witness.
