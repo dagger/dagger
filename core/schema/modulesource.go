@@ -1242,7 +1242,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		// A worktree/submodule checkout has a dangling .git pointer file at
 		// the context root; the engine never interprets it (git-ness comes
 		// canonically via MaterializeHostGitCheckout), so drop it before it
-		// breaks git discovery near the synced tree.
+		// poisons git discovery near the synced tree.
 		src.ContextDirectory, err = core.DropRootGitPointerFile(ctx, dag, src.ContextDirectory)
 		if err != nil {
 			return err
