@@ -237,7 +237,7 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// point: it is only reachable from the first turn's history. A restore
 	// that opened an empty conversation would hand the replayer [prompt2]
 	// where it expects [prompt1] and fail the turn outright.
-	chiefModel := cannedReplayModel(ctx, t, source, source.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
 		WithPrompt(chiefPrompt1).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply1},
@@ -246,12 +246,12 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply2},
 		}))
-	scoutModel := cannedReplayModel(ctx, t, source, source.LLM().
+	scoutModel := cannedRecordingModel(ctx, t, source, source.LLM().
 		WithPrompt(scoutPrompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: scoutReply},
 		}))
-	testsModel := cannedReplayModel(ctx, t, source, source.LLM().
+	testsModel := cannedRecordingModel(ctx, t, source, source.LLM().
 		WithPrompt(testsPrompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: testsReply},
@@ -397,7 +397,7 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	sink := newAgentTraceSink(t)
 	source := connect(ctx, t, sink.clientOpts()...)
 
-	model := cannedReplayModel(ctx, t, source, source.LLM().
+	model := cannedRecordingModel(ctx, t, source, source.LLM().
 		WithPrompt(prompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: answer},
