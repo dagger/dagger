@@ -126,17 +126,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 
-		// GitLab
-		{
-			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-			want: Parsed{
-				ModPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
-				RepoRootSubdir: "depth1/depth2",
-				Scheme:         NoScheme,
-				SourceUser:     "",
-			},
-		},
+		// GitLab with an explicit repository boundary.
 		{
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 			want: Parsed{
@@ -144,20 +134,6 @@ func TestParse(t *testing.T) {
 				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				RepoRootSubdir: "depth1/depth2",
 				Scheme:         NoScheme,
-				SourceUser:     "",
-			},
-		},
-
-		// Edge case of RepoRootForImportPath
-		// private GitLab: go-get unauthenticated returns obfuscated repo root
-		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L210-221
-		{
-			urlStr: "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
-			want: Parsed{
-				ModPath:        "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
-				RepoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private", Repo: "https://gitlab.com/dagger-modules/private"},
-				RepoRootSubdir: "test/more/dagger-test-modules-private/depth1/depth2",
-				Scheme:         SchemeSSH,
 				SourceUser:     "",
 			},
 		},
@@ -245,19 +221,6 @@ func TestParse(t *testing.T) {
 				Scheme:         SchemeSCPLike,
 				RepoRootSubdir: "cool-sdk",
 				SourceUser:     "git",
-			},
-		},
-		// Gerrit codereview on custom port
-		{
-			urlStr: "ssh://someuser@golang.org:29418/x/review/git-codereview",
-			want: Parsed{
-				ModPath:        "golang.org/x/review/git-codereview",
-				RepoRoot:       &vcs.RepoRoot{Root: "golang.org/x/review", Repo: "https://go.googlesource.com/review"},
-				Scheme:         SchemeSSH,
-				RepoRootSubdir: "git-codereview",
-				SourceUser:     "someuser",
-				CloneRef:       "ssh://someuser@golang.org:29418/x/review",
-				SourceCloneRef: "ssh://someuser@golang.org:29418/x/review",
 			},
 		},
 	} {
