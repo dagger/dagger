@@ -55,7 +55,9 @@ The key dagql entry points are:
 - `dagql.Cache.registerLazyEvaluation`
   Stores the current lazy callback on the attached `sharedResult` when a result is first published or when a cache/persisted hit is re-wrapped.
 - `dagql.HasPendingLazyEvaluation`
-  Reports whether an attached result still has deferred work. Telemetry uses this to avoid treating a pending lazy hit as a fully satisfied cache hit.
+  Reports whether an attached result still has deferred work, including opening a stored snapshot and unfinished bookkeeping. Schema child construction continues to use this operational predicate.
+- `dagql.HasPendingLazyComputation`
+  Reports remaining computation for cache-hit and partial-span reporting. Containers distinguish stored opens through the optional `HasLazyEvaluationReporting` contract; ordinary values retain their existing pending behavior.
 
 ## What `Cache.Evaluate` Guarantees
 
@@ -217,7 +219,7 @@ Rules the container implementation follows (and any future parts value should):
 
 - Every part is written exactly once, by its own group's body, and never rewritten. A delegation body copies from the parent's already-latched part, so a part's value is independent of the order sibling groups run in.
 - Group bodies never demand sibling groups of their own op. The only intra-result demand is the resolution-phase metadata settling, which completes before any requested group's body starts.
-- A refined container op keeps `container.Lazy` non-nil until its last group is consumed, which keeps `LazyEvalFunc() != nil` meaning "something is still deferred" and persistence's ready-form selection (`Lazy == nil`) meaning "fully materialized". After any group succeeds, delegation groups whose parent part is already final are also consumed without starting parent work. A partially evaluated result persists in the lazy form: the recipe, exactly like an unevaluated result; partial progress is re-derived on demand after restart.
+- A refined container op keeps `container.Lazy` non-nil until its last group is consumed, so `LazyEvalFunc() != nil` means computation or opening a stored output is deferred. After a successful callback, or a direct metadata visit, copies from already available parent parts can also be consumed without starting parent work. A cache metadata return with no callback performs no sweep. Persistence captures computation completion from original group consumption and immutable stored descriptors; it does not use the operational pointer as the completion boundary.
 
 For containers the parts are `metadata` (every plain field), `fs`, `execMeta`, and `mount:<target>` (target-keyed: targets are unique in a mount list and survive add/remove/replace). Refined ops fall into two templates: metadata-only mutations (metadata group applies the field edit; every snapshot part is its own delegation group) and snapshot writers (the exec's joint `execOutputs` group fills fs, execMeta, and every writable mount from one process run; `withRootfs`'s `write` group fills fs from its source). Unrefined ops map every part to the whole-result group and behave exactly as before, so chains refine incrementally: a refined child of an unrefined parent simply evaluates the parent fully when it delegates.
 
@@ -471,12 +473,21 @@ For `Directory` and `File`, persisted object encoding chooses between:
 - a snapshot form when a concrete snapshot is already available
 - a lazy form when the object is still deferred
 
-For `Container`, the persisted payload distinguishes:
+`Container` has one payload: consumed metadata, pending/absent/completed records
+for snapshot parts, and the original recipe while any computation remains.
+Completed directory/file values inside the container carry path, platform,
+services, and a snapshot role link. Decode leaves their accessors closed and
+seeds original completed group latches before publication. `ContainerRestoreLazy`
+shares the original state and routes stored outputs to independent `open:<part>`
+groups. Pending groups retain their original boundaries, including joint exec
+outputs. The restore operation is never serialized as another recipe.
 
-- a ready form
-- a lazy form
-
-Nested directory/file values inside containers are also encoded explicitly.
+The Container retains immutable descriptors after its op clears. These support
+ownership, usage, re-encoding, and stable stored-open span purpose through
+bookkeeping retries. Stored-only hits report cached; remaining computation
+reports pending. A successful computation with unfinished cache bookkeeping
+continues to report pending. Standalone Directory/File dependency decode remains
+unchanged and may open input snapshots before a Container output is demanded.
 
 Each lazy type that supports persistence implements `EncodePersisted`, and the corresponding object decoder reconstructs the right lazy type from an explicit persisted lazy kind.
 
