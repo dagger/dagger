@@ -930,7 +930,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	generated, err = s.validateSDKModuleWorkspace(operationCtx, scoped, generated, workspaceScope, staged.ConfigFile)
+	generated, err = s.validateSDKModuleWorkspace(operationCtx, ws, scoped, generated, workspaceScope, staged.ConfigFile)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -1010,6 +1010,7 @@ func workspaceAtSDKModuleScope(
 
 func (s *workspaceSchema) validateSDKModuleWorkspace(
 	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
 	base dagql.ObjectResult[*core.Workspace],
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
@@ -1039,6 +1040,13 @@ func (s *workspaceSchema) validateSDKModuleWorkspace(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("inspect SDK-module result: %w", err)
 	}
+	isEmpty, err := changes.Self().IsEmpty(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("inspect SDK-module result: %w", err)
+	}
+	if isEmpty {
+		return parent, nil
+	}
 	touched, err := changesetTouchedPaths(ctx, changes.Self())
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("inspect SDK-module paths: %w", err)
@@ -1055,7 +1063,7 @@ func (s *workspaceSchema) validateSDKModuleWorkspace(
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDK-module changes ID: %w", err)
 	}
 	var adopted dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, base, &adopted, dagql.Selector{
+	if err := dag.Select(ctx, parent, &adopted, dagql.Selector{
 		Field: "withChanges",
 		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
 	}); err != nil {

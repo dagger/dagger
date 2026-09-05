@@ -364,6 +364,7 @@ func runSDKModuleGeneratorGraph(
 	}
 	current := base
 	for _, node := range plan.ordered {
+		parent := current
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Changeset]{}, err
@@ -385,9 +386,9 @@ func runSDKModuleGeneratorGraph(
 		if err != nil {
 			return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("resolve clients in scope %q: %w", node.path, err)
 		}
-		current, err = provider.GenerateScope(operationCtx, scoped, node.scope.IsModule, node.scope.Name, clients)
+		generated, err := provider.GenerateScope(operationCtx, scoped, node.scope.IsModule, node.scope.Name, clients)
 		if err == nil {
-			current, err = s.validateSDKModuleWorkspace(operationCtx, scoped, current, node.path, staged.ConfigFile)
+			current, err = s.validateSDKModuleWorkspace(operationCtx, parent, scoped, generated, node.path, staged.ConfigFile)
 		}
 		if err == nil && node.scope.IsModule {
 			err = s.validateGeneratedModuleConfig(operationCtx, current, node.path)
