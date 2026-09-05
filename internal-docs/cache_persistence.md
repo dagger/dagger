@@ -471,6 +471,52 @@ Separately, the snapshot manager exports:
 Those rows are written into the snapshot metadata tables and loaded back into
 the snapshot manager at startup.
 
+### Immutable snapshot transfers
+
+Local snapshot export now populates the same parent/blob and parent/diff
+indexes as image import. Registration uses the descriptor actually returned,
+including an explicitly requested encoding. The first emitted layer uses the
+empty parent key when export omits scratch or an empty root. Actual snapshot
+ancestry is unchanged. These entries use the existing persistent tables; they
+are reuse hints and do not own resources.
+
+`SnapshotManager.ImportChain` imports one `ExportChain` from an in-process
+provider. It shares `importLayer` with `ImportImage`. Under the parent/diff
+exclusion, it first attaches and validates an existing snapshot, then checks
+local content, and only then opens the provider. Content writer acquisition can
+also find bytes supplied by another operation and avoid a source read. A lost
+snapshot candidate is a miss; other attachment failures remain errors. Both
+import and export key waits observe cancellation, so a waiting caller can
+release its own pins while another transfer continues.
+
+Nonempty chain imports and image imports own a temporary resource lease
+through the returned ref's `Release`. Empty generic chains use ordinary scratch.
+Ordinary result snapshot-link ownership must be established before that release. `AttachLease` validates snapshot presence after attachment because
+containerd accepts resource references to absent targets. Snapshot reuse does
+not require restoring missing optional historical export blobs. New exports
+add their content to continuing snapshot owners.
+
+`ExportChain.Release` ends ownership of the exported provider's snapshots and
+content. Copies share the same release handle. Image assembly retains original
+chains and a separate lease for image metadata and rewritten layers until
+`ExportedImage.Release`. Prepared images keep that ownership through the
+existing arbitrary-cache `OnRelease` hook. Arbitrary completion and cancellation
+transfer that callback under `callsMu`. An independent cache operation keeps
+late initialization and abandoned-value cleanup visible to `Cache.Close`.
+Cleanup runs outside the lock, including when the entry was removed before
+the value arrived. Failure removes only the transfer's temporary ownership. Other result owners remain intact. Committed prefixes
+retain reuse entries and remain reusable while present.
+
+A clean shutdown can preserve typed results without releasing their process-local
+refs. Leases from `newResourcePin` carry `dagger.io/snapshot-transfer=true`.
+At server startup, after `NewCache` restores durable owners and reports no reset,
+`ReleaseTransferLeasesAfterRestart` removes exactly those marked leases before
+new transfers can start. The previous process no longer owns their Go refs.
+Result owner leases and unrelated temporary leases remain intact. This helper
+is specific to server startup; ordinary cache construction can occur while a
+live transfer exists and must not call it. Cleanup errors fail startup through
+the existing error return.
+
 ## Snapshot Owner Leases On Import
 
 Import does more than just rebuild tables in memory.
