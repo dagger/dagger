@@ -136,6 +136,22 @@ class FunctionCachePolicy(Enum):
     PerSession = "PerSession"
 
 
+class GitPushDisposition(Enum):
+    """How a Git push updated the remote ref."""
+
+    CREATED = "CREATED"
+    """The remote ref was created."""
+
+    FAST_FORWARD = "FAST_FORWARD"
+    """The remote ref was fast-forwarded."""
+
+    FORCED = "FORCED"
+    """The remote ref was replaced under an explicit lease."""
+
+    UP_TO_DATE = "UP_TO_DATE"
+    """The remote ref already pointed to this commit."""
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -8470,6 +8486,122 @@ class GitCommit(Type):
 
 
 @typecheck
+class GitPushResult(Type):
+    """A receipt for a completed Git push. Reading or replaying the
+    receipt does not push again."""
+
+    async def disposition(self) -> GitPushDisposition:
+        """How the remote ref was updated.
+
+        Returns
+        -------
+        GitPushDisposition
+            How a Git push updated the remote ref.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("disposition", _args)
+        return await _ctx.execute(GitPushDisposition)
+
+    async def id(self) -> str:
+        """A unique identifier for this GitPushResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def previous_sha(self) -> str:
+        """The previous remote object ID; empty when the ref was created.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("previousSHA", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The fully qualified remote ref.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
+        return await _ctx.execute(str)
+
+    async def sha(self) -> str:
+        """The object ID pushed to the remote.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
@@ -8629,6 +8761,42 @@ class GitRef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def push(
+        self,
+        *,
+        to: "GitRepository | None" = None,
+        branch: str | None = "",
+        expected_remote_sha: str | None = "",
+    ) -> GitPushResult:
+        """Push this ref engine-side, using the destination's credentials.
+        Checkout hooks do not run. A missing remote ref is created.
+
+        Without a lease, Git's normal non-force rules apply. This operation is
+        never cached. The returned receipt can be replayed without pushing
+        again.
+
+        Parameters
+        ----------
+        to:
+            Destination remote repository. Defaults to this ref's repository
+            URL.
+        branch:
+            Destination branch; a refs/ prefix is used verbatim. Defaults to
+            this ref's branch name. Required for detached and non-branch refs.
+        expected_remote_sha:
+            Optional lease: a full lowercase object ID allows replacement only
+            if the remote ref still has that value. Checked even for up-to-
+            date pushes. Empty or omitted uses normal non-force rules,
+            creating the ref if it does not exist.
+        """
+        _args = [
+            Arg("to", to, None),
+            Arg("branch", branch, ""),
+            Arg("expectedRemoteSHA", expected_remote_sha, ""),
+        ]
+        _ctx = self._select("push", _args)
+        return GitPushResult(_ctx)
 
     async def ref(self) -> str:
         """The resolved ref name at this ref.
@@ -17446,6 +17614,8 @@ __all__ = [
     "GitBundle",
     "GitBundleRef",
     "GitCommit",
+    "GitPushDisposition",
+    "GitPushResult",
     "GitRef",
     "GitRepository",
     "HTTPState",

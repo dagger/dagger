@@ -988,6 +988,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitPushResult",
+			"p": "Dagger/GitPushResult.html",
+			"d": "<p>A receipt for a completed Git push. Reading or replaying the receipt does not push again.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -5540,6 +5550,36 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitPushResult::disposition",
+			"p": "Dagger/GitPushResult.html#method_disposition",
+			"d": "<p>How the remote ref was updated.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::id",
+			"p": "Dagger/GitPushResult.html#method_id",
+			"d": "<p>A unique identifier for this GitPushResult.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::previousSHA",
+			"p": "Dagger/GitPushResult.html#method_previousSHA",
+			"d": "<p>The previous remote object ID; empty when the ref was created.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::ref",
+			"p": "Dagger/GitPushResult.html#method_ref",
+			"d": "<p>The fully qualified remote ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::sha",
+			"p": "Dagger/GitPushResult.html#method_sha",
+			"d": "<p>The object ID pushed to the remote.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::asWorkspace",
 			"p": "Dagger/GitRef.html#method_asWorkspace",
 			"d": "<p>Creates a synthetic workspace from this git ref.</p>"
@@ -5579,6 +5619,12 @@
 			"n": "Dagger\\GitRef::name",
 			"p": "Dagger/GitRef.html#method_name",
 			"d": "<p>The resolved name of this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::push",
+			"p": "Dagger/GitRef.html#method_push",
+			"d": "<p>Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.</p>"
 		},
 		{
 			"t": "M",

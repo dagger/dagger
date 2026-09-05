@@ -203,6 +203,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.NodeFunc("push", s.push).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Pushes to an external Git repository on each invocation.").
+			Doc("Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.",
+				"Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.").
+			Args(dagql.Arg("to").Doc("Destination remote repository. Defaults to this ref's repository URL."),
+				dagql.Arg("branch").Doc("Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs."),
+				dagql.Arg("expectedRemoteSHA").Doc("Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.")),
 		dagql.NodeFunc("targetCommit", s.targetCommit).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The commit this ref resolves to.`),
@@ -269,6 +277,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
+	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.GitPushResult](srv).View(AfterVersion("v1.0.0-0")))
+	core.GitPushDispositions.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.GitPushResult]{}.Install(srv)
+	dagql.Fields[*core.Query]{
+		dagql.Func("__gitPushResult", s.pushResult).View(AfterVersion("v1.0.0-0")).
+			Doc("(Internal-only) Reconstruct a completed push receipt without contacting the remote."),
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitBundle](srv).View(AfterVersion("v1.0.0-beta.10")))

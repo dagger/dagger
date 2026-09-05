@@ -90,6 +90,29 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+     *
+     * Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+     */
+    public function push(
+        ?GitRepository $to = null,
+        ?string $branch = '',
+        ?string $expectedRemoteSHA = '',
+    ): GitPushResult {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('push');
+        if (null !== $to) {
+        $innerQueryBuilder->setArgument('to', $to);
+        }
+        if (null !== $branch) {
+        $innerQueryBuilder->setArgument('branch', $branch);
+        }
+        if (null !== $expectedRemoteSHA) {
+        $innerQueryBuilder->setArgument('expectedRemoteSHA', $expectedRemoteSHA);
+        }
+        return new \Dagger\GitPushResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved ref name at this ref.
      */
     public function ref(): string

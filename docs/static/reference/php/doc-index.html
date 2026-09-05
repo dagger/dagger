@@ -560,7 +560,9 @@
 <abbr title="Dagger\Function_">Function_</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>A doc string for the function, if any.</p></dd><dt><a href="Dagger/Generator.html#method_description">
 <abbr title="Dagger\Generator">Generator</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>Return the description of the generator</p></dd><dt><a href="Dagger/Host.html#method_directory">
+                    <dd><p>Return the description of the generator</p></dd><dt><a href="Dagger/GitPushResult.html#method_disposition">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::disposition</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>How the remote ref was updated.</p></dd><dt><a href="Dagger/Host.html#method_directory">
 <abbr title="Dagger\Host">Host</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Accesses a directory on the host.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_description">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
@@ -796,7 +798,8 @@
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.</p></dd><dt><a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A ref advertised by a Git bundle.</p></dd><dt><a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A receipt for a completed Git push. Reading or replaying the receipt does not push again.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git ref (tag, branch, or commit).</p></dd><dt><a href="Dagger/GitRefId.html"><abbr title="Dagger\GitRefId">GitRefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git repository.</p></dd><dt><a href="Dagger/GitRepositoryId.html"><abbr title="Dagger\GitRepositoryId">GitRepositoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -958,7 +961,9 @@
 <abbr title="Dagger\GitBundleRef">GitBundleRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitBundleRef.</p></dd><dt><a href="Dagger/GitCommit.html#method_id">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
+                    <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitPushResult.html#method_id">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this GitPushResult.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
 <abbr title="Dagger\GitRef">GitRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitRef.</p></dd><dt><a href="Dagger/GitRepository.html#method_id">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1366,7 +1371,11 @@
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::prerequisiteSHAs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Commits that must already exist wherever this bundle is applied.</p></dd><dt><a href="Dagger/GitCommit.html#method_parentShas">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::parentShas</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
+                    <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/GitPushResult.html#method_previousSHA">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::previousSHA</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The previous remote object ID; empty when the ref was created.</p></dd><dt><a href="Dagger/GitRef.html#method_push">
+<abbr title="Dagger\GitRef">GitRef</abbr>::push</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
+                    <dd><p>Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
 <abbr title="Dagger\LLM">LLM</abbr>::portableID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
 <abbr title="Dagger\LLM">LLM</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -1442,7 +1451,9 @@
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::refs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Refs advertised by the bundle and the object IDs they resolve to.</p></dd><dt><a href="Dagger/GitCommit.html#method_releaseTag">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::releaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
+                    <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitPushResult.html#method_ref">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The fully qualified remote ref.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved ref name at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_ref">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1541,7 +1552,9 @@
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>The full commit SHA.</p></dd><dt><a href="Dagger/GitCommit.html#method_shortSha">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::shortSha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>The abbreviated commit SHA.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
+                    <dd><p>The abbreviated commit SHA.</p></dd><dt><a href="Dagger/GitPushResult.html#method_sha">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The object ID pushed to the remote.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::shell</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
                     <dd><p>Healthcheck command is a shell command.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_startInterval">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::startInterval</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>

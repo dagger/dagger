@@ -590,18 +590,22 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	entries, err := c.Git(repoURL, dagger.GitOpts{
+	repo := c.Git(repoURL, dagger.GitOpts{
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 		SSHAuthSocket:           c.Host().UnixSocket(sock),
-	}).
-		Branch("main").
+	})
+	entries, err := repo.Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			DiscardGitDir: true,
 		}).
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
+	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").WithCommit("SSH push", workspaceCommitDate)
+	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
+	require.NoError(t, err)
+	require.Equal(t, "CREATED", result.Disposition)
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {

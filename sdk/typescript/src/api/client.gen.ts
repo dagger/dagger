@@ -1810,6 +1810,72 @@ export type GitCommitTreeOpts = {
   includeTags?: boolean
 }
 
+/**
+ * How a Git push updated the remote ref.
+ */
+export enum GitPushDisposition {
+  /**
+   * The remote ref was created.
+   */
+  Created = "CREATED",
+
+  /**
+   * The remote ref was fast-forwarded.
+   */
+  FastForward = "FAST_FORWARD",
+
+  /**
+   * The remote ref was replaced under an explicit lease.
+   */
+  Forced = "FORCED",
+
+  /**
+   * The remote ref already pointed to this commit.
+   */
+  UpToDate = "UP_TO_DATE",
+}
+
+/**
+ * Utility function to convert a GitPushDisposition value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function GitPushDispositionValueToName(
+  value: GitPushDisposition,
+): string {
+  switch (value) {
+    case GitPushDisposition.Created:
+      return "CREATED"
+    case GitPushDisposition.FastForward:
+      return "FAST_FORWARD"
+    case GitPushDisposition.Forced:
+      return "FORCED"
+    case GitPushDisposition.UpToDate:
+      return "UP_TO_DATE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a GitPushDisposition name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function GitPushDispositionNameToValue(
+  name: string,
+): GitPushDisposition {
+  switch (name) {
+    case "CREATED":
+      return GitPushDisposition.Created
+    case "FAST_FORWARD":
+      return GitPushDisposition.FastForward
+    case "FORCED":
+      return GitPushDisposition.Forced
+    case "UP_TO_DATE":
+      return GitPushDisposition.UpToDate
+    default:
+      return name as GitPushDisposition
+  }
+}
 export type GitRefAsWorkspaceOpts = {
   /**
    * Current working directory inside the workspace root. Defaults to the workspace root.
@@ -1832,6 +1898,23 @@ export type GitRefLogOpts = {
    * Exclude commits reachable from this ref, i.e. only list commits added on top of it.
    */
   base?: GitRef
+}
+
+export type GitRefPushOpts = {
+  /**
+   * Destination remote repository. Defaults to this ref's repository URL.
+   */
+  to?: GitRepository
+
+  /**
+   * Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+   */
+  branch?: string
+
+  /**
+   * Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+   */
+  expectedRemoteSHA?: string
 }
 
 export type GitRefTreeOpts = {
@@ -9807,6 +9890,112 @@ export class GitCommit extends BaseClient {
 }
 
 /**
+ * A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+ */
+export class GitPushResult extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _disposition?: GitPushDisposition = undefined
+  private readonly _previousSHA?: string = undefined
+  private readonly _ref?: string = undefined
+  private readonly _sha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _disposition?: GitPushDisposition,
+    _previousSHA?: string,
+    _ref?: string,
+    _sha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._disposition = _disposition
+    this._previousSHA = _previousSHA
+    this._ref = _ref
+    this._sha = _sha
+  }
+
+  /**
+   * A unique identifier for this GitPushResult.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * How the remote ref was updated.
+   */
+  disposition = async (): Promise<GitPushDisposition> => {
+    if (this._disposition) {
+      return this._disposition
+    }
+
+    const ctx = this._ctx.select("disposition")
+
+    const response: Awaited<GitPushDisposition> = await ctx.execute()
+
+    return GitPushDispositionNameToValue(response)
+  }
+
+  /**
+   * The previous remote object ID; empty when the ref was created.
+   */
+  previousSHA = async (): Promise<string> => {
+    if (this._previousSHA) {
+      return this._previousSHA
+    }
+
+    const ctx = this._ctx.select("previousSHA")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The fully qualified remote ref.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The object ID pushed to the remote.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
@@ -9933,6 +10122,19 @@ export class GitRef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+   *
+   * Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+   * @param opts.to Destination remote repository. Defaults to this ref's repository URL.
+   * @param opts.branch Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+   * @param opts.expectedRemoteSHA Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+   */
+  push = (opts?: GitRefPushOpts): GitPushResult => {
+    const ctx = this._ctx.select("push", { ...opts })
+    return new GitPushResult(ctx)
   }
 
   /**

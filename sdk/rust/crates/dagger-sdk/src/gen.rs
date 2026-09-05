@@ -8795,6 +8795,69 @@ impl Node for GitCommit {
     }
 }
 #[derive(Clone)]
+pub struct GitPushResult {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitPushResult {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitPushResult {
+    fn graphql_type() -> &'static str {
+        "GitPushResult"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitPushResult {
+    /// How the remote ref was updated.
+    pub async fn disposition(&self) -> Result<GitPushDisposition, DaggerError> {
+        let query = self.selection.select("disposition");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this GitPushResult.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The previous remote object ID; empty when the ref was created.
+    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("previousSHA");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The fully qualified remote ref.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The object ID pushed to the remote.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitPushResult {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -8817,6 +8880,18 @@ pub struct GitRefLogOpts<'a> {
     /// Only include commits touching these paths, relative to the root of the repository.
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRefPushOpts<'a> {
+    /// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+    #[builder(setter(into, strip_option), default)]
+    pub branch: Option<&'a str>,
+    /// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+    #[builder(setter(into, strip_option), default)]
+    pub expected_remote_sha: Option<&'a str>,
+    /// Destination remote repository. Defaults to this ref's repository URL.
+    #[builder(setter(into, strip_option), default)]
+    pub to: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
@@ -8976,6 +9051,43 @@ impl GitRef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+    /// Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn push(&self) -> GitPushResult {
+        let query = self.selection.select("push");
+        GitPushResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+    /// Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn push_opts<'a>(&self, opts: GitRefPushOpts<'a>) -> GitPushResult {
+        let mut query = self.selection.select("push");
+        if let Some(to) = opts.to {
+            query = query.arg("to", to);
+        }
+        if let Some(branch) = opts.branch {
+            query = query.arg("branch", branch);
+        }
+        if let Some(expected_remote_sha) = opts.expected_remote_sha {
+            query = query.arg("expectedRemoteSHA", expected_remote_sha);
+        }
+        GitPushResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The resolved ref name at this ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
@@ -17996,6 +18108,17 @@ pub enum FunctionCachePolicy {
     Never,
     #[serde(rename = "PerSession")]
     PerSession,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum GitPushDisposition {
+    #[serde(rename = "CREATED")]
+    Created,
+    #[serde(rename = "FAST_FORWARD")]
+    FastForward,
+    #[serde(rename = "FORCED")]
+    Forced,
+    #[serde(rename = "UP_TO_DATE")]
+    UpToDate,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {

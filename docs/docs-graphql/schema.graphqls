@@ -3231,6 +3231,41 @@ type GitCommit implements Node {
   ): Directory!
 }
 
+"""How a Git push updated the remote ref."""
+enum GitPushDisposition {
+  """The remote ref was created."""
+  CREATED
+
+  """The remote ref was fast-forwarded."""
+  FAST_FORWARD
+
+  """The remote ref was replaced under an explicit lease."""
+  FORCED
+
+  """The remote ref already pointed to this commit."""
+  UP_TO_DATE
+}
+
+"""
+A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+"""
+type GitPushResult implements Node {
+  """How the remote ref was updated."""
+  disposition: GitPushDisposition!
+
+  """A unique identifier for this GitPushResult."""
+  id: ID!
+
+  """The previous remote object ID; empty when the ref was created."""
+  previousSHA: String!
+
+  """The fully qualified remote ref."""
+  ref: String!
+
+  """The object ID pushed to the remote."""
+  sha: String!
+}
+
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """Creates a synthetic workspace from this git ref."""
@@ -3276,6 +3311,32 @@ type GitRef implements Node {
 
   """The resolved name of this ref."""
   name: String!
+
+  """
+  Push this ref engine-side, using the destination's credentials. Checkout hooks
+  do not run. A missing remote ref is created.
+
+  Without a lease, Git's normal non-force rules apply. This operation is never
+  cached. The returned receipt can be replayed without pushing again.
+  """
+  push(
+    """Destination remote repository. Defaults to this ref's repository URL."""
+    to: ID @expectedType(name: "GitRepository")
+
+    """
+    Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's
+    branch name. Required for detached and non-branch refs.
+    """
+    branch: String = ""
+
+    """
+    Optional lease: a full lowercase object ID allows replacement only if the
+    remote ref still has that value. Checked even for up-to-date pushes. Empty
+    or omitted uses normal non-force rules, creating the ref if it does not
+    exist.
+    """
+    expectedRemoteSHA: String = ""
+  ): GitPushResult!
 
   """The resolved ref name at this ref."""
   ref: String! @deprecated(reason: "Use \"name\" instead.")
