@@ -112,8 +112,8 @@ func Load(
 	return provider, nil
 }
 
-// FindClientRoot finds the SDK client root that contains ws.Cwd. An empty
-// result means this provider found no usable root.
+// FindClientRoot finds the SDK client root that contains ws.Cwd. A null result
+// means this provider found no usable root.
 func (provider *Provider) FindClientRoot(
 	ctx context.Context,
 	ws dagql.ObjectResult[*core.Workspace],
@@ -126,7 +126,7 @@ func (provider *Provider) FindClientRoot(
 	if err != nil {
 		return "", fmt.Errorf("SDK module findClientRoot workspace ID: %w", err)
 	}
-	var result dagql.String
+	var result dagql.Nullable[dagql.String]
 	if err := inst.dag.Select(ctx, inst.object, &result, dagql.Selector{
 		Field: findClientRootFunction,
 		Args: []dagql.NamedInput{
@@ -135,7 +135,10 @@ func (provider *Provider) FindClientRoot(
 	}); err != nil {
 		return "", fmt.Errorf("call SDK module findClientRoot: %w", err)
 	}
-	return result.String(), nil
+	if !result.Valid {
+		return "", nil
+	}
+	return result.Value.String(), nil
 }
 
 // ImplementsDefaultModulePath reports whether this provider implements the
@@ -270,7 +273,7 @@ func (provider *Provider) validate() error {
 	}{
 		{
 			name:   findClientRootFunction,
-			result: "String!",
+			result: "String",
 			args:   []argumentShape{{name: "ws", typ: "Workspace!"}},
 		},
 		{

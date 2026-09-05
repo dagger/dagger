@@ -2,7 +2,7 @@
 Test SDK for dependency-ordered scope generation.
 """
 type ScopeSdk {
-  findClientRoot(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String {
     "."
   }
 

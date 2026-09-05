@@ -18,10 +18,10 @@ type ModuleMaxLifecycle {
     ws.directory(".", include: [path]).exists(path)
   }
 
-  findClientRoot(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String {
     let goMod = ws.findUp("go.mod")
     if (goMod == null) {
-      ""
+      null
     } else {
       configDir(goMod, "go.mod")
     }

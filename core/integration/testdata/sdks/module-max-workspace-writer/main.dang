@@ -2,8 +2,8 @@
 Test SDK for the module-max Workspace output boundary.
 """
 type ModuleMaxWorkspaceWriter {
-  findClientRoot(ws: Workspace!): String! {
-    ""
+  findClientRoot(ws: Workspace!): String {
+    null
   }
 
   defaultModulePath(ws: Workspace!, name: String!): String! {

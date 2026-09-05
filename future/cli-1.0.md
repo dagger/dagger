@@ -497,12 +497,12 @@ interface Sdk {
 
   Return a workspace-root-relative parent path of Workspace.cwd.
   Return "." for the workspace root.
-  Return "" when this SDK does not find a usable scope.
+  Return null when this SDK does not find a usable scope.
   """
   findClientRoot(
     """The input workspace."""
     ws: Workspace!
-  ): String!
+  ): String
 
   """
   Generate all module and client files for one SDK scope.
@@ -555,6 +555,8 @@ The engine calls `findClientRoot` with the command invocation Workspace.
 
 The method can inspect files such as `go.mod`, `package.json`, or `pyproject.toml`.
 
+The method returns null when it does not find a client root.
+
 The engine validates the returned path. The path must contain the input `Workspace.cwd`.
 
 The engine calls `findClientRoot` on a provider instance with global settings only. Scope settings are not available until the scope is known.
@@ -567,7 +569,7 @@ The lookup always applies to one selected SDK:
 
 1. Find the deepest recorded scope for that SDK that contains `Workspace.cwd`.
 2. Call that SDK's `findClientRoot` with the command invocation Workspace.
-3. Return the deeper non-empty path.
+3. Return the deeper non-null path.
 
 The engine uses this lookup in these cases:
 

@@ -203,9 +203,9 @@ import "dagger/init-fixture/internal/dagger"
 
 type InitFixture struct{}
 
-func (m *InitFixture) FindClientRoot(ws *dagger.Workspace) string {
+func (m *InitFixture) FindClientRoot(ws *dagger.Workspace) *string {
 	_ = ws
-	return ""
+	return nil
 }
 
 // GenerateScope scaffolds the SDK-owned files onto the module config that it
