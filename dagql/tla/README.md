@@ -209,3 +209,37 @@ Earlier constrained simulations in `final-sweep-probes-summary.log` and
 `final-sweep-breaks-summary.log` did not reach their predicates. They are not
 positive evidence. Earlier broad-cost joint and sweep runs were stopped with
 queued states; they are incomplete cost measurements, not successful bounds.
+
+The independent `SnapshotChain.tla` component covers immutable chain import and
+export below DagQL. `snapshot_import` and `snapshot_export` are registered short
+names for `Some` and `One`. Existing short names still select `CacheLifecycle`.
+The cache spec and its existing configurations are unchanged.
+
+```sh
+dagger --env dev call tla-check some --configs=snapshot_import,snapshot_export
+dagger --env dev call tla-check one --config=snapshot_import
+```
+
+The component separates snapshot/index presence, handles, actual resources,
+source reads, and layer apply. It models partial ancestry attachment and a
+presence check after attachment. containerd's resource insertion validates no
+target presence; its metadata writes serialize with GC. A lost candidate may
+leave temporary references to absent resources, but cannot be returned as a hit.
+Selection evidence is recorded at the reuse decision, since another export can
+publish after an importer accepts a miss. Existing and generated export blobs
+remain pinned until provider consumption. Imported refs remain pinned through
+owner adoption. Snapshot IDs change on reapply, preserving actual parent keys.
+
+The two bounds allow two importers, two owners, prefix/suffix chains, failure,
+pruning, and later apply. The import shape allows three requests and three
+physical creations. The export shape starts with two local layers and allows
+two imports and one further creation. File bytes, metadata, compression,
+containerd resources, actual cleanup, and typed adoption/restart require Go
+checks. These bounds do not establish those facts.
+
+For the bounded snapshot implementation, run the existing quick set through the
+changed runner and the relevant snapshot shapes, probes, and deliberate breaks.
+The approved selected plan supersedes the full-suite instruction for this work.
+Every individual run has a 30-minute ceiling; measure before increasing bounds.
+Initial source review and measurements are in progress. No completed production
+validation is claimed by this model checkpoint.
