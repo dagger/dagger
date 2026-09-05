@@ -423,5 +423,5 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	// checks the producer's skip flag, never on target-span validity — so a future
 	// "check execSpanCtx.IsValid()" refactor would drop this observable link.
 	require.True(t, waitLinkHasInvalidTarget(spans, wcprof.WaitReasonLazy.String()),
-		"a non-skipped target with a genuinely invalid span must still emit a observable by validation targetless lazy wait link")
+		"a non-skipped target with a genuinely invalid span must still emit a targetless lazy wait link visible to validation")
 }
