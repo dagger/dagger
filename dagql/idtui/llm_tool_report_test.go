@@ -62,8 +62,8 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 		},
 		{
 			// The tool call's display span (displayPhases.StartToolCall):
-			// every provider builds one, replay included, and core scopes the
-			// tool result's report to it.
+			// every provider builds one, including the recorded-response
+			// provider, and core scopes the tool result's report to it.
 			ID:          displayID,
 			TraceID:     prettyTestTraceID(),
 			Name:        "report",
@@ -378,9 +378,9 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 // CHECKS section at all, falling back to the raw span tree. Rolled up relative
 // to the tool call itself, that boundary sits AT the root and is irrelevant.
 //
-// Note the Boundary attribute is what makes this a reproduction: replay-driven
-// integration tests never create the display span, so the bug is invisible to
-// them.
+// The Boundary attribute is what makes this a reproduction. Recording-driven
+// integration tests historically omitted the display span; their provider now
+// emits it, and this unit test injects the equivalent snapshot directly.
 func TestASCIIReporterScopedChecksUnderToolBoundary(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()

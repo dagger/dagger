@@ -40,12 +40,12 @@ func countOTelName(ended []sdktrace.ReadOnlySpan, name string) int {
 	return n
 }
 
-// TestProfileSkipGatesSingleflightEmit drives the REAL cache singleflight path
+// TestProfileSkipControlsSingleflightEmit drives the REAL cache singleflight path
 // (GetOrInitCall) under a recording span and asserts the frame-homed ProfileSkip
-// bit gates the OTel call_exec + publishResult spans: a skipped reflection-class
+// bit controls the OTel call_exec + publishResult spans: a skipped reflection-class
 // miss emits neither, a kept user-work miss emits both, and the loaded graph's
-// structural gate stays clean (0 orphans / 0 unresolved waits) in both cases.
-func TestProfileSkipGatesSingleflightEmit(t *testing.T) {
+// structural validation stays clean (0 orphans / 0 unresolved waits) in both cases.
+func TestProfileSkipControlsSingleflightEmit(t *testing.T) {
 	sr, rootCtx, root := newRecordingRoot("POST /query")
 	ctx := cacheTestContext(rootCtx)
 	c, err := NewCache(ctx, "", nil, nil)
@@ -88,7 +88,7 @@ func TestProfileSkipGatesSingleflightEmit(t *testing.T) {
 // TestProfileSkipStaticCutSingleflightJoiner exercises the load-bearing property:
 // because the cut is STATIC per recipe, a joiner of a skipped key is itself
 // skipped, so the executor mints no call_exec and the joiner emits no wait — the
-// gate stays 0/0 with no dangling singleflight wait target. (A dynamic per-caller
+// validation stays 0/0 with no dangling singleflight wait target. (A dynamic per-caller
 // cut could leave a non-skipped joiner waiting on a skipped target; this asserts we
 // do not.)
 func TestProfileSkipStaticCutSingleflightJoiner(t *testing.T) {
@@ -140,7 +140,7 @@ func TestProfileSkipStaticCutSingleflightJoiner(t *testing.T) {
 	spans := sr.Ended()
 	require.Equal(t, 0, countOTelKind(spans, wcprof.OpKindCallExec.String()), "skipped executor mints no call_exec")
 	// The static per-recipe cut means the joiner is skipped too, so it emits no
-	// singleflight wait link at all (nothing for the offline gate to flag).
+	// singleflight wait link at all (nothing for the offline validation to flag).
 	require.Equal(t, 0, countOTelWaitLinks(spans, wcprof.WaitReasonSingleflight.String()),
 		"a skipped join must emit no singleflight wait link")
 }
@@ -167,7 +167,7 @@ func countOTelWaitLinks(ended []sdktrace.ReadOnlySpan, reason string) int {
 
 // waitLinkHasInvalidTarget reports whether any wait link with the given reason
 // carries an all-zero (invalid) target span id — the shape a targetless wait emits
-// when its target span was never minted, which the offline gate flags as unresolved.
+// when its target span was never minted, which the offline validation flags as unresolved.
 func waitLinkHasInvalidTarget(ended []sdktrace.ReadOnlySpan, reason string) bool {
 	for _, s := range ended {
 		for _, l := range s.Links() {
@@ -196,13 +196,13 @@ func newLazySkipRecorder() (*tracetest.SpanRecorder, trace.Tracer) {
 	return sr, tp.Tracer("wcprof-otel-skip-lazy-test")
 }
 
-// TestProfileSkipGatesLazyEmit drives the REAL lazy-eval path (Cache.Evaluate ->
+// TestProfileSkipControlsLazyEmit drives the REAL lazy-eval path (Cache.Evaluate ->
 // evaluateOne) under a recording span and asserts the producer frame's ProfileSkip
-// gates the OTel lazy span + waits: a skipped producer mints no lazy OTel span (and
-// no OTel lazy wait); a kept producer mints one and its waits resolve. The gate
+// controls the OTel lazy span + waits: a skipped producer mints no lazy OTel span (and
+// no OTel lazy wait); a kept producer mints one and its waits resolve. The validation
 // stays clean either way. (Native lazy ops are unaffected; wcprof is not active in
 // this test, so only the OTel side is observed.)
-func TestProfileSkipGatesLazyEmit(t *testing.T) {
+func TestProfileSkipControlsLazyEmit(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		profileSkip bool
@@ -258,9 +258,9 @@ func TestProfileSkipGatesLazyEmit(t *testing.T) {
 
 // TestProfileSkipLazyCrossRecipeForcerStaysClean is the load-bearing N3 case: a
 // skipped producer's pending value forced by a TRACED (recording) joiner — a
-// DIFFERENT recipe than the producer. The OTel lazy waits gate on the PRODUCER's
+// DIFFERENT recipe than the producer. The OTel lazy waits check the PRODUCER's
 // stored flag, so the joiner emits no wait into the (deliberately) absent producer
-// span and the gate stays 0/0. Were the gate keyed on the joiner's own (non-skipped)
+// span and the validation stays 0/0. Were the emission check keyed on the joiner's own (non-skipped)
 // bit, the joiner would emit a targetless wait → UnresolvedWaitTargets.
 func TestProfileSkipLazyCrossRecipeForcerStaysClean(t *testing.T) {
 	sr, tr := newLazySkipRecorder()
@@ -343,9 +343,9 @@ func TestProfileSkipLazyCrossRecipeForcerStaysClean(t *testing.T) {
 // TestProfileSkipDoesNotBlindInvalidTargetDetector: a NON-skipped target
 // whose call_exec span is genuinely invalid (a mixed/untraced executor) must STILL
 // emit a targetless OTel wait, so the loader reports UnresolvedWaitTargets and the
-// gate fails loud. Proves the skip bit did not blind the detector — the OTel wait
-// gates on oc.profSkip, never on execSpanCtx validity — locking out a future
-// "gate on execSpanCtx.IsValid()" refactor.
+// validation fails loud. Proves the skip bit did not blind the detector — the OTel wait
+// checks oc.profSkip, never on execSpanCtx validity — locking out a future
+// "check execSpanCtx.IsValid()" refactor.
 func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	sr, tr := newLazySkipRecorder()
 	baseCtx := cacheTestContext(t.Context())
@@ -357,7 +357,7 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 
 	leaderReady := make(chan struct{})
 	release := make(chan struct{})
-	// NON-skipped producer: the OTel joiner wait is NOT gated off, so it must still
+	// NON-skipped producer: the OTel joiner wait is NOT suppressed, so it must still
 	// be emitted even when the target span is invalid.
 	frame := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -393,7 +393,7 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 
 	// TRACED joiner: reads the invalid attempt span target and, because the producer is
 	// NOT profile-skipped, STILL emits its OTel wait (targetless) — exactly what the
-	// gate must catch. (If the gate keyed on span-target validity instead of the
+	// validation must catch. (If the emission check keyed on span-target validity instead of the
 	// producer flag, this loss would be silently hidden.)
 	jCtx, jSpan := tr.Start(baseCtx, "traced-joiner")
 	jDone := make(chan error, 1)
@@ -419,9 +419,9 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	spans := sr.Ended()
 	// The non-skipped forcer must STILL emit its lazy wait even though the target
 	// span is genuinely invalid: a targetless (all-zero target) wait link that the
-	// offline gate then reports as an unresolved wait and fails loud on. The emit
-	// gates on the producer's skip flag, never on target-span validity — so a future
-	// "gate on execSpanCtx.IsValid()" refactor would drop this observable link.
+	// offline validation then reports as an unresolved wait and fails loud on. The emit
+	// checks the producer's skip flag, never on target-span validity — so a future
+	// "check execSpanCtx.IsValid()" refactor would drop this observable link.
 	require.True(t, waitLinkHasInvalidTarget(spans, wcprof.WaitReasonLazy.String()),
-		"a non-skipped target with a genuinely invalid span must still emit a gate-observable targetless lazy wait link")
+		"a non-skipped target with a genuinely invalid span must still emit a observable by validation targetless lazy wait link")
 }

@@ -1,4 +1,4 @@
-# Cloud Check Replay And Workspace Remotes
+# Cloud Check Result Rendering And Workspace Remotes
 
 ## Goal
 
@@ -10,8 +10,8 @@ dagger -W github.com/acme/hello@main check
 ```
 
 For explicit remote workspace addresses, `dagger check` first asks Dagger Cloud
-for the latest matching check result. If Cloud has a replayable result, the CLI
-replays that result through the normal Dagger TUI and exits with the stored
+for the latest matching check result. If Cloud has a renderable result, the CLI
+renders that result through the normal Dagger TUI and exits with the stored
 status. If Cloud has no result, the CLI falls back to executing checks for the
 selected workspace. Local and implicit workspaces execute normally.
 
@@ -61,11 +61,11 @@ branch  github.com/acme/hello@main             green 12/12  1h ago
 pr      github.com/acme/hello@pull/4242/head    red 10/12    3h ago
 ```
 
-## Replay
+## Stored Result Rendering
 
-Cloud replay creates local synthetic telemetry and feeds it to the existing
-frontend exporters. The replay trace is local-only and should not be exported
-back to Cloud.
+Stored-result rendering creates local synthetic telemetry and feeds it to the
+existing frontend exporters. The synthetic trace is local-only and should not
+be exported back to Cloud.
 
 At a high level:
 

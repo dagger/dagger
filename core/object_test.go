@@ -585,7 +585,7 @@ func TestModuleObjectEncodeAllowsRawCallIDInPrivateField(t *testing.T) {
 // attach the referenced result, and record a real dependency edge so the
 // result stays retained for as long as the owning object's cached state is
 // reusable, even after the producing session closes. Previously the handle
-// stayed a raw string invisible to retention, and later sessions replaying
+// stayed a raw string invisible to retention, and later sessions loading
 // cached state failed with "missing shared result".
 func TestModuleObjectPrivateHandleFieldRetainedAcrossProducerSessionClose(t *testing.T) {
 	t.Parallel()
@@ -772,7 +772,7 @@ func TestModuleObjectAttachDependencyResultsRewritesHandleVariants(t *testing.T)
 	assert.Assert(t, ok)
 
 	// Nil and recipe-form values pass through unchanged: recipe IDs are
-	// self-contained and replayable, so they need no dependency edge.
+	// self-contained and loadable, so they need no dependency edge.
 	nilPtr, ok := obj.Fields["nilPtr"].(*call.ID)
 	assert.Assert(t, ok)
 	assert.Assert(t, nilPtr == nil)

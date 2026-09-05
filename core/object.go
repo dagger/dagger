@@ -688,9 +688,9 @@ func attachModuleObjectValue(
 // are the main source of these values: SDKs serialize stored objects as ID
 // strings, and without a dependency edge the referenced result can be
 // released while the owning object's cached state is still reusable,
-// leaving later sessions to replay a dangling handle that fails with
+// leaving later sessions to load a dangling handle that fails with
 // "missing shared result". Non-ID strings are ordinary scalars, and
-// recipe-form IDs are self-contained and replayable, so both are left
+// recipe-form IDs are self-contained and loadable, so both are left
 // as-is.
 func attachModuleObjectHandleValue(
 	ctx context.Context,

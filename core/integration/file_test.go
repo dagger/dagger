@@ -100,9 +100,9 @@ func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "some-content", contents)
 }
 
-func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testctx.T) {
+func (FileSuite) TestBlobBinaryRoundTripAndReload(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
-		t.Skip("needs its own CLI session to capture and replay call payloads")
+		t.Skip("needs its own CLI session to capture and reload call payloads")
 	}
 	contents := []byte{0x00, 0xff, 0xfe, 0x80, 'b', 'l', 'o', 'b', 0x00}
 	different := bytes.Clone(contents)
@@ -172,8 +172,8 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 	// evaluation by mounting the reconstructed File. This exercises arbitrary
 	// binary bytes, including invalid UTF-8 and NUL, without routing them through
 	// File.contents.
-	replayer := connect(ctx, t)
-	var replayed struct {
+	loader := connect(ctx, t)
+	var loaded struct {
 		Container struct {
 			From struct {
 				WithMountedFile struct {
@@ -184,8 +184,8 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 			}
 		}
 	}
-	err = replayer.Do(ctx, &dagger.Request{
-		Query: `query ReplayBlob($file: ID!, $image: String!) {
+	err = loader.Do(ctx, &dagger.Request{
+		Query: `query ReloadBlob($file: ID!, $image: String!) {
 			container {
 				from(address: $image) {
 					withMountedFile(path: "/blob", source: $file) {
@@ -200,10 +200,10 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 			"file":  recipeID,
 			"image": alpineImage,
 		},
-	}, &dagger.Response{Data: &replayed})
+	}, &dagger.Response{Data: &loaded})
 	require.NoError(t, err)
 	wantDigest := fmt.Sprintf("%x  /blob\n", sha256.Sum256(contents))
-	require.Equal(t, wantDigest+"600\n", replayed.Container.From.WithMountedFile.WithExec.Stdout)
+	require.Equal(t, wantDigest+"600\n", loaded.Container.From.WithMountedFile.WithExec.Stdout)
 }
 
 func (FileSuite) TestChownLookup(ctx context.Context, t *testctx.T) {

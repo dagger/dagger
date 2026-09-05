@@ -1134,7 +1134,7 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // loader drops it from the compiled ops. The session's final trace/log barrier
 // flushes the carrier after all cleanup producers have stopped. A trace that
 // never ran a traced main query, or whose count is zero, gets no carrier
-// and so fails the loader's gate by default (unverifiable → refused).
+// and so fails the loader's completeness check by default (unverifiable → refused).
 func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
 		return
