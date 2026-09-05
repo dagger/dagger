@@ -337,9 +337,11 @@ There are three main interfaces to know:
 
 Implemented by typed self payloads that know how to encode themselves directly:
 
-- `EncodePersistedObject(context.Context, PersistedObjectCache) (json.RawMessage, error)`
+- `EncodePersistedObject(context.Context, PersistedObjectCache) (PersistedObjectEncoding, error)`
 
-This is how objects serialize their own internal state to JSON.
+The encoding carries object JSON and the exact snapshot links belonging to that
+encoded state. Pending accessor pre-seeds can have runtime leases without being
+completed outputs in the encoding.
 
 ### `PersistedObjectDecoder`
 
@@ -386,7 +388,7 @@ The core lazy interface includes:
 
 That last method is the persistence hook.
 
-For objects like `Directory`, `File`, and `Container`, persisted object encoding
+For standalone `Directory` and `File`, persisted object encoding
 often has two broad forms:
 
 - **snapshot form**
@@ -408,8 +410,29 @@ then persistence returns `ErrPersistStateNotReady`.
 Today `Directory` and `File` explicitly do this when they have neither snapshot
 nor lazy state available to encode.
 
-That is important because shutdown persistence is all-or-nothing from the point
-of view of clean restart. If a persistable retained result cannot be serialized,
+`Container` uses one payload with consumed metadata, a record for each snapshot
+part, and its original recipe only while computation remains. Each part is
+pending, absent, or a completed directory, file, or exec-metadata snapshot.
+Completion comes from object-side group consumption, including final parent
+copies, independently of cache bookkeeping completion. A settled mapping error
+leaves the affected part pending while preserving any other consumed parts.
+
+Decode installs metadata and immutable descriptors without opening the stored
+container outputs. It seeds the original completed groups and uses ordinary
+attempts with separate `open:<part>` groups to open saved snapshots on demand.
+Joint computation outputs can open independently after restart. Descriptors
+remain on the Container after opening and after the operational lazy pointer
+clears, so typed decode, usage accounting, owner-lease sync, and a second flush
+retain the same identities. Absence needs no opening. Pending recipe inputs
+still use the existing standalone Directory/File decoders, which may open their
+own snapshots immediately.
+
+This container payload change is persistence schema 18. Older stores are wiped;
+there is no migration. See `core/container_persistence.go` and the bounded model
+evidence in `dagql/tla/README.md`.
+
+Shutdown persistence remains all-or-nothing from the point of view of clean
+restart. If a persistable retained result cannot be serialized,
 the flush fails, `clean_shutdown=1` is not recorded, and the next startup wipes
 the store.
 
@@ -593,14 +616,10 @@ If shutdown flush fails, the next startup wipes the store.
 
 ### 4. Some object forms are still unsupported
 
-One explicit example today: `Container.EncodePersistedObject` still rejects
-containers carrying:
-
-- services
-- secrets
-- sockets
-
-That is a known first-cut restriction.
+Object-specific encoders can reject unsupported states. Container metadata
+encodes service, secret, socket, and mutable-mount references through existing
+result dependencies and session-resource contracts. Part persistence does not
+change those contracts or make engine-local resource handles portable.
 
 ### 5. Arbitrary cache entries are not part of persistence
 

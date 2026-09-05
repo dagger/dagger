@@ -28,9 +28,9 @@
 <main>
 <header>
 <h1>Preserve evaluated container parts across restart</h1>
-<p class="meta">Revised local design draft · September 5, 2026 · source base <code>563d9211a5a368b414c11a329a34753c42520910</code></p>
+<p class="meta">Approved design and implementation reference · September 5, 2026 · inspected design base <code>563d9211a5a368b414c11a329a34753c42520910</code></p>
 <p class="lead">A retained container should remember which computation finished. Restart should restore its metadata and open each completed snapshot only when that part is demanded. Work that remains pending should keep its existing recipe and group boundaries.</p>
-<p class="meta">This is a design and implementation plan. Source was inspected; the feature, tests, and model extension have not been implemented or run. Council review converged on September 5, 2026. The design awaits Erik’s review.</p>
+<p class="meta">Erik approved this scope. Implementation and focused validation are complete. The mechanisms and evidence limits below define the implemented boundary; design acceptance alone does not establish correctness.</p>
 </header>
 
 <section id="proposal">
@@ -44,7 +44,8 @@
 </section>
 
 <section id="evidence">
-<h2>Current problem and saved work</h2>
+<h2>Problem at the design base and saved work</h2>
+<p class="source">This section describes the pre-change behavior at the inspected design base. The implementation replaces that encoding as specified below.</p>
 <p><code>Container.EncodePersistedObject</code> chooses a recipe whenever <code>Lazy</code> remains set. It can also encode snapshot values, but it does not encode the groups’ consumption. The recipe decoder creates a fresh <code>LazyState</code>. Values restored into accessors are therefore seeds, not proof that the writer finished. A later group demand runs its body again.</p>
 <p class="source">Source: <a href="../../../core/container.go">core/container.go</a>, <code>EncodePersistedObject</code>, <code>decodePersistedContainerLazy</code>; <a href="../../../core/lazy_state.go">core/lazy_state.go</a>, <code>NewLazyState</code>; <a href="../../../core/container_exec.go">core/container_exec.go</a>, <code>decodePersistedContainerExecLazy</code>.</p>
 
@@ -101,7 +102,7 @@ restart; demand a new selector beneath X’s /work mount</code></pre>
 
 <section id="format">
 <h2>Persisted representation</h2>
-<p>Replace the container’s recipe-versus-data choice with one container payload. Keep the generic result envelope, dependency rows, and result-to-snapshot link table. Increment <code>cachePersistenceSchemaVersion</code> in <code>dagql/cache.go</code> from its current value of 17 at the format change. The field names below specify the intended shape; they are not an implemented API.</p>
+<p>Replace the container’s recipe-versus-data choice with one container payload. Keep the generic result envelope, dependency rows, and result-to-snapshot link table. The implementation increments <code>cachePersistenceSchemaVersion</code> in <code>dagql/cache.go</code> from 17 to 18. The outline below describes the internal payload; Go stores the optional recipe in <code>LazyJSON</code>.</p>
 <pre><code>container payload
   metadata: { consumed, value: existing plain container metadata }
   parts: map[PartKey] final-part-record // empty while metadata is pending
@@ -116,7 +117,7 @@ final-part-record
 
 result snapshot links
   (resultID, role, RefKey = local SnapshotID)</code></pre>
-<p>Every non-pending record means consumed computation. Each present Directory/File descriptor has a nonempty local snapshot link, its path string, platform, and service references. Keep the existing path normalization: an empty persisted path leaves its accessor unset. Do not add accessor-presence flags or a nested absent-snapshot form. Current scratch directories obtain a real snapshot through <code>loadCanonicalScratchDirectory</code>; a consumed present value without a snapshot is an encode error. The actual absent container rootfs and execMeta cases use <code>absent</code> and restore an unset accessor.</p>
+<p>Every non-pending record means consumed computation. Each present Directory/File descriptor has a nonempty local snapshot link, its path string, platform, and service references. Opening a stored present value installs its recorded path, including an empty string. This small implementation refinement makes the completed path available to <code>GetOrEval</code>; canonical scratch/root paths normally use <code>/</code>. Standalone Directory/File decoding remains unchanged. Do not add accessor-presence flags or a nested absent-snapshot form. Current scratch directories obtain a real snapshot through <code>loadCanonicalScratchDirectory</code>; a consumed present value without a snapshot is an encode error. The actual absent container rootfs and execMeta cases use <code>absent</code> and restore an unset accessor.</p>
 <p>Use a container-owned descriptor decoder for embedded values. Calling the standalone Directory/File decoder here would reopen their snapshots during container decode. When metadata is consumed, the parts map contains exactly fs, execMeta, and the snapshot mounts named by its settled list. When metadata is pending, its canonical parts map is empty and the recipe is required. Reject any nonempty map in that case, including completed records, using this structural rule before consulting dynamic group mapping.</p>
 <div class="table"><table>
 <thead><tr><th>Part</th><th>When consumed</th><th>When pending</th><th>Local link</th></tr></thead>
@@ -145,7 +146,7 @@ result snapshot links
 <section id="restore">
 <h2>Decode and demand routing</h2>
 <h3>A restore operation, with one group latch authority</h3>
-<p>Add <code>ContainerRestoreLazy</code> in <code>core/container_persistence.go</code>. It implements <code>LazyContainerParts</code>. It holds the optional original refined recipe and a reference to the container’s immutable map of stored part descriptors. The descriptors also live on Container independently of <code>Lazy</code>, so clearing the op cannot lose snapshot ownership or saved completion.</p>
+<p>Add <code>ContainerRestoreLazy</code> in <code>core/container_persistence.go</code>. It implements <code>LazyContainerParts</code>. It holds the optional original refined recipe and its shared state; its methods read the owning container’s immutable descriptors. The descriptors live on Container independently of <code>Lazy</code>, so clearing the op cannot lose snapshot ownership or saved completion.</p>
 <p>For a remaining refined recipe, the restore operation returns that recipe’s <code>ContainerLazyState()</code>. Initialize completed original groups under that state before publication. Use the same state for the extra <code>open:</code> groups. Do not wrap a recipe’s <code>EvaluateContainerGroup</code> in another call to <code>EvaluateGroup</code> on the same group: its body already takes that mutex. For a fully computed container, use a fresh state with metadata and no-I/O absence groups consumed. Leave <code>lazyInitComplete</code> false while any opening remains, or it would suppress those openings.</p>
 <p>This operation exists only on decode. It is never recursively serialized as a new recipe. The encoder projects final part state and, when necessary, the original recipe JSON. A second restart creates one fresh restore operation, regardless of how often the row has crossed a restart.</p>
 <p>Its interface methods are explicit: <code>EncodePersisted(ctx, cache)</code> forwards to the original recipe when that pointer exists, and returns <code>nil, nil</code> when it does not. <code>AttachDependencies(ctx, attach)</code> forwards to the original recipe’s attachment method, including its normal input rebinding and returned dependencies; without a recipe it returns <code>nil, nil</code>. Container’s existing attachment method still handles its plain resource references. The restore operation adds no serializable recipe kind.</p>
@@ -259,7 +260,7 @@ result snapshot links
 
 <section id="model">
 <h2>Model before implementation</h2>
-<p>Extend <code>dagql/tla/CacheLifecycle.tla</code> before production code. Keep its current names, including <code>lazyConsumed</code>, <code>lazyComplete</code>, <code>lazySyncPending</code>, <code>PartGroupOf</code>, <code>GroupNeeds</code>, <code>EvalSweepDelegation</code>, <code>ImportedLazyArm</code>, <code>Flush</code>, and <code>Restart</code>. The existing single-group <code>lazy</code> configuration must still produce exactly <strong>6,398,997 distinct states</strong>. That number is the recorded anchor, not a new run result.</p>
+<p>Extend <code>dagql/tla/CacheLifecycle.tla</code> before production code. Keep its current names, including <code>lazyConsumed</code>, <code>lazyComplete</code>, <code>lazySyncPending</code>, <code>PartGroupOf</code>, <code>GroupNeeds</code>, <code>EvalSweepDelegation</code>, <code>ImportedLazyArm</code>, <code>Flush</code>, and <code>Restart</code>. The existing single-group <code>lazy</code> configuration must still produce exactly <strong>6,398,997 distinct states</strong>. The completed implementation check retained exactly that anchor; its command and duration are recorded in the model README.</p>
 
 <h3>State and actions to add</h3>
 <ul>
@@ -295,15 +296,15 @@ result snapshot links
 <p>Preserve current <code>OwnershipExact</code>, <code>EvalDoneComplete</code>, <code>LazyCompleteSettled</code>, <code>LazyMutualExclusion</code>, <code>LazySuccessPermanent</code>, <code>NoStaleCancelError</code>, <code>LazyAttemptDefersCollection</code>, <code>SweepOwnerActive</code>, <code>SweepStartsFinal</code>, and the flush integrity assertions, adapting their routing expressions to the enabled per-result mapping. Compare initial restored computation with the captured oracle before any post-restart work; use monotonicity plus the no-recompute assertion thereafter.</p>
 
 <h3>Bounded configurations</h3>
-<p>Start with three small configurations: <code>container_part_restart</code> (metadata and one snapshot; legal imported starts, two evaluators, failure/retry/release), <code>container_sweep_restart</code> (parent and child; a pending copy and a stored sibling where needed for the wrong-copy-key witness), and <code>container_joint_restore</code> (metadata plus two jointly computed snapshot parts, starting with fresh computation). Keep fresh sweep → flush → restart reachable in the sweep shape. These are proposed names. Register their expected outcomes in <code>.dagger/modules/tla-check/main.go</code>. Add a case to the quick set only after measuring its cost.</p>
-<p>Combine open retry/release with the small restart shape first. Add a separate retry configuration only if measured exploration cost justifies splitting those scenarios. Each routine configuration should fit roughly twenty minutes; record its bounds, duration, reachability probes, and deliberate-break outcomes. No runtime cost is claimed before measurement.</p>
+<p>Start with three small configurations: <code>container_part_restart</code> (metadata and one snapshot; legal imported starts, two evaluators, failure/retry/release), <code>container_sweep_restart</code> (parent and child; a pending copy and a stored sibling where needed for the wrong-copy-key witness), and <code>container_joint_restore</code> (metadata plus two jointly computed snapshot parts, starting with fresh computation). Keep fresh sweep → flush → restart reachable in the sweep shape. These configurations are implemented and their expected outcomes are registered in <code>.dagger/modules/tla-check/main.go</code>. They remain outside the quick set. The measured state counts, durations, positive probes, deliberate breaks, and precise scope constraint are recorded in <a href="../../../dagql/tla/README.md">dagql/tla/README.md</a>.</p>
+<p>Combine open retry/release with the small restart shape first. Add a separate retry configuration only if measured exploration cost justifies splitting those scenarios. Each routine configuration should fit roughly twenty minutes; an individual relevant run may take up to thirty minutes. This ceiling does not expand the selected set. Record bounds, duration, reachability probes, and deliberate-break outcomes; measured costs are in the model README.</p>
 <p>The sweep configuration must permit an invocation after restart and enough evaluators for both the initiating demand and the internal parent demand. The current sweep-only configuration disables persistence and cannot prove this round trip. Show the full source trace to the swept-copy state before using any saved-state continuation to reduce exploration cost. Recheck every deliberate break at the final bound; reducing a bound until the behavior disappears is not validation.</p>
-<p>Run the existing quick set, the exact single-group anchor, and only affected group/prerequisite/sweep and new persistence shapes. The routine plan does not include the full suite or the prior costly persistence liveness run. Existing cheap liveness checks remain in the quick set. This local design task runs no TLC. The model checks lifecycle and concurrency; Go tests must prove actual values, snapshot role mapping, open counts, and bytes retained.</p>
+<p>Run the existing quick set, the exact single-group anchor, and only affected group/prerequisite/sweep and new persistence shapes. The routine plan does not include the full suite or the prior costly persistence liveness run. Existing cheap liveness checks remain in the quick set. The selected implementation checks are complete; do not repeat them without a model source cause. The model checks lifecycle and concurrency; Go tests must prove actual values, snapshot role mapping, open counts, and bytes retained.</p>
 </section>
 
 <section id="plan">
 <h2>Implementation and evidence plan</h2>
-<p>Model work and inactive preparatory helpers may land first. The format-version cut, new encoder and decoder, working demand routing, descriptor-aware ownership, and reporting integration land together as one executable change. Do not publish an intermediate commit that writes values it cannot read and demand correctly, or add a temporary eager decoder to preserve an artificial split. The rows below group review work; they do not require separate commits. Test names are proposed additions unless explicitly identified as existing. Run through the development module, with logs and deliberate-break variants under a private <code>/tmp</code> directory. None of these commands has been run for this draft.</p>
+<p>Model work and inactive preparatory helpers may land first. The format-version cut, new encoder and decoder, working demand routing, descriptor-aware ownership, and reporting integration land together as one executable change. Do not publish an intermediate commit that writes values it cannot read and demand correctly, or add a temporary eager decoder to preserve an artificial split. The rows below group review work; they do not require separate commits. Test names are proposed additions unless explicitly identified as existing. Run through the development module, with logs and deliberate-break variants under a private <code>/tmp</code> directory. The completed model evidence is immutable at <code>08553b38a09624f0931b06dfdf4f912aff388c79</code>; the initial coherent Go candidate is <code>526cdcb94dd4cd7e2c348ab578afe0b33d3f2244</code>. Focused Go and actual restart evidence is recorded below against the implementation.</p>
 <div class="table"><table>
 <thead><tr><th>Order of work</th><th>Concrete files and mechanism</th><th>Acceptance evidence</th></tr></thead>
 <tbody>
@@ -315,7 +316,7 @@ result snapshot links
 <tr><td>Prove restart behavior</td><td>New <code>core/container_persistence_test.go</code>, existing <code>dagql/cache_snapshot_persistence_test.go</code> / <code>cache_persistence_import_test.go</code>, and focused subtests in <code>core/integration/engine_persistence_test.go</code>.</td><td>The mounted content writer retains its actual snapshot and consumption, its mutation count stays unchanged on stored demand, and pending ancestor execution occurs exactly when later requested. Both typed and envelope-only middle-engine checkpoints preserve unopened state.</td></tr>
 <tr><td>Reconcile implementation and design</td><td>This document and the model comments, plus affected internal persistence/lazy documentation.</td><td>Every new transition has a code counterpart. Report exact bounded commands and outcomes. No claims based solely on a cached scalar or an old worktree’s results.</td></tr>
 </tbody></table></div>
-<p>At the format cut, audit version-specific fixtures and references. <code>dagql/cache_metadata_prune_benchmark_test.go</code> contains <code>BenchmarkCacheMetadataSchema17Import</code> and a literal version-17 expectation. Update its name/expectation with the current format and inspect other direct version references. This is a small source/fixture audit; it does not require broad benchmark runs.</p>
+<p>The format is version 18. <code>dagql/cache_metadata_prune_benchmark_test.go</code> now uses <code>BenchmarkCacheMetadataSchema18Import</code> and the version-18 expectation. This fixture audit requires no broad benchmark run.</p>
 
 <h3>Focused test matrix</h3>
 <ul>
@@ -332,25 +333,28 @@ result snapshot links
 
 <h3>Make the restart evidence observe the container</h3>
 <p>Build the mounted content-writer chain with enough files for an actual copy, retain X normally, and prove before shutdown that its write group is consumed while fs and execMeta are pending. Record the output SnapshotID and the writer-body/commit count. After restart, load the same Container row by result identity, inspect its completed descriptor and empty accessor, then demand a selector path never queried on the first engine. Check the selected bytes and X’s unchanged SnapshotID, and verify the writer did not execute again.</p>
-<p>A previously cached <code>contents()</code> or <code>stdout()</code> result can bypass the container completely. Reusing such a scalar as the only assertion is invalid evidence. For real-engine coverage, inspect the cache’s actual container payload/part state with a test helper or a narrowly scoped diagnostic counter; do not add a public API. Run the failing pre-change variant of the test with the same observation points. A pending ancestor exec can write an externally counted marker through existing local test machinery, or be counted at the exec test seam; it must stay at zero until its output is demanded, then become one.</p>
+<p>A previously cached <code>contents()</code> or <code>stdout()</code> result can bypass the container completely. Reusing such a scalar as the only assertion is invalid evidence. For real-engine coverage, inspect the cache’s actual container payload/part state with a test helper or a narrowly scoped diagnostic counter; do not add a public API. For the negative control, discard completed snapshot records and links from partial rows while retaining their original recipe. Run the same test and observations; the middle-engine completed-part assertion must fail. This control does not claim byte-identical historical source. A pending ancestor exec can write an externally counted marker through existing local test machinery, or be counted at the exec test seam; it must stay at zero until its output is demanded, then become one.</p>
 
-<h3>Bounded commands for the implementation</h3>
-<pre><code>dagger --env dev check tla-check:quick
-dagger --env dev call tla-check one --config=lazy
-dagger --env dev call tla-check some \
-  --configs=container_part_restart,container_sweep_restart,container_joint_restore
+<h3>Recorded implementation checks</h3>
+<p>The bounded model evidence is recorded in <a href="../../../dagql/tla/README.md">dagql/tla/README.md</a>: 25 selected exhaustive passes, 11 positive breadth-first probes, and 11 deliberate breaks against model SHA-256 <code>c397ada06da89afd1ea2f8e171bc93f50bb86ea8e26656b0ce2a808687a8c6b0</code>. The sweep constraint, invocation, state counts, durations, and incomplete-run limits are part of that evidence. These are bounded lifecycle checks; actual snapshot values and mutations are covered by the Go evidence below.</p>
+<pre><code>go test -race ./core \
+  -run '^Test(Container(Restore|Persisted|ExecSuccessConsumesFinalReadOnlyMount)|RecordStatus)' \
+  -count=1 -timeout=5m
 
-# Add only affected existing shapes after inspecting the final model diff.
-dagger --env dev call tla-check some --configs=lazy_parts,lazy_parts_prereq,lazy_parts_delegate
+go test -race ./dagql \
+  -run '^Test(Evaluate(Parts|WholeResultOverGroups)|Lazy(Emit|Triggered)|WcprofLazyParent|Cache(SnapshotOwnerLeaseSyncDefersSessionCleanup|Persistence(Import|WorkerUsesEncodedSnapshotLinks|SchemaMismatch)))' \
+  -count=1 -timeout=5m
 
-dagger api call engine-dev test --pkg ./core \
-  --run='TestContainer(Persistence|Restore|MountedSourceWriterParts|ExecSuccessConsumesFinalReadOnlyMount)' --race=true
-dagger api call engine-dev test --pkg ./dagql \
-  --run='TestContainerPartPersistence|TestStoredSnapshot' --race=true
 dagger api call engine-dev test --pkg ./core/integration \
-  --run='TestCachePersistence/TestDiskPersistenceAcrossRestart/container_parts'
-</code></pre>
-<p>Use exact added test names in the final commands and include the affected existing persistence/telemetry tests selected by the diff. Test entry points come from <code>.dagger/modules/engine-dev/test.go</code>; model entry points come from <code>.dagger/modules/tla-check/main.go</code>. Use the current CLI spelling supported by the installed development CLI. Save logs, inspect all failures, and do not run broad packages or repeat expensive checks without a change or unresolved concern.</p>
+  --run='TestCachePersistence/TestDiskPersistenceAcrossRestart/container_parts_preserve_mutations_and_unopened_snapshots' \
+  --test-verbose=true --timeout=15m</code></pre>
+<p>The core and DagQL selections passed with the race detector at <code>82567d28fe128e58d515488fcd327af45b76a5aa</code> (1.742s and 1.961s package times). Core coverage includes actual cache flush/reload for the unsupported cache/tmpfs target and detached file/directory records, independent saved opens, joint completion seeding, direct metadata sweeps, open failure, bookkeeping-only retry after pointer clearing, cached/pending/partial reporting, cause and wait links, canceled leader with a healthy waiter, session release during an open, shared descriptor ownership, and size queries without opening.</p>
+<p>The 27 existing tests in <code>core/container_parts_test.go</code>, <code>core/container_selector_parts_test.go</code>, and <code>core/container_exec_parts_test.go</code> also passed with the race detector (1.481s), selecting every named test except the exec-success case already included above. The exact command follows; archival logs reside outside the repository.</p>
+<details><summary>Exact existing routing selection</summary><pre><code>go test -race ./core -run '^(TestContainerFinalDelegationSweepDoesNotStartParentWork|TestContainerMetadataOnlyMountMutationParts|TestContainerMetadataMountNamedOwnerReadsParentRootFS|TestContainerMountedSourceWriterParts|TestContainerMountedSourceWriterNamedOwner|TestContainerMountedSourceWriterShadowsNestedMount|TestDockerfileCompatMountSourceIsFile|TestContainerPathWriterRouting|TestContainerPathWriterExactMountRemoval|TestContainerWithoutPathFullEvaluationWithEmptyRootFS|TestContainerWithoutPathsJointWriteGroup|TestContainerGetVariantRefsEvaluatesImageParts|TestContainerMetadataChainLeavesSnapshotGroupsPending|TestContainerDirectEvaluateRunsRefinedGroups|TestContainerDelegationOverwritesStalePreCopiedAccessor|TestContainerConcurrentGroupCompletionClearsLazyOnce|TestContainerRoutingReadsRaceRefinedClear|TestContainerRoutingReadsRaceUnrefinedClear|TestContainerHasPendingFallbackRacesDirectClear|TestContainerDirectorySelectorReturnsRootFSErrorBeforeSelection|TestContainerDirectorySelectorLeavesSiblingMountsPending|TestContainerRootFSSelectorLeavesMountsPending|TestContainerStdoutSkipsReadOnlyMountDelegation|TestContainerExecMetadataReadRunsNothing|TestContainerExecReadOnlyMountStaysPending|TestContainerExecEvaluatesParentMountsConcurrently|TestContainerExecMetadataKeepsVolatileNamesAndExpandErrors)$' -count=1 -timeout=5m</code></pre></details>
+<p>The real three-engine selection passed in <a href="https://dagger.cloud/dagger/traces/90963afcfe7250160e8f83bcaf56d3d2">the recorded engine trace</a> (4m44s including development build). Its source was <code>526cdcb94dd4cd7e2c348ab578afe0b33d3f2244</code> plus the SDK ID, original snapshot assertions, and schema-child checks now committed in <code>82567d28fe</code>; the later empty-path refinement was covered by the local codec race test. Both typed and untouched-envelope middle-engine paths retain the mounted mutation. Fresh selectors on the third engine consume the saved snapshot with zero writer-body/commit runs; the pending ancestor runs once when demanded later. A completed exec opens exec metadata on the middle engine and a distinct mount on the third, while rootfs remains closed until child demand.</p>
+<p>Raw local logs are retained under <code>/tmp/per-part-persistence-implementation-20260905/resume</code>. A private control that discards completed output only from partial rows failed at the intended middle-engine completion assertion (line 168, called at 244), before another writer demand. The <a href="https://dagger.cloud/dagger/traces/5cb56c62a544e624be5236d645a5ed5a">recorded control trace</a> ran for 59.78s (4m25s including build). This is a semantic negative control, not a reconstruction of the complete old source; it proves the test detects lost completion and does not measure a repeated mutation in the control.</p>
+<p>Complete final row objects were recovered from the positive trace. The raw export has interleaved or truncated enclosing snapshots and omits some late checkpoint labels; complete row fragments retain the original mounted snapshot IDs with one stored open and no writer/commit count. The successful test assertions establish intermediate observations absent from the exported labels. The compact extraction and raw hash are retained in <code>coordinator-restart-evidence.json</code> and <code>coordinator-restart-rows.json</code> under the same evidence root.</p>
+
 </section>
 
 <section id="alternatives">
@@ -367,15 +371,15 @@ dagger api call engine-dev test --pkg ./core/integration \
 <tr><td>Retain all recipes and rerun on local open failure</td><td>Could resemble a future remote fallback.</td><td>It changes local error behavior and pre-decides recipe availability after completion. Neither is needed to preserve completed local work.</td></tr>
 <tr><td>Defer every Directory/File dependency decode too</td><td>Could support a broader no-open claim.</td><td>The useful mounted-output preservation and completed-container opening behavior do not require it. Keep the measured dependency cost explicit and leave broader decoding to a separate decision.</td></tr>
 </tbody></table></div>
-<p>There is no unresolved scope question blocking this draft. The substantive boundary is explicit: completed container-owned values are deferred; standalone dependency decoding remains as today. The mounted mutation, decode bookkeeping, and ownership arguments are source-based and await the stated implementation evidence.</p>
-<p>Review findings should identify a current source path or reachable trace, its material consequence, and a proportionate correction. Assess each independently. Council review converged on September 5, 2026. The design awaits Erik’s review; it does not carry forward acceptance from an older persistence candidate.</p>
+<p>The implemented boundary is explicit: completed container-owned values open on demand; standalone dependency decoding remains unchanged. The mounted mutation, decode bookkeeping, and ownership behavior have the focused evidence recorded above.</p>
+<p>Review findings should identify a current source path or reachable trace, its material consequence, and a proportionate correction. Assess each independently. Council review converged on September 5, 2026. Erik approved implementation within this scope. Production review is separate from the completed design review and carries forward no acceptance from an older persistence candidate.</p>
 </section>
 
 <section id="sources">
 <h2>Source and authority notes</h2>
 <p>The current task brief and Erik’s current directions control scope. The historical guiding requirements and engine foundations documents were read for durable goals: one cache model, ordinary identity for engine-local inputs, metadata available ahead of content, no synchronous miss-path service question, reconstructable cache state, ordinary local ownership/pruning, model before code, and a clear engine/service boundary.</p>
 <p>Those historical documents also describe an older baseline. Current code has per-group attempts rather than separate part attempts plus group exclusion, target-keyed mount parts rather than positional part identity, a final-parent-copy sweep, and <code>lazyConsumed</code> distinct from cache completion. The development model module is local and does not run in CI. Current container serialization carries secret, socket, and service references; actual resource and module-runtime contracts decide persistability. None of the older blanket prohibitions or layer-pull mechanisms becomes a requirement for this local proposal.</p>
-<p>The <a href="per-part-evaluation.html">current evaluation HTML</a> supplies the presentation context and earlier explanation. Its accumulated status sections include superseded facts and old line numbers. Current source at the stated base was used for behavioral claims. The coordinator’s <code>/tmp/per-part-persistence-scope-20260905/review.html</code> was read as a list of leads after inspecting the mechanism; its prior candidate and historical test results are not validation for this design.</p>
+<p>The <a href="per-part-evaluation.html">current evaluation HTML</a> supplies the presentation context and earlier explanation. Its accumulated status sections include superseded facts and old line numbers. Current source at the stated base was used for behavioral claims. Historical candidates and their test results are not validation for this implementation. The committed source versions and recorded outcomes above identify its evidence.</p>
 <details><summary>Current source map for review</summary>
 <ul>
 <li><a href="../../../core/container_parts.go">core/container_parts.go</a>: part/group keys, metadata-first resolution, routing, parent-copy sweep, pointer clearing, path writer mapping.</li>
@@ -390,7 +394,7 @@ dagger api call engine-dev test --pkg ./core/integration \
 </ul>
 </details>
 </section>
-<footer>Local review artifact. Only this new document is changed by the design task. The implementation plan is prospective.</footer>
+<footer>Persistence format 18. Selected model and runtime checks, exact source versions, and evidence limits are recorded above.</footer>
 </main>
 </div>
 </body>
