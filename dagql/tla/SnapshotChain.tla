@@ -16,10 +16,12 @@
 (* parent/diff lock spans lookup, fetch, apply, and publication; no model *)
 (* metadata lock spans bytes. Fetch and apply have independent phases.   *)
 (* File bytes, compression, mounts, and restart codecs need Go evidence. *)
+(* Root 0 is already normalized; omitted local roots are a Go concern.   *)
 (*                                                                     *)
 (* Selection evidence is captured at lookup, not at later I/O entry:    *)
 (* an export may publish while an importer already holds a valid miss.   *)
-(* seen and bad are evidence only. No action guard reads them. Bounds    *)
+(* snapshotChoice, blobChoice, seen and bad are evidence only. No action  *)
+(* guard reads them. Bounds                                             *)
 (* limit external requests and physical creations, never property state. *)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -45,7 +47,8 @@ Survives(s) == s # 0 /\ Ancestry(s) \subseteq Present
 Indexed(i) == Survives(Candidate(i))
 EmptyPins == [snaps |-> {}, bytes |-> {}]
 EmptyWorker == [phase |-> "idle", prefix |-> 0, layer |-> 1, target |-> 1,
-                handle |-> 0, pins |-> EmptyPins, mount |-> FALSE,
+                handle |-> 0, snapshotChoice |-> 0, blobChoice |-> FALSE,
+                pins |-> EmptyPins, mount |-> FALSE,
                 write |-> FALSE]
 PinnedSnapshots == UNION {workers[i].pins.snaps : i \in Importers}
                    \cup UNION {owners[o].pins.snaps : o \in Owners}
@@ -90,6 +93,7 @@ Lock(i) ==
 Lookup(i) ==
     /\ workers[i].phase = "lookup"
     /\ workers' = [workers EXCEPT ![i].handle = Candidate(i),
+         ![i].snapshotChoice = IF Indexed(i) THEN Candidate(i) ELSE 0,
          ![i].phase = IF Candidate(i) = 0 THEN "blob" ELSE "attach"]
     /\ bad' = bad \cup (IF Indexed(i) /\ workers'[i].handle # Candidate(i)
                            THEN {"snapshotSelection"} ELSE {})
@@ -120,8 +124,8 @@ Validate(i) ==
 
 BlobLookup(i) ==
     /\ workers[i].phase = "blob"
-    /\ workers' = [workers EXCEPT ![i].phase =
-         IF workers[i].layer \in blobs THEN "pinBlob" ELSE "fetch"]
+    /\ workers' = [workers EXCEPT ![i].blobChoice = workers[i].layer \in blobs,
+         ![i].phase = IF workers[i].layer \in blobs THEN "pinBlob" ELSE "fetch"]
     /\ bad' = bad \cup (IF workers[i].layer \in blobs /\ workers'[i].phase # "pinBlob"
                            THEN {"blobSelection"} ELSE {})
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, seen>>
@@ -134,8 +138,8 @@ PinBlob(i) ==
 
 CheckBlob(i) ==
     /\ workers[i].phase = "checkBlob"
-    /\ workers' = [workers EXCEPT ![i].phase =
-         IF workers[i].layer \in blobs THEN "ready" ELSE "fetch"]
+    /\ workers' = [workers EXCEPT ![i].blobChoice = workers[i].layer \in blobs,
+         ![i].phase = IF workers[i].layer \in blobs THEN "ready" ELSE "fetch"]
     /\ seen' = IF workers[i].layer \in blobs THEN seen \cup {"blobReuse"} ELSE seen
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad>>
 
@@ -143,7 +147,10 @@ Fetch(i) ==
     /\ workers[i].phase = "fetch"
     /\ workers' = [workers EXCEPT ![i].phase = "reading", ![i].write = TRUE]
     /\ seen' = seen \cup {"fetch"}
-    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad>>
+    /\ bad' = bad \cup
+         (IF Survives(workers[i].snapshotChoice) THEN {"fetchAfterSnapshotChoice"} ELSE {})
+         \cup (IF workers[i].blobChoice THEN {"fetchAfterBlobChoice"} ELSE {})
+    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts>>
 
 Fetched(i) ==
     /\ workers[i].phase = "reading"
@@ -156,12 +163,16 @@ Apply(i) ==
     /\ workers[i].phase = "ready"
     /\ Len(snapshots) < MaxSnapshots
     /\ workers' = [workers EXCEPT ![i].phase = "applying", ![i].mount = TRUE]
+    /\ bad' = bad \cup
+         (IF Survives(workers[i].snapshotChoice) THEN {"applyAfterSnapshotChoice"} ELSE {})
     /\ seen' = seen \cup {"apply"} \cup
          (IF \E s \in IDs : ~snapshots[s].present /\
               <<snapshots[s].parent, snapshots[s].layer>> = Key(i)
           THEN {"reapply"} ELSE {})
-    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad>>
+    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts>>
 
+(* Snapshot commit attaches its resource in the metadata transaction.    *)
+(* Index publication follows under the key lock while that pin remains. *)
 Commit(i) ==
     /\ workers[i].phase = "applying"
     /\ Len(snapshots) < MaxSnapshots
@@ -180,6 +191,9 @@ Advance(i) ==
     /\ locks' = [locks EXCEPT ![Key(i)] = 0]
     /\ UNCHANGED <<snapshots, blobs, index, owners, producer, starts, seen, bad>>
 
+(* Owner attachment may take several metadata writes in Go. Operation    *)
+(* pins protect the whole closure until all succeed, so GC cannot change *)
+(* the resources during this action. Failure keeps the operation owner.  *)
 Adopt(i, o) ==
     /\ workers[i].phase = "returned"
     /\ owners' = [owners EXCEPT ![o] =
@@ -321,8 +335,10 @@ ApplyHasBytes == \A i \in Importers : workers[i].phase \in {"ready", "applying"}
 ProviderHasResources == producer.phase = "provider" =>
     /\ Ancestry(producer.tip) \subseteq Present \cap producer.pins.snaps
     /\ Layers \subseteq blobs \cap producer.pins.bytes
-CleanupComplete == \A i \in Importers : workers[i].phase \in {"done", "failed"} =>
-    /\ workers[i].pins = EmptyPins /\ workers[i].prefix = 0 /\ workers[i].handle = 0
-    /\ ~workers[i].mount /\ ~workers[i].write
-    /\ \A k \in Keys : locks[k] # i
+CleanupComplete ==
+    /\ producer.phase = "done" => producer.pins = EmptyPins
+    /\ \A i \in Importers : workers[i].phase \in {"done", "failed"} =>
+         /\ workers[i].pins = EmptyPins /\ workers[i].prefix = 0 /\ workers[i].handle = 0
+         /\ ~workers[i].mount /\ ~workers[i].write
+         /\ \A k \in Keys : locks[k] # i
 =============================================================================
