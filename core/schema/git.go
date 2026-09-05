@@ -1735,6 +1735,16 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
+	// Trees without .git are content-addressed independently of the ref name.
+	// Record a pinned recipe before publishing that equivalence: otherwise a
+	// later SHA-based selection (such as Workspace.checkpoint) can reuse the
+	// first writer's mutable branch recipe. Keep named refs for trees with .git,
+	// where the ref name is part of the checkout metadata and content identity.
+	ref := parent.Self()
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
+	}
+
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 	if err != nil {
 		return inst, err
@@ -1756,6 +1766,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	return inst, nil
+}
+
+func pinnedGitTree(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], sha string, args treeArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	err = srv.Select(ctx, repo, &inst,
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(sha)},
+		}},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(args.DiscardGitDir)},
+			{Name: "depth", Value: dagql.NewInt(args.Depth)},
+			{Name: "includeTags", Value: dagql.NewBoolean(args.IncludeTags)},
+		}},
+	)
+	return inst, err
 }
 
 func (s *gitSchema) targetCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
@@ -1827,6 +1851,17 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	// Share the pinned recipe with GitRef.tree, even when this commit was
+	// originally selected through a mutable ref's targetCommit.
+	commit := parent.Self()
+	if commit.Repo.Self().DiscardGitDir || args.DiscardGitDir {
+		return pinnedGitTree(ctx, srv, commit.Repo, commit.Ref.SHA, treeArgs{
+			DiscardGitDir: args.DiscardGitDir,
+			Depth:         args.Depth,
+			IncludeTags:   args.IncludeTags,
+		})
 	}
 
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)

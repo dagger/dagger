@@ -540,6 +540,14 @@ func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path 
 	return cp
 }
 
+// MountPoints returns the sorted workspace-root-relative mount paths.
+func (ws *Workspace) MountPoints() []string {
+	if ws == nil {
+		return nil
+	}
+	return slices.Clone(ws.mountPoints)
+}
+
 // MountedPath reports whether a workspace-root-relative path is at or under
 // one of the workspace's mount points.
 func (ws *Workspace) MountedPath(resolvedPath string) bool {

@@ -16309,6 +16309,7 @@ type Workspace struct {
 	export      *Void
 	findUp      *string
 	id          *ID
+	portable    *bool
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16378,6 +16379,53 @@ func (r *Workspace) Changes(opts ...WorkspaceChangesOpts) *Changeset {
 	}
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// WorkspaceCheckpointOpts contains options for Workspace.Checkpoint
+type WorkspaceCheckpointOpts struct {
+	// Include and approve matching nonignored untracked paths, relative to the workspace root.
+	Include []string
+	// Exclude matching paths from capture.
+	Exclude []string
+	// Maximum size of an untracked file, in bytes.
+	MaxUntrackedFileBytes int
+	// Maximum total size of untracked files, in bytes.
+	MaxUntrackedTotalBytes int
+	// Maximum number of untracked files.
+	MaxUntrackedFiles int
+}
+
+// Return this workspace as a frozen value.
+//
+// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+func (r *Workspace) Checkpoint(opts ...WorkspaceCheckpointOpts) *Workspace {
+	q := r.query.Select("checkpoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `maxUntrackedFileBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedFileBytes) {
+			q = q.Arg("maxUntrackedFileBytes", opts[i].MaxUntrackedFileBytes)
+		}
+		// `maxUntrackedTotalBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedTotalBytes) {
+			q = q.Arg("maxUntrackedTotalBytes", opts[i].MaxUntrackedTotalBytes)
+		}
+		// `maxUntrackedFiles` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedFiles) {
+			q = q.Arg("maxUntrackedFiles", opts[i].MaxUntrackedFiles)
+		}
+	}
+
+	return &Workspace{
 		query: q,
 	}
 }
@@ -16790,6 +16838,19 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
+// Whether this workspace's recipe can be replayed without its originating client.
+func (r *Workspace) Portable(ctx context.Context) (bool, error) {
+	if r.portable != nil {
+		return *r.portable, nil
+	}
+	q := r.query.Select("portable")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
 func (r *Workspace) Reloaded() *Workspace {
 	q := r.query.Select("reloaded")
@@ -17045,6 +17106,27 @@ func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpt
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select the config environment carried by this workspace.
+func (r *Workspace) WithConfigEnvironment(name string) *Workspace {
+	q := r.query.Select("withConfigEnvironment")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+func (r *Workspace) WithConfigPaths(configFile string, lockFile string) *Workspace {
+	q := r.query.Select("withConfigPaths")
+	q = q.Arg("configFile", configFile)
+	q = q.Arg("lockFile", lockFile)
 
 	return &Workspace{
 		query: q,

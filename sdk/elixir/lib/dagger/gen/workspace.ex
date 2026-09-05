@@ -64,6 +64,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace as a frozen value.
+
+  Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+  """
+  @spec checkpoint(t(), [
+          {:include, [String.t()]},
+          {:exclude, [String.t()]},
+          {:max_untracked_file_bytes, integer() | nil},
+          {:max_untracked_total_bytes, integer() | nil},
+          {:max_untracked_files, integer() | nil}
+        ]) :: Dagger.Workspace.t()
+  def checkpoint(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("checkpoint")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+      |> QB.maybe_put_arg("maxUntrackedFileBytes", optional_args[:max_untracked_file_bytes])
+      |> QB.maybe_put_arg("maxUntrackedTotalBytes", optional_args[:max_untracked_total_bytes])
+      |> QB.maybe_put_arg("maxUntrackedFiles", optional_args[:max_untracked_files])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return all checks from modules loaded in the workspace.
   """
   @spec checks(t(), [
@@ -382,6 +410,17 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Whether this workspace's recipe can be replayed without its originating client.
+  """
+  @spec portable(t()) :: {:ok, boolean()} | {:error, term()}
+  def portable(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("portable")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
   """
   @spec reloaded(t()) :: Dagger.Workspace.t()
@@ -564,6 +603,37 @@ defmodule Dagger.Workspace do
       |> QB.select("withConfigEnv")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Select the config environment carried by this workspace.
+  """
+  @spec with_config_environment(t(), String.t()) :: Dagger.Workspace.t()
+  def with_config_environment(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("withConfigEnvironment") |> QB.put_arg("name", name)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+  """
+  @spec with_config_paths(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def with_config_paths(%__MODULE__{} = workspace, config_file, lock_file) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withConfigPaths")
+      |> QB.put_arg("configFile", config_file)
+      |> QB.put_arg("lockFile", lock_file)
 
     %Dagger.Workspace{
       query_builder: query_builder,

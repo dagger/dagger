@@ -5672,6 +5672,32 @@ type Workspace implements Node {
     from: ID @expectedType(name: "Workspace")
   ): Changeset!
 
+  """
+  Return this workspace as a frozen value.
+
+  Tracked changes are captured automatically; untracked paths require approval.
+  Git refs are pinned. The recipe is portable when a remote can serve its base,
+  otherwise the checkpoint is frozen for this session only.
+  """
+  checkpoint(
+    """
+    Include and approve matching nonignored untracked paths, relative to the workspace root.
+    """
+    include: [String!]
+
+    """Exclude matching paths from capture."""
+    exclude: [String!]
+
+    """Maximum size of an untracked file, in bytes."""
+    maxUntrackedFileBytes: Int
+
+    """Maximum total size of untracked files, in bytes."""
+    maxUntrackedTotalBytes: Int
+
+    """Maximum number of untracked files."""
+    maxUntrackedFiles: Int
+  ): Workspace!
+
   """Return all checks from modules loaded in the workspace."""
   checks(
     """Only include checks matching the specified patterns"""
@@ -5889,6 +5915,11 @@ type Workspace implements Node {
   modules: [WorkspaceModule!]!
 
   """
+  Whether this workspace's recipe can be replayed without its originating client.
+  """
+  portable: Boolean!
+
+  """
   Return this workspace with its cached host reads invalidated, so subsequent
   file and directory reads re-read the live host instead of a snapshot cached
   earlier in the session.
@@ -5995,6 +6026,23 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """Select the config environment carried by this workspace."""
+  withConfigEnvironment(
+    """Environment name, or empty to clear the selection."""
+    name: String!
+  ): Workspace!
+
+  """
+  Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+  """
+  withConfigPaths(
+    """Config file path."""
+    configFile: String!
+
+    """Lockfile path."""
+    lockFile: String!
   ): Workspace!
 
   """

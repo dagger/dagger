@@ -3162,6 +3162,33 @@ export type WorkspaceChangesOpts = {
   from?: Workspace
 }
 
+export type WorkspaceCheckpointOpts = {
+  /**
+   * Include and approve matching nonignored untracked paths, relative to the workspace root.
+   */
+  include?: string[]
+
+  /**
+   * Exclude matching paths from capture.
+   */
+  exclude?: string[]
+
+  /**
+   * Maximum size of an untracked file, in bytes.
+   */
+  maxUntrackedFileBytes?: number
+
+  /**
+   * Maximum total size of untracked files, in bytes.
+   */
+  maxUntrackedTotalBytes?: number
+
+  /**
+   * Maximum number of untracked files.
+   */
+  maxUntrackedFiles?: number
+}
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -15264,6 +15291,7 @@ export class Workspace extends BaseClient {
   private readonly _detectScope?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
+  private readonly _portable?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -15278,6 +15306,7 @@ export class Workspace extends BaseClient {
     _detectScope?: string,
     _export?: Void,
     _findUp?: string,
+    _portable?: boolean,
   ) {
     super(ctx)
 
@@ -15289,6 +15318,7 @@ export class Workspace extends BaseClient {
     this._detectScope = _detectScope
     this._export = _export
     this._findUp = _findUp
+    this._portable = _portable
   }
 
   /**
@@ -15339,6 +15369,21 @@ export class Workspace extends BaseClient {
   changes = (opts?: WorkspaceChangesOpts): Changeset => {
     const ctx = this._ctx.select("changes", { ...opts })
     return new Changeset(ctx)
+  }
+
+  /**
+   * Return this workspace as a frozen value.
+   *
+   * Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+   * @param opts.include Include and approve matching nonignored untracked paths, relative to the workspace root.
+   * @param opts.exclude Exclude matching paths from capture.
+   * @param opts.maxUntrackedFileBytes Maximum size of an untracked file, in bytes.
+   * @param opts.maxUntrackedTotalBytes Maximum total size of untracked files, in bytes.
+   * @param opts.maxUntrackedFiles Maximum number of untracked files.
+   */
+  checkpoint = (opts?: WorkspaceCheckpointOpts): Workspace => {
+    const ctx = this._ctx.select("checkpoint", { ...opts })
+    return new Workspace(ctx)
   }
 
   /**
@@ -15606,6 +15651,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Whether this workspace's recipe can be replayed without its originating client.
+   */
+  portable = async (): Promise<boolean> => {
+    if (this._portable) {
+      return this._portable
+    }
+
+    const ctx = this._ctx.select("portable")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
    */
   reloaded = (): Workspace => {
@@ -15724,6 +15784,25 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithConfigEnvOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Select the config environment carried by this workspace.
+   * @param name Environment name, or empty to clear the selection.
+   */
+  withConfigEnvironment = (name: string): Workspace => {
+    const ctx = this._ctx.select("withConfigEnvironment", { name })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+   * @param configFile Config file path.
+   * @param lockFile Lockfile path.
+   */
+  withConfigPaths = (configFile: string, lockFile: string): Workspace => {
+    const ctx = this._ctx.select("withConfigPaths", { configFile, lockFile })
     return new Workspace(ctx)
   }
 

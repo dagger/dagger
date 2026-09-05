@@ -30,6 +30,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
+		NotReplayable("Requires the originating workspace client").
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
@@ -47,6 +48,29 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("checkpoint", s.checkpoint).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures the client's current Git state after approval").
+			Doc("Return this workspace as a frozen value.",
+				"Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.").
+			Args(
+				dagql.Arg("include").Doc("Include and approve matching nonignored untracked paths, relative to the workspace root."),
+				dagql.Arg("exclude").Doc("Exclude matching paths from capture."),
+				dagql.Arg("maxUntrackedFileBytes").Doc("Maximum size of an untracked file, in bytes."),
+				dagql.Arg("maxUntrackedTotalBytes").Doc("Maximum total size of untracked files, in bytes."),
+				dagql.Arg("maxUntrackedFiles").Doc("Maximum number of untracked files."),
+			),
+		dagql.NodeFunc("portable", s.portable).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Whether this workspace's recipe can be replayed without its originating client."),
+		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.").
+			Args(dagql.Arg("configFile").Doc("Config file path."), dagql.Arg("lockFile").Doc("Lockfile path.")),
+		dagql.NodeFunc("withConfigEnvironment", s.withConfigEnvironment).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select the config environment carried by this workspace.").
+			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceSDK", s.workspaceSDK).

@@ -45,6 +45,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Host]{
 		dagql.NodeFunc("directory", s.directory).
+			NotReplayable("Reads a directory from the originating client").
 			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -56,6 +57,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("file", s.file).
+			NotReplayable("Reads a file from the originating client").
 			WithInput(dagql.RequestedCacheInput("noCache")).
 			Doc(`Accesses a file on the host.`).
 			Args(
@@ -71,6 +73,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("unixSocket", s.socket).
+			NotReplayable("Uses a socket on the originating client").
 			WithInput(dagql.PerClientInput).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
@@ -123,6 +126,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("__gitDir", s.gitDir).
+			NotReplayable("Reconstructs a Git checkout from the originating client").
 			WithInput(dagql.PerClientInput).
 			Doc(`(Internal-only) A canonical .git directory for the client checkout at path, reconstructed from the client's own git pack.`,
 				`The engine never interprets a host checkout's raw git layout (worktree/submodule pointer files, commondirs, separate git dirs): the client's own git packs the repository and the engine rebuilds a standalone .git from the pack.`).

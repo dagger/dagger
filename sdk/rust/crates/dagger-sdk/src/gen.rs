@@ -15394,6 +15394,24 @@ pub struct WorkspaceChangesOpts {
     pub from: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceCheckpointOpts<'a> {
+    /// Exclude matching paths from capture.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// Include and approve matching nonignored untracked paths, relative to the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    /// Maximum size of an untracked file, in bytes.
+    #[builder(setter(into, strip_option), default)]
+    pub max_untracked_file_bytes: Option<isize>,
+    /// Maximum number of untracked files.
+    #[builder(setter(into, strip_option), default)]
+    pub max_untracked_files: Option<isize>,
+    /// Maximum total size of untracked files, in bytes.
+    #[builder(setter(into, strip_option), default)]
+    pub max_untracked_total_bytes: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -15699,6 +15717,49 @@ impl Workspace {
             query = query.arg("from", from);
         }
         Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace as a frozen value.
+    /// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checkpoint(&self) -> Workspace {
+        let query = self.selection.select("checkpoint");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace as a frozen value.
+    /// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checkpoint_opts<'a>(&self, opts: WorkspaceCheckpointOpts<'a>) -> Workspace {
+        let mut query = self.selection.select("checkpoint");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(max_untracked_file_bytes) = opts.max_untracked_file_bytes {
+            query = query.arg("maxUntrackedFileBytes", max_untracked_file_bytes);
+        }
+        if let Some(max_untracked_total_bytes) = opts.max_untracked_total_bytes {
+            query = query.arg("maxUntrackedTotalBytes", max_untracked_total_bytes);
+        }
+        if let Some(max_untracked_files) = opts.max_untracked_files {
+            query = query.arg("maxUntrackedFiles", max_untracked_files);
+        }
+        Workspace {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -16064,6 +16125,11 @@ impl Workspace {
             })
             .collect())
     }
+    /// Whether this workspace's recipe can be replayed without its originating client.
+    pub async fn portable(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("portable");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
     pub fn reloaded(&self) -> Workspace {
         let query = self.selection.select("reloaded");
@@ -16342,6 +16408,40 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select the config environment carried by this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name, or empty to clear the selection.
+    pub fn with_config_environment(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withConfigEnvironment");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_file` - Config file path.
+    /// * `lock_file` - Lockfile path.
+    pub fn with_config_paths(
+        &self,
+        config_file: impl Into<String>,
+        lock_file: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withConfigPaths");
+        query = query.arg("configFile", config_file.into());
+        query = query.arg("lockFile", lock_file.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

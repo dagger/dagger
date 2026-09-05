@@ -10,6 +10,7 @@ service Git {
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
   rpc PackUncommitted(PackUncommittedRequest) returns (stream PackUncommittedResponse);
+  rpc CaptureGit(CaptureGitRequest) returns (stream CaptureGitResponse);
 }
 
 message GitCredentialRequest {
@@ -152,7 +153,88 @@ message ErrorInfo {
     PACK_FAILED = 8;
     UNCOMMITTED_UNSUPPORTED = 9;
     CHECKOUT_STATE_MISMATCH = 10;
+    CAPTURE_REJECTED = 11;
+    CAPTURE_FAILED = 12;
   }
   ErrorType type = 1;
   string message = 2;
+}
+
+// CaptureGit performs the security-sensitive host half of a portable Git
+// workspace checkpoint. It discovers a currently advertised remote ancestor,
+// scans the selected dirty set, and then emits a version-3 two-ref bundle.
+// Without a usable remote ancestor, HEAD is the prerequisite and the engine
+// must reconstruct the repository from this client's checkout.
+message CaptureGitRequest {
+  string checkout_path = 1;
+  CaptureGitPolicy policy = 2;
+}
+
+// Tracked changes are included automatically. Untracked changes need explicit
+// approval. approval_tokens are opaque fingerprints returned
+// with an aggregate prompt and bind its retry to the exact reviewed state;
+// include patterns approve matching ordinary nonignored untracked
+// paths for noninteractive use. Patterns use Git path separators and path.Match.
+message CaptureGitPolicy {
+  repeated string include = 1;
+  repeated string exclude = 2;
+  repeated string approval_tokens = 3;
+  int64 max_untracked_file_bytes = 4;
+  int64 max_untracked_total_bytes = 5;
+  int32 max_untracked_files = 6;
+  int64 max_tracked_file_bytes = 7;
+  int64 max_total_bytes = 8;
+}
+
+message CaptureGitResponse {
+  oneof msg {
+    CaptureGitMetadata metadata = 1;
+    CaptureGitChunk chunk = 2;
+  }
+}
+
+message CaptureGitChunk {
+  enum Kind {
+    CAPTURE_CHUNK_UNKNOWN = 0;
+    CAPTURE_CHUNK_BUNDLE = 1;
+    reserved 2;
+  }
+  Kind kind = 1;
+  bytes data = 2;
+}
+
+message CaptureGitMetadata {
+  uint32 format_version = 1;
+  string object_format = 2;
+  string remote_url = 3;
+  string remote_ref = 4;
+  string base_sha = 5;
+  string head_sha = 6;
+  reserved 7;
+  string bundle_sha256 = 8;
+  int64 bundle_bytes = 9;
+  // worktree_sha is the optional synthetic snapshot commit S. Its parent is
+  // head_sha and its tree is the complete approved dirty state.
+  string worktree_sha = 10;
+  reserved 11;
+  reserved "worktree_bytes";
+  int32 tracked_files = 12;
+  int32 untracked_files = 13;
+  int64 selected_bytes = 14;
+  ErrorInfo error = 15;
+  // approval_candidates is populated only on a fail-closed preflight. It
+  // lists the complete selected dirty set for one local aggregate prompt,
+  // retaining suspicious classifications but never candidate bytes.
+  repeated CaptureGitCandidate approval_candidates = 16;
+  // Pins a session-only host reconstruction to the captured checkout state.
+  string checkout_state_digest = 17;
+}
+
+message CaptureGitCandidate {
+  string path = 1;
+  string classification = 2;
+  bool tracked = 3;
+  int64 bytes = 4;
+  // approval_token binds approval to the path's reviewed type, mode, and bytes.
+  string approval_token = 5;
 }

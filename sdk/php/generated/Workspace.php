@@ -49,6 +49,37 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace as a frozen value.
+     *
+     * Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
+     */
+    public function checkpoint(
+        ?array $include = null,
+        ?array $exclude = null,
+        ?int $maxUntrackedFileBytes = null,
+        ?int $maxUntrackedTotalBytes = null,
+        ?int $maxUntrackedFiles = null,
+    ): Workspace {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checkpoint');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        if (null !== $maxUntrackedFileBytes) {
+        $innerQueryBuilder->setArgument('maxUntrackedFileBytes', $maxUntrackedFileBytes);
+        }
+        if (null !== $maxUntrackedTotalBytes) {
+        $innerQueryBuilder->setArgument('maxUntrackedTotalBytes', $maxUntrackedTotalBytes);
+        }
+        if (null !== $maxUntrackedFiles) {
+        $innerQueryBuilder->setArgument('maxUntrackedFiles', $maxUntrackedFiles);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all checks from modules loaded in the workspace.
      */
     public function checks(
@@ -310,6 +341,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Whether this workspace's recipe can be replayed without its originating client.
+     */
+    public function portable(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portable');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'portable');
+    }
+
+    /**
      * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
      */
     public function reloaded(): Workspace
@@ -454,6 +494,27 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select the config environment carried by this workspace.
+     */
+    public function withConfigEnvironment(string $name): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigEnvironment');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+     */
+    public function withConfigPaths(string $configFile, string $lockFile): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigPaths');
+        $innerQueryBuilder->setArgument('configFile', $configFile);
+        $innerQueryBuilder->setArgument('lockFile', $lockFile);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -919,6 +919,11 @@ type FieldSpec struct {
 	// identity but are not explicit GraphQL field args.
 	ImplicitInputs []ImplicitInput
 
+	// NotReplayable identifies fields that require the originating client.
+	// ClassifyRecipe reports this metadata; it does not change cache lookup or
+	// recipe loading behavior.
+	NotReplayable string
+
 	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
 	// Used for entrypoint proxies that delegate to real fields which
 	// emit their own telemetry.
@@ -1475,6 +1480,13 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.Description = FormatDescription(paras...)
+	return field
+}
+
+// NotReplayable marks a client-dependent leaf for structural recipe
+// classification. It does not affect recipe evaluation or caching.
+func (field Field[T]) NotReplayable(reason string) Field[T] {
+	field.Spec.NotReplayable = reason
 	return field
 }
 

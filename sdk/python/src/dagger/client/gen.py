@@ -15265,6 +15265,46 @@ class Workspace(Type):
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
+    def checkpoint(
+        self,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        max_untracked_file_bytes: int | None = None,
+        max_untracked_total_bytes: int | None = None,
+        max_untracked_files: int | None = None,
+    ) -> Self:
+        """Return this workspace as a frozen value.
+
+        Tracked changes are captured automatically; untracked paths require
+        approval. Git refs are pinned. The recipe is portable when a remote
+        can serve its base, otherwise the checkpoint is frozen for this
+        session only.
+
+        Parameters
+        ----------
+        include:
+            Include and approve matching nonignored untracked paths, relative
+            to the workspace root.
+        exclude:
+            Exclude matching paths from capture.
+        max_untracked_file_bytes:
+            Maximum size of an untracked file, in bytes.
+        max_untracked_total_bytes:
+            Maximum total size of untracked files, in bytes.
+        max_untracked_files:
+            Maximum number of untracked files.
+        """
+        _args = [
+            Arg("include", include, None),
+            Arg("exclude", exclude, None),
+            Arg("maxUntrackedFileBytes", max_untracked_file_bytes, None),
+            Arg("maxUntrackedTotalBytes", max_untracked_total_bytes, None),
+            Arg("maxUntrackedFiles", max_untracked_files, None),
+        ]
+        _ctx = self._select("checkpoint", _args)
+        return Workspace(_ctx)
+
     def checks(
         self,
         *,
@@ -15744,6 +15784,26 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
+    async def portable(self) -> bool:
+        """Whether this workspace's recipe can be replayed without its
+        originating client.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("portable", _args)
+        return await _ctx.execute(bool)
+
     def reloaded(self) -> Self:
         """Return this workspace with its cached host reads invalidated, so
         subsequent file and directory reads re-read the live host instead of a
@@ -15941,6 +16001,38 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def with_config_environment(self, name: str) -> Self:
+        """Select the config environment carried by this workspace.
+
+        Parameters
+        ----------
+        name:
+            Environment name, or empty to clear the selection.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withConfigEnvironment", _args)
+        return Workspace(_ctx)
+
+    def with_config_paths(self, config_file: str, lock_file: str) -> Self:
+        """Select workspace-root-relative config and lockfile paths. Empty paths
+        clear the selection.
+
+        Parameters
+        ----------
+        config_file:
+            Config file path.
+        lock_file:
+            Lockfile path.
+        """
+        _args = [
+            Arg("configFile", config_file),
+            Arg("lockFile", lock_file),
+        ]
+        _ctx = self._select("withConfigPaths", _args)
         return Workspace(_ctx)
 
     def with_config_value(
