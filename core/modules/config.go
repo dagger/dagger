@@ -71,13 +71,17 @@ func ParseModuleConfigForFormat(src []byte, format ConfigFormat) (*ModuleConfigW
 
 func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, error) {
 	// before attempting to parse the entire config, just read the
-	// engineVersion field, to perform version checks to see if it's even
-	// possible
+	// format and engineVersion fields, to select the parser and perform
+	// version checks before parsing the complete config.
 	var meta struct {
-		EngineVersion string `toml:"engineVersion"`
+		ManifestVersion int    `toml:"manifestVersion"`
+		EngineVersion   string `toml:"engineVersion"`
 	}
 	if err := toml.Unmarshal(src, &meta); err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if meta.ManifestVersion != 0 {
+		return parseModuleManifestV2TOML(src, meta.ManifestVersion)
 	}
 	if err := checkModuleConfigVersion(meta.EngineVersion); err != nil {
 		return nil, err
@@ -95,6 +99,41 @@ func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, erro
 	modCfg := current.moduleConfigWithUserFields()
 	normalizeLoadedModuleConfig(&modCfg.ModuleConfig)
 	return modCfg, nil
+}
+
+func parseModuleManifestV2TOML(src []byte, manifestVersion int) (*ModuleConfigWithUserFields, error) {
+	if manifestVersion != ModuleManifestVersion2 {
+		return nil, fmt.Errorf("unsupported %s manifest version %d", Filename, manifestVersion)
+	}
+	if err := validateModuleManifestV2TOML(src); err != nil {
+		return nil, err
+	}
+
+	var manifest ModuleManifestV2
+	if err := toml.Unmarshal(src, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if strings.TrimSpace(manifest.Name) == "" {
+		return nil, fmt.Errorf("%s manifest version 2 requires name", Filename)
+	}
+	switch manifest.Entrypoint.Kind {
+	case ModuleEntrypointKindDang, ModuleEntrypointKindModule:
+	case "":
+		return nil, fmt.Errorf("%s manifest version 2 requires entrypoint.kind", Filename)
+	default:
+		return nil, fmt.Errorf("%s manifest version 2 has unsupported entrypoint kind %q", Filename, manifest.Entrypoint.Kind)
+	}
+	if strings.TrimSpace(manifest.Entrypoint.Source) == "" {
+		return nil, fmt.Errorf("%s manifest version 2 requires entrypoint.source", Filename)
+	}
+
+	return &ModuleConfigWithUserFields{
+		ModuleConfig: ModuleConfig{
+			ManifestVersion: manifest.ManifestVersion,
+			Name:            manifest.Name,
+			Entrypoint:      &manifest.Entrypoint,
+		},
+	}, nil
 }
 
 func parseLegacyModuleConfigJSON(src []byte) (*ModuleConfigWithUserFields, error) {
@@ -141,9 +180,19 @@ func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format Con
 	switch format {
 	case ConfigFormatCurrent:
 		var buf bytes.Buffer
-		err = toml.NewEncoder(&buf).
-			Order(toml.OrderPreserve).
-			Encode(newCurrentModuleConfigWithUserFields(modCfg))
+		encoder := toml.NewEncoder(&buf).Order(toml.OrderPreserve)
+		if modCfg.ManifestVersion == ModuleManifestVersion2 {
+			if modCfg.Entrypoint == nil {
+				return nil, fmt.Errorf("%s manifest version 2 requires entrypoint", Filename)
+			}
+			err = encoder.Encode(&ModuleManifestV2{
+				ManifestVersion: modCfg.ManifestVersion,
+				Name:            modCfg.Name,
+				Entrypoint:      *modCfg.Entrypoint,
+			})
+		} else {
+			err = encoder.Encode(newCurrentModuleConfigWithUserFields(modCfg))
+		}
 		out = buf.Bytes()
 	case ConfigFormatLegacy:
 		out, err = json.MarshalIndent(modCfg, "", "  ")
@@ -168,8 +217,15 @@ type ModuleConfigWithUserFields struct {
 // ModuleConfig is the config for a single module as loaded from a module config file.
 // Only contains fields that are set/edited by dagger utilities.
 type ModuleConfig struct {
+	// ManifestVersion selects the dagger-module.toml schema. Zero identifies
+	// the transitional pre-v2 TOML schema.
+	ManifestVersion int `json:"manifestVersion,omitempty"`
+
 	// The name of the module.
 	Name string `json:"name"`
+
+	// Entrypoint defines how the engine loads and calls a manifest v2 module.
+	Entrypoint *ModuleEntrypointConfig `json:"entrypoint,omitempty"`
 
 	// The version of the engine this module was last updated with.
 	EngineVersion string `json:"engineVersion"`

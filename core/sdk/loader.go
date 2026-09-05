@@ -46,6 +46,9 @@ func (l *Loader) SDKForModule(
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
 ) (_ core.SDK, rerr error) {
+	if parentSrc != nil && parentSrc.Entrypoint != nil {
+		return l.entrypointForModule(parentSrc)
+	}
 	if sdk == nil {
 		return nil, errMissingSDKRef
 	}

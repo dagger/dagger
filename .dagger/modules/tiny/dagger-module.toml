@@ -1,0 +1,6 @@
+manifestVersion = 2
+name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "entrypoint"

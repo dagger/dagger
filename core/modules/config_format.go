@@ -3,9 +3,32 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	toml "github.com/pelletier/go-toml"
 )
+
+const ModuleManifestVersion2 = 2
+
+type ModuleEntrypointKind string
+
+const (
+	ModuleEntrypointKindDang   ModuleEntrypointKind = "dang"
+	ModuleEntrypointKindModule ModuleEntrypointKind = "module"
+)
+
+// ModuleManifestV2 is the version 2 dagger-module.toml schema.
+type ModuleManifestV2 struct {
+	ManifestVersion int                    `toml:"manifestVersion"`
+	Name            string                 `toml:"name"`
+	Entrypoint      ModuleEntrypointConfig `toml:"entrypoint"`
+}
+
+// ModuleEntrypointConfig selects and configures a module entrypoint.
+type ModuleEntrypointConfig struct {
+	Kind   ModuleEntrypointKind `json:"kind" toml:"kind"`
+	Source string               `json:"source" toml:"source"`
+}
 
 // CurrentModuleConfigWithUserFields is the public schema for dagger-module.toml.
 type CurrentModuleConfigWithUserFields struct {
@@ -201,6 +224,31 @@ func validateCurrentModuleConfigTOML(data []byte) error {
 			}
 		}
 	}
+	return nil
+}
+
+func validateModuleManifestV2TOML(data []byte) error {
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return fmt.Errorf("failed to decode module config: %w", err)
+	}
+
+	for _, key := range tree.Keys() {
+		if !slices.Contains([]string{"manifestVersion", "name", "entrypoint"}, key) {
+			return fmt.Errorf("%s manifest version 2 does not support %q", Filename, key)
+		}
+	}
+
+	entrypoint, ok := tree.Get("entrypoint").(*toml.Tree)
+	if !ok {
+		return fmt.Errorf("%s manifest version 2 requires entrypoint", Filename)
+	}
+	for _, key := range entrypoint.Keys() {
+		if !slices.Contains([]string{"kind", "source"}, key) {
+			return fmt.Errorf("%s manifest version 2 entrypoint does not support %q", Filename, key)
+		}
+	}
+
 	return nil
 }
 
