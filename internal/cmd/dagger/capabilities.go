@@ -315,7 +315,6 @@ func init() {
 		functionsAliasCmd,
 		moduleUpdateCmd,
 		installedCmd,
-		apiClientListCmd,
 		moduleClientScopeCmd,
 		moduleClientListCmd,
 		sdkListCmd,
