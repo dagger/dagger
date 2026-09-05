@@ -154,7 +154,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			}
 			return rows
 		}
-		resultID := func(id dagger.ContainerID) uint64 {
+		resultID := func(id dagger.ID) uint64 {
 			t.Helper()
 			var decoded call.ID
 			require.NoError(t, decoded.Decode(string(id)))
@@ -227,14 +227,17 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.Zero(t, rowsA[pid].Value.Counts["execRun"])
 		require.EqualValues(t, 1, rowsA[jid].Value.Counts["execRun"])
 		jointParts := rowsA[jid].Value.Parts
+		for _, part := range []string{"fs", "execMeta", "mount:/joint"} {
+			require.NotEmpty(t, jointParts[part].OpenSnapshotID)
+		}
 		stopEngine(ctx, t, upstreamA, tunnelA, clientA)
 		upstreamA, tunnelA, clientA = nil, nil, nil
 
 		upstreamB, tunnelB, clientB := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamB, tunnelB, clientB) })
-		_, err = clientB.LoadContainerFromID(typedID).User(ctx)
+		_, err = dagger.Ref[*dagger.Container](clientB, typedID).User(ctx)
 		require.NoError(t, err)
-		stdout, err := clientB.LoadContainerFromID(jointID).Stdout(ctx)
+		stdout, err := dagger.Ref[*dagger.Container](clientB, jointID).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "completed", stdout)
 		rowsB := readRows(upstreamB)
@@ -254,8 +257,8 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		upstreamC, tunnelC, clientC := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamC, tunnelC, clientC) })
-		typedC := clientC.LoadContainerFromID(typedID)
-		envelopeC := clientC.LoadContainerFromID(envelopeID)
+		typedC := dagger.Ref[*dagger.Container](clientC, typedID)
+		envelopeC := dagger.Ref[*dagger.Container](clientC, envelopeID)
 		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
 			_, err := ctr.User(ctx)
 			require.NoError(t, err)
@@ -273,7 +276,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.NoError(t, err)
 			require.Equal(t, strings.Repeat("payload-31\n", 512), contents)
 		}
-		jointC := clientC.LoadContainerFromID(jointID)
+		jointC := dagger.Ref[*dagger.Container](clientC, jointID)
 		contents, err := jointC.File("/joint/output").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "joint", contents)
@@ -290,6 +293,21 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			require.False(t, row.Value.Parts["fs"].Computed)
 			logRow("saved mounted output opened", row)
 		}
+		// Construct schema children while the completed parent's rootfs is closed.
+		// Their fresh selectors must route through that parent and open its output.
+		metadataChild := jointC.WithLabel("restored-child", "yes")
+		mountChild := jointC.WithMountedDirectory("/extra", clientC.Directory().WithNewFile("child", "extra"))
+		_, err = metadataChild.ID(ctx)
+		require.NoError(t, err)
+		_, err = mountChild.ID(ctx)
+		require.NoError(t, err)
+		checkClosed(readRows(upstreamC)[jid], "fs", jointParts["fs"].OpenSnapshotID)
+		for _, child := range []*dagger.Container{metadataChild, mountChild} {
+			contents, err := child.File("/etc/alpine-release").Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, contents)
+		}
+		require.EqualValues(t, 1, readRows(upstreamC)[jid].Value.Counts["storedOpen:fs"])
 		for _, ctr := range []*dagger.Container{typedC, envelopeC} {
 			contents, err := ctr.File("/exec-ran").Contents(ctx)
 			require.NoError(t, err)
