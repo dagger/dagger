@@ -3337,6 +3337,28 @@ export type WorkspaceTerminalsOpts = {
   include?: string[]
 }
 
+export type WorkspaceWithCommitOpts = {
+  /**
+   * Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+   */
+  paths?: string[]
+
+  /**
+   * RFC3339 author and committer date. Required for reproducible commits.
+   */
+  date: string
+
+  /**
+   * Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+   */
+  authorName?: string
+
+  /**
+   * Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+   */
+  authorEmail?: string
+}
+
 export type WorkspaceWithClientOpts = {
   /**
    * Optional SDK name. Inspect all installed SDKs when omitted.
@@ -15759,6 +15781,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+   *
+   * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+   * @param message Commit message.
+   * @param opts.paths Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+   * @param opts.date RFC3339 author and committer date. Required for reproducible commits.
+   * @param opts.authorName Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+   * @param opts.authorEmail Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+   */
+  withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
+    const ctx = this._ctx.select("withCommit", { message, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a generated module client added to one SDK scope.
    *
    * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
@@ -15833,6 +15870,16 @@ export class Workspace extends BaseClient {
    */
   withDirectory = (path: string, source: Directory): Workspace => {
     const ctx = this._ctx.select("withDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Set the default author and committer identity carried by this workspace.
+   * @param name Git author name.
+   * @param email Git author email.
+   */
+  withGitAuthor = (name: string, email: string): Workspace => {
+    const ctx = this._ctx.select("withGitAuthor", { name, email })
     return new Workspace(ctx)
   }
 

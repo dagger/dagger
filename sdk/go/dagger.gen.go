@@ -17060,6 +17060,43 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+	Paths []string
+	// Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+	AuthorName string
+	// Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+	AuthorEmail string
+}
+
+// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+//
+// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+	}
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithClientOpts contains options for Workspace.WithClient
 type WorkspaceWithClientOpts struct {
 	// Optional SDK name. Inspect all installed SDKs when omitted.
@@ -17172,6 +17209,17 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	q := r.query.Select("withDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Set the default author and committer identity carried by this workspace.
+func (r *Workspace) WithGitAuthor(name string, email string) *Workspace {
+	q := r.query.Select("withGitAuthor")
+	q = q.Arg("name", name)
+	q = q.Arg("email", email)
 
 	return &Workspace{
 		query: q,

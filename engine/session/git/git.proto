@@ -33,7 +33,11 @@ message CredentialInfo {
   string password = 4;
 }
 
-message GitConfigRequest {}
+message GitConfigRequest {
+  // Optional checkout for effective repository-local config (including worktrees).
+  // Empty retains the system/global-only config query.
+  string checkout_path = 1;
+}
 
 message GitConfigResponse {
   oneof result {

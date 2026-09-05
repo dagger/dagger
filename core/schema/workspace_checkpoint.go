@@ -405,6 +405,16 @@ func checkpointWorkspaceMetadataComposition(
 		return inst, err
 	}
 	inst = withEnv
+	var withAuthor dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, inst, &withAuthor, dagql.Selector{
+		Field: "withGitAuthor", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(metadata.GitAuthorName)},
+			{Name: "email", Value: dagql.NewString(metadata.GitAuthorEmail)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	inst = withAuthor
 	if mounts, ok := metadata.MountsDir(); ok {
 		for _, mountPath := range metadata.MountPoints() {
 			stat, err := mounts.Self().Stat(ctx, mounts, srv, mountPath, true)

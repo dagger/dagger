@@ -138,6 +138,10 @@ type Workspace struct {
 	// workspace selection.
 	selectedEnv string
 
+	// Git identity captured at workspace load, not at commit or recipe replay.
+	GitAuthorName  string
+	GitAuthorEmail string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -620,6 +624,8 @@ type persistedWorkspacePayload struct {
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
 	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
+	GitAuthorName   string                        `json:"gitAuthorName,omitempty"`
+	GitAuthorEmail  string                        `json:"gitAuthorEmail,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -770,6 +776,8 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		ClientID:        ws.ClientID,
 		HostPath:        ws.hostPath,
 		SelectedEnv:     ws.selectedEnv,
+		GitAuthorName:   ws.GitAuthorName,
+		GitAuthorEmail:  ws.GitAuthorEmail,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -857,6 +865,8 @@ func (*Workspace) DecodePersistedObject(
 		ClientID:        persisted.ClientID,
 		hostPath:        persisted.HostPath,
 		selectedEnv:     persisted.SelectedEnv,
+		GitAuthorName:   persisted.GitAuthorName,
+		GitAuthorEmail:  persisted.GitAuthorEmail,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)

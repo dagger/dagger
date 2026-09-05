@@ -15981,6 +15981,48 @@ class Workspace(Type):
         _ctx = self._select("withClient", _args)
         return Workspace(_ctx)
 
+    def with_commit(
+        self,
+        message: str,
+        date: str,
+        *,
+        paths: list[str] | None = None,
+        author_name: str | None = None,
+        author_email: str | None = None,
+    ) -> Self:
+        """Commit uncommitted changes and return a frozen workspace with Git HEAD
+        advanced.
+
+        The host checkout is not modified. Changes outside the selected paths
+        remain uncommitted.
+
+        Parameters
+        ----------
+        message:
+            Commit message.
+        date:
+            RFC3339 author and committer date. Required for reproducible
+            commits.
+        paths:
+            Literal paths relative to the workspace cwd. Empty commits
+            everything. Renames must include both paths.
+        author_name:
+            Author and committer name. Defaults to the identity captured at
+            workspace load, otherwise Dagger.
+        author_email:
+            Author and committer email. Defaults to the identity captured at
+            workspace load, otherwise dagger@localhost.
+        """
+        _args = [
+            Arg("message", message),
+            Arg("date", date),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("authorName", author_name, None),
+            Arg("authorEmail", author_email, None),
+        ]
+        _ctx = self._select("withCommit", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -16090,6 +16132,24 @@ class Workspace(Type):
             Arg("source", source),
         ]
         _ctx = self._select("withDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_git_author(self, name: str, email: str) -> Self:
+        """Set the default author and committer identity carried by this
+        workspace.
+
+        Parameters
+        ----------
+        name:
+            Git author name.
+        email:
+            Git author email.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("email", email),
+        ]
+        _ctx = self._select("withGitAuthor", _args)
         return Workspace(_ctx)
 
     def with_file(

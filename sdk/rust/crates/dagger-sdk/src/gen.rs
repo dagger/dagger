@@ -15511,6 +15511,18 @@ pub struct WorkspaceTerminalsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithCommitOpts<'a> {
+    /// Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+    #[builder(setter(into, strip_option), default)]
+    pub author_email: Option<&'a str>,
+    /// Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub author_name: Option<&'a str>,
+    /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithClientOpts<'a> {
     /// Optional SDK name. Inspect all installed SDKs when omitted.
     #[builder(setter(into, strip_option), default)]
@@ -16377,6 +16389,56 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+    /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit(&self, message: impl Into<String>, date: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+    /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit_opts<'a>(
+        &self,
+        message: impl Into<String>,
+        date: impl Into<String>,
+        opts: WorkspaceWithCommitOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(author_name) = opts.author_name {
+            query = query.arg("authorName", author_name);
+        }
+        if let Some(author_email) = opts.author_email {
+            query = query.arg("authorEmail", author_email);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a named config environment created.
     ///
     /// # Arguments
@@ -16512,6 +16574,22 @@ impl Workspace {
                 Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the default author and committer identity carried by this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Git author name.
+    /// * `email` - Git author email.
+    pub fn with_git_author(&self, name: impl Into<String>, email: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withGitAuthor");
+        query = query.arg("name", name.into());
+        query = query.arg("email", email.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

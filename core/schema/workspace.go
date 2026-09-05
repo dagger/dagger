@@ -48,6 +48,34 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Checkpoints host-backed receivers before committing").
+			Doc("Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.",
+				"The host checkout is not modified. Changes outside the selected paths remain uncommitted.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost."),
+			),
+		dagql.NodeFunc("__commitBase", s.commitBase).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Materialize a frozen workspace's Git checkout with full history."),
+		dagql.NodeFunc("__commitRepository", s.commitRepository).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Open the committed repository, preserving its logical origin."),
+		dagql.NodeFunc("__commitDirectory", s.commitDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Create a commit in a frozen workspace's scratch repository."),
+		dagql.NodeFunc("withGitAuthor", s.withGitAuthor).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Set the default author and committer identity carried by this workspace.").
+			Args(dagql.Arg("name").Doc("Git author name."), dagql.Arg("email").Doc("Git author email.")),
 		dagql.NodeFunc("checkpoint", s.checkpoint).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").

@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Add Workspace.withCommit to create real Git commits in frozen workspaces,
+  with deterministic dates, captured author identity, and optional path scopes.
+  Host-backed workspaces are checkpointed before committing; the local checkout
+  is not changed. Unselected edits remain uncommitted on the returned workspace.
+time: 2026-09-05T18:00:00Z
+custom:
+  Author: vito
+  PR: ""

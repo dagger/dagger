@@ -456,7 +456,7 @@ func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (s
 	return response.Response, nil
 }
 
-func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error) {
+func (c *Client) GetGitConfig(ctx context.Context, checkoutPath ...string) ([]*git.GitConfigEntry, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -466,7 +466,11 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := git.NewGitClient(caller.Conn()).GetConfig(ctx, &git.GitConfigRequest{})
+	req := &git.GitConfigRequest{}
+	if len(checkoutPath) > 0 {
+		req.CheckoutPath = checkoutPath[0]
+	}
+	response, err := git.NewGitClient(caller.Conn()).GetConfig(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query git config: %w", err)
 	}

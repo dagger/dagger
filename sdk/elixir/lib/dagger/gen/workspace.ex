@@ -571,6 +571,32 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+
+  The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+  """
+  @spec with_commit(t(), String.t(), String.t(), [
+          {:paths, [String.t()]},
+          {:author_name, String.t() | nil},
+          {:author_email, String.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommit")
+      |> QB.put_arg("message", message)
+      |> QB.put_arg("date", date)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("authorName", optional_args[:author_name])
+      |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a generated module client added to one SDK scope.
 
   Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
@@ -677,6 +703,23 @@ defmodule Dagger.Workspace do
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Set the default author and committer identity carried by this workspace.
+  """
+  @spec with_git_author(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def with_git_author(%__MODULE__{} = workspace, name, email) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withGitAuthor")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("email", email)
 
     %Dagger.Workspace{
       query_builder: query_builder,

@@ -7642,6 +7642,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCommit",
+			"p": "Dagger/Workspace.html#method_withCommit",
+			"d": "<p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withClient",
 			"p": "Dagger/Workspace.html#method_withClient",
 			"d": "<p>Return this workspace with a generated module client added to one SDK scope.</p>"
@@ -7675,6 +7681,12 @@
 			"n": "Dagger\\Workspace::withDirectory",
 			"p": "Dagger/Workspace.html#method_withDirectory",
 			"d": "<p>Return this workspace with a directory merged into the given path, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withGitAuthor",
+			"p": "Dagger/Workspace.html#method_withGitAuthor",
+			"d": "<p>Set the default author and committer identity carried by this workspace.</p>"
 		},
 		{
 			"t": "M",

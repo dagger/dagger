@@ -467,6 +467,33 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+     *
+     * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+     */
+    public function withCommit(
+        string $message,
+        string $date,
+        ?array $paths = [],
+        ?string $authorName = null,
+        ?string $authorEmail = null,
+    ): Workspace {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('message', $message);
+        $innerQueryBuilder->setArgument('date', $date);
+        if (null !== $paths) {
+        $innerQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $authorName) {
+        $innerQueryBuilder->setArgument('authorName', $authorName);
+        }
+        if (null !== $authorEmail) {
+        $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a generated module client added to one SDK scope.
      *
      * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
@@ -547,6 +574,17 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the default author and committer identity carried by this workspace.
+     */
+    public function withGitAuthor(string $name, string $email): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGitAuthor');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('email', $email);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

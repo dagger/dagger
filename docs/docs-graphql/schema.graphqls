@@ -6000,6 +6000,34 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+
+  The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+  """
+  withCommit(
+    """Commit message."""
+    message: String!
+
+    """
+    Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+    """
+    paths: [String!] = []
+
+    """RFC3339 author and committer date. Required for reproducible commits."""
+    date: String!
+
+    """
+    Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+    """
+    authorName: String
+
+    """
+    Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+    """
+    authorEmail: String
+  ): Workspace!
+
+  """
   Return this workspace with a generated module client added to one SDK scope.
 
   Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
@@ -6080,6 +6108,17 @@ type Workspace implements Node {
 
     """Directory to merge there."""
     source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
+  Set the default author and committer identity carried by this workspace.
+  """
+  withGitAuthor(
+    """Git author name."""
+    name: String!
+
+    """Git author email."""
+    email: String!
   ): Workspace!
 
   """
