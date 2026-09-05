@@ -87,7 +87,7 @@ type LLM struct {
 	// The full message history, exposed over the API as first-class content
 	// blocks so that conversations can be queried and branched.
 	//
-	// Installed as a version-gated field in core/schema/llm.go rather than via
+	// Installed as a field with version-specific visibility in core/schema/llm.go rather than via
 	// a `field:"true"` tag, since struct tag fields cannot carry a view filter.
 	Messages []*LLMMessage
 
@@ -349,7 +349,7 @@ type LLMContentBlock struct {
 
 	// Provider-specific opaque data. Exposed so a conversation exported via
 	// messages can be reconstructed losslessly with withResponse — some
-	// providers (e.g. Anthropic) reject replayed thinking blocks without it.
+	// providers (e.g. Anthropic) reject resubmitted thinking blocks without it.
 	Signature string `field:"true" json:"signature,omitempty" doc:"Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation."`
 }
 
@@ -656,16 +656,16 @@ func (r *LLMRouter) isLocalModel(model string) bool {
 	return r.LocalBaseURL != "" && r.LocalAPICompat != "" && r.LocalModel == model
 }
 
-func (r *LLMRouter) isReplay(model string) bool {
-	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
+func (r *LLMRouter) isRecording(model string) bool {
+	return strings.HasPrefix(model, "recording-") || strings.HasPrefix(model, "recording/")
 }
 
-func (r *LLMRouter) getReplay(model string) ([]*LLMMessage, error) {
-	model, ok := strings.CutPrefix(model, "replay-")
+func (r *LLMRouter) getRecording(model string) ([]*LLMMessage, error) {
+	model, ok := strings.CutPrefix(model, "recording-")
 	if !ok {
-		model, ok = strings.CutPrefix(model, "replay/")
+		model, ok = strings.CutPrefix(model, "recording/")
 		if !ok {
-			return nil, fmt.Errorf("model %q is not replayable", model)
+			return nil, fmt.Errorf("model %q is not a recording", model)
 		}
 	}
 
@@ -673,7 +673,7 @@ func (r *LLMRouter) getReplay(model string) ([]*LLMMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeReplayMessages(result)
+	return decodeRecordedMessages(result)
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
@@ -762,13 +762,13 @@ func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	return endpoint
 }
 
-func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
-	replay, err := r.getReplay(model)
+func (r *LLMRouter) routeRecordingModel(model string) (*LLMEndpoint, error) {
+	recording, err := r.getRecording(model)
 	if err != nil {
 		return nil, err
 	}
 	endpoint := &LLMEndpoint{}
-	endpoint.Client = newHistoryReplay(replay)
+	endpoint.Client = newRecordedResponseProvider(recording)
 	return endpoint, nil
 }
 
@@ -873,8 +873,8 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 		}
 	case r.isMistralModel(model):
 		return nil, fmt.Errorf("mistral models are not yet supported")
-	case r.isReplay(model):
-		endpoint, err = r.routeReplayModel(model)
+	case r.isRecording(model):
+		endpoint, err = r.routeRecordingModel(model)
 		if err != nil {
 			return nil, err
 		}
@@ -1779,7 +1779,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	// A tool may have returned an LLM: it acted as a continuation, and the turn
 	// resumes from THAT conversation — its env, tools, system prompts and
 	// history — instead of the one that made the call (see MCP.adoptLLM). Its ID
-	// records the transform, so replay lands on it. The turn's state changes
+	// records the transform, so loading it restores that conversation. The turn's state changes
 	// were folded into the conversation it derived from above, and adoptLLM
 	// refuses a continuation that would drop any, so nothing remains to persist
 	// on top of it.
@@ -2286,11 +2286,12 @@ func (llm *LLM) allowed(ctx context.Context) error {
 }
 
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
-// used both during live step() execution and during replay. callDigest is the
-// DAG digest enabling TUI branching from that point. resultTokens maps a tool
-// call's ID to the estimated token size of the result it produced (populated
-// only during replay, where the whole conversation is known up front), so a
-// replayed tool-call span carries the same result-size badge as a live one.
+// used both during live step() execution and during history emission.
+// callDigest is the DAG digest enabling TUI branching from that point.
+// resultTokens maps a tool call's ID to the estimated token size of the result
+// it produced (populated only during history emission, where the whole
+// conversation is known up front), so an emitted tool-call span carries the
+// same result-size badge as a live one.
 func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
@@ -2392,8 +2393,9 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
 				// Mirror the live tool-call span's result-size badge: the result
-				// itself lives in a later user (tool-result) message, so replay
-				// looks it up by call ID from the pre-scanned conversation.
+				// itself lives in a later user (tool-result) message, so history
+				// emission looks it up by call ID from the pre-scanned
+				// conversation.
 				if tokens := resultTokens[block.CallID]; tokens > 0 {
 					extraAttrs = append(extraAttrs,
 						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
@@ -2438,11 +2440,12 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 	}
 }
 
-// Replay re-emits telemetry spans for all messages in the conversation history.
+// EmitHistory re-emits telemetry spans for all messages in the conversation
+// history.
 // This allows the TUI to display the conversation after loading a saved session.
-func (llm *LLM) Replay(ctx context.Context) {
-	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
-	// replayed tool-call span carries the same result-size badge the live path
+func (llm *LLM) EmitHistory(ctx context.Context) {
+	// Pre-scan for each tool result's estimated size, keyed by call ID, so an
+	// emitted tool-call span carries the same result-size badge the live path
 	// stamps in endToolCallDisplay (the result lives in a later user message).
 	resultTokens := map[string]int64{}
 	for _, msg := range llm.Messages {
@@ -2453,7 +2456,7 @@ func (llm *LLM) Replay(ctx context.Context) {
 		}
 	}
 	for _, msg := range llm.Messages {
-		// We don't have per-message call digests for replay, so pass empty.
+		// We don't have per-message call digests for history emission, so pass empty.
 		// The TUI will still display the messages, just without branch support.
 		emitMessageSpan(ctx, msg, "", resultTokens)
 	}
@@ -2532,10 +2535,10 @@ func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 // workspace binding, and full message history, in that order.
 //
 // It emits from the LLM's *final in-memory state*, never from its recorded ID
-// spine. That is what makes the result bounded and replay-safe. During a
-// session step() appends a withWorkspace selector on every workspace-mutating
+// spine. That is what makes the result bounded and safe to reconstruct. During
+// a session step() appends a withWorkspace selector on every workspace-mutating
 // tool call and a withTools selector on every object rebind, so the spine
-// accumulates each superseded binding; replaying those on a later load
+// accumulates each superseded binding; reapplying those on a later load
 // re-applies edits that are already on disk (or fails outright, once the
 // content they were derived from has moved on). Emitting from final state
 // keeps only the tip-most binding per slot and drops the rest. Tool bindings
@@ -2638,7 +2641,7 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 		})
 	}
 
-	// Replay the conversation in message order. Every message shape the engine
+	// Reconstruct the conversation in message order. Every message shape the engine
 	// can produce maps to a selector; anything else is an error rather than
 	// silent data loss.
 	for i, msg := range llm.Messages {

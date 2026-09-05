@@ -59,7 +59,7 @@ The LLM acts through the methods of the objects it's bound to via
   a new `self`; `step()` persists the transition as a `.withTools` selector on
   the LLM's ID (the same shape it uses to persist a `Changeset` overlay via
   `withWorkspace`), so state transitions are ordinary selectors — durable and
-  reconstructable on replay. At most one binding per object type is kept.
+  reconstructable when loaded. At most one binding per object type is kept.
 - To the *model*, objects are never named, passed, or returned as handles;
   binding is author-side. There is no `Type#N` registry and no free-form
   script surface. Host-writing fields (`export`) are simply not reachable:
@@ -127,7 +127,7 @@ dagger agent                                    # prompt with all of them compos
   prompt; `dagger agent editor go-doc:goDoc` selects a subset
   (colon-qualified with bare-name fallback, inherited from `dagger check`);
   `dagger agent -l` lists. Selection and composition live server-side so the
-  composed LLM is replayable from its ID.
+  composed LLM is reconstructable from its ID.
 
 ## 4. Workspace propagation: who sees which workspace
 
@@ -185,7 +185,7 @@ is **passed explicitly** — never carried implicitly across a module boundary.
 - `@agent`: `core/agents.go`, `core/schema/agents.go`, `core/modtree.go`,
   `internal/cmd/dagger/agent.go`, `core/integration/agents_test.go`
 - Propagation: `core/workspace_context.go` (seeding), `core/modfunc.go`
-  (`loadWorkspaceArg` / `callerInModuleFunction` — the explicit-pass gate),
+  (`loadWorkspaceArg` / `callerInModuleFunction` — the explicit-pass condition),
   `engine/server/session_workspaces.go` (frozen inheritance),
   `core/integration/generators_test.go`
   (`TestWorkspaceGeneratorsSeeOverlayEdits` and the

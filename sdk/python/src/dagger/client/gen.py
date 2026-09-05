@@ -10063,6 +10063,20 @@ class LLM(Type):
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
 
+    async def emit_history(self) -> Self:
+        """Re-emit telemetry spans for the full message history, so a loaded
+        conversation displays in the TUI.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "emitHistory", _args)
+
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
         independently instead of deduplicating to a single cached result.
@@ -10277,20 +10291,6 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
-
-    async def replay(self) -> Self:
-        """Re-emit telemetry spans for the full message history, so a loaded
-        conversation displays in the TUI.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "replay", _args)
 
     async def skills(self) -> list["LLMSkill"]:
         """The skills visible to the model, exactly as the ListSkills tool serves

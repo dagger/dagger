@@ -26,8 +26,8 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	case endpoint.IsOAuth:
 		// Claude Code subscription OAuth: bearer token + Claude Code identity
 		// headers. The endpoint rejects requests that don't look like Claude
-		// Code (see also the system-prompt injection in SendQuery). The token
-		// baked in here is only the value observed at construction; when the
+		// Code (see also the Claude Code system-prompt setup in SendQuery). The
+		// token baked in here is only the value observed at construction; when the
 		// endpoint carries a credential source, credentialTransport overwrites
 		// the header with the current token on every request.
 		opts = append(opts,
@@ -117,8 +117,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	}
 
 	// Reasoning (extended thinking) is enabled for this request only when an
-	// effort is configured. This single condition gates both OutputConfig.Effort
-	// below and whether prior thinking blocks may be replayed: Anthropic rejects
+	// effort is configured. This single condition controls both OutputConfig.Effort
+	// below and whether prior thinking blocks may be resubmitted: Anthropic rejects
 	// a request that carries thinking blocks when thinking isn't enabled for it
 	// ("thinking blocks without thinking enabled"). If a prior turn produced
 	// thinking but this turn has reasoning off, the stored blocks must be dropped.
@@ -165,11 +165,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			case LLMContentThinking:
 				// Round-trip extended thinking. When thinking is enabled and the
 				// assistant made tool calls, Anthropic requires the original
-				// thinking blocks to be replayed unmodified with their signature,
+				// thinking blocks to be resubmitted unmodified with their signature,
 				// or it rejects the request. A block with no text but a signature
 				// is a redacted thinking block (opaque data stored in Signature).
 				//
-				// Only replay thinking (and redacted-thinking) blocks when
+				// Only resubmit thinking (and redacted-thinking) blocks when
 				// reasoning is enabled for this request. If it isn't (effort
 				// cleared, or a model that doesn't support it), Anthropic rejects
 				// a request that carries thinking blocks, so drop them instead.
@@ -419,7 +419,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			})
 		case anthropic.RedactedThinkingBlock:
 			// Redacted thinking carries no readable text, only opaque data that
-			// must be replayed verbatim. Stash it in Signature so the send path
+			// must be resubmitted verbatim. Stash it in Signature so the send path
 			// can reconstruct the block.
 			contentBlocks = append(contentBlocks, &LLMContentBlock{
 				Kind:      LLMContentThinking,

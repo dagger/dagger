@@ -10821,13 +10821,13 @@ export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _contextTokens?: number = undefined
   private readonly _contextWindow?: number = undefined
+  private readonly _emitHistory?: ID = undefined
   private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
   private readonly _reasoningEffort?: string = undefined
-  private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
   private readonly _transcript?: string = undefined
@@ -10840,13 +10840,13 @@ export class LLM extends BaseClient {
     _id?: ID,
     _contextTokens?: number,
     _contextWindow?: number,
+    _emitHistory?: ID,
     _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
     _portableID?: ID,
     _provider?: string,
     _reasoningEffort?: string,
-    _replay?: ID,
     _sync?: ID,
     _tools?: string,
     _transcript?: string,
@@ -10856,13 +10856,13 @@ export class LLM extends BaseClient {
     this._id = _id
     this._contextTokens = _contextTokens
     this._contextWindow = _contextWindow
+    this._emitHistory = _emitHistory
     this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
     this._portableID = _portableID
     this._provider = _provider
     this._reasoningEffort = _reasoningEffort
-    this._replay = _replay
     this._sync = _sync
     this._tools = _tools
     this._transcript = _transcript
@@ -10911,6 +10911,17 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+   */
+  emitHistory = async (): Promise<LLM> => {
+    const ctx = this._ctx.select("emitHistory")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -11037,17 +11048,6 @@ export class LLM extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-   */
-  replay = async (): Promise<LLM> => {
-    const ctx = this._ctx.select("replay")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
