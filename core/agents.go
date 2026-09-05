@@ -9,17 +9,18 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// Agent is a single @agent middleware leaf: a function agent(base: LLM!): LLM!
-// contributed by a module (hack/designs/workspace-agents.md §3).
-type Agent struct {
+// AgentMiddleware is a single @agent middleware leaf: a function
+// agent(base: LLM!): LLM! contributed by a module
+// (hack/designs/workspace-agents.md §3).
+type AgentMiddleware struct {
 	Node *ModTreeNode `json:"node"`
 }
 
-// AgentGroup is the rolled-up set of @agent middlewares across the current
-// module and its installed deps, composable onto a single base LLM.
-type AgentGroup struct {
-	Node   *ModTreeNode `json:"node"`
-	Agents []*Agent     `json:"agents"`
+// AgentMiddlewareGroup is the rolled-up set of @agent middlewares across the
+// current module and its installed deps, composable onto a single base LLM.
+type AgentMiddlewareGroup struct {
+	Node   *ModTreeNode       `json:"node"`
+	Agents []*AgentMiddleware `json:"agents"`
 
 	// BoundWorkspace is the Workspace this group was rolled up from — the one
 	// `Workspace.agents` was called on, including any overlay edits. Compose
@@ -31,7 +32,7 @@ type AgentGroup struct {
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
-func NewAgentGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*AgentGroup, error) {
+func NewAgentMiddlewareGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*AgentMiddlewareGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -41,25 +42,25 @@ func NewAgentGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 	if err != nil {
 		return nil, err
 	}
-	agents := make([]*Agent, 0, len(agentNodes))
+	agents := make([]*AgentMiddleware, 0, len(agentNodes))
 	for _, agentNode := range agentNodes {
-		agents = append(agents, &Agent{Node: agentNode})
+		agents = append(agents, &AgentMiddleware{Node: agentNode})
 	}
 
-	return &AgentGroup{
+	return &AgentMiddlewareGroup{
 		Node:   rootNode,
 		Agents: agents,
 	}, nil
 }
 
-func (*AgentGroup) Type() *ast.Type {
+func (*AgentMiddlewareGroup) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "AgentGroup",
+		NamedType: "AgentMiddlewareGroup",
 		NonNull:   true,
 	}
 }
 
-func (r *AgentGroup) List() []*Agent {
+func (r *AgentMiddlewareGroup) List() []*AgentMiddleware {
 	return r.Agents
 }
 
@@ -67,7 +68,7 @@ func (r *AgentGroup) List() []*Agent {
 // alphabetical module:fn order, returning the composed LLM (hack/designs/workspace-agents.md §3).
 // Each leaf is invoked with base explicitly set to the running accumulator; the
 // composed LLM's ID records the full chain and replays deterministically.
-func (r *AgentGroup) Compose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+func (r *AgentMiddlewareGroup) Compose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	// Compose the agents against the workspace this group was rolled up from, so
 	// each @agent leaf's auto-injected Workspace! and any currentWorkspace read
 	// resolve against BoundWorkspace, not the frozen session workspace.
@@ -114,43 +115,43 @@ func warnToolNameCollisions(ctx context.Context, llm *LLM) {
 	}
 }
 
-func (r *AgentGroup) Clone() *AgentGroup {
+func (r *AgentMiddlewareGroup) Clone() *AgentMiddlewareGroup {
 	cp := *r
 	if cp.Node != nil {
 		cp.Node = cp.Node.Clone()
 	}
-	cp.Agents = make([]*Agent, len(r.Agents))
+	cp.Agents = make([]*AgentMiddleware, len(r.Agents))
 	for i := range cp.Agents {
 		cp.Agents[i] = r.Agents[i].Clone()
 	}
 	return &cp
 }
 
-func (*Agent) Type() *ast.Type {
+func (*AgentMiddleware) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "Agent",
+		NamedType: "AgentMiddleware",
 		NonNull:   true,
 	}
 }
 
-func (a *Agent) Path() []string {
+func (a *AgentMiddleware) Path() []string {
 	return a.Node.Path()
 }
 
 // Name is the fully qualified module:fn path of the agent.
-func (a *Agent) Name() string {
+func (a *AgentMiddleware) Name() string {
 	return a.Node.PathString()
 }
 
-func (a *Agent) Description() string {
+func (a *AgentMiddleware) Description() string {
 	return a.Node.Description
 }
 
-func (a *Agent) OriginalModule() *Module {
+func (a *AgentMiddleware) OriginalModule() *Module {
 	return a.Node.OriginalModule.Self()
 }
 
-func (a *Agent) Clone() *Agent {
+func (a *AgentMiddleware) Clone() *AgentMiddleware {
 	cp := *a
 	cp.Node = a.Node.Clone()
 	return &cp

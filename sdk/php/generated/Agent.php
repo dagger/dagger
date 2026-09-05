@@ -8,15 +8,31 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
+ */
 class Agent extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The description of the agent
+     * Why the loop failed, for a FAILED agent; empty otherwise.
+     *
+     * The snapshot holds the completed prefix — send or resume retries from it.
      */
-    public function description(): string
+    public function error(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'error');
+    }
+
+    /**
+     * The opaque runtime handle minted by the spawn that created this agent.
+     *
+     * It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+     */
+    public function handle(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('handle');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'handle');
     }
 
     /**
@@ -29,7 +45,35 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the fully qualified name of the agent
+     * Preempt the in-flight step, keeping all completed steps, and pause.
+     *
+     * The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
+     *
+     * On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+     */
+    public function interrupt(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interrupt');
+        $id = $this->queryLeaf($leafQueryBuilder, 'interrupt');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Look up a previously sent message by its opaque handle.
+     *
+     * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
+     *
+     * Fails if the agent has no runtime entry in this session, or no record of the given handle.
+     */
+    public function message(string $handle): AgentMessage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('message');
+        $innerQueryBuilder->setArgument('handle', $handle);
+        return new \Dagger\AgentMessage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Display label for the agent; carries no identity.
      */
     public function name(): string
     {
@@ -38,20 +82,170 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The original module in which the agent has been defined
+     * Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+     *
+     * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+     *
+     * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+     *
+     * Idempotent per subscriber; re-subscribing replaces the state set.
      */
-    public function originalModule(): Module
+    public function notify(Agent $subscriber, ?array $on = null): Agent
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('notify');
+        $leafQueryBuilder->setArgument('subscriber', $subscriber);
+        if (null !== $on) {
+        $leafQueryBuilder->setArgument('on', $on);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'notify');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
-     * The path of the agent within its module
+     * Stop draining the mailbox once the in-flight step completes.
+     *
+     * Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+     *
+     * Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
      */
-    public function path(): array
+    public function pause(): Agent
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pause');
+        $id = $this->queryLeaf($leafQueryBuilder, 'pause');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
+     *
+     * The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
+     *
+     * The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
+     *
+     * Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+     */
+    public function rehydrate(?AgentState $state = null, ?string $error = ''): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('rehydrate');
+        if (null !== $state) {
+        $leafQueryBuilder->setArgument('state', $state);
+        }
+        if (null !== $error) {
+        $leafQueryBuilder->setArgument('error', $error);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'rehydrate');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+     *
+     * This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+     *
+     * The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+     *
+     * Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+     */
+    public function reseed(LLM $conversation): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reseed');
+        $leafQueryBuilder->setArgument('conversation', $conversation);
+        $id = $this->queryLeaf($leafQueryBuilder, 'reseed');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+     *
+     * Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+     *
+     * No-op on a running or idle agent.
+     */
+    public function resume(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resume');
+        $id = $this->queryLeaf($leafQueryBuilder, 'resume');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+     *
+     * Never blocks, never drops; concurrent sends queue in order.
+     *
+     * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
+     *
+     * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+     */
+    public function send(string $message, ?string $replyTo = ''): AgentMessage
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('send');
+        $leafQueryBuilder->setArgument('message', $message);
+        if (null !== $replyTo) {
+        $leafQueryBuilder->setArgument('replyTo', $replyTo);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'send');
+        return $this->client->loadObjectFromId(\Dagger\AgentMessage::class, new \Dagger\Id((string)$id), 'AgentMessage');
+    }
+
+    /**
+     * The conversation as of the last committed step: immutable, branchable, persistable.
+     *
+     * The seed conversation if the agent never stepped.
+     *
+     * Branching from it does not affect the agent.
+     */
+    public function snapshot(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('snapshot');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Start the agent's evaluation loop. No-op if it is already running.
+     *
+     * The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+     */
+    public function start(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
+        $id = $this->queryLeaf($leafQueryBuilder, 'start');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Computed lifecycle state; never stored.
+     *
+     * An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+     */
+    public function state(): AgentState
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('state');
+        return \Dagger\AgentState::from((string)$this->queryLeaf($leafQueryBuilder, 'state'));
+    }
+
+    /**
+     * Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+     */
+    public function stop(?bool $kill = false): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
+        if (null !== $kill) {
+        $leafQueryBuilder->setArgument('kill', $kill);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'stop');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+     *
+     * Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+     */
+    public function wait(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('wait');
+        $id = $this->queryLeaf($leafQueryBuilder, 'wait');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 }

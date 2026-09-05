@@ -11,6 +11,7 @@ import (
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
 	telemetry "github.com/dagger/otel-go"
@@ -51,6 +52,133 @@ func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
 	fromJSON.ProcessAttribute(telemetryattrs.LLMToolResultTokensAttr, float64(678))
 	if fromJSON.LLMToolResultTokens != 678 {
 		t.Fatalf("LLMToolResultTokens (float64) = %d, want 678", fromJSON.LLMToolResultTokens)
+	}
+}
+
+// TestProcessAttributeLLMMessageOrigin covers the ingestion of the
+// dagger.io/llm.origin.* vocabulary: the recorded provenance of a message
+// that arrived through an agent mailbox lands on the snapshot's LLMOrigin*
+// fields, and the kind predicates read it back.
+func TestProcessAttributeLLMMessageOrigin(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindAgent)
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentIDAttr, "agent-b")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentNameAttr, "scout")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginRefAttr, "#3")
+	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginReplyToAttr, "#2")
+
+	if snapshot.LLMOriginKind != "AGENT" ||
+		snapshot.LLMOriginAgentID != "agent-b" ||
+		snapshot.LLMOriginAgentName != "scout" ||
+		snapshot.LLMOriginRef != "#3" ||
+		snapshot.LLMOriginReplyTo != "#2" {
+		t.Fatalf("origin attrs not ingested: %+v", snapshot)
+	}
+	if !snapshot.LLMAgentOriginMessage() || snapshot.LLMEventOriginMessage() {
+		t.Fatal("kind predicates disagree with an AGENT origin")
+	}
+
+	var event SpanSnapshot
+	event.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindEvent)
+	if !event.LLMEventOriginMessage() || event.LLMAgentOriginMessage() {
+		t.Fatal("kind predicates disagree with an EVENT origin")
+	}
+
+	var plain SpanSnapshot
+	if plain.LLMAgentOriginMessage() || plain.LLMEventOriginMessage() {
+		t.Fatal("an unmarked message must not read as origin-carrying")
+	}
+}
+
+func TestSpanNameLogUpdatesLiveSpan(t *testing.T) {
+	db := NewDB()
+	spanID := SpanID{SpanID: trace.SpanID{1}}
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	db.SetPrimarySpan(spanID)
+
+	record := newTestLogRecord(
+		trace.TraceID{1},
+		spanID.SpanID,
+		"live name",
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export name record: %v", err)
+	}
+
+	span := db.Spans.Map[spanID]
+	if span.Name != "live name" {
+		t.Fatalf("span name = %q, want %q", span.Name, "live name")
+	}
+	if span.HasLogs {
+		t.Fatal("span-name metadata was marked as ordinary log output")
+	}
+	if len(db.PrimaryLogs[spanID]) != 0 {
+		t.Fatal("span-name metadata was buffered as primary output")
+	}
+
+	// A repeated in-flight ExportSpans heartbeat still carries the name captured
+	// at span start. It must not roll back the newer log-carried name.
+	heartbeat := tracetest.SpanStub{
+		Name: "starting name",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{1},
+			SpanID:  spanID.SpanID,
+		}),
+		StartTime: start,
+		EndTime:   start.Add(-time.Second),
+	}.Snapshot()
+	if err := db.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{heartbeat}); err != nil {
+		t.Fatalf("export frozen span heartbeat: %v", err)
+	}
+	if span.Name != "live name" {
+		t.Fatalf("frozen heartbeat rolled span name back to %q", span.Name)
+	}
+
+	// Snapshot imports use the same protection for recorded/live trace loading.
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	if span.Name != "live name" {
+		t.Fatalf("frozen snapshot rolled span name back to %q", span.Name)
+	}
+
+	final := tracetest.SpanStub{
+		Name:        "final name",
+		SpanContext: heartbeat.SpanContext(),
+		StartTime:   start,
+		EndTime:     start.Add(time.Second),
+	}.Snapshot()
+	if err := db.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{final}); err != nil {
+		t.Fatalf("export final span: %v", err)
+	}
+	if span.Name != "final name" {
+		t.Fatalf("final span name = %q, want final name", span.Name)
+	}
+}
+
+func TestSpanNameLogBeforeSpanSnapshot(t *testing.T) {
+	db := NewDB()
+	spanID := SpanID{SpanID: trace.SpanID{1}}
+	record := newTestLogRecord(
+		trace.TraceID{1},
+		spanID.SpanID,
+		"early name",
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
+		t.Fatalf("export name record: %v", err)
+	}
+
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID, Name: "starting name", StartTime: start, EndTime: start.Add(-time.Second)},
+	})
+	if got := db.Spans.Map[spanID].Name; got != "early name" {
+		t.Fatalf("span name = %q, want early log-carried name", got)
 	}
 }
 

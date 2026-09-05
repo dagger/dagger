@@ -17,6 +17,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -24,6 +26,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
@@ -68,26 +71,60 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	// A bytes body with no content type: not a call payload at all, but still
 	// binary data that must never render as log text.
-	untypedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("UNTYPED-BYTES")))
-	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"))
-	return []sdklog.Record{before, payloadBytes, typedText, untypedBytes, after}
+	spanName := frontendTestLogRecord(spanID, otellog.StringValue("updated span name"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	unreservedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("not text")))
+	malformedRole := frontendTestLogRecord(spanID, otellog.StringValue("malformed role\n"),
+		otellog.Bool(telemetryattrs.LogRoleAttr, true))
+	malformedProgress := frontendTestLogRecord(spanID, otellog.StringValue("malformed progress\n"),
+		otellog.Bool(telemetryattrs.ProgressItemAttr, true))
+	malformedAgentState := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent state\n"),
+		otellog.Int64(telemetryattrs.AgentStateAttr, 1))
+	malformedAgentSnapshot := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent snapshot\n"),
+		otellog.Bool(telemetryattrs.AgentSnapshotDigestAttr, true))
+	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"),
+		otellog.Bool(telemetry.ContentTypeAttr, true),
+		otellog.String(telemetry.LogsVerboseAttr, "not bool"),
+		otellog.String(telemetry.StdioEOFAttr, "not bool"),
+		otellog.String(telemetry.LogsGlobalAttr, "not bool"),
+		otellog.String(telemetry.StdioStreamAttr, "not int"),
+		otellog.Bool(telemetry.DagDigestAttr, true))
+	eof := frontendTestLogRecord(spanID, otellog.StringValue(""),
+		otellog.Bool(telemetry.StdioEOFAttr, true))
+	return []sdklog.Record{
+		before,
+		payloadBytes,
+		typedText,
+		spanName,
+		unreservedBytes,
+		malformedRole,
+		malformedProgress,
+		malformedAgentState,
+		malformedAgentSnapshot,
+		after,
+		eof,
+	}
 }
 
-func requireOnlyOrdinaryFrontendLogs(t *testing.T, records []sdklog.Record) {
+func requireRenderableFrontendLogs(t *testing.T, records []sdklog.Record) {
 	t.Helper()
-	require.Len(t, records, 2)
+	require.Len(t, records, 3)
+	for _, record := range records {
+		require.Equal(t, otellog.KindString, record.Body().Kind())
+	}
 	require.Equal(t, "before\n", records[0].Body().AsString())
 	require.Equal(t, "after\n", records[1].Body().AsString())
+	require.Empty(t, records[2].Body().AsString(), "stdio EOF must remain available to frontends")
 }
 
-func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
+func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 	knownSpanID := trace.SpanID{1}
 	unknownSpanID := trace.SpanID{2}
 	knownRecords := frontendMixedLogRecords(t, knownSpanID)
 	unknownRecords := frontendMixedLogRecords(t, unknownSpanID)
 
-	t.Run("filter preserves ordinary order", func(t *testing.T) {
-		requireOnlyOrdinaryFrontendLogs(t, renderableLogRecords(knownRecords))
+	t.Run("ingestion preserves renderable order", func(t *testing.T) {
+		requireRenderableFrontendLogs(t, dagui.NewDB().IngestLogs(knownRecords))
 	})
 
 	t.Run("streaming", func(t *testing.T) {
@@ -101,7 +138,7 @@ func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
 		knownLogs := fe.logs.testLogs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, knownLogs)
 		require.Equal(t, "before\nafter\n", knownLogs.rawBuf.String())
-		requireOnlyOrdinaryFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
+		requireRenderableFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
 		require.Len(t, fe.logs.pendingLogs, 1, "reserved records remained buffered for missing spans")
 	})
 
@@ -133,6 +170,153 @@ func TestCallPayloadRecordsExcludedFromFrontendLogs(t *testing.T) {
 		spanLogs := session.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, spanLogs)
 		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+	})
+}
+
+func TestTerminalTitleFollowsPrimaryZoomAndLiveName(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, Name: "root title"},
+		{ID: childID, ParentID: rootID, Name: "child title"},
+	})
+
+	term := tuist.NewHeadlessTerminal(120, 20)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("root title"))
+
+	term.Reset()
+	fe.ZoomToSpan(childID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("child title"))
+
+	term.Reset()
+	nameRecord := frontendTestLogRecord(
+		childID.SpanID,
+		otellog.StringValue("renamed live"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+	)
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
+	fe.tui.Step()
+	require.Equal(t, "renamed live", db.Spans.Map[childID].Name)
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("renamed live"))
+	require.Nil(t, fe.logs.Logs[childID], "span name record rendered as log output")
+
+	term.Reset()
+	fe.Update()
+	fe.tui.Step()
+	require.NotContains(t, term.Output(), "\x1b]2;", "unchanged title was written again")
+
+	term.Reset()
+	fe.ZoomToSpan(rootID)
+	fe.tui.Step()
+	require.Contains(t, term.Output(), ansi.SetWindowTitle("root title"))
+}
+
+func TestSanitizeTerminalTitle(t *testing.T) {
+	require.Equal(t, "safename", sanitizeTerminalTitle("safe\x1b]2;injected\x07\nname"))
+}
+
+func renderDump(t *testing.T, id *call.ID, dump Dump) string {
+	t.Helper()
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	require.NoError(t, dump.DumpID(out, id))
+	return buf.String()
+}
+
+func dumpTestType(name string) *ast.Type {
+	return &ast.Type{NamedType: name, NonNull: true}
+}
+
+func callRenderingTestID() *call.ID {
+	objectID := call.New().
+		Append(dumpTestType("Container"), "container").
+		Append(
+			dumpTestType("Container"),
+			"withLabel",
+			call.WithArgs(call.NewArgument("name", call.NewLiteralString("value"), false)),
+		)
+	return call.New().Append(
+		dumpTestType("Result"),
+		"use",
+		call.WithArgs(
+			call.NewArgument("object", call.NewLiteralID(objectID), false),
+			call.NewArgument("keep", call.NewLiteralString("value"), false),
+			call.NewArgument("omit", call.NewLiteralNull(), false),
+			call.NewArgument("options", call.NewLiteralObject(
+				call.NewArgument("nested", call.NewLiteralString("value"), false),
+				call.NewArgument("absent", call.NewLiteralNull(), false),
+			), false),
+		),
+	)
+}
+
+func TestDumpUsesRawRecipeRendering(t *testing.T) {
+	require.Equal(t, strings.Join([]string{
+		"use(",
+		"┆ ┆ object: Container.withLabel(name: \"value\"): Container!",
+		"┆ ┆ keep: \"value\"",
+		"┆ ┆ omit: null",
+		"┆ ┆ options: {nested: \"value\", absent: null}",
+		"┆ ): Result!",
+		"",
+	}, "\n"), renderDump(t, callRenderingTestID(), Dump{}))
+}
+
+func renderLiveCallRows(t *testing.T, width int) string {
+	t.Helper()
+	id := callRenderingTestID()
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+
+	db := dagui.NewDB()
+	for digest, frame := range dag.GetRecipe().GetCallsByDigest() {
+		db.Calls[digest] = frame
+	}
+	rootID := prettyTestSpanID(1)
+	callID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "root",
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+		},
+		{
+			ID: callID, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "use", CallDigest: id.Call().GetDigest(),
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(width, 30)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true}
+	fe.recalculateViewLocked()
+	return ansi.Strip(strings.Join(fe.tui.Frame(), "\n"))
+}
+
+func TestLiveTUISimplifiesCallRows(t *testing.T) {
+	t.Run("compact when call fits", func(t *testing.T) {
+		got := renderLiveCallRows(t, 200)
+		require.Contains(t, got, "use(object: Container.withLabel(name: \"value\"): Container!, keep: \"value\", options: {nested: \"value\"}): Result!")
+		require.NotContains(t, got, "omit:")
+		require.NotContains(t, got, "absent:")
+		require.NotContains(t, got, "null")
+	})
+
+	t.Run("wrapped call keeps tree indentation", func(t *testing.T) {
+		got := renderLiveCallRows(t, 60)
+		require.Contains(t, got, VertDash3+" object: Container.withLabel(name: \"value\")")
+		require.NotContains(t, got, "omit:")
+		require.NotContains(t, got, "absent:")
+		require.NotContains(t, got, "null")
 	})
 }
 
@@ -284,7 +468,7 @@ func TestInlineLogsViewFetchesOnMountAndRenders(t *testing.T) {
 	if !gotChild {
 		t.Fatalf("expanded child's logs were not requested on LogsView mount; fetched=%v", fetched)
 	}
-	if fe.logsViews[childID] == nil {
+	if fe.logsViews[logsViewKey{spanID: childID}] == nil {
 		t.Fatal("no LogsView created for expanded child")
 	}
 
@@ -370,7 +554,7 @@ func TestInlineLogsReactToScreenHeight(t *testing.T) {
 
 	// Tall screen: the window is a third of it.
 	_ = fe.tui.Frame()
-	lv := fe.logsViews[childID]
+	lv := fe.logsViews[logsViewKey{spanID: childID}]
 	if lv == nil {
 		t.Fatal("no LogsView created for expanded child")
 	}
@@ -1251,18 +1435,16 @@ func prettyTestTraceID() dagui.TraceID {
 
 func TestLogPagerQClosesLikeEscape(t *testing.T) {
 	fe := NewWithDB(io.Discard, dagui.NewDB())
-	restored := false
+	fe.tui.SetFocus(fe)
 	fe.logPager = &LogPagerView{}
-	fe.logPagerReturn = func() { restored = true }
+	fe.logPagerFocus = fe.tui.PushFocus(fe.logPager)
 
 	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Text: "q", Code: 'q'}))
 
 	if fe.logPager != nil {
 		t.Fatal("expected q to close log pager")
 	}
-	if !restored {
-		t.Fatal("expected q to restore prior focus like escape")
-	}
+	require.True(t, fe.tui.IsFocused(fe), "expected q to restore prior focus like escape")
 }
 
 func TestTestsModeQClosesLikeEscape(t *testing.T) {
@@ -1333,6 +1515,209 @@ func (stubShellHandler) SaveBeforeHistory()                {}
 func (stubShellHandler) RestoreAfterHistory()              {}
 func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) func() {
 	return nil
+}
+func (stubShellHandler) EditFromID(context.Context, string) func() error { return nil }
+
+type historyShellHandler struct {
+	stubShellHandler
+	saved    int
+	restored int
+}
+
+func (h *historyShellHandler) SaveBeforeHistory()   { h.saved++ }
+func (h *historyShellHandler) RestoreAfterHistory() { h.restored++ }
+
+func newHistoryTestFrontend(t *testing.T, handler ShellHandler) *frontendPretty {
+	t.Helper()
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 10))
+	fe.setupTUI()
+	fe.startShell(context.Background(), handler)
+	fe.tui.Step()
+	return fe
+}
+
+func TestPromptArrowsMoveWithinMultilineInputBeforeHistory(t *testing.T) {
+	handler := &historyShellHandler{}
+	fe := newHistoryTestFrontend(t, handler)
+	fe.inputHistory = []string{"older command", "latest command"}
+	fe.historyIndex = -1
+	fe.textInput.SetValue("first\nsecond")
+	fe.tui.Step()
+
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Equal(t, "first\nsecond", fe.textInput.Value())
+	require.Zero(t, handler.saved)
+
+	// Typing after Up proves the cursor moved to the first line.
+	fe.tui.Inject(tuist.ParseKey("!"))
+	fe.tui.Step()
+	require.Equal(t, "first!\nsecond", fe.textInput.Value())
+
+	fe.tui.Inject(tuist.ParseKey("down"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Zero(t, handler.saved)
+
+	// Typing after Down proves the cursor returned to the second line.
+	fe.tui.Inject(tuist.ParseKey("?"))
+	fe.tui.Step()
+	require.Equal(t, "first!\nsecond?", fe.textInput.Value())
+}
+
+func TestPromptArrowsBrowseAndRestoreHistoryAtMultilineBoundary(t *testing.T) {
+	handler := &historyShellHandler{}
+	fe := newHistoryTestFrontend(t, handler)
+	fe.inputHistory = []string{"older command", "latest command"}
+	fe.historyIndex = -1
+	fe.textInput.SetValue("draft\ncontinued")
+	fe.tui.Step()
+
+	// The first Up moves to the first line; the second bubbles at the top.
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	fe.tui.Inject(tuist.ParseKey("up"))
+	fe.tui.Step()
+	require.Equal(t, 1, fe.historyIndex)
+	require.Equal(t, "latest command", fe.textInput.Value())
+	require.Equal(t, "draft\ncontinued", fe.historySaved)
+	require.Equal(t, 1, handler.saved)
+	require.Zero(t, handler.restored)
+
+	// Down on the history entry is already at the bottom, so it restores the
+	// multiline draft and its shell mode.
+	fe.tui.Inject(tuist.ParseKey("down"))
+	fe.tui.Step()
+	require.Equal(t, -1, fe.historyIndex)
+	require.Equal(t, "draft\ncontinued", fe.textInput.Value())
+	require.Equal(t, 1, handler.saved)
+	require.Equal(t, 1, handler.restored)
+}
+
+type focusedEditShellHandler struct {
+	stubShellHandler
+	target  string
+	called  chan string
+	release chan struct{}
+	err     error
+}
+
+func (h *focusedEditShellHandler) TargetAgentID() string { return h.target }
+
+func (h *focusedEditShellHandler) EditFromID(_ context.Context, encoded string) func() error {
+	if h.called == nil {
+		return nil
+	}
+	return func() error {
+		h.called <- encoded
+		if h.release != nil {
+			<-h.release
+		}
+		return h.err
+	}
+}
+
+// TestPromptEditTarget covers the frontend half of rewind/reword/resume: the
+// post-withPrompt digest is rewound through its receiver, same-boundary prompts
+// map oldest-to-newest, reply rows edit their originating prompt, and a nested
+// worker row cannot be routed into the focused chief.
+func TestPromptEditTarget(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{
+		Digest: "xxh3:edit-base",
+		Field:  "llm",
+		Type:   &callpbv1.Type{NamedType: "LLM"},
+	}
+	promptCall := func(digest, receiver, prompt string) *callpbv1.Call {
+		return &callpbv1.Call{
+			Digest:         digest,
+			Field:          "withPrompt",
+			Type:           &callpbv1.Type{NamedType: "LLM"},
+			ReceiverDigest: receiver,
+			Args: []*callpbv1.Argument{{
+				Name: "prompt",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+					String_: prompt,
+				}},
+			}},
+		}
+	}
+	firstCall := promptCall("xxh3:edit-first", base.Digest, "first wording")
+	secondCall := promptCall("xxh3:edit-second", firstCall.Digest, "second wording")
+	for _, frame := range []*callpbv1.Call{base, firstCall, secondCall} {
+		db.Calls[frame.Digest] = frame
+	}
+
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(90)
+	firstID := prettyTestSpanID(91)
+	secondID := prettyTestSpanID(92)
+	replyID := prettyTestSpanID(93)
+	workerID := prettyTestSpanID(94)
+	workerReplyID := prettyTestSpanID(95)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: firstID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: secondCall.Digest, StartTime: start.Add(time.Second)},
+		{ID: secondID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: secondCall.Digest, StartTime: start.Add(2 * time.Second)},
+		{ID: replyID, ParentID: chiefID, LLMRole: "assistant", LLMCallDigest: secondCall.Digest, StartTime: start.Add(3 * time.Second)},
+		{ID: workerID, ParentID: chiefID, Agent: true, AgentID: "worker", StartTime: start.Add(4 * time.Second)},
+		{ID: workerReplyID, ParentID: workerID, LLMRole: "assistant", LLMCallDigest: secondCall.Digest, StartTime: start.Add(5 * time.Second)},
+	})
+	fe := &frontendPretty{
+		db:    db,
+		shell: &focusedEditShellHandler{target: "chief"},
+	}
+
+	prompt, encoded, ok := fe.promptEditTarget(db.Spans.Map[firstID])
+	require.True(t, ok)
+	require.Equal(t, "first wording", prompt)
+	require.NotEmpty(t, encoded, "the edit point is the first prompt's receiver")
+
+	prompt, encoded, ok = fe.promptEditTarget(db.Spans.Map[secondID])
+	require.True(t, ok)
+	require.Equal(t, "second wording", prompt)
+	require.NotEmpty(t, encoded)
+
+	prompt, _, ok = fe.promptEditTarget(db.Spans.Map[replyID])
+	require.True(t, ok)
+	require.Equal(t, "second wording", prompt, "reply edits its originating prompt")
+
+	_, _, ok = fe.promptEditTarget(db.Spans.Map[workerReplyID])
+	require.False(t, ok, "nested worker must not rewind the focused chief")
+
+	// The action waits for the asynchronous rewind before exposing the old text
+	// in the input, then enters insert mode with that text ready to reword.
+	db.SetPrimarySpan(chiefID)
+	handler := &focusedEditShellHandler{
+		target:  "chief",
+		called:  make(chan string, 1),
+		release: make(chan struct{}),
+	}
+	term := tuist.NewHeadlessTerminal(100, 12)
+	live := newWithTerminal(io.Discard, db, term)
+	live.setupTUI()
+	live.startShell(context.Background(), handler)
+	live.enterNavMode()
+	live.FocusedSpan = replyID
+	_, wantEncoded, ok := live.promptEditTarget(db.Spans.Map[replyID])
+	require.True(t, ok)
+
+	live.editPrompt()
+	select {
+	case got := <-handler.called:
+		require.Equal(t, wantEncoded, got)
+	case <-time.After(time.Second):
+		t.Fatal("edit action did not start")
+	}
+	require.Empty(t, live.textInput.Value(), "text must stay hidden until rewind succeeds")
+	close(handler.release)
+	require.Eventually(t, func() bool {
+		live.tui.Step()
+		return live.inputFocused() && live.textInput.Value() == "second wording"
+	}, time.Second, 10*time.Millisecond)
 }
 
 // TestFlowingModeDoesNotCropOverflowingTree is the regression guard for the
@@ -1630,7 +2015,7 @@ func TestFlowingModeScopedToLiveUnzoomedShell(t *testing.T) {
 // gutters and no "user"/"assistant"/"tool" role labels, with the subtle
 // per-role cues in their place -- a shaded background behind the user's
 // prompt, dim italic for thinking, plain indented prose for the assistant,
-// and a faint dot for tool calls.
+// red prose for a terminal failure, and a faint dot for tool calls.
 func TestConversationTranscriptStyling(t *testing.T) {
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
@@ -1638,6 +2023,7 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	thinkID := prettyTestSpanID(3)
 	asstID := prettyTestSpanID(4)
 	toolID := prettyTestSpanID(5)
+	failureID := prettyTestSpanID(6)
 	start := time.Unix(100, 0)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{
@@ -1664,6 +2050,12 @@ func TestConversationTranscriptStyling(t *testing.T) {
 			LLMRole: "assistant", LLMTool: "Find", ParentID: rootID,
 			StartTime: start.Add(7 * time.Second), EndTime: start.Add(8 * time.Second), Final: true,
 		},
+		{
+			ID: failureID, TraceID: prettyTestTraceID(), Name: "agent failure",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(9 * time.Second), EndTime: start.Add(10 * time.Second), Final: true,
+			Status: sdktrace.Status{Code: codes.Error, Description: "context limit reached"},
+		},
 	})
 	db.SetPrimarySpan(rootID)
 
@@ -1686,6 +2078,9 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	setLog(thinkID, "let me think")
 	setLog(asstID, "here is my reply")
 	setLog(toolID, `{"pattern": "*"}`)
+	fe.logs.ToolArgs[toolID] = fe.logs.Logs[toolID]
+	delete(fe.logs.Logs, toolID)
+	setLog(failureID, "context limit reached")
 
 	fe.recalculateViewLocked()
 
@@ -1711,9 +2106,98 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	if !containsStyledLine(frame, "let me think", "\x1b[90;3m") {
 		t.Fatalf("thinking is not rendered dim italic:\n%s", visibleEscapes(frame))
 	}
+	// A terminal agent failure is permanent transcript content, with the full
+	// error text (not only its status badge) rendered red (SGR 31).
+	if !containsStyledLine(frame, "context limit reached", "\x1b[31m") {
+		t.Fatalf("agent failure text is not rendered red:\n%s", visibleEscapes(frame))
+	}
 	// Tool calls keep a faint-dot cue.
 	if !strings.Contains(plain, "• Find") {
 		t.Fatalf("tool call missing faint-dot cue:\n%s", plain)
+	}
+}
+
+// TestConversationTranscriptStylesMessageOrigins covers the live-shell half of
+// message provenance (hack/designs/agent-messaging.md §4.1): a message
+// another agent sent keeps the shaded incoming-prompt block but renders under
+// a sender-attribution header, and an engine lifecycle event renders as a
+// bare faint one-liner — no shaded card, payload elided behind a "(+N
+// lines)" tail.
+func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	agentMsgID := prettyTestSpanID(2)
+	eventMsgID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "shell",
+			StartTime: start, EndTime: start.Add(10 * time.Second), Final: true,
+		},
+		{
+			ID: agentMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			LLMOriginKind: "AGENT", LLMOriginAgentID: "agent-b",
+			LLMOriginAgentName: "scout", LLMOriginRef: "#3",
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: eventMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			LLMOriginKind: "EVENT", LLMOriginAgentID: "agent-b",
+			LLMOriginAgentName: "scout",
+			StartTime:          start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		_, _ = logs.Write([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(agentMsgID, "what branch should I target?")
+	setLog(eventMsgID, "Agent \"scout\" is now idle.\n\nIts final reply:\n\nall done")
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	// The agent's message carries its sender-attribution header, with the
+	// sender's name bold cyan on the shaded block (SGR 1;36;100)...
+	if !strings.Contains(plain, "scout #3") {
+		t.Fatalf("agent message missing sender-attribution header:\n%s", plain)
+	}
+	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;100m") {
+		t.Fatalf("attribution header name is not bold cyan on the shaded block:\n%s", visibleEscapes(frame))
+	}
+	// ...and its body keeps the shaded incoming-prompt background (SGR 100).
+	if !containsStyledLine(frame, "what branch should I target?", "\x1b[100m") {
+		t.Fatalf("agent message body lost the shaded background:\n%s", visibleEscapes(frame))
+	}
+
+	// The event renders as a faint one-liner (SGR 90), payload elided...
+	if !strings.Contains(plain, `Agent "scout" is now idle. (+4 lines)`) {
+		t.Fatalf("event message not collapsed to a one-liner:\n%s", plain)
+	}
+	if !containsStyledLine(frame, `is now idle`, "\x1b[90m") {
+		t.Fatalf("event one-liner is not faint:\n%s", visibleEscapes(frame))
+	}
+	if strings.Contains(plain, "all done") {
+		t.Fatalf("event payload leaked into the transcript:\n%s", plain)
+	}
+	// ...with no shaded card: neither the line itself nor prompt padding.
+	if containsStyledLine(frame, `is now idle`, "\x1b[100m") {
+		t.Fatalf("event one-liner is drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
 	}
 }
 
@@ -1839,6 +2323,9 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 		fe.autoFocus = false
 		fe.FocusedSpan = focusID
 		fe.recalculateViewLocked()
+		// FocusedSpan selects the navigation row; Tuist focus owns the visual
+		// focus treatment, including the prompt cue.
+		fe.focusNavigationTarget()
 
 		for _, line := range strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n") {
 			if strings.Contains(stripANSICodes(line), "hello there") {
@@ -1923,6 +2410,9 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 	fe.autoFocus = false
 	fe.FocusedSpan = asstID
 	fe.recalculateViewLocked()
+	// FocusedSpan selects the navigation row; Tuist focus owns the visual
+	// focus treatment, including the prompt cue.
+	fe.focusNavigationTarget()
 
 	lines := strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n")
 	cues := 0

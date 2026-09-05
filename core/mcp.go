@@ -462,6 +462,20 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	return patchpreview.SummarizeString(entries, summaryWidth)
 }
 
+const gitDiffContentType = "text/x-diff"
+
+// toolResultContentType classifies authoritative Git patches returned by tools.
+// Changeset.asPatch always starts with a diff --git header; summaries and other
+// tool output do not. Keeping this classification at the point that emits the
+// model-visible result lets every frontend render the same engine-side value
+// without reconstructing edits from tool arguments.
+func toolResultContentType(result string) string {
+	if strings.HasPrefix(result, "diff --git ") {
+		return gitDiffContentType
+	}
+	return ""
+}
+
 func toAny(v any) (res map[string]any, rerr error) {
 	pl, err := json.Marshal(v)
 	if err != nil {
@@ -1125,6 +1139,31 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
+func toolArgHeaderValue(name string, value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if str, ok := value.(string); ok {
+		return str, true
+	}
+	switch name {
+	case "offset", "limit":
+		return fmt.Sprint(value), true
+	case "args":
+		values, ok := value.([]any)
+		if !ok {
+			return "", false
+		}
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			parts = append(parts, fmt.Sprint(value))
+		}
+		return strings.Join(parts, " "), true
+	default:
+		return "", false
+	}
+}
+
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
 	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
@@ -1140,17 +1179,28 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 
 	var toolArgNames []string
 	var toolArgValues []string
+	seenToolArgs := map[string]bool{}
+	appendToolArg := func(name string) {
+		if seenToolArgs[name] {
+			return
+		}
+		val, ok := toolArgHeaderValue(name, args[name])
+		if !ok {
+			return
+		}
+		toolArgNames = append(toolArgNames, name)
+		toolArgValues = append(toolArgValues, val)
+		seenToolArgs[name] = true
+	}
 	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
 		for _, arg := range requiredArgs {
-			val, ok := args[arg]
-			if !ok {
-				continue
-			}
-			if str, ok := val.(string); ok {
-				toolArgNames = append(toolArgNames, arg)
-				toolArgValues = append(toolArgValues, str)
-			}
+			appendToolArg(arg)
 		}
+	}
+	// Header-specific optional values: Read's pagination controls and generic
+	// argv arrays are useful context even though they are not required args.
+	for _, arg := range []string{"offset", "limit", "args"} {
+		appendToolArg(arg)
 	}
 	toolName := tool.Name
 	if tool.Server != "" {
@@ -1185,10 +1235,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		}
 	}()
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
-
 	defer func() {
 		// Bound the result before anything observes it: everything downstream
 		// must see exactly what the LLM sees, and this is the one place every
@@ -1196,8 +1242,16 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		// and the LLMToolResultTokensAttr estimate endToolCallDisplay stamps
 		// from the string we return.
 		res = guardToolResult(res)
-		// write final result to telemetry so we see exactly what the LLM sees
+
+		attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+		if contentType := toolResultContentType(res); contentType != "" {
+			attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+		}
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
+		// Write the final result to telemetry so the TUI sees exactly what the
+		// LLM sees, with semantic content type when the result is a patch.
 		fmt.Fprintln(stdio.Stdout, res)
+		_ = stdio.Close()
 	}()
 
 	toolCtx := ctx

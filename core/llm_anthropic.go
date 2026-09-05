@@ -367,7 +367,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 			case "input_json_delta":
 				if p := dp.Phase(ev.Index); p != nil {
-					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
+					p.writeToolArgs(ev.Delta.PartialJSON)
 				}
 			}
 		case anthropic.ContentBlockStopEvent:

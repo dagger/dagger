@@ -14,6 +14,19 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
+     * Reconstruct a spawned agent from its runtime handle.
+     *
+     * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+     */
+    public function agent(string $handle, string $name): Agent
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agent');
+        $innerQueryBuilder->setArgument('handle', $handle);
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Agent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
      */
     public function contextTokens(): int
@@ -134,8 +147,8 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function replay(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('replay');
-        $this->queryLeaf($leafQueryBuilder, 'replay');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'replay');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
     }
 
     /**
@@ -145,6 +158,21 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
         return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
+    }
+
+    /**
+     * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+     *
+     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+     */
+    public function spawn(?string $name = null): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'spawn');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**
@@ -165,8 +193,8 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     public function sync(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
     }
 
     /**
@@ -223,10 +251,13 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Queue a user prompt, to be sent to the model on the next step or loop.
      */
-    public function withPrompt(string $prompt): LLM
+    public function withPrompt(string $prompt, ?LLMMessageOriginInput $origin = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPrompt');
         $innerQueryBuilder->setArgument('prompt', $prompt);
+        if (null !== $origin) {
+        $innerQueryBuilder->setArgument('origin', $origin);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -288,6 +319,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
         $innerQueryBuilder->setArgument('directory', $directory);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+     */
+    public function withSmallModel(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSmallModel');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

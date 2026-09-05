@@ -651,7 +651,13 @@ class _InputField:
             self.has_default = True
 
         if default_value and is_enum_type(self.named_type):
-            self.default_value = f"{self.named_type.name}.{default_value}"
+            if isinstance(default_value, list):
+                members = ", ".join(
+                    f"{self.named_type.name}.{v}" for v in default_value
+                )
+                self.default_value = f"[{members}]"
+            else:
+                self.default_value = f"{self.named_type.name}.{default_value}"
         else:
             self.default_value = repr(default_value)
 
@@ -761,22 +767,24 @@ class _ObjectField:
             ctx.supports_nullable_objects,
         )
 
-        # Any field in the API that returns an ID for its parent object should
-        # return the binding for the object instead in the SDK to allow continued
-        # chaining, except if it's called "id".
+        # Any field in the API that returns an ID with an @expectedType should
+        # return the binding for that object instead in the SDK to allow
+        # continued chaining, except if it's called "id".
         #
         # For example, the API `Service { start: ID! @expectedType(name: "Service") }`
         # should produce the following binding signature:
         # >>> class Service:
         # ...     async def start(self) -> Self: ...
         #
+        # and `LLM { spawn: ID! @expectedType(name: "Agent") }` produces:
+        # >>> class LLM:
+        # ...     async def spawn(self) -> Agent: ...
         self.convert_id = False
         if (
             name != "id"
             and is_id_type(field.type)
             and self.is_leaf
             and self.expected_type
-            and self.parent_name == self.expected_type
         ):
             self.type = self.expected_type
             self.convert_id = True
@@ -846,7 +854,14 @@ class _ObjectField:
             yield "_args: list[Arg] = []"
 
         if self.convert_id:
-            args = ("self", f'"{self.graphql_name}"', "_args")
+            args = ["self", f'"{self.graphql_name}"', "_args"]
+            if self.type != self.parent_name:
+                # Load another type's ID as that type, via its client
+                # class when the handle names an interface.
+                handle = self.ctx.schema.get_type(self.type)
+                args.append(
+                    f"_{self.type}Client" if is_interface_type(handle) else self.type
+                )
             yield f"return await self._ctx.execute_sync({', '.join(args)})"
             return
 

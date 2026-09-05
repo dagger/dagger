@@ -73,6 +73,12 @@ public class Schema {
     return version;
   }
 
+  /** Returns true if the named type is a GraphQL INTERFACE. */
+  public boolean isInterface(String typeName) {
+    return types != null
+        && types.stream().anyMatch(t -> typeName.equals(t.getName()) && t.isInterface());
+  }
+
   public boolean supportsNullableObjects() {
     if (version == null || version.isBlank()) {
       return true;

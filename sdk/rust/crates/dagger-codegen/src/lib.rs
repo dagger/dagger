@@ -436,6 +436,198 @@ mod tests {
 }"#
     }
 
+    /// Minimal schema whose ID-returning fields name another object
+    /// (`LLM.spawn` -> `Agent`) and an interface (`LLM.syncer` -> `Syncer`),
+    /// plus a `File` implementing `Syncer`, whose `sync` names the interface.
+    fn id_handle_schema() -> &'static str {
+        r#"{
+  "__schema": {
+    "queryType": {"name": "Query"},
+    "mutationType": null,
+    "subscriptionType": null,
+    "types": [
+      {
+        "kind": "SCALAR", "name": "ID", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "INTERFACE", "name": "Syncer", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+          },
+          {
+            "name": "sync", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": [{"kind": "OBJECT", "name": "File", "ofType": null}]
+      },
+      {
+        "kind": "OBJECT", "name": "File", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"File\""}]}]
+          },
+          {
+            "name": "sync", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"File\""}]}]
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [{"kind": "INTERFACE", "name": "Syncer", "ofType": null}],
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "Agent", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "LLM", "description": null,
+        "fields": [
+          {
+            "name": "id", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"LLM\""}]}]
+          },
+          {
+            "name": "spawn", "description": "Spawn an agent.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Agent\""}]}]
+          },
+          {
+            "name": "syncer", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null,
+            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Syncer\""}]}]
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT", "name": "Query", "description": null,
+        "fields": [
+          {
+            "name": "llm", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "OBJECT", "name": "LLM", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }
+    ],
+    "directives": []
+  }
+}"#
+    }
+
+    #[test]
+    fn id_handles_load_their_expected_type() {
+        let code = generate_from_json(id_handle_schema());
+        // another object's ID loads that object
+        assert!(
+            code.contains("fn spawn") && code.contains("-> Result<Agent, DaggerError>"),
+            "spawn should return Agent:\n{}",
+            code.lines()
+                .filter(|l| l.contains("spawn"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(code.contains("inline_fragment(\"Agent\")"));
+        // an interface's ID loads through the interface's client struct
+        assert!(
+            code.contains("fn syncer") && code.contains("-> Result<SyncerClient, DaggerError>"),
+            "syncer should return SyncerClient:\n{}",
+            code.lines()
+                .filter(|l| l.contains("syncer"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(code.contains("inline_fragment(\"Syncer\")"));
+    }
+
+    /// The body of the `impl <Trait> for <Type>` block that starts with
+    /// `header`, up to the next `impl` block.
+    fn impl_block<'a>(code: &'a str, header: &str) -> &'a str {
+        let start = code
+            .find(header)
+            .unwrap_or_else(|| panic!("missing {header}"));
+        let rest = &code[start + header.len()..];
+        let end = rest
+            .match_indices("impl ")
+            .map(|(i, _)| i)
+            .find(|&i| rest[i + 5..].starts_with(|c: char| c.is_ascii_uppercase()))
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    #[test]
+    fn interface_self_handles_return_the_implementing_type() {
+        let code = generate_from_json(id_handle_schema());
+        // the trait declares the interface's own handle as Self
+        assert!(
+            code.contains("fn sync(&self) -> impl core::future::Future<Output = Result<Self, DaggerError>> + Send where Self: Sized;"),
+            "trait should return Self:\n{}",
+            code.lines()
+                .filter(|l| l.contains("fn sync"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        // each implementation loads its own type
+        let file_impl = impl_block(&code, "impl Syncer for File");
+        assert!(file_impl.contains("Ok(Self {"), "File impl:\n{file_impl}");
+        assert!(
+            file_impl.contains("inline_fragment(\"File\")"),
+            "File impl:\n{file_impl}"
+        );
+        let client_impl = impl_block(&code, "impl Syncer for SyncerClient");
+        assert!(
+            client_impl.contains("Ok(Self {"),
+            "client impl:\n{client_impl}"
+        );
+        assert!(
+            client_impl.contains("inline_fragment(\"Syncer\")"),
+            "client impl:\n{client_impl}"
+        );
+        // and the inherent method on the object still returns the object
+        assert!(code.contains("-> Result<File, DaggerError>"));
+    }
+
     #[test]
     fn convert_id_sync_returns_parent() {
         let code = generate_from_json(expected_type_schema());

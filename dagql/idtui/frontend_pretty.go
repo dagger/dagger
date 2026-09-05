@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
@@ -36,6 +37,7 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	"github.com/dagger/dagger/engine/slog"
@@ -107,27 +109,81 @@ type frontendPretty struct {
 	backgroundReq chan backgroundRequest
 
 	// updated by Shell
-	shell           ShellHandler
-	shellCtx        context.Context
-	shellInterrupt  context.CancelCauseFunc
-	promptFg        termenv.Color
-	promptErr       error
-	promptErrLabel  *ErrorLabel
-	queuedMsgLabel  *QueuedMessageLabel
-	statusLine      *StatusLine
-	statusLineData  StatusLineData
-	llmCostFn       LLMCostFunc
-	textInput       *tuist.TextInput
-	promptFrame     *PromptFrame
-	completionMenu  *tuist.CompletionMenu
-	keymapBar       *KeymapBar
-	editlineFocused bool
-	inputHistory    []string // raw encoded history entries (with mode prefix)
-	historyIndex    int      // -1 = not browsing history
-	historySaved    string   // saved input when browsing history
-	autoModeSwitch  bool
-	shellRunning    bool
-	shellLock       sync.Mutex
+	shell          ShellHandler
+	shellCtx       context.Context
+	shellInterrupt context.CancelCauseFunc
+	promptFg       termenv.Color
+	promptErr      error
+	promptErrLabel *ErrorLabel
+	queuedMsgLabel *QueuedMessageLabel
+	agentRoster    *AgentRoster
+	statusLine     *StatusLine
+	statusLineData StatusLineData
+	llmCostFn      LLMCostFunc
+	textInput      *tuist.TextInput
+	promptFrame    *PromptFrame
+	completionMenu *tuist.CompletionMenu
+	keymapBar      *KeymapBar
+	inputHistory   []string // raw encoded history entries (with mode prefix)
+	historyIndex   int      // -1 = not browsing history
+	historySaved   string   // saved input when browsing history
+	// turnsRunning counts the handler turns in flight. Prompt turns are no
+	// longer serialized -- each runs server-side in its own agent runtime --
+	// so several can overlap, and "is anything running" is a count, not a
+	// flag.
+	turnsRunning int
+	// serialRunning marks a turn that occupies the handler's single
+	// interpreter (a shell command, or a prompt-mode /command). Only those
+	// take shellLock, and only those make a submitted message queue.
+	serialRunning bool
+	shellLock     sync.Mutex
+
+	// agentDrafts holds the half-typed line of each agent the user has
+	// focused, keyed by agent runtime handle: saved on blur, restored on focus,
+	// so switching agents mid-sentence does not eat the sentence (§5.1).
+	agentDrafts map[string]string
+	// lastFocusedAgent is the agent focused before the current one, for the
+	// tmux-style last-agent toggle: the two-agent ping-pong is the common
+	// case, and a next/prev cycle is the wrong verb for it.
+	lastFocusedAgent string
+	// unaddressableAgents remembers agents whose handle could not be rebuilt
+	// from the trace, so the roster can render them as read-only rather than
+	// letting a failed rebuild look like a working entry.
+	unaddressableAgents map[string]bool
+	// pendingFocusAgent is the agent the client BELIEVES it has focused: the
+	// destination of the most recent focus keypress, held until the handler
+	// confirms it. Focus is retargeted on the shell goroutine, so between a
+	// keypress and its completion TargetAgentID() still names the agent being
+	// left -- and nav mode's [/] is meant to be tapped, so the next press
+	// routinely lands inside that window. Reading the settled target there
+	// would step from where focus has BEEN instead of where it is GOING.
+	pendingFocusAgent string
+	// focusInFlight is true while a FocusAgent request is out. Only one is
+	// allowed at a time: the request attaches and re-points the handler's
+	// target, so two of them racing could settle wherever finished last
+	// rather than where the user walked to. Taps behind it coalesce, and
+	// settleFocus issues one catch-up hop when it lands.
+	focusInFlight bool
+	// agentRosterState fingerprints what the strip last rendered, so the
+	// trace can push updates into it without re-rendering every frame.
+	agentRosterState string
+	// lastRosterFocus is the focused agent as of the last roster update, so a
+	// change of FOCUS can invalidate the view without the state flags -- which
+	// also fingerprint above, and change far more often -- doing so too.
+	lastRosterFocus string
+	// agentSnapshots remembers the last conversation-snapshot digest seen per
+	// agent, so telemetry ingestion can detect step boundaries (a fresh
+	// commit) and push a per-step UI refresh to the handler rather than
+	// leaving the status line and changes preview a whole turn stale.
+	agentSnapshots map[string]string
+	// The conversation currently promoted into the live tree, and the agent
+	// it is scoped to (empty for the whole trace). Promotion is an ADD into
+	// the host's RevealedSpans, so switching agents has to withdraw the
+	// previous scope by hand -- these three remember exactly what to
+	// withdraw. See promoteConversationLocked.
+	promotedConversationAgent string
+	promotedConversation      []*dagui.MessageNode
+	promotedConversationHost  *dagui.Span
 
 	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
 	// when a failure is surfaced). The bool is whether to roll up descendant
@@ -226,15 +282,18 @@ type frontendPretty struct {
 	pinnedZoom dagui.SpanID
 
 	// TUI state/config
-	spinnerEpoch time.Time // shared epoch so all spinners animate in sync
-	profile      termenv.Profile
-	window       windowSize // terminal dimensions
-	contentWidth int
-	browserBuf   *strings.Builder // logs if browser fails
-	finalRender  bool             // whether we're doing the final render
-	claims       *renderClaims
-	stdin        io.Reader // used by backgroundMsg for running terminal
-	writer       io.Writer
+	spinnerEpoch     time.Time // shared epoch so all spinners animate in sync
+	profile          termenv.Profile
+	window           windowSize // terminal dimensions
+	contentWidth     int
+	browserBuf       *strings.Builder // logs if browser fails
+	finalRender      bool             // whether we're doing the final render
+	claims           *renderClaims
+	stdin            io.Reader // used by backgroundMsg for running terminal
+	writer           io.Writer
+	tuiTerm          tuist.Terminal
+	terminalTitle    string
+	terminalTitleSet bool
 
 	// notification bubbles (single overlay with a Container of bubbles)
 	notifications         map[string]*NotificationBubble // keyed by section title
@@ -244,9 +303,11 @@ type frontendPretty struct {
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
 
-	// Add prompt field
-	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel *huh.Form   // direct reference for KeyBinds()
+	// Prompt forms are serialized through one active request and a FIFO. Each
+	// mounted form owns a scoped Tuist focus handle so teardown can restore the
+	// exact component that was focused before it was presented.
+	activeForm   *activePromptForm
+	pendingForms []*promptFormRequest
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -260,7 +321,7 @@ type frontendPretty struct {
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
 	// memoized across unrelated parent repaints (spinner ticks, focus moves).
-	logsViews     map[dagui.SpanID]*LogsView
+	logsViews     map[logsViewKey]*LogsView
 	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
 	// progressExpanded tracks rows whose completed-transfer roll-up has
@@ -274,9 +335,9 @@ type frontendPretty struct {
 	viewDirty bool
 
 	// search state (Vim-style "/" search)
-	searchActive         bool                  // search input bar is shown
-	searchQuery          string                // confirmed search string
-	searchInput          *tuist.TextInput      // the "/" prompt input (non-nil while searchActive)
+	searchQuery          string           // confirmed search string
+	searchInput          *tuist.TextInput // the "/" prompt input while search is active
+	searchFocus          *tuist.FocusHandle
 	searchMatches        []searchMatch         // ordered list of all matches
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
@@ -285,6 +346,7 @@ type frontendPretty struct {
 	// test view state
 	testsMode        bool
 	testsReturnSpan  dagui.SpanID
+	testsFocus       *tuist.FocusHandle
 	fullscreenTests  *TestView
 	testViews        map[dagui.SpanID]*TestView
 	orphanTests      *TestView
@@ -293,7 +355,7 @@ type frontendPretty struct {
 
 	// fullscreen log pager state
 	logPager       *LogPagerView
-	logPagerReturn func()
+	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
 
 	// commandView replaces the generic trace screen when a command wants to
@@ -301,6 +363,7 @@ type frontendPretty struct {
 	commandView       CommandView
 	commandViewHandle *commandViewHandle
 	spanLists         map[*SpanListView]struct{}
+	logSearchFocus    *tuist.FocusHandle
 }
 
 // Verify interface compliance at compile time.
@@ -499,6 +562,9 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		maxLiteralWidth = ctx.Width / 2
 	}
 	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.finalRender)
+	if !s.finalRender {
+		r.enableCallSimplification(ctx.Width)
+	}
 	visualFocused := s.focused && !s.finalRender
 
 	s.selfLineCount = 0
@@ -896,6 +962,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		browserBuf:    new(strings.Builder),
 		notifications: make(map[string]*NotificationBubble),
 		writer:        w,
+		tuiTerm:       term,
 		claims:        newRenderClaims(),
 	}
 	tui.AddChild(fe)
@@ -1026,29 +1093,30 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + queuedMsg + textInput + statusLine before keymapBar:
-	// output → error → queued → prompt → statusLine → keymap
+	// Insert errorLabel + queuedMsg + promptFrame + statusLine before keymapBar:
+	// output → error → queued → prompt → statusLine (with agent roster) → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
+	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
 	fe.statusLine = &StatusLine{
 		profile:   fe.profile,
 		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
+		roster:    fe.agentRoster,
 		liveStats: fe.llmLiveStats,
-		inFlight:  func() bool { return fe.shellRunning },
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
+	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetShowHardwareCursor(true)
 
 	// put the bowtie on
 	fe.syncPrompt()
 	fe.tui.SetFocus(fe.textInput)
-	fe.editlineFocused = true
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
@@ -1064,6 +1132,7 @@ func (fe *frontendPretty) stopShell() {
 		fe.tui.RemoveChild(fe.queuedMsgLabel)
 		fe.queuedMsgLabel = nil
 	}
+	fe.agentRoster = nil
 	if fe.statusLine != nil {
 		fe.tui.RemoveChild(fe.statusLine)
 		fe.statusLine = nil
@@ -1082,8 +1151,7 @@ func (fe *frontendPretty) stopShell() {
 	fe.shell = nil
 	fe.shellCtx = nil
 	fe.completionMenu = nil
-	fe.editlineFocused = false
-	fe.tui.SetShowHardwareCursor(false)
+	fe.syncHardwareCursor()
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -1321,27 +1389,85 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		return ErrNonInteractive
 	}
 
-	done := make(chan error, 1)
-	wrapCh := make(chan *teav1.Wrap, 1)
-
+	req := fe.newPromptFormRequest(ctx, form, nil)
 	fe.dispatch(func() {
-		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
-			done <- formCompletionError(f)
-		})
+		fe.enqueuePromptForm(req)
 		fe.Update()
 	})
 
 	select {
 	case <-ctx.Done():
-		// The caller gave up on the form (e.g. an OAuth browser callback
-		// delivered the code first). Dismiss it so it doesn't linger in the TUI.
-		wrap := <-wrapCh
 		fe.dispatch(func() {
-			fe.removeForm(wrap)
+			fe.cancelPromptForm(req)
 		})
 		return ctx.Err()
-	case err := <-done:
-		return err
+	case <-req.done:
+		return req.err
+	}
+}
+
+type promptFormRequest struct {
+	ctx      context.Context
+	model    *huh.Form
+	result   func(*huh.Form)
+	done     chan struct{}
+	err      error
+	finished bool
+}
+
+type activePromptForm struct {
+	request *promptFormRequest
+	model   *huh.Form
+	wrap    *teav1.Wrap
+	spacer  *blankLine
+	focus   *tuist.FocusHandle
+}
+
+func (fe *frontendPretty) newPromptFormRequest(ctx context.Context, form *huh.Form, result func(*huh.Form)) *promptFormRequest {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &promptFormRequest{
+		ctx:    ctx,
+		model:  form,
+		result: result,
+		done:   make(chan struct{}),
+	}
+}
+
+// handlePromptForm queues an internal form. External callers should use
+// HandleForm so cancellation participates in the same lifecycle.
+func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
+	req := fe.newPromptFormRequest(context.Background(), form, result)
+	fe.enqueuePromptForm(req)
+}
+
+// enqueuePromptForm serializes prompt forms in FIFO order. Must run on the UI
+// goroutine.
+func (fe *frontendPretty) enqueuePromptForm(req *promptFormRequest) {
+	if req == nil || req.finished {
+		return
+	}
+	fe.pendingForms = append(fe.pendingForms, req)
+	fe.activateNextPromptForm()
+}
+
+func (fe *frontendPretty) activateNextPromptForm() {
+	if fe.activeForm != nil {
+		return
+	}
+	for len(fe.pendingForms) > 0 {
+		req := fe.pendingForms[0]
+		fe.pendingForms = fe.pendingForms[1:]
+		if req == nil || req.finished {
+			continue
+		}
+		if req.ctx.Err() != nil {
+			fe.finishPromptFormRequest(req, req.ctx.Err())
+			continue
+		}
+		fe.presentPromptForm(req)
+		return
 	}
 }
 
@@ -1350,75 +1476,6 @@ func formCompletionError(form *huh.Form) error {
 		return errors.Join(ErrInterrupted, huh.ErrUserAborted)
 	}
 	return nil
-}
-
-// removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
-// is still the active form, so a late dismissal (e.g. from a cancelled context)
-// can't remove a form that has since been replaced. Must run on the UI goroutine.
-func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
-	if fe.formWrap == nil || fe.formWrap != wrap {
-		return
-	}
-	fe.tui.RemoveChild(fe.formWrap)
-	fe.formWrap = nil
-	fe.formModel = nil
-	fe.keymapBar.Update()
-	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
-	fe.Update()
-}
-
-// PrintAbove satisfies llmconfig.AbovePrinter: it writes text into the terminal
-// scrollback above the live TUI, so long content like OAuth URLs isn't
-// word-wrapped by the form renderer and stays selectable / Ctrl+Clickable. It
-// runs on the UI goroutine (serialized with rendering) because setup calls it
-// from a background goroutine.
-func (fe *frontendPretty) PrintAbove(text string) {
-	fe.dispatch(func() {
-		fe.tui.PrintAbove(text)
-	})
-}
-
-// OpenBrowser satisfies llmconfig.BrowserOpener, opening url in the user's
-// browser (e.g. for OAuth). runWithTUI already redirects browser.Stdout/Stderr
-// into a buffer, so a failed or noisy opener can't corrupt the TUI.
-func (fe *frontendPretty) OpenBrowser(url string) error {
-	return browser.OpenURL(url)
-}
-
-func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
-	form.SubmitCmd = tea.Quit
-	form.CancelCmd = tea.Quit
-	fe.formModel = form.
-		WithTheme(frontendFormTheme()).
-		WithKeyMap(frontendFormKeyMap()).
-		WithShowHelp(false)
-	fe.formWrap = teav1.New(fe.formModel)
-	wrap := fe.formWrap
-	fe.formWrap.OnQuit(func() {
-		// Remove this form BEFORE invoking result: the callback may
-		// synchronously install a replacement form (e.g. branch()'s "custom
-		// prompt" path chains a second form via handlePromptForm), which
-		// reassigns fe.formWrap/fe.formModel. Removing afterwards
-		// would then see the replacement, hit removeForm's guard and no-op,
-		// leaking this form (and its spacer) on screen. Capture the model first
-		// since removeForm nils fe.formModel.
-		model := fe.formModel
-		fe.removeForm(wrap)
-		result(model)
-		if model.State == huh.StateAborted {
-			// A form owns input focus, so Ctrl+C reaches Huh instead of the
-			// frontend's navigation handler. Preserve the frontend-wide interrupt
-			// contract rather than treating the form's default value as a choice.
-			fe.quitAction(ErrInterrupted)
-		}
-	})
-	// Insert before keymapBar
-	fe.tui.RemoveChild(fe.keymapBar)
-	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(fe.keymapBar)
-	fe.keymapBar.Update()
-	fe.tui.SetFocus(fe.formWrap)
-	return wrap
 }
 
 func frontendFormKeyMap() *huh.KeyMap {
@@ -1451,6 +1508,133 @@ func frontendFormTheme() *huh.Theme {
 	theme.Blurred.FocusedButton = button
 	theme.Blurred.BlurredButton = button
 	return theme
+}
+
+func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
+	req.model.SubmitCmd = tea.Quit
+	req.model.CancelCmd = tea.Quit
+	model := req.model.
+		WithTheme(frontendFormTheme()).
+		WithKeyMap(frontendFormKeyMap()).
+		WithShowHelp(false)
+	// Cap the form at half the screen so a tall field (e.g. the .resume session
+	// picker's long Select) stays scrollable instead of dominating the terminal.
+	// A form that already fits keeps its natural height: forcing the cap would
+	// pad compact confirmations with blank rows.
+	if h := fe.window.Height; h > 0 {
+		if natural := strings.Count(model.View(), "\n") + 1; natural > h/2 {
+			model = model.WithHeight(max(h/2, 3))
+		}
+	}
+	active := &activePromptForm{
+		request: req,
+		model:   model,
+		wrap:    teav1.New(model),
+		spacer:  &blankLine{},
+	}
+	active.wrap.OnQuit(func() {
+		fe.completePromptForm(active, true)
+	})
+
+	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
+	// typed before the wrapper's first render and restores the captured owner
+	// when this form is dismissed.
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(active.wrap)
+	fe.tui.AddChild(active.spacer)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.activeForm = active
+	active.focus = fe.tui.PushFocus(active.wrap)
+	fe.syncHardwareCursor()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+}
+
+// completePromptForm tears down exactly one form. Late callbacks and duplicate
+// cancellation are harmless because identity and finished state are checked.
+func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeResult bool) {
+	if active == nil || fe.activeForm != active || active.request.finished {
+		return
+	}
+
+	active.focus.Restore()
+	fe.tui.RemoveChild(active.wrap)
+	fe.tui.RemoveChild(active.spacer)
+	fe.activeForm = nil
+	fe.syncHardwareCursor()
+
+	req := active.request
+	fe.finishPromptFormRequest(req, formCompletionError(active.model))
+	if invokeResult && req.result != nil {
+		// Teardown happens before callbacks so chained forms cannot orphan the
+		// wrapper that just quit.
+		req.result(active.model)
+	}
+	if active.model.State == huh.StateAborted {
+		// A form owns input focus, so Ctrl+C reaches Huh instead of the
+		// frontend's navigation handler. Preserve the frontend-wide interrupt
+		// contract rather than treating the form's default value as a choice.
+		fe.quitAction(ErrInterrupted)
+	}
+	fe.activateNextPromptForm()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) finishPromptFormRequest(req *promptFormRequest, err error) {
+	if req == nil || req.finished {
+		return
+	}
+	req.err = err
+	req.finished = true
+	close(req.done)
+}
+
+func (fe *frontendPretty) cancelPromptForm(req *promptFormRequest) {
+	if req == nil || req.finished {
+		return
+	}
+	if fe.activeForm != nil && fe.activeForm.request == req {
+		fe.completePromptForm(fe.activeForm, false)
+		return
+	}
+	for i, pending := range fe.pendingForms {
+		if pending != req {
+			continue
+		}
+		fe.pendingForms = append(fe.pendingForms[:i], fe.pendingForms[i+1:]...)
+		break
+	}
+	fe.finishPromptFormRequest(req, req.ctx.Err())
+	fe.activateNextPromptForm()
+}
+
+// PrintAbove satisfies llmconfig.AbovePrinter: it writes text into the terminal
+// scrollback above the live TUI, so long content like OAuth URLs isn't
+// word-wrapped by the form renderer and stays selectable / Ctrl+Clickable. It
+// runs on the UI goroutine (serialized with rendering) because setup calls it
+// from a background goroutine.
+func (fe *frontendPretty) PrintAbove(text string) {
+	fe.dispatch(func() {
+		fe.tui.PrintAbove(text)
+	})
+}
+
+// OpenBrowser satisfies llmconfig.BrowserOpener, opening url in the user's
+// browser (e.g. for OAuth). runWithTUI already redirects browser.Stdout/Stderr
+// into a buffer, so a failed or noisy opener can't corrupt the TUI.
+func (fe *frontendPretty) OpenBrowser(url string) error {
+	return browser.OpenURL(url)
+}
+
+// blankLine is a trivial component that renders a single empty line.
+type blankLine struct{ tuist.Compo }
+
+func (*blankLine) Render(ctx tuist.Context) {
+	ctx.Line("")
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1574,6 +1758,44 @@ func (fe *frontendPretty) primarySpan() dagui.SpanID {
 		return fe.reportPrimary
 	}
 	return fe.db.PrimarySpan
+}
+
+// syncTerminalTitle keeps the terminal's OSC 2 title aligned with the span the
+// live frontend is scoped to. It runs from Render on the UI goroutine, so its
+// direct terminal write is serialized with Tuist's frame writes without
+// smuggling OSC into the rendered line model.
+func (fe *frontendPretty) syncTerminalTitle() {
+	if fe.reportOnly || fe.tuiTerm == nil || fe.db == nil {
+		return
+	}
+	spanID := fe.ZoomedSpan
+	if !spanID.IsValid() {
+		spanID = fe.primarySpan()
+	}
+	span := fe.db.Spans.Map[spanID]
+	if span == nil {
+		return
+	}
+
+	title := sanitizeTerminalTitle(span.Name)
+	if fe.terminalTitleSet && title == fe.terminalTitle {
+		return
+	}
+	fe.tuiTerm.WriteString(ansi.SetWindowTitle(title))
+	fe.terminalTitle = title
+	fe.terminalTitleSet = true
+}
+
+// sanitizeTerminalTitle prevents a telemetry-provided name from terminating
+// OSC 2 early or injecting other terminal controls.
+func sanitizeTerminalTitle(title string) string {
+	title = ansi.Strip(title)
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, title)
 }
 
 func (fe *frontendPretty) SetTelemetryError(err error) {
@@ -2024,6 +2246,100 @@ func (fe *frontendPretty) setupTUI() {
 	fe.tui.SetFocus(fe)
 }
 
+func (fe *frontendPretty) inputFocused() bool {
+	return fe.tui != nil && fe.textInput != nil && fe.tui.IsFocused(fe.textInput)
+}
+
+func (fe *frontendPretty) formFocused() bool {
+	return fe.tui != nil && fe.activeForm != nil && fe.tui.IsFocused(fe.activeForm.wrap)
+}
+
+func (fe *frontendPretty) searchFocused() bool {
+	return fe.tui != nil && fe.searchInput != nil && fe.tui.IsFocused(fe.searchInput)
+}
+
+func (fe *frontendPretty) logSearchFocused() bool {
+	return fe.tui != nil && fe.logSearchInput != nil && fe.tui.IsFocused(fe.logSearchInput)
+}
+
+func (fe *frontendPretty) logPagerFocused() bool {
+	return fe.tui != nil && fe.logPager != nil && fe.tui.IsFocused(fe.logPager)
+}
+
+func (fe *frontendPretty) testsFocusTarget() tuist.Component {
+	if fe.fullscreenTests == nil {
+		return nil
+	}
+	if children := fe.fullscreenTests.focusedChildren; children != nil && children.focusedSpan.IsValid() && children.sync() {
+		if children.scope.rows != nil && children.scope.rows.BySpan[children.focusedSpan] != nil {
+			if tree := children.scope.spanTrees[children.focusedSpan]; tree != nil {
+				return tree
+			}
+		}
+	}
+	return fe.fullscreenTests
+}
+
+func (fe *frontendPretty) testsFocused() bool {
+	if fe.tui == nil || !fe.testsMode || fe.fullscreenTests == nil {
+		return false
+	}
+	focused := fe.tui.Focused()
+	if focused == fe.fullscreenTests {
+		return true
+	}
+	for _, children := range fe.testSpanChildren {
+		for _, tree := range children.scope.spanTrees {
+			if focused == tree {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (fe *frontendPretty) navigationFocused() bool {
+	if fe.tui == nil {
+		return false
+	}
+	focused := fe.tui.Focused()
+	if focused == fe {
+		return true
+	}
+	for _, tree := range fe.spanTrees {
+		if focused == tree {
+			return true
+		}
+	}
+	return false
+}
+
+func (fe *frontendPretty) navigationTarget() tuist.Component {
+	if fe.FocusedSpan.IsValid() {
+		if tree := fe.spanTrees[fe.FocusedSpan]; tree != nil {
+			return tree
+		}
+	}
+	return fe
+}
+
+func (fe *frontendPretty) focusNavigationTarget() {
+	fe.tui.SetFocus(fe.navigationTarget())
+	fe.syncHardwareCursor()
+}
+
+// syncHardwareCursor keeps terminal cursor visibility as a rendering side
+// effect of Tuist focus. It is never consulted to decide who receives input.
+func (fe *frontendPretty) syncHardwareCursor() {
+	if fe.tui == nil {
+		return
+	}
+	focused := fe.tui.Focused()
+	show := focused != nil && (focused == fe.textInput || focused == fe.searchInput ||
+		focused == fe.logSearchInput || (fe.activeForm != nil && focused == fe.activeForm.wrap))
+	fe.tui.SetShowHardwareCursor(show)
+}
+
 // OnMount is called by tuist when the component is mounted into the TUI tree.
 // It starts the frame ticker and, on the first mount, spawns the run function.
 func (fe *frontendPretty) OnMount(ctx tuist.Context) {
@@ -2244,6 +2560,8 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		if fe.commandView != nil {
 			fe.commandView.Update()
 		}
+		fe.updateAgentRoster()
+		fe.notifyAgentSteps()
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -2261,8 +2579,10 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 	}
 	// The inline LogsView memoizes Vterm.View(); its content isn't an input the
 	// owner's sync() compares, so push an Update when logs arrive.
-	if lv, ok := fe.logsViews[spanID]; ok {
-		lv.Update()
+	for key, lv := range fe.logsViews {
+		if key.spanID == spanID {
+			lv.Update()
+		}
 	}
 	if _, _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
 		for id := spanID; ; {
@@ -2310,7 +2630,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			logSpanIDs[spanID] = struct{}{}
 			fe.updateSpanTreesForLogs(spanID)
 		}
-		fe.db.LogExporter().Export(context.Background(), logsCopy)
+		logsCopy = fe.db.IngestLogs(logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
@@ -2322,6 +2642,13 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		if fe.commandView != nil {
 			fe.commandView.Update()
 		}
+		// Agent state rides the log stream (design §9), so a state change
+		// arrives here rather than on a span.
+		fe.updateAgentRoster()
+		// So do conversation commits: a snapshot record marks a step
+		// boundary, which is the cue to refresh the focused conversation's
+		// UI surfaces.
+		fe.notifyAgentSteps()
 		fe.Update()
 	})
 	return nil
@@ -2407,27 +2734,12 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 	return <-errs
 }
 
-func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
-	if fe.formModel != nil {
-		return fe.formModel.KeyBinds()
+func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:gocyclo
+	if fe.formFocused() {
+		return fe.activeForm.model.KeyBinds()
 	}
 	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
 		return nil
-	}
-
-	if fe.editlineFocused {
-		bnds := []key.Binding{
-			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-		}
-		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
-			)
-		}
-		if fe.shell != nil {
-			bnds = append(bnds, fe.shell.KeyBindings(out)...)
-		}
-		return bnds
 	}
 
 	var quitMsg string
@@ -2447,7 +2759,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
-	if fe.logSearchInput != nil {
+	if fe.searchFocused() || fe.logSearchFocused() {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("enter"),
 				key.WithHelp("enter", "search")),
@@ -2455,7 +2767,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				key.WithHelp("esc", "cancel")),
 		}
 	}
-	if fe.logPager != nil {
+	if fe.logPagerFocused() {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"),
 				key.WithHelp("↑↓", "scroll")),
@@ -2482,7 +2794,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 	}
 	var focused *dagui.Span
-	if fe.testsMode {
+	if fe.testsFocused() {
 		enterHelp := "detail"
 		enterEnabled := false
 		if fe.fullscreenTests != nil {
@@ -2523,10 +2835,33 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
+	if fe.inputFocused() {
+		bnds := []key.Binding{
+			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
+		}
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
+			)
+		}
+		// Roster focus is shown only once there is more than one agent to
+		// switch between. A single-agent roster remains a state display.
+		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
+				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
+					KeyEnabled(fe.lastFocusedAgent != "")),
+			)
+		}
+		if fe.shell != nil {
+			bnds = append(bnds, fe.shell.KeyBindings(out)...)
+		}
+		return bnds
+	}
 	if fe.FocusedSpan.IsValid() {
 		focused = fe.db.Spans.Map[fe.FocusedSpan]
 	}
-	return []key.Binding{
+	binds := []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
@@ -2565,6 +2900,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("b", "branch"),
 			KeyEnabled(focused != nil && spanLLMCallDigest(focused) != "" && fe.shell != nil),
 		),
+		key.NewBinding(key.WithKeys("e"),
+			key.WithHelp("e", "edit prompt"),
+			KeyEnabled(fe.editablePrompt(focused)),
+		),
 		key.NewBinding(key.WithKeys("L"),
 			key.WithHelp("L", "logs"),
 			KeyEnabled(fe.spanHasLogs(focused)),
@@ -2578,10 +2917,25 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("N", "prev"),
 			KeyEnabled(fe.searchQuery != "")),
 	}
+	// Roster focus uses unmodified keys because nav mode is the one place they
+	// are free, and is shown only once there is more than one agent to switch.
+	if fe.agentRoster != nil && fe.agentRoster.Switchable() {
+		binds = append(binds,
+			key.NewBinding(key.WithKeys("1…9", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
+				key.WithHelp("1…9", "focus agent")),
+			key.NewBinding(key.WithKeys("`"),
+				key.WithHelp("`", "last agent"),
+				KeyEnabled(fe.lastFocusedAgent != "")),
+			key.NewBinding(key.WithKeys("[/]", "[", "]"),
+				key.WithHelp("[/]", "prev/next agent"),
+				KeyEnabled(fe.addressableAgentCount() > 1)),
+		)
+	}
+	return binds
 }
 
 func (fe *frontendPretty) keymapSnug() bool {
-	return fe.statusLine != nil && fe.formWrap == nil && fe.searchInput == nil && fe.logSearchInput == nil
+	return fe.statusLine != nil && fe.activeForm == nil && fe.searchInput == nil && fe.logSearchInput == nil
 }
 
 func (fe *frontendPretty) keymapHeight() int {
@@ -2644,6 +2998,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.viewDirty = false
 		fe.recalculateViewLocked()
 	}
+	fe.syncTerminalTitle()
 
 	// Refresh search on every frame — picks up new log output via
 	// midterm's incremental search (only re-scans changed rows).
@@ -2652,6 +3007,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
+	if !fe.finalRender {
+		r.enableCallSimplification(ctx.Width)
+	}
 
 	if fe.finalRender {
 		fe.renderFinalReport(ctx, r)
@@ -2778,7 +3136,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// The zoom header is pinned above the body so the zoomed span stays in view.
 	ctx.Lines(zoomHeader...)
 	ctx.Lines(body...)
-	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
+	// NOTE: textInput, active forms, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
 	// propagate through tuist automatically.
 }
@@ -3415,9 +3773,13 @@ func (fe *frontendPretty) queuedMessageHeight() int {
 }
 
 // statusLineHeight returns the line count of the status line. It renders a
-// single line while a model is set, and nothing otherwise.
+// single line while a model or agent roster is present, and nothing otherwise.
 func (fe *frontendPretty) statusLineHeight() int {
-	if fe.statusLine == nil || fe.statusLine.data.Model == "" {
+	if fe.statusLine == nil {
+		return 0
+	}
+	if fe.statusLine.data.Model == "" &&
+		(fe.statusLine.roster == nil || !fe.statusLine.roster.Visible()) {
 		return 0
 	}
 	return 1
@@ -3433,21 +3795,20 @@ func (fe *frontendPretty) editlineHeight() int {
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
 	height := strings.Count(val, "\n") + 1
-	// The framed prompt adds a horizontal rule above and below the input.
-	if fe.promptFrame != nil && fe.promptFrame.enabled {
-		height += 2
+	// PromptFrame owns the framed prompt's two rule rows.
+	if fe.promptFrame != nil {
+		height += fe.promptFrame.ChromeHeight()
 	}
 	return height
 }
 
-// formHeight returns the estimated line count of the form wrap
-// for chrome-height budgeting. The actual rendering is handled by tuist
-// (formWrap is a sibling component).
+// formHeight returns the estimated line count of the active form wrapper for
+// chrome-height budgeting. The actual rendering is handled by Tuist.
 func (fe *frontendPretty) formHeight() int {
-	if fe.formModel == nil {
+	if fe.activeForm == nil {
 		return 0
 	}
-	view := fe.formModel.View()
+	view := fe.activeForm.model.View()
 	if view == "" {
 		return 0
 	}
@@ -3590,11 +3951,6 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		return
 	}
 
-	if fe.formWrap != nil {
-		// avoid stealing focus from a form if present
-		return
-	}
-
 	if fe.focusedIndex() < 0 {
 		// durability: focused span disappeared from view
 		fe.autoFocus = true
@@ -3615,23 +3971,31 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
 
-	// Re-apply tuist focus after sync. The focus() call above may have
-	// targeted a SpanTreeView that didn't exist yet (new span on first
-	// appearance). Now that syncSpanTreeState has created all
-	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
-	fe.applyTuistFocus()
+	// If navigation was waiting on the stable frontend fallback while the
+	// selected SpanTreeView was created, transfer focus to that view now. Never
+	// steal focus from an input, form, pager, or tests view.
+	if fe.tui.IsFocused(fe) {
+		if target := fe.navigationTarget(); target != fe {
+			fe.tui.SetFocus(target)
+		}
+	}
 }
 
 // surfaceRoot returns the span the reveal-independent surfacing (checks,
 // conversation, services, generators) should roll up beneath for this render:
-// the currently ZOOMED span, or nil -- meaning the DB root, i.e. the whole
-// trace -- when the zoom IS the DB root or isn't loaded.
+// the currently ZOOMED span, or nil -- meaning the whole trace -- when the
+// zoom IS the DB root or isn't loaded.
 //
 // Surfacing is zoom-relative (see DB.surfaceRoot): "what ran beneath what I'm
 // looking at". The unzoomed interactive case resolves to nil and is therefore
 // byte-for-byte what it always was, while a subtree-scoped report -- an LLM
 // tool result, whose primary/zoom is the tool-call display span -- gets the
 // checks that tool ran, even though the display span is itself a Boundary.
+//
+// The two families read nil slightly differently, deliberately: checks,
+// services and generators resolve it to db.RootSpan, while the conversation
+// reads it as every message span in the DB, so an imported trace's transcript
+// surfaces alongside the live one (DB.SurfacedConversation).
 func (fe *frontendPretty) surfaceRoot() *dagui.Span {
 	if fe.db == nil {
 		return nil
@@ -3678,6 +4042,559 @@ func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
 		return nil
 	}
 	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
+}
+
+// agentRosterEntries sources the roster strip from the session's published
+// agents. Unlike the surfaced views above it is NOT relative to the zoom
+// root: the roster answers "who is in this session", a question the current
+// zoom has no bearing on — and an agent spawned deep inside a module call is
+// exactly the one worth surfacing.
+func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
+	if fe.db == nil {
+		return nil
+	}
+	focused := fe.focusedAgentID()
+	agents := fe.db.Agents()
+	entries := make([]AgentRosterEntry, 0, len(agents))
+	for _, agent := range agents {
+		name := agent.Name
+		if name == "" {
+			name = "agent"
+		}
+		entries = append(entries, AgentRosterEntry{
+			ID:        agent.ID,
+			Name:      name,
+			State:     agent.State,
+			WaitingOn: agent.WaitingOn,
+			Focused:   agent.ID != "" && agent.ID == focused,
+			// An agent whose loop span carries no call digest was never
+			// addressable, and one whose handle failed to rebuild has been
+			// proven not to be. Either way the entry is watch-only, and says
+			// so rather than pretending it can be spoken to.
+			ReadOnly: agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
+		})
+	}
+	return entries
+}
+
+// targetAgentID is the runtime handle of the agent the prompt addresses, as
+// reported by the handler -- the single source of truth for focus, so the
+// strip and the routing can never disagree.
+func (fe *frontendPretty) targetAgentID() string {
+	if fe.shell == nil {
+		return ""
+	}
+	if t, ok := fe.shell.(interface{ TargetAgentID() string }); ok {
+		return t.TargetAgentID()
+	}
+	return ""
+}
+
+// focusedAgentID is the agent the CLIENT believes the prompt addresses: the
+// destination of a focus request still in flight, or the handler's settled
+// target when there is none.
+//
+// The handler remains the single source of truth; this is the client's belief
+// about where that truth is heading, and it exists because focus is retargeted
+// asynchronously. Everything a keypress computes from "where focus is" reads
+// this instead of targetAgentID: the roster's own * marker (so the strip moves
+// on the press rather than a round-trip later -- the only feedback [/] has,
+// now that it stays in nav mode), which agent a draft is parked against, and
+// where the next cycle step counts from.
+func (fe *frontendPretty) focusedAgentID() string {
+	if fe.pendingFocusAgent != "" {
+		return fe.pendingFocusAgent
+	}
+	return fe.targetAgentID()
+}
+
+// focusAgentIndex moves focus to the nth roster entry (0-based), the
+// tmux-style numbered jump behind prompt mode's ctrl+<digit>. Reports whether
+// the key was handled.
+func (fe *frontendPretty) focusAgentIndex(n int) bool {
+	entries := fe.agentRosterEntries()
+	if n < 0 || n >= len(entries) {
+		return false
+	}
+	claimed, _ := fe.focusAgent(entries[n])
+	return claimed
+}
+
+// focusLastAgent toggles back to the previously focused agent -- tmux's
+// last-window, because the two-agent ping-pong is the common case and a
+// next/prev cycle is the wrong verb for it. (Nav mode does bind a cycle as
+// well; see navCycleAgent for why that does not make this key redundant.)
+// Returns focusAgent's (claimed, moved) pair.
+func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
+	if fe.lastFocusedAgent == "" {
+		return false, false
+	}
+	for _, entry := range fe.agentRosterEntries() {
+		if entry.ID == fe.lastFocusedAgent {
+			return fe.focusAgent(entry)
+		}
+	}
+	return false, false
+}
+
+// navRosterEntries returns entries only when the roster can switch focus.
+// The single-agent roster stays visible as state but must not claim nav keys.
+func (fe *frontendPretty) navRosterEntries() []AgentRosterEntry {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return nil
+	}
+	return fe.agentRoster.Entries()
+}
+
+// addressableAgentCount is how many roster entries focus can actually move
+// between. An entry the client holds no handle for can be watched but not
+// spoken to, so it is not a cycle target; the count is what tells the help
+// line whether [/] has anywhere to go.
+func (fe *frontendPretty) addressableAgentCount() int {
+	var n int
+	for _, entry := range fe.navRosterEntries() {
+		if entry.ID != "" && !entry.ReadOnly {
+			n++
+		}
+	}
+	return n
+}
+
+// navFocusAgent is nav mode's numbered jump: prompt mode's ctrl+<digit> on the
+// bare digit (0-based here). Reports whether the digit named a roster entry
+// at all -- a digit past the end of the strip names nothing, and nav mode
+// leaves it unclaimed rather than swallowing it.
+//
+// The key is claimed even when focus does not move (the named agent was
+// already focused, or is read-only and says so): the user pointed at an entry
+// that is right there on the strip, so "take me to that agent's prompt" is
+// answered either way. The prompt is only handed back when focus actually
+// MOVED, though: a failed focus leaves the user in nav mode, where their
+// fingers are -- flipping to insert on the error path would type every
+// subsequent nav key into the draft.
+func (fe *frontendPretty) navFocusAgent(n int) bool {
+	entries := fe.navRosterEntries()
+	if n < 0 || n >= len(entries) {
+		return false
+	}
+	claimed, moved := fe.focusAgent(entries[n])
+	if moved {
+		fe.returnToPromptAfterFocus()
+	}
+	return claimed
+}
+
+// navCycleAgent moves focus one step along the roster -- delta +1 for the
+// next entry, -1 for the previous -- wrapping around at the ends. Reports
+// whether there was anywhere to go, so a session with nobody else to talk to
+// leaves the key unclaimed instead of miming a switch that never happened.
+//
+// Unlike the digits and the toggle this does NOT hand the prompt back, and
+// that split is the whole design of the key: a cycle is a survey verb, meant
+// to be tapped until you land on the one you want, and a key that dropped you
+// into the prompt on the first press would type its own second press into the
+// input. The strip's * marker is the feedback instead, and `i` is one
+// keystroke away once you have arrived.
+//
+// §5.1 argues a next/prev cycle is the wrong verb for the two-agent
+// ping-pong, and it still is: the last-focused toggle answers that, and nav
+// mode binds it too. The cycle earns its place for the other case -- a roster
+// long enough that finding an agent's number is itself the work -- where
+// stepping along the strip beats counting it.
+//
+// Read-only entries are stepped OVER, never onto. focusAgent answers "focus
+// THIS one" for an unaddressable entry with a prompt error, which is the
+// honest reply when the user named it by number; a cycle names nobody in
+// particular, so stopping there would answer "next agent" with an error about
+// an agent the user never asked for -- once per press, all the way along. An
+// entry is only PROVEN unaddressable by a rebuild that failed, so the cycle
+// can still walk onto one the first time and report it; from then on the
+// strip has it marked and the cycle passes it by.
+func (fe *frontendPretty) navCycleAgent(delta int) bool {
+	entries := fe.navRosterEntries()
+	n := len(entries)
+	if n == 0 {
+		return false
+	}
+	start := -1
+	for i, entry := range entries {
+		if entry.Focused {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		// Nothing focused yet: start just off the near end, so ] lands on
+		// the first entry and [ on the last.
+		if delta > 0 {
+			start = -1
+		} else {
+			start = 0
+		}
+	}
+	for i := 1; i <= n; i++ {
+		entry := entries[((start+i*delta)%n+n)%n]
+		if entry.Focused || entry.ReadOnly || entry.ID == "" {
+			continue
+		}
+		// Nothing left for focusAgent to refuse but a handler that cannot
+		// retarget at all, and then there is no cycle to run.
+		claimed, _ := fe.focusAgent(entry)
+		return claimed
+	}
+	// One agent, or every other entry watch-only: the roster key is a no-op
+	// and must not pretend otherwise by consuming the press.
+	return false
+}
+
+// navFocusLastAgent is nav mode's last-focused toggle -- prompt mode's alt+l,
+// which §5.1 calls the right verb for the two-agent ping-pong that is the
+// common case. Nav mode would be strictly weaker without it.
+//
+// Like the digits, and unlike the cycle, this names a destination rather than
+// surveying, so it hands the prompt back -- but only when focus actually
+// moved (see navFocusAgent).
+func (fe *frontendPretty) navFocusLastAgent() bool {
+	if len(fe.navRosterEntries()) == 0 {
+		return false
+	}
+	claimed, moved := fe.focusLastAgent()
+	if !claimed {
+		return false
+	}
+	if moved {
+		fe.returnToPromptAfterFocus()
+	}
+	return true
+}
+
+// returnToPromptAfterFocus hands the prompt back after a roster key NAMED an
+// agent from nav mode -- a digit or the last-focused toggle, never the cycle
+// (see navCycleAgent).
+//
+// Naming an agent is a prelude to typing at it -- that is the entire point of
+// the per-agent draft, saved on blur and restored on focus (§5.1), which only
+// pays off if the next keystroke is the message. Staying in nav mode would
+// cost an `i` every single time and buy nothing: the tree nav mode browses is
+// the whole trace, and focus does not change it. doBranch ends the same way,
+// for the same reason.
+func (fe *frontendPretty) returnToPromptAfterFocus() {
+	fe.enterInsertMode()
+}
+
+// focusAgent points the prompt at one roster entry: the draft in the input is
+// saved against the agent being left and the new agent's draft restored, the
+// client's own belief about focus moves at once, and then the handler is asked
+// to make it true -- attaching to the agent through a handle rebuilt from the
+// trace when the session is not already driving it.
+//
+// Returns (claimed, moved): claimed when the keypress was answered at all --
+// including by an error naming the entry -- and moved only when the client's
+// belief actually switched to the entry. Callers that hand the prompt back
+// after a focus must key on moved, not claimed: flipping to insert on an
+// error path types the user's next nav keys into the draft.
+//
+// Focus moves only by a keypress -- never by an event -- so this is only ever
+// called from a key handler, or from settleFocus finishing what one started.
+func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved bool) {
+	if entry.ID == "" || entry.Focused {
+		return false, false
+	}
+	if _, ok := fe.shell.(interface {
+		FocusAgent(ctx context.Context, agentID, name, encodedID string) error
+	}); !ok {
+		return false, false
+	}
+	if entry.ReadOnly && fe.agentCallDigest(entry.ID) == "" {
+		// Nothing to rebuild from: the trace never advertised the call that
+		// produced this agent. An entry that is read-only merely because an
+		// EARLIER rebuild failed falls through instead: payloads keep
+		// arriving as the trace streams, so naming the entry by key is an
+		// explicit retry, and a success below clears the mark.
+		fe.setPromptError(fmt.Errorf("agent %q cannot be addressed from this trace", entry.Name))
+		return true, false
+	}
+
+	// The handle is rebuilt from the trace the client already ingests: the
+	// loop span advertises the digest of the call that produced the agent
+	// value, and that call's payload is on a span like any other (§9).
+	encodedID, err := encodedIDForCallDigest(fe.db, fe.agentCallDigest(entry.ID))
+	if err != nil {
+		// A frame whose span never reached this client cannot be rebuilt; the
+		// entry is read-only from here on, and says so.
+		fe.markAgentUnaddressable(entry.ID)
+		fe.setPromptError(fmt.Errorf("agent %q cannot be addressed: %w", entry.Name, err))
+		return true, false
+	}
+	// The rebuild closed, so any earlier verdict is stale: the payloads it
+	// was missing have arrived since. Clear the mark, and any error still
+	// naming the failure -- a successful focus must not leave a red line
+	// about it on screen.
+	delete(fe.unaddressableAgents, entry.ID)
+	fe.clearPromptError()
+
+	fe.saveAgentDraft()
+	// An interject hint describes a message sent to the agent being LEFT;
+	// carrying it across the switch would pin another agent's queue above
+	// this one's prompt.
+	fe.clearInterjectHint()
+	previous := fe.focusedAgentID()
+	// Believe the switch now and ask the handler to make it true after: the
+	// request is answered on the shell goroutine, so anything that read the
+	// settled target in the meantime would see a focus that has not moved
+	// yet. See focusedAgentID.
+	fe.pendingFocusAgent = entry.ID
+	fe.restoreAgentDraft(entry.ID)
+	fe.updateAgentRoster()
+
+	if fe.focusInFlight {
+		// A request is already out. This press rides along on the belief
+		// above, and settleFocus sends the catch-up request when that one
+		// lands; firing a second now would race the first at the handler.
+		return true, true
+	}
+	fe.sendFocusRequest(entry, encodedID, previous)
+	return true, true
+}
+
+// sendFocusRequest asks the handler to retarget at one entry. The client's
+// belief and the drafts have already been moved by the keypress, so this is
+// only the part that has to reach the handler: the completion either confirms
+// the belief or rolls it back.
+func (fe *frontendPretty) sendFocusRequest(entry AgentRosterEntry, encodedID, previous string) {
+	targeter, ok := fe.shell.(interface {
+		FocusAgent(ctx context.Context, agentID, name, encodedID string) error
+	})
+	if !ok {
+		return
+	}
+	fe.focusInFlight = true
+	fe.runShellAsync(func() {
+		err := targeter.FocusAgent(fe.shellCtx, entry.ID, entry.Name, encodedID)
+		fe.dispatch(func() {
+			if err != nil {
+				if fe.pendingFocusAgent == entry.ID {
+					// Focus did not move, so neither may the draft: put the
+					// line the user was typing back where they were typing
+					// it. Only when nothing was pressed since -- otherwise
+					// the drafts already belong to wherever the keys walked.
+					fe.saveDraftFor(entry.ID)
+					fe.restoreAgentDraft(previous)
+				}
+				fe.markAgentUnaddressable(entry.ID)
+				fe.setPromptError(fmt.Errorf("focus %q: %w", entry.Name, err))
+			} else {
+				fe.lastFocusedAgent = previous
+			}
+			fe.settleFocus(entry.ID)
+			fe.updateAgentRoster()
+			fe.Update()
+		})
+	})
+}
+
+// settleFocus runs when a focus request finishes. It releases the in-flight
+// slot and, when the roster keys walked on while that request was out, sends
+// one more request for wherever they ended up.
+//
+// Coalescing rather than queueing every press is deliberate: a burst of [ ]
+// taps is a survey, and the agents passed over are precisely the ones the
+// user decided NOT to talk to -- attaching to each in turn would be work done
+// on their behalf that they never asked for. It costs one extra round-trip
+// per burst instead of one per tap.
+func (fe *frontendPretty) settleFocus(requested string) {
+	fe.focusInFlight = false
+	if fe.pendingFocusAgent == "" || fe.pendingFocusAgent == requested {
+		// Nothing pressed since this request went out: the handler has
+		// caught up with the client's belief, or -- on failure -- the belief
+		// has been rolled back to where the handler still is.
+		fe.pendingFocusAgent = ""
+		return
+	}
+	for _, entry := range fe.agentRosterEntries() {
+		if entry.ID != fe.pendingFocusAgent {
+			continue
+		}
+		encodedID, err := encodedIDForCallDigest(fe.db, fe.agentCallDigest(entry.ID))
+		if err != nil {
+			// It rebuilt when the key was pressed; if it no longer does,
+			// the belief has to come back to where the handler actually is.
+			fe.markAgentUnaddressable(entry.ID)
+			fe.setPromptError(fmt.Errorf("agent %q cannot be addressed: %w", entry.Name, err))
+			fe.pendingFocusAgent = ""
+			fe.restoreAgentDraft(fe.targetAgentID())
+			return
+		}
+		fe.sendFocusRequest(entry, encodedID, requested)
+		return
+	}
+	// The agent left the roster while the request was out.
+	fe.pendingFocusAgent = ""
+}
+
+// agentCallDigest is the digest the engine advertised for an agent's value.
+func (fe *frontendPretty) agentCallDigest(agentID string) string {
+	if fe.db == nil {
+		return ""
+	}
+	for _, agent := range fe.db.Agents() {
+		if agent.ID == agentID {
+			return agent.CallDigest
+		}
+	}
+	return ""
+}
+
+func (fe *frontendPretty) markAgentUnaddressable(agentID string) {
+	if fe.unaddressableAgents == nil {
+		fe.unaddressableAgents = map[string]bool{}
+	}
+	fe.unaddressableAgents[agentID] = true
+}
+
+// saveAgentDraft parks the half-typed line against the agent it was being
+// typed at, so a switch mid-sentence does not eat the sentence. It is the
+// agent the client BELIEVES it is on: with a focus request still in flight
+// the handler's target still names the agent already left, and saving there
+// would overwrite that agent's real draft with the one being carried away
+// from it.
+func (fe *frontendPretty) saveAgentDraft() {
+	fe.saveDraftFor(fe.focusedAgentID())
+}
+
+// saveDraftFor parks the input's current line against a specific agent.
+func (fe *frontendPretty) saveDraftFor(agentID string) {
+	if fe.textInput == nil || agentID == "" {
+		return
+	}
+	if fe.agentDrafts == nil {
+		fe.agentDrafts = map[string]string{}
+	}
+	fe.agentDrafts[agentID] = fe.textInput.Value()
+}
+
+// restoreAgentDraft puts the newly focused agent's parked line back in the
+// input.
+func (fe *frontendPretty) restoreAgentDraft(agentID string) {
+	if fe.textInput == nil {
+		return
+	}
+	fe.textInput.SetValue(fe.agentDrafts[agentID])
+	fe.syncPrompt()
+}
+
+// setPromptError surfaces an error above the prompt, the same place a failed
+// turn reports.
+func (fe *frontendPretty) setPromptError(err error) {
+	fe.promptErr = err
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(err)
+	}
+}
+
+// clearPromptError removes the error line above the prompt. Called when the
+// action the error described has since succeeded (a focus that rebuilt, a
+// submitted prompt): a stale red line outlives its moment otherwise, since
+// nothing else repaints it away until the next submit.
+func (fe *frontendPretty) clearPromptError() {
+	fe.promptErr = nil
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(nil)
+	}
+}
+
+// updateAgentRoster re-renders the status line when the published roster has
+// changed. Components render only when marked dirty, and the roster's content
+// comes from the trace rather than from a setter, so this is where the trace
+// pushes it: on span batches (an agent appearing) and on log records (an
+// agent's state changing), plus whenever focus moves.
+func (fe *frontendPretty) updateAgentRoster() {
+	if fe.agentRoster == nil {
+		return
+	}
+	// The strip is no longer the only thing focus drives: the live tree is
+	// promoted per focused agent (see promoteConversationLocked), so a focus
+	// change has to invalidate the view too. Checked ahead of the fingerprint
+	// below, and against focus alone: this is the one place every focus path
+	// converges on -- focusAgent believing a switch, and the handler's
+	// completion confirming or rolling it back -- while the fingerprint also
+	// covers state flags, which change often and do not move the transcript.
+	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
+		fe.lastRosterFocus = focused
+		fe.viewDirty = true
+	}
+	var fingerprint strings.Builder
+	for _, entry := range fe.agentRosterEntries() {
+		fmt.Fprintf(&fingerprint, "%s\x00%s\x00%s\x00%t\x00%t\n",
+			entry.ID, entry.Name, entry.State, entry.Focused, entry.ReadOnly)
+	}
+	if fingerprint.String() == fe.agentRosterState {
+		return
+	}
+	fe.agentRosterState = fingerprint.String()
+	if fe.statusLine != nil {
+		fe.statusLine.Update()
+	}
+}
+
+// notifyAgentSteps detects step boundaries in the ingested trace -- an
+// agent's conversation-snapshot digest changing, which the engine publishes
+// on every commit -- and relays them to the shell handler, which refreshes
+// the focused conversation's status line and changes preview from the new
+// snapshot. This is what makes those surfaces track a working agent step by
+// step rather than turn by turn.
+//
+// It also retires the interject hint when the focused agent commits: the
+// mailbox drains at step boundaries, so the first commit after a mid-turn
+// submit is the moment the message is on the record (and visible in the
+// transcript), and the hint has served its purpose.
+func (fe *frontendPretty) notifyAgentSteps() {
+	if fe.db == nil {
+		return
+	}
+	stepper, _ := fe.shell.(interface{ AgentStepped(instanceID string) })
+	if fe.agentSnapshots == nil {
+		fe.agentSnapshots = map[string]string{}
+	}
+	for _, agent := range fe.db.Agents() {
+		if agent.ID == "" || agent.SnapshotDigest == "" {
+			continue
+		}
+		if fe.agentSnapshots[agent.ID] == agent.SnapshotDigest {
+			continue
+		}
+		fe.agentSnapshots[agent.ID] = agent.SnapshotDigest
+		if agent.ID == fe.focusedAgentID() {
+			fe.clearInterjectHint()
+		}
+		if stepper != nil {
+			// Cheap by contract: the handler defers its engine round-trips
+			// to a coalescing refresh goroutine, so telemetry ingestion --
+			// this runs on the UI event loop -- is never blocked on the
+			// engine.
+			stepper.AgentStepped(agent.ID)
+		}
+	}
+}
+
+// setInterjectHint shows a mid-turn submit above the prompt: the message was
+// handed to the engine (it is on the record, absorbed at the agent's next
+// step boundary), so without a hint the submit would look like the input
+// simply ate it. Unlike a queued serial-turn message it cannot be recalled
+// for editing -- it has already been sent.
+func (fe *frontendPretty) setInterjectHint(msg string) {
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetSentMessage(msg)
+	}
+}
+
+// clearInterjectHint retires the interject hint, if one is showing. Recallable
+// queued messages (serial turns) are left alone: they clear through
+// clearQueuedMessage, which also drains the handler's queue slot.
+func (fe *frontendPretty) clearInterjectHint() {
+	if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Sent() {
+		fe.queuedMsgLabel.SetMessage("")
+	}
 }
 
 // reportTestRoot is surfaceRoot for the TESTS section.
@@ -3762,11 +4679,64 @@ func (fe *frontendPretty) promoteConversationLocked() {
 		// The host is itself a message: there is no setup noise above it to hide.
 		return
 	}
-	fe.db.PromoteConversationTo(host)
+	scope, nodes := fe.conversationToPromote()
+	// Withdraw the previous scope before wiring the new one: promotion only
+	// adds, so a switch that skipped this would reveal both agents' transcripts
+	// at once (see DB.DemoteConversationNodesFrom).
+	if fe.promotedConversationHost != nil &&
+		(fe.promotedConversationAgent != scope || fe.promotedConversationHost != host) {
+		fe.db.DemoteConversationNodesFrom(fe.promotedConversationHost, fe.promotedConversation)
+	}
+	fe.db.PromoteConversationNodesTo(host, nodes)
+	fe.promotedConversationAgent = scope
+	fe.promotedConversation = nodes
+	fe.promotedConversationHost = host
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
+}
+
+// conversationToPromote is the transcript the live tree should show, and the
+// agent it is scoped to ("" for the whole trace).
+//
+// This is the read side of "the tree follows focus". It deliberately moves the
+// PROMOTION axis and not the zoom axis: zoom is navigation the user drives with
+// enter/esc, so focusing an agent by writing ZoomedSpan would make esc silently
+// un-follow the agent it is still routing messages to, and would discard
+// whatever the user had zoomed to before they switched.
+//
+// Two cases fall back to the whole trace rather than narrowing:
+//
+//   - The roster cannot switch focus. A single-agent session's one agent IS
+//     the whole conversation, so scoping buys nothing and would change what
+//     existing single-agent sessions render.
+//   - The focused agent has surfaced nothing yet -- freshly spawned, or its
+//     first turn has not reached this client. Promoting an empty set marks the
+//     host Passthrough with nothing revealed, i.e. a blank screen; showing the
+//     session until it speaks is the honest reading of "no transcript yet".
+func (fe *frontendPretty) conversationToPromote() (string, []*dagui.MessageNode) {
+	whole := func() (string, []*dagui.MessageNode) {
+		return "", fe.db.SurfacedConversation()
+	}
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return whole()
+	}
+	focused := fe.focusedAgentID()
+	if focused == "" {
+		return whole()
+	}
+	for _, agent := range fe.db.Agents() {
+		if agent.ID != focused {
+			continue
+		}
+		if nodes := fe.db.SurfacedConversationForAgent(agent); len(nodes) > 0 {
+			return focused, nodes
+		}
+		return whole()
+	}
+	// Focused on an agent the trace no longer lists.
+	return whole()
 }
 
 // promoteGeneratorsLocked is the `dagger generate` analog of
@@ -3810,43 +4780,6 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
-}
-
-// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
-// test view in tests mode, the SpanTreeView for the selected span in trace mode,
-// or fe itself when no span is selected. Skipped when editline or search has
-// focus.
-func (fe *frontendPretty) applyTuistFocus() {
-	if fe.editlineFocused || fe.searchActive || fe.logSearchInput != nil {
-		return
-	}
-	if fe.logPager != nil {
-		fe.tui.SetFocus(fe.logPager)
-		return
-	}
-	if fe.testsMode && fe.fullscreenTests != nil {
-		fe.tui.SetFocus(fe.fullscreenTests)
-		return
-	}
-	if fe.commandView != nil {
-		if fe.FocusedSpan.IsValid() {
-			for view := range fe.spanLists {
-				if tree := view.scope.spanTrees[fe.FocusedSpan]; tree != nil {
-					fe.tui.SetFocus(tree)
-					return
-				}
-			}
-		}
-		fe.tui.SetFocus(fe.commandView)
-		return
-	}
-	if fe.FocusedSpan.IsValid() {
-		if sr, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			fe.tui.SetFocus(sr)
-			return
-		}
-	}
-	fe.tui.SetFocus(fe)
 }
 
 // syncSpanTreeState synchronizes the main trace SpanTreeView component tree
@@ -4296,9 +5229,11 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 // above and below, extending its ANSIBrightBlack block by one row each way so
 // the prompt reads as a padded card set apart from the transcript. Only applies
 // in the live shell view; other rows, the final report, and plain mode are
-// unchanged.
+// unchanged. Event-origin messages render as bare one-liners, not cards, so
+// they get no shaded padding either.
 func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
-	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser {
+	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser ||
+		row.Span.LLMEventOriginMessage() {
 		return lines
 	}
 	width := fe.contentWidth
@@ -4367,21 +5302,17 @@ func (fe *frontendPretty) focusedIndex() int {
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
+	moveKeyboard := fe.navigationFocused()
 	oldSpan := fe.FocusedSpan
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
-			fe.tui.SetFocus(fe)
-		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
-			if sr, ok := fe.spanTrees[newSpan]; ok {
-				fe.tui.SetFocus(sr)
-			}
-		}
+	}
+	if moveKeyboard {
+		fe.focusNavigationTarget()
 	}
 	// Invalidate the render caches of old and new SpanTreeViews when the
 	// selected span changes. Tuist SetFocus handles visual focus invalidation;
@@ -4408,8 +5339,8 @@ func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
 // ---------- tuist.Interactive -----------------------------------------------
 
 // HandleKeyPress implements tuist.Interactive. It dispatches key events to the
-// nav handler. When the TextInput or formWrap is focused, keys go directly to
-// them via tuist's focus routing.
+// navigation handler. Focused inputs and forms receive keys directly through
+// Tuist's focus routing.
 func (fe *frontendPretty) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	fe.handleNavKeyUV(ev)
 
@@ -4440,9 +5371,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		}
 		return false // let TextInput handle ctrl+d (delete char) when input non-empty
 	case "ctrl+c":
-		if fe.shellInterrupt != nil {
-			fe.shellInterrupt(errors.New("interrupted"))
-		}
+		fe.interruptCurrent()
 		fe.textInput.SetValue("")
 		fe.syncPrompt()
 		return true
@@ -4451,7 +5380,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "esc", "alt+esc":
-		fe.enterNavMode(false)
+		fe.enterNavMode()
 		fe.syncPrompt()
 		return true
 	case "alt++", "alt+=":
@@ -4467,11 +5396,16 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "alt+up":
-		// Pull a queued interject message back into the input for editing.
-		// Inherently racy: if the prompt loop already consumed the message
-		// mid-turn, the shell's dequeue returns empty, so fall back to the
-		// text the label was showing.
-		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+		// Pull a queued message (one submitted while a non-prompt turn was
+		// running; see handleInputComplete) back into the input for editing.
+		// Slightly racy: if the turn just finished, handleShellDone already
+		// consumed the message to start it as a new turn, so the dequeue
+		// returns empty and we fall back to the text the label was showing.
+		// Prompt-turn interjections never land here: they are sent to the
+		// agent immediately, with nothing left client-side to recall -- the
+		// Sent check below keeps alt+up from "recalling" a message the agent
+		// is already going to read.
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			shown := fe.queuedMsgLabel.Message()
 			if msg := fe.clearQueuedMessage(); msg != "" {
 				shown = msg
@@ -4481,15 +5415,28 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 			return true
 		}
 		return false
-	case "up":
-		if fe.historyUp() {
-			return true
-		}
-	case "down":
-		if fe.historyDown() {
-			return true
-		}
+	case "up", "down":
+		// Let TextInput move within multiline or wrapped input. At the visual
+		// boundary it bubbles the key to PromptFrame for history navigation.
+		return false
 	default:
+		// Roster focus: tmux's numbered jump targets, with Ctrl so the digits
+		// themselves keep typing, plus its last-window toggle. Tuist requests
+		// Kitty keyboard disambiguation, so capable terminals encode modified
+		// digits distinctly. Nav mode's bare digits remain the fallback for
+		// legacy terminals and terminal shortcuts that consume Ctrl+digits.
+		// Tab is unavailable (input-mode binding, and the completion menu eats
+		// it).
+		if n, ok := agentJumpKey(keyStr); ok {
+			if fe.focusAgentIndex(n) {
+				return true
+			}
+		}
+		if keyStr == agentLastKey {
+			if claimed, _ := fe.focusLastAgent(); claimed {
+				return true
+			}
+		}
 		if fe.shell != nil {
 			if work := fe.shell.ReactToInput(fe.shellCtx, ev, fe.textInput.Value(), true); work != nil {
 				fe.runShellAsync(work)
@@ -4501,6 +5448,34 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	return false // let TextInput handle it
 }
 
+// handlePromptFrameKey handles editor keys that TextInput bubbled at a visual
+// boundary. PromptFrame is the input's parent in the component tree.
+func (fe *frontendPretty) handlePromptFrameKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	switch uv.Key(ev).String() {
+	case "up":
+		return fe.historyUp()
+	case "down":
+		return fe.historyDown()
+	default:
+		return false
+	}
+}
+
+// agentLastKey toggles back to the previously focused agent (tmux's
+// last-window, prefix+l). Prompt mode only; nav mode's roster keys are the
+// bare digits and [/] (see handleNavKeyUV).
+const agentLastKey = "alt+l"
+
+// agentJumpKey maps prompt mode's ctrl+1..ctrl+9 to a 0-based roster index.
+// Nav mode reaches the same jumps without the modifier.
+func agentJumpKey(keyStr string) (int, bool) {
+	rest, ok := strings.CutPrefix(keyStr, "ctrl+")
+	if !ok || len(rest) != 1 || rest[0] < '1' || rest[0] > '9' {
+		return 0, false
+	}
+	return int(rest[0] - '1'), true
+}
+
 // handleNavKeyUV handles key events in navigation mode.
 //
 //nolint:gocyclo // splitting this up doesn't feel more readable
@@ -4509,16 +5484,13 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
-
 	if fe.logPager != nil {
 		switch keyStr {
 		case "q", "esc", "alt+esc":
 			fe.closeLogPager()
 		case "ctrl+c":
 			if fe.shell != nil {
-				if fe.shellInterrupt != nil {
-					fe.shellInterrupt(errors.New("interrupted"))
-				}
+				fe.interruptCurrent()
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
@@ -4550,9 +5522,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			fe.closeTestsMode()
 		case "ctrl+c":
 			if fe.shell != nil {
-				if fe.shellInterrupt != nil {
-					fe.shellInterrupt(errors.New("interrupted"))
-				}
+				fe.interruptCurrent()
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
@@ -4582,9 +5552,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	switch keyStr {
 	case "q", "ctrl+c":
 		if fe.shell != nil {
-			if fe.shellInterrupt != nil {
-				fe.shellInterrupt(errors.New("interrupted"))
-			}
+			fe.interruptCurrent()
 		} else {
 			fe.quitAction(ErrInterrupted)
 		}
@@ -4691,13 +5659,66 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		fe.recalculateViewLocked()
 		return
 	case "tab", "i":
-		fe.enterInsertMode(false)
+		fe.enterInsertMode()
 		return
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// Roster focus on bare digits. Prompt mode hides the same jump behind
+		// Ctrl so the digits keep typing. Tuist requests the Kitty keyboard
+		// protocol's disambiguate mode, under which Ctrl+digits arrive as
+		// distinct CSI u sequences, but legacy terminals cannot represent every
+		// chord and terminal shortcuts can still consume them before they reach
+		// us. Nav mode is a modal context where unmodified keys are the
+		// vocabulary, so it can offer the jump on a key that always arrives
+		// (§5.1). The Ctrl bindings stay: this adds a universal fallback rather
+		// than replacing the prompt shortcut.
+		//
+		// Accepted cost: nav mode is otherwise vim-flavoured (hjkl, gg, G,
+		// /, n/N), and spending the digits here forecloses ever adding vim's
+		// count prefixes (5j). Deliberate -- there is no motion here long
+		// enough to want counting, and a switcher you can reach is worth
+		// more than one you might one day want to repeat.
+		if fe.navFocusAgent(int(keyStr[0] - '1')) {
+			return
+		}
+	case "`":
+		// Last-focused toggle: nav mode's alt+l, and by §5.1 the RIGHT verb
+		// for the two-agent ping-pong that is the common case -- without it
+		// nav mode would be strictly weaker than the prompt. tmux's own `l`
+		// is taken here (nav l = expand), so: ` is free, sits next to 1, and
+		// reads as "the other one". (`\` is free too, but neighbours ctrl+\'s
+		// SIGQUIT -- bad company for a key you tap.)
+		if fe.navFocusLastAgent() {
+			return
+		}
+	case "[", "]":
+		// Previous/next agent -- and NOT ctrl+[, the obvious pairing. Not
+		// because it cannot be read: tuist turns on the Kitty keyboard
+		// protocol's disambiguate mode unconditionally (tuist's
+		// terminal_unix.go / terminal_windows.go), and under it esc arrives
+		// as CSI 27 u while ctrl+[ arrives as CSI 91;5u -- two genuinely
+		// distinct keys. The problem is that it is AMBIGUOUS: on every
+		// terminal without that protocol (Terminal.app, older xterm,
+		// tmux/screen, conhost) ctrl+[ is the bare 0x1B byte and decodes as
+		// plain "esc", and nothing here consults tuist's HasKittyKeyboard to
+		// tell the two worlds apart. It would be a real key for some users
+		// and a silent Esc for the rest. And even where it works it is
+		// muscle memory for Esc, so taking it would break Esc for exactly
+		// the users whose terminal is good enough to let us have it.
+		delta := 1
+		if keyStr == "[" {
+			delta = -1
+		}
+		if fe.navCycleAgent(delta) {
+			return
+		}
 	case "t":
 		fe.terminal()
 		return
 	case "b":
 		fe.branch()
+		return
+	case "e":
+		fe.editPrompt()
 		return
 	case "L":
 		fe.openFocusedLogs()
@@ -4744,15 +5765,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 // handleInputComplete is called when the editline signals that input is
 // complete (user pressed Enter on a complete line).
 func (fe *frontendPretty) handleInputComplete() {
-	if !fe.editlineFocused {
-		return
-	}
-
+	// TextInput.OnSubmit is only reached through Tuist's focused input routing.
 	// reset prompt error state
-	fe.promptErr = nil
-	if fe.promptErrLabel != nil {
-		fe.promptErrLabel.SetError(nil)
-	}
+	fe.clearPromptError()
 
 	value := fe.textInput.Value()
 	// Add to history (encoded with mode prefix for round-trip fidelity)
@@ -4770,10 +5785,24 @@ func (fe *frontendPretty) handleInputComplete() {
 	// reset now that we've accepted input
 	fe.textInput.SetValue("")
 
-	// If a turn is already running, queue this as an interject message for the
-	// current turn (picked up by the prompt loop) instead of blocking on a new
-	// one.
-	if fe.shellRunning {
+	// Route the message. WHO gets it is the handler's business -- the focused
+	// conversation -- and never an inference from what happens to be running:
+	// with a roster, the busy agent and the focused agent are routinely
+	// different agents (§5.1). The target's own in-flight turn absorbs the
+	// message if it has one (the engine records it immediately and its reply
+	// arrives within that turn, so nothing stays pending client-side).
+	if fe.submitToTarget(value) {
+		// Absorbed mid-turn: the engine holds it until the agent's next step
+		// boundary, so show it queued above the prompt until that boundary
+		// lands -- without the hint, the submit looks like the input ate it.
+		fe.setInterjectHint(value)
+		return
+	}
+	// Otherwise it opens a new turn -- unless the handler's one interpreter is
+	// busy with a shell command or a /command, which can't absorb input, so
+	// the message is queued and replayed when that turn finishes (see
+	// handleShellDone).
+	if fe.serialRunning {
 		if _, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
 			fe.setQueuedMessage(value)
 			return
@@ -4783,8 +5812,41 @@ func (fe *frontendPretty) handleInputComplete() {
 	fe.startShellHandle(value)
 }
 
-// setQueuedMessage stores an interject message on the shell handler and shows
-// the pending indicator above the prompt.
+// submitToTarget offers the message to the focused conversation's in-flight
+// turn, reporting whether it was absorbed.
+func (fe *frontendPretty) submitToTarget(value string) bool {
+	if fe.shell == nil {
+		return false
+	}
+	sub, ok := fe.shell.(interface{ SubmitToTarget(string) bool })
+	return ok && sub.SubmitToTarget(value)
+}
+
+// interruptCurrent is Ctrl-C. A serial turn (a shell command or a /command)
+// is cancelled client-side, since that turn IS the client. Otherwise the
+// FOCUSED agent's runtime is interrupted server-side -- explicitly, by
+// address, rather than by re-pointing a cancel at whichever turn happens to
+// hold the handler: an agent that is running but is not the one blocking the
+// client would otherwise be unreachable, and the agent the user is looking at
+// is the only one Ctrl-C may touch (§5.1).
+func (fe *frontendPretty) interruptCurrent() {
+	// Ctrl-C abandons anything waiting behind the interrupted work. Clear both
+	// the client-side serial queue and the sent interject hint; the engine's
+	// interrupt drops its still-unconsumed mailbox entries in parallel.
+	fe.clearQueuedMessage()
+	if !fe.serialRunning && fe.shell != nil {
+		if it, ok := fe.shell.(interface{ InterruptTarget() bool }); ok && it.InterruptTarget() {
+			return
+		}
+	}
+	if fe.shellInterrupt != nil {
+		fe.shellInterrupt(errors.New("interrupted"))
+	}
+}
+
+// setQueuedMessage stores a message on the shell handler to be run as a new
+// turn once the current (non-prompt) one finishes, and shows the pending
+// indicator above the prompt.
 func (fe *frontendPretty) setQueuedMessage(msg string) {
 	if qh, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
 		qh.QueueMessage(msg)
@@ -4794,8 +5856,8 @@ func (fe *frontendPretty) setQueuedMessage(msg string) {
 	}
 }
 
-// clearQueuedMessage removes the queued interject message from the shell
-// handler and the indicator, returning whatever was still pending.
+// clearQueuedMessage removes the queued message from the shell handler and
+// the indicator, returning whatever was still pending.
 func (fe *frontendPretty) clearQueuedMessage() string {
 	var msg string
 	if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
@@ -4810,30 +5872,47 @@ func (fe *frontendPretty) clearQueuedMessage() string {
 // startShellHandle runs a shell turn for value in the background. It is used
 // both for freshly submitted input and to drain a message that was queued
 // after the previous turn's prompt loop finished consuming interjects.
+//
+// A SERIAL turn -- a shell command or a prompt-mode /command -- occupies the
+// handler's single mvdan/sh interpreter, so those are still serialized behind
+// shellLock. A prompt turn is not: it runs server-side in its own agent
+// runtime, and holding the lock would mean an agent that is running blocks
+// every other agent from being spoken to.
 func (fe *frontendPretty) startShellHandle(value string) {
 	if fe.shell == nil {
 		return
 	}
+	serial := true
+	if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
+		serial = sh.Serial(value)
+	}
 	ctx, cancel := context.WithCancelCause(fe.shellCtx)
 	fe.shellInterrupt = cancel
-	fe.shellRunning = true
+	fe.turnsRunning++
+	if serial {
+		fe.serialRunning = true
+	}
 
-	// switch back to following the bottom and re-enter nav mode
-	fe.goEnd()
-	fe.enterNavMode(true)
+	// A prompt submission may resume following new output, but a queued turn
+	// starting after the user moved elsewhere must not retarget navigation.
+	if fe.inputFocused() {
+		fe.goEnd()
+	}
 
 	go func() {
-		fe.shellLock.Lock()
-		defer fe.shellLock.Unlock()
+		if serial {
+			fe.shellLock.Lock()
+			defer fe.shellLock.Unlock()
+		}
 		err := fe.shell.Handle(ctx, value)
 		fe.dispatch(func() {
-			fe.handleShellDone(err)
+			fe.handleShellDone(err, serial)
 			fe.Update()
 		})
 	}()
 }
 
-func (fe *frontendPretty) handleShellDone(err error) {
+func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 	fe.promptErr = err
 	if fe.promptErrLabel != nil {
 		fe.promptErrLabel.SetError(err)
@@ -4843,34 +5922,34 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	} else {
 		fe.promptFg = termenv.ANSIRed
 	}
-	if fe.autoModeSwitch {
-		fe.enterInsertMode(true)
-	}
 	fe.syncPrompt()
-	fe.shellRunning = false
+	if fe.turnsRunning > 0 {
+		fe.turnsRunning--
+	}
+	if serial {
+		fe.serialRunning = false
+	}
 
-	// The turn is done: clear the pending indicator (the message was either
-	// consumed mid-turn by the prompt loop, or is still queued). If one is
-	// still queued, run it now as a new turn so it is not left stale.
-	if queued := fe.clearQueuedMessage(); queued != "" {
-		fe.startShellHandle(queued)
+	// The turn is done: if a message was queued behind it (submitted while a
+	// serial turn ran), run it now as a new turn so it is not left stale.
+	if !fe.serialRunning {
+		if queued := fe.clearQueuedMessage(); queued != "" {
+			fe.startShellHandle(queued)
+		}
 	}
 }
 
 // ---------- mode switching --------------------------------------------------
 
-func (fe *frontendPretty) enterNavMode(auto bool) {
-	fe.autoModeSwitch = auto
-	fe.editlineFocused = false
-	fe.recalculateViewLocked() // also applies tuist focus via applyTuistFocus
+func (fe *frontendPretty) enterNavMode() {
+	fe.focusNavigationTarget()
 	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) enterSearchMode() {
-	if fe.searchActive {
+	if fe.searchInput != nil {
 		return
 	}
-	fe.searchActive = true
 	fe.searchInput = tuist.NewTextInput("")
 	fe.searchInput.Prompt = "/"
 	fe.searchInput.OnSubmit = func(ctx tuist.Context, value string) bool {
@@ -4879,23 +5958,24 @@ func (fe *frontendPretty) enterSearchMode() {
 	}
 	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
 
-	// Insert before keymapBar.
+	// Insert before keymapBar and temporarily own focus.
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.searchInput)
 	fe.tui.AddChild(fe.keymapBar)
-	fe.tui.SetFocus(fe.searchInput)
-	fe.tui.SetShowHardwareCursor(true)
+	fe.searchFocus = fe.tui.PushFocus(fe.searchInput)
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) exitSearchMode() {
-	if fe.searchInput != nil {
-		fe.tui.RemoveChild(fe.searchInput)
-		fe.searchInput = nil
+	if fe.searchInput == nil {
+		return
 	}
-	fe.searchActive = false
-	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
-	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	fe.searchFocus.Restore()
+	fe.tui.RemoveChild(fe.searchInput)
+	fe.searchInput = nil
+	fe.searchFocus = nil
+	fe.syncHardwareCursor()
 	fe.keymapBar.Update()
 }
 
@@ -4928,15 +6008,165 @@ func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEven
 	return false
 }
 
-func (fe *frontendPretty) enterInsertMode(auto bool) {
-	fe.autoModeSwitch = auto
+func (fe *frontendPretty) enterInsertMode() {
 	if fe.textInput != nil {
-		fe.editlineFocused = true
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
-		fe.recalculateViewLocked()
+		fe.syncHardwareCursor()
 		fe.keymapBar.Update()
 	}
+}
+
+// editablePrompt reports whether span belongs to the focused agent and its LLM
+// recipe can be traced back to an addressable withPrompt call. Reply and tool
+// rows are accepted too: e edits the prompt that originated their current turn.
+func (fe *frontendPretty) editablePrompt(span *dagui.Span) bool {
+	promptCall := fe.promptEditCall(span)
+	return promptCall != nil && promptCall.ReceiverDigest != ""
+}
+
+// promptEditCall locates the withPrompt call represented by span. It stays
+// payload-only so the key-help hot path does not rebuild and encode a full ID on
+// every render; promptEditTarget pays for that only after e is pressed.
+func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
+	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
+		return nil
+	}
+	digest := spanLLMCallDigest(span)
+	if digest == "" {
+		return nil
+	}
+	promptCall := fe.db.Call(digest)
+	for promptCall != nil && promptCall.Field != "withPrompt" {
+		promptCall = fe.db.Call(promptCall.ReceiverDigest)
+	}
+	if promptCall == nil {
+		return nil
+	}
+
+	if span.LLMRole == telemetry.LLMRoleUser && !span.Internal {
+		var peers []*dagui.Span
+		for _, candidate := range fe.db.Spans.Order {
+			if candidate != nil && !candidate.Internal &&
+				candidate.LLMRole == telemetry.LLMRoleUser &&
+				candidate.LLMCallDigest == digest &&
+				fe.sameNearestAgent(candidate, span) {
+				peers = append(peers, candidate)
+			}
+		}
+		slices.SortFunc(peers, func(a, b *dagui.Span) int {
+			return a.StartTime.Compare(b.StartTime)
+		})
+		selected := slices.Index(peers, span)
+		if selected < 0 {
+			return nil
+		}
+		for range len(peers) - selected - 1 {
+			promptCall = fe.db.Call(promptCall.ReceiverDigest)
+			if promptCall == nil || promptCall.Field != "withPrompt" {
+				return nil
+			}
+		}
+	}
+	return promptCall
+}
+
+// promptEditTarget returns the originating submitted prompt and the encoded LLM
+// state just before it. Message spans carry the post-withPrompt digest. For the
+// uncommon case where several messages drained at one step boundary and share
+// that final digest, explicitly selected user rows are mapped by StartTime onto
+// the consecutive withPrompt receiver chain.
+func (fe *frontendPretty) promptEditTarget(span *dagui.Span) (string, string, bool) {
+	promptCall := fe.promptEditCall(span)
+	if promptCall == nil || promptCall.ReceiverDigest == "" {
+		return "", "", false
+	}
+	var prompt string
+	var found bool
+	for _, arg := range promptCall.Args {
+		if arg.Name == "prompt" && arg.Value != nil {
+			prompt = arg.Value.GetString_()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", "", false
+	}
+	encoded, err := encodedIDForCallDigest(fe.db, promptCall.ReceiverDigest)
+	if err != nil {
+		return "", "", false
+	}
+	return prompt, encoded, true
+}
+
+func nearestAgent(span *dagui.Span) *dagui.Span {
+	for cur := span; cur != nil; cur = cur.ParentSpan {
+		if cur.Agent {
+			return cur
+		}
+	}
+	return nil
+}
+
+func (fe *frontendPretty) sameNearestAgent(a, b *dagui.Span) bool {
+	aa, bb := nearestAgent(a), nearestAgent(b)
+	if aa == nil || bb == nil {
+		return aa == bb
+	}
+	return aa.AgentID == bb.AgentID
+}
+
+// spanBelongsToFocusedAgent prevents a nested worker's surfaced message from
+// rewinding the chief merely because it appears in the chief's tree. Traces
+// predating agent spans remain editable: without an owning ancestor there is no
+// contrary routing evidence.
+func (fe *frontendPretty) spanBelongsToFocusedAgent(span *dagui.Span) bool {
+	owner := nearestAgent(span)
+	if owner == nil {
+		return true
+	}
+	focused := fe.focusedAgentID()
+	return focused != "" && owner.AgentID == focused
+}
+
+// editPrompt implements rewind, reword, resume. Rewind runs off the UI thread
+// because it may interrupt an in-flight engine step. Only after that succeeds do
+// we expose the old text in insert mode; submitting it then continues the same
+// agent from the pre-message state selected above.
+func (fe *frontendPretty) editPrompt() {
+	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
+		return
+	}
+	prompt, encoded, ok := fe.promptEditTarget(fe.db.Spans.Map[fe.FocusedSpan])
+	if !ok {
+		return
+	}
+	work := fe.shell.EditFromID(fe.shellCtx, encoded)
+	if work == nil {
+		return
+	}
+	fe.clearQueuedMessage()
+	go func() {
+		if err := work(); err != nil {
+			slog.Error("failed to rewind prompt for editing", "error", err)
+			fe.dispatch(func() {
+				fe.setPromptError(err)
+				fe.promptFg = termenv.ANSIRed
+				fe.syncPrompt()
+				fe.Update()
+			})
+			return
+		}
+		fe.dispatch(func() {
+			fe.clearPromptError()
+			fe.textInput.SetValue(prompt)
+			fe.goEnd()
+			fe.enterInsertMode()
+			fe.syncPrompt()
+			fe.Update()
+		})
+	}()
 }
 
 // branch prompts the user for a summarization choice, then branches the LLM
@@ -5024,7 +6254,7 @@ func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
 				// After branching, follow the bottom and switch to insert mode
 				// so the user can immediately see new spans and type a prompt.
 				fe.goEnd()
-				fe.enterInsertMode(false)
+				fe.enterInsertMode()
 				fe.syncPrompt()
 				fe.Update()
 			})
@@ -5126,20 +6356,76 @@ func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
 	if digest == "" {
 		return ""
 	}
-	// Find a span in the DB whose CallDigest matches the LLMCallDigest. This is
-	// the dagql call span (e.g. LLM.withPrompt) that produced the LLM state we
-	// want to branch from.
-	for _, s := range fe.db.Spans.Map {
-		if s.CallDigest == digest {
-			id, err := loadIDFromSpan(s)
-			if err != nil {
-				slog.Debug("failed to load ID from LLM call span", "err", err)
-				continue
-			}
-			return id
-		}
+	id, err := encodedIDForCallDigest(fe.db, digest)
+	if err != nil {
+		slog.Debug("failed to load ID from LLM call span", "err", err)
+		return ""
 	}
-	return ""
+	return id
+}
+
+// encodedIDForCallDigest rebuilds the ID of the dagql call with the given
+// digest from the call payloads this client has ingested, and encodes it.
+//
+// This is the one proven digest→handle path, shared by branch-from-message
+// (which finds an LLM.withPrompt/withResponse call), roster addressing (which
+// finds the pinned agent(handle:, name:) lookup a loop span advertises) and
+// resume (which finds an agent's committed conversation). It fails loudly
+// when a frame's payload never reached this client -- DB.CallIDForDigest
+// names the frame that referenced it -- which is the read-only signal a
+// caller must surface rather than treat as a working handle.
+//
+// It resolves through the payloads rather than by scanning for a span that
+// carries the digest, because a payload can reach a client with no span at
+// all: span emission dedupes per session by call digest, while the closure
+// still rides the log channel.
+func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("no trace to rebuild from")
+	}
+	id, err := db.CallIDForDigest(digest)
+	if err != nil {
+		return "", err
+	}
+	return id.Encode()
+}
+
+// AgentRestorePlan projects the imported trace's agents into a restore plan
+// (AgentRestorer, design §5.1's "Reading the DB back").
+//
+// It runs on the event loop and blocks for the result, like every other DB
+// read a run-goroutine caller makes: `dagger agent --trace` calls this
+// immediately after a fetch whose exports are still being dispatched onto
+// this same goroutine, and RestorePlan walks every span in the DB.
+func (fe *frontendPretty) AgentRestorePlan() []dagui.AgentRestore {
+	var plan []dagui.AgentRestore
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		plan = fe.db.RestorePlan()
+	})
+	<-done
+	return plan
+}
+
+// EncodedIDForCallDigest rebuilds and encodes the ID of the call with the
+// given digest, on the event loop for the same reason AgentRestorePlan is.
+//
+// This is the one proven digest->handle path (see encodedIDForCallDigest);
+// exposing it on the frontend rather than exporting the package-level
+// function is what keeps that read under the DB's owner.
+func (fe *frontendPretty) EncodedIDForCallDigest(digest string) (string, error) {
+	var (
+		encoded string
+		err     error
+	)
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		encoded, err = encodedIDForCallDigest(fe.db, digest)
+	})
+	<-done
+	return encoded, err
 }
 
 func loadIDFromSpan(span *dagui.Span) (string, error) {
@@ -5234,7 +6520,6 @@ func (fe *frontendPretty) initTextInput() {
 		fe.handleInputComplete()
 		return true // clear input
 	}
-	fe.editlineFocused = true
 }
 
 // syncPrompt refreshes the text input prompt from the shell handler.
@@ -5471,12 +6756,6 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 // its own highlighting via Vterm.SearchQuery).
 func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
-
-	if row.Span.LLMTool != "" {
-		// For edit tools, render a unified diff below the title. No-op for all
-		// other tools and incomplete/missing edit args.
-		fe.renderToolArgs(out, r, row, prefix)
-	}
 
 	// The expanded-step-logs case (span.Message == "" && (Expanded || LLMTool))
 	// is now rendered by SpanTreeView.renderInlineLogs via the memoized
@@ -6190,6 +7469,23 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	}
 }
 
+func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
+	if !isToolCallDisplay(span) || !toolNameIs(span.LLMTool, "grep") {
+		return
+	}
+	logs := fe.logs.Logs[span.ID]
+	if exec := toolCallExecSpan(span); (logs == nil || logs.UsedHeight() == 0) && exec != nil {
+		logs = fe.logs.Logs[exec.ID]
+	}
+	if logs == nil {
+		return
+	}
+	summary := sanitizeSummary(strings.TrimSpace(ansi.Strip(logs.LastLine())))
+	if summary != "" {
+		fmt.Fprint(out, out.String(" - "+summary).Faint())
+	}
+}
+
 func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool, abridged bool) error {
 	span := row.Span
 	chained := row.Chained
@@ -6264,6 +7560,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
+		fe.renderToolOutputSummary(out, span)
 
 		// Flag how many tokens a tool call's result added to the model's
 		// context, so an outsized one stands out at a glance.
@@ -6333,13 +7630,16 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	if !fe.finalRender && fe.shell != nil {
 		switch {
-		case row.Span.LLMRole == telemetry.LLMRoleUser:
+		case row.Span.LLMRole == telemetry.LLMRoleUser && !row.Span.LLMEventOriginMessage():
 			// The user's prompt sits on a shaded block; its leading gutter -- or
 			// the focus cue ("❯ ") that stands in for it -- must be shaded too so
 			// line 0 matches the continuation lines, which carry the gutter inside
 			// their background (styleLLMMessageView). Otherwise the cue punches an
 			// unshaded hole in the block. The block is padded to the full content
-			// width, so its right edge is clipped and stays flush.
+			// width, so its right edge is clipped and stays flush. Agent-origin
+			// messages keep the shaded block (under their attribution header);
+			// event one-liners have no block, so they fall through to the plain
+			// cue below.
 			cue := out.String("  ")
 			if focused {
 				cue = out.String(LLMPrompt + " ").Bold()
@@ -6391,7 +7691,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 			// leading space.
 		}
 	} else if !fe.finalRender {
-		if fe.formWrap != nil {
+		if fe.activeForm != nil {
 			// The form owns input focus, so don't imply that its host span is also
 			// selected. Preserve the column so the title doesn't jump sideways.
 			fmt.Fprint(out, " ")
@@ -6798,8 +8098,8 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 		return false
 	}
 	// Give conversation turns their subtle content styling: the user's prompt
-	// on a shaded background, thinking as dim italic. The assistant's reply and
-	// tool output are left untouched (no chrome at all).
+	// on a shaded background, thinking as dim italic, and failures in red. Plain
+	// assistant replies and tool output are left untouched (no chrome at all).
 	if styled, ok := fe.styleLLMMessageView(out, row.Span, logPrefix, view); ok {
 		view = styled
 	}
@@ -6809,16 +8109,21 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 
 // styleLLMMessageView applies pi-style per-role content styling to a rendered
 // message Vterm view, returning the restyled view (and true) for the roles it
-// handles. The user's prompt is drawn on a shaded (ANSIBrightBlack) background
-// padded to the content width, so it reads as an inset block; thinking is drawn
-// dim and italic. Other roles -- the assistant's reply, tool calls -- are left
-// verbatim, so this returns false for them.
+// handles. Failed messages render in red so a terminal agent failure remains
+// visible in the conversation above the prompt. Otherwise the user's prompt is
+// drawn on a shaded (ANSIBrightBlack) background padded to the content width;
+// a message another agent sent renders as the same shaded block under a
+// sender-attribution header; an engine lifecycle event collapses to a compact
+// faint one-liner; and thinking is drawn dim and italic. Other roles -- the
+// assistant's reply, tool calls -- are left verbatim, so this returns false
+// for them.
 func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
 	if span.LLMRole == "" || span.LLMTool != "" {
 		return "", false
 	}
+	failed := span.IsFailed() && !span.IsCanceled()
 	user := span.LLMRole == telemetry.LLMRoleUser
-	if !user && !span.LLMThinking {
+	if !failed && !user && !span.LLMThinking {
 		return "", false
 	}
 
@@ -6827,23 +8132,46 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		width = fe.window.Width
 	}
 
+	if user && !failed {
+		// Origin-carrying messages (hack/designs/agent-messaging.md §4.1) do
+		// not read as the user's own words: an agent's message renders under
+		// its sender's name, and an engine lifecycle event collapses to a
+		// one-liner instead of a prompt bubble.
+		switch {
+		case span.LLMEventOriginMessage():
+			return fe.styleLLMEventView(out, view), true
+		case span.LLMAgentOriginMessage():
+			return fe.styleLLMAgentMessageView(out, span, logPrefix, view, width), true
+		}
+	}
+
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 	var b strings.Builder
 	for i, line := range lines {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		// Strip existing SGR so the role styling owns the line; user prompts and
-		// thinking are prose, not richly formatted output, so nothing of value is
-		// lost, and it keeps a background from being punched out by a reset.
+		// Strip existing SGR so the role styling owns the line. These messages
+		// are prose, not richly formatted output, so nothing of value is lost.
 		plain := ansi.Strip(line)
-		if user {
+		switch {
+		case failed:
+			// Like thinking, a failed message's first line renders inline on the
+			// already-indented title line. Continuations retain the plain message
+			// gutter while only the error text itself is red.
+			body := plain
+			if i > 0 {
+				body = strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+				b.WriteString(logPrefix)
+			}
+			b.WriteString(out.String(body).Foreground(termenv.ANSIRed).String())
+		case user:
 			padded := plain
 			if width > 0 {
 				padded = padANSI(clipPlain(plain, width), width)
 			}
 			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
-		} else {
+		default:
 			// Thinking: dim italic foreground, no background. The first line renders
 			// inline on the already-indented title line (redraw omits the gutter on
 			// line 0), so keep it flush -- only continuation lines carry the gutter.
@@ -6859,6 +8187,92 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		b.WriteByte('\n')
 	}
 	return b.String(), true
+}
+
+// styleLLMEventView collapses an engine lifecycle event message (EVENT
+// origin) to a compact one-liner: the event's first line, faint, with a
+// "(+N lines)" tail when the payload beneath it -- e.g. an idle worker's
+// final reply -- is elided. The full text stays in the span's logs, so the
+// zoomed view and ReadLogs remain the discovery path for the rest. The first
+// line renders inline on the already-indented title line, like thinking.
+func (fe *frontendPretty) styleLLMEventView(out TermOutput, view string) string {
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	first := strings.TrimRight(ansi.Strip(lines[0]), " ")
+	var b strings.Builder
+	b.WriteString(out.String(first).Foreground(termenv.ANSIBrightBlack).String())
+	if extra := len(lines) - 1; extra > 0 {
+		b.WriteString(out.String(fmt.Sprintf(" (+%d lines)", extra)).Faint().String())
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// styleLLMAgentMessageView renders a message another agent sent (AGENT
+// origin) as a sender-attributed block: an attribution header naming the
+// sender (plus the message's ref, or the ref it replies to), above the
+// message body on the same shaded background as a user prompt. The shading
+// still says "this steered the turn"; the header stops it from reading as
+// something the user typed (the P3 pitfall in
+// hack/designs/agent-messaging.md).
+//
+// The header takes the inline position on the title line, so the body's
+// first line -- which rendered inline for plain user prompts -- moves down a
+// row and gains the message gutter the continuation lines already carry.
+func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.Span, logPrefix, view string, width int) string {
+	shade := termenv.ANSIBrightBlack
+	name := span.LLMOriginAgentName
+	if name == "" {
+		name = "agent"
+	}
+	detail := span.LLMOriginRef
+	if span.LLMOriginReplyTo != "" {
+		detail = "↩ " + span.LLMOriginReplyTo
+	}
+
+	var b strings.Builder
+	plainHeader := name
+	if detail != "" {
+		plainHeader += " " + detail
+	}
+	if width > 0 && lipgloss.Width(plainHeader) > width {
+		// Too narrow for the styled split: fall back to one clipped segment.
+		b.WriteString(out.String(padANSI(clipPlain(plainHeader, width), width)).Faint().Background(shade).String())
+	} else {
+		rest := ""
+		if detail != "" {
+			rest = " " + detail
+		}
+		if width > 0 {
+			rest = padANSI(rest, width-lipgloss.Width(name))
+		}
+		b.WriteString(out.String(name).Bold().Foreground(termenv.ANSICyan).Background(shade).String())
+		b.WriteString(out.String(rest).Faint().Background(shade).String())
+	}
+
+	gutter := ansi.Strip(logPrefix)
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	for i, line := range lines {
+		b.WriteByte('\n')
+		// Strip existing SGR so the role styling owns the line, as for user
+		// prompts.
+		plain := ansi.Strip(line)
+		if i == 0 {
+			// The body's first line rendered inline for plain user prompts and
+			// so carries no gutter; demoted beneath the header it needs one to
+			// line up with its continuations.
+			plain = gutter + plain
+		}
+		if width > 0 {
+			plain = padANSI(clipPlain(plain, width), width)
+		}
+		b.WriteString(out.String(plain).Background(shade).String())
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // logLinePrefixes builds the per-line prefix applied to a row's inline log
@@ -6947,6 +8361,7 @@ func (fe *frontendPretty) writeLogTrimHeader(out TermOutput, trimPrefix string, 
 type prettyLogs struct {
 	DB            *dagui.DB
 	Logs          map[dagui.SpanID]*Vterm
+	ToolArgs      map[dagui.SpanID]*Vterm
 	PrefixWriters map[dagui.SpanID]*multiprefixw.Writer
 	LogWidth      int
 	SawEOF        map[dagui.SpanID]bool
@@ -6958,6 +8373,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
 		DB:            db,
 		Logs:          make(map[dagui.SpanID]*Vterm),
+		ToolArgs:      make(map[dagui.SpanID]*Vterm),
 		PrefixWriters: make(map[dagui.SpanID]*multiprefixw.Writer),
 		LogWidth:      -1,
 		Profile:       profile,
@@ -6967,7 +8383,11 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	for _, log := range renderableLogRecords(logs) {
+	for _, log := range logs {
+		body, isText := dagui.LogBodyString(log)
+		if !isText {
+			continue
+		}
 		// Check for Markdown content type
 		contentType := ""
 		eof := false
@@ -6976,13 +8396,13 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		for attr := range log.WalkAttributes {
 			switch attr.Key {
 			case telemetry.ContentTypeAttr:
-				contentType = attr.Value.AsString()
+				contentType, _ = dagui.LogValueString(attr.Value)
 			case telemetry.StdioEOFAttr:
-				eof = attr.Value.AsBool()
+				eof, _ = dagui.LogValueBool(attr.Value)
 			case telemetry.LogsGlobalAttr:
-				global = attr.Value.AsBool()
+				global, _ = dagui.LogValueBool(attr.Value)
 			case telemetry.LogsVerboseAttr:
-				verbose = attr.Value.AsBool()
+				verbose, _ = dagui.LogValueBool(attr.Value)
 			}
 		}
 
@@ -7010,14 +8430,22 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				context = spanID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
-			fmt.Fprint(pw, log.Body().AsString())
+			fmt.Fprint(pw, body)
 		}
 
 		vterm := l.spanLogs(spanID)
-		if contentType == "text/markdown" {
-			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
-		} else {
-			_, _ = fmt.Fprint(vterm, log.Body().AsString())
+		if contentType == "application/json" {
+			if span := l.DB.Spans.Map[spanID]; span != nil && span.LLMRole != "" && span.LLMTool != "" {
+				vterm = l.spanToolArgs(spanID)
+			}
+		}
+		switch contentType {
+		case "text/markdown":
+			_, _ = vterm.WriteMarkdown([]byte(body))
+		case "text/x-diff":
+			_, _ = vterm.WriteDiff([]byte(body))
+		default:
+			_, _ = fmt.Fprint(vterm, body)
 		}
 	}
 	return nil
@@ -7107,9 +8535,24 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	return term
 }
 
+func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
+	term, found := l.ToolArgs[spanID]
+	if !found {
+		term = NewVterm(l.Profile)
+		if l.LogWidth > -1 {
+			term.SetWidth(l.LogWidth)
+		}
+		l.ToolArgs[spanID] = term
+	}
+	return term
+}
+
 func (l *prettyLogs) SetWidth(width int) {
 	l.LogWidth = width
 	for _, vt := range l.Logs {
+		vt.SetWidth(width)
+	}
+	for _, vt := range l.ToolArgs {
 		vt.SetWidth(width)
 	}
 }
@@ -7139,60 +8582,31 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan error, 1)
-
-	fe.dispatch(func() {
-		fe.handlePromptForm(
-			huh.NewForm(
-				huh.NewGroup(
-					NewExplicitConfirm("Yes", "No", dest).
-						Title(title).
-						Description(strings.TrimSpace((&Markdown{
-							Content: message,
-							Width:   fe.window.Width,
-						}).View())),
-				),
-			),
-			func(f *huh.Form) { done <- formCompletionError(f) },
-		)
-		fe.Update()
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		return err
-	}
+	return fe.HandleForm(ctx, NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Description(strings.TrimSpace((&Markdown{
+					Content: message,
+					Width:   fe.window.Width,
+				}).View())).
+				Value(dest),
+		),
+	))
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	done := make(chan error, 1)
-
-	fe.dispatch(func() {
-		fe.handlePromptForm(
-			NewForm(
-				huh.NewGroup(
-					huh.NewInput().
-						Title(title).
-						Description(strings.TrimSpace((&Markdown{
-							Content: message,
-							Width:   fe.window.Width,
-						}).View())).
-						Value(dest),
-				),
-			),
-			func(f *huh.Form) { done <- formCompletionError(f) },
-		)
-		fe.Update()
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		return err
-	}
+	return fe.HandleForm(ctx, NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(title).
+				Description(strings.TrimSpace((&Markdown{
+					Content: message,
+					Width:   fe.window.Width,
+				}).View())).
+				Value(dest),
+		),
+	))
 }
 
 func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {

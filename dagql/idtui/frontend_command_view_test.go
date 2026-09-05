@@ -222,7 +222,7 @@ func TestMountedFormUpdatesKeymapAndUsesNaturalHeight(t *testing.T) {
 	if !flushTitle || strings.HasPrefix(plainAfter, " Apply changes?") || strings.Contains(plainAfter, "\n Apply changes?") {
 		t.Fatalf("form retained a leading padding column:\n%s", plainAfter)
 	}
-	if height := strings.Count(fe.formModel.View(), "\n") + 1; height > 8 {
+	if height := strings.Count(fe.activeForm.model.View(), "\n") + 1; height > 8 {
 		t.Fatalf("compact confirmation reserved %d lines", height)
 	}
 }

@@ -336,17 +336,14 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	err := fe.db.LogExporter().Export(ctx, logs)
-	if err != nil {
-		return err
-	}
-	for _, record := range renderableLogRecords(logs) {
+	logs = fe.db.IngestLogs(logs)
+	for _, record := range logs {
 		// Check if this log is marked as verbose
 		isVerbose := false
 		record.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
-				isVerbose = true
-				return false // stop walking
+			if kv.Key == telemetry.LogsVerboseAttr {
+				isVerbose, _ = dagui.LogValueBool(kv.Value)
+				return !isVerbose
 			}
 			return true // continue walking
 		})
@@ -376,8 +373,8 @@ func (fe *frontendPlain) appendLogs(spanID dagui.SpanID, records []sdklog.Record
 	}
 
 	for _, record := range records {
-		body := record.Body().AsString()
-		if body == "" {
+		body, ok := dagui.LogBodyString(record)
+		if !ok || body == "" {
 			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
 			// want to avoid giving it its own line.
 			continue

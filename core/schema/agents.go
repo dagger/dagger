@@ -14,10 +14,10 @@ var _ SchemaResolvers = &agentsSchema{}
 func (s agentsSchema) Install(srv *dagql.Server) {
 	// Agents are v1+ API surface; installing the classes with a view gate also
 	// gates their generated ID/load fields.
-	srv.InstallObject(dagql.NewClass[*core.AgentGroup](srv).View(AfterVersion("v1.0.0-0")))
-	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.AgentMiddlewareGroup](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.AgentMiddleware](srv).View(AfterVersion("v1.0.0-0")))
 
-	dagql.Fields[*core.AgentGroup]{
+	dagql.Fields[*core.AgentMiddlewareGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual agents and their details"),
 
@@ -28,7 +28,7 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.Agent]{
+	dagql.Fields[*core.AgentMiddleware]{
 		dagql.Func("name", s.name).
 			Doc("Return the fully qualified name of the agent"),
 		dagql.Func("description", s.description).
@@ -40,11 +40,11 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-func (s agentsSchema) list(_ context.Context, parent *core.AgentGroup, args struct{}) ([]*core.Agent, error) {
+func (s agentsSchema) list(_ context.Context, parent *core.AgentMiddlewareGroup, args struct{}) ([]*core.AgentMiddleware, error) {
 	return parent.List(), nil
 }
 
-func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args struct {
+func (s agentsSchema) compose(ctx context.Context, parent *core.AgentMiddlewareGroup, args struct {
 	Base dagql.Optional[core.LLMID]
 }) (dagql.ObjectResult[*core.LLM], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -87,18 +87,18 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args
 	return parent.Compose(ctx, base)
 }
 
-func (s agentsSchema) name(_ context.Context, parent *core.Agent, args struct{}) (string, error) {
+func (s agentsSchema) name(_ context.Context, parent *core.AgentMiddleware, args struct{}) (string, error) {
 	return parent.Name(), nil
 }
 
-func (s agentsSchema) description(_ context.Context, parent *core.Agent, args struct{}) (string, error) {
+func (s agentsSchema) description(_ context.Context, parent *core.AgentMiddleware, args struct{}) (string, error) {
 	return parent.Description(), nil
 }
 
-func (s agentsSchema) path(_ context.Context, parent *core.Agent, args struct{}) ([]string, error) {
+func (s agentsSchema) path(_ context.Context, parent *core.AgentMiddleware, args struct{}) ([]string, error) {
 	return parent.Path(), nil
 }
 
-func (s agentsSchema) originalModule(_ context.Context, parent *core.Agent, args struct{}) (*core.Module, error) {
+func (s agentsSchema) originalModule(_ context.Context, parent *core.AgentMiddleware, args struct{}) (*core.Module, error) {
 	return parent.OriginalModule(), nil
 }

@@ -79,12 +79,22 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
+With --trace, a past session is restored from the trace it published to Dagger
+Cloud: every agent it ran comes back under the same identity, with the
+conversation and lifecycle state it had, and the old session's whole progress
+view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
+agents are still running FORKS them — the restored instances are new runtimes
+in this session, not a hand-off of the live ones. And messages that were
+enqueued but never consumed are not in the trace at all, so they are not
+restored; anything a turn actually consumed is part of its conversation and is.
+
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
   dagger agent -r                 # Resume a saved session (interactive picker)
   dagger agent -r=&lt;session&gt;       # Resume a specific saved session
+  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
 
 
 ```
@@ -94,8 +104,11 @@ dagger agent [options] [name...]
 ### Options
 
 ```
+      --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
   -l, --list                      List available agents
+      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
   -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
+      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
 ```
 
 ### Options inherited from parent commands

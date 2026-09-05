@@ -30,13 +30,185 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
-export type AgentGroupComposeOpts = {
+export type AgentNotifyOpts = {
+  /**
+   * The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+   */
+  on?: AgentState[]
+}
+
+export type AgentRehydrateOpts = {
+  /**
+   * The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
+   *
+   * RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+   */
+  state?: AgentState
+
+  /**
+   * The loop error to restore, for state FAILED. Refused with any other state.
+   */
+  error?: string
+}
+
+export type AgentSendOpts = {
+  /**
+   * The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+   */
+  replyTo?: string
+}
+
+export type AgentStopOpts = {
+  /**
+   * Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+   */
+  kill?: boolean
+}
+
+/**
+ * How a message landed in an agent's evaluation.
+ */
+export enum AgentMessageDelivery {
+  /**
+   * The message is queued: the agent is paused or failed, and a resume will drain it.
+   */
+  Queued = "QUEUED",
+
+  /**
+   * The message opened a new turn: the agent was idle or newly started.
+   */
+  Started = "STARTED",
+
+  /**
+   * The message was absorbed into the in-flight turn at a step boundary, steering it.
+   */
+  Steered = "STEERED",
+}
+
+/**
+ * Utility function to convert a AgentMessageDelivery value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AgentMessageDeliveryValueToName(
+  value: AgentMessageDelivery,
+): string {
+  switch (value) {
+    case AgentMessageDelivery.Queued:
+      return "QUEUED"
+    case AgentMessageDelivery.Started:
+      return "STARTED"
+    case AgentMessageDelivery.Steered:
+      return "STEERED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AgentMessageDelivery name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AgentMessageDeliveryNameToValue(
+  name: string,
+): AgentMessageDelivery {
+  switch (name) {
+    case "QUEUED":
+      return AgentMessageDelivery.Queued
+    case "STARTED":
+      return AgentMessageDelivery.Started
+    case "STEERED":
+      return AgentMessageDelivery.Steered
+    default:
+      return name as AgentMessageDelivery
+  }
+}
+export type AgentMiddlewareGroupComposeOpts = {
   /**
    * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
    */
   base?: LLM
 }
 
+/**
+ * Computed lifecycle state of an agent.
+ */
+export enum AgentState {
+  /**
+   * The loop failed; snapshot holds the completed prefix. Resume retries.
+   */
+  Failed = "FAILED",
+
+  /**
+   * Mailbox empty, turn complete; blocked in receive.
+   */
+  Idle = "IDLE",
+
+  /**
+   * Mailbox accepting but not draining, until resume.
+   */
+  Paused = "PAUSED",
+
+  /**
+   * A model request or tool evaluation is in flight.
+   */
+  Running = "RUNNING",
+
+  /**
+   * Runtime released; snapshot remains readable.
+   */
+  Stopped = "STOPPED",
+
+  /**
+   * Blocked on input from the user (derived; see waitingOn).
+   */
+  WaitingInput = "WAITING_INPUT",
+}
+
+/**
+ * Utility function to convert a AgentState value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AgentStateValueToName(value: AgentState): string {
+  switch (value) {
+    case AgentState.Failed:
+      return "FAILED"
+    case AgentState.Idle:
+      return "IDLE"
+    case AgentState.Paused:
+      return "PAUSED"
+    case AgentState.Running:
+      return "RUNNING"
+    case AgentState.Stopped:
+      return "STOPPED"
+    case AgentState.WaitingInput:
+      return "WAITING_INPUT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AgentState name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AgentStateNameToValue(name: string): AgentState {
+  switch (name) {
+    case "FAILED":
+      return AgentState.Failed
+    case "IDLE":
+      return AgentState.Idle
+    case "PAUSED":
+      return AgentState.Paused
+    case "RUNNING":
+      return AgentState.Running
+    case "STOPPED":
+      return AgentState.Stopped
+    case "WAITING_INPUT":
+      return AgentState.WaitingInput
+    default:
+      return name as AgentState
+  }
+}
 export type BuildArg = {
   /**
    * The build argument name.
@@ -2059,6 +2231,13 @@ export type LLMLoopOpts = {
   maxTokens?: number
 }
 
+export type LLMSpawnOpts = {
+  /**
+   * Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+   */
+  name?: string
+}
+
 export type LLMStepOpts = {
   /**
    * Cap the model's output tokens for this step. Defaults to the model's maximum.
@@ -2071,6 +2250,13 @@ export type LLMWithModelOpts = {
    * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
   provider?: string
+}
+
+export type LLMWithPromptOpts = {
+  /**
+   * The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+   */
+  origin?: LLMMessageOriginInput
 }
 
 export type LLMWithResponseOpts = {
@@ -2208,6 +2394,90 @@ export function LLMContentBlockKindNameToValue(
       return LLMContentBlockKind.ToolResult
     default:
       return name as LLMContentBlockKind
+  }
+}
+export type LLMMessageOriginInput = {
+  /**
+   * The sending or observed agent's runtime handle.
+   */
+  agentHandle?: string
+
+  /**
+   * The display name of the agent behind agentHandle.
+   */
+  agentName?: string
+
+  /**
+   * Who put this message on the record.
+   */
+  kind: LLMMessageOriginKind
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3".
+   */
+  ref?: string
+
+  /**
+   * The ref of the message this one answers, if any.
+   */
+  replyTo?: string
+}
+
+/**
+ * Who put a message on the conversation record.
+ */
+export enum LLMMessageOriginKind {
+  /**
+   * Another agent: the message was sent from within that agent's turn.
+   */
+  Agent = "AGENT",
+
+  /**
+   * The engine, reporting a subscribed agent's lifecycle transition.
+   */
+  Event = "EVENT",
+
+  /**
+   * The user: a prompt submitted by a client rather than sent by an agent.
+   */
+  User = "USER",
+}
+
+/**
+ * Utility function to convert a LLMMessageOriginKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function LLMMessageOriginKindValueToName(
+  value: LLMMessageOriginKind,
+): string {
+  switch (value) {
+    case LLMMessageOriginKind.Agent:
+      return "AGENT"
+    case LLMMessageOriginKind.Event:
+      return "EVENT"
+    case LLMMessageOriginKind.User:
+      return "USER"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a LLMMessageOriginKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function LLMMessageOriginKindNameToValue(
+  name: string,
+): LLMMessageOriginKind {
+  switch (name) {
+    case "AGENT":
+      return LLMMessageOriginKind.Agent
+    case "EVENT":
+      return LLMMessageOriginKind.Event
+    case "USER":
+      return LLMMessageOriginKind.User
+    default:
+      return name as LLMMessageOriginKind
   }
 }
 /**
@@ -3129,6 +3399,11 @@ export type WorkspaceAgentsOpts = {
    * Only include agents matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * Exclude agents matching the specified patterns
+   */
+  exclude?: string[]
 }
 
 export type WorkspaceChangesOpts = {
@@ -3566,7 +3841,442 @@ export class Address extends BaseClient {
   }
 }
 
+/**
+ * A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
+ */
 export class Agent extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _error?: string = undefined
+  private readonly _handle?: string = undefined
+  private readonly _interrupt?: ID = undefined
+  private readonly _name?: string = undefined
+  private readonly _notify?: ID = undefined
+  private readonly _pause?: ID = undefined
+  private readonly _rehydrate?: ID = undefined
+  private readonly _reseed?: ID = undefined
+  private readonly _resume?: ID = undefined
+  private readonly _send?: ID = undefined
+  private readonly _start?: ID = undefined
+  private readonly _state?: AgentState = undefined
+  private readonly _stop?: ID = undefined
+  private readonly _wait?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _error?: string,
+    _handle?: string,
+    _interrupt?: ID,
+    _name?: string,
+    _notify?: ID,
+    _pause?: ID,
+    _rehydrate?: ID,
+    _reseed?: ID,
+    _resume?: ID,
+    _send?: ID,
+    _start?: ID,
+    _state?: AgentState,
+    _stop?: ID,
+    _wait?: ID,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._error = _error
+    this._handle = _handle
+    this._interrupt = _interrupt
+    this._name = _name
+    this._notify = _notify
+    this._pause = _pause
+    this._rehydrate = _rehydrate
+    this._reseed = _reseed
+    this._resume = _resume
+    this._send = _send
+    this._start = _start
+    this._state = _state
+    this._stop = _stop
+    this._wait = _wait
+  }
+
+  /**
+   * A unique identifier for this Agent.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Why the loop failed, for a FAILED agent; empty otherwise.
+   *
+   * The snapshot holds the completed prefix — send or resume retries from it.
+   */
+  error = async (): Promise<string> => {
+    if (this._error) {
+      return this._error
+    }
+
+    const ctx = this._ctx.select("error")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The opaque runtime handle minted by the spawn that created this agent.
+   *
+   * It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+   */
+  handle = async (): Promise<string> => {
+    if (this._handle) {
+      return this._handle
+    }
+
+    const ctx = this._ctx.select("handle")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Preempt the in-flight step, keeping all completed steps, and pause.
+   *
+   * The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
+   *
+   * On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+   */
+  interrupt = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("interrupt")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Look up a previously sent message by its opaque handle.
+   *
+   * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
+   *
+   * Fails if the agent has no runtime entry in this session, or no record of the given handle.
+   * @param handle The opaque handle generated by the send that enqueued the message.
+   */
+  message = (handle: string): AgentMessage => {
+    const ctx = this._ctx.select("message", { handle })
+    return new AgentMessage(ctx)
+  }
+
+  /**
+   * Display label for the agent; carries no identity.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+   *
+   * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+   *
+   * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+   *
+   * Idempotent per subscriber; re-subscribing replaces the state set.
+   * @param subscriber The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
+   * @param opts.on The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+   */
+  notify = async (
+    subscriber: Agent,
+    opts?: AgentNotifyOpts,
+  ): Promise<Agent> => {
+    const ctx = this._ctx.select("notify", { subscriber, ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Stop draining the mailbox once the in-flight step completes.
+   *
+   * Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+   *
+   * Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+   */
+  pause = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("pause")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
+   *
+   * The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
+   *
+   * The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
+   *
+   * Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+   * @param opts.state The lifecycle state to restore into, as facts on the entry: PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch, IDLE is ready to be prompted.
+   *
+   * RUNNING and WAITING_INPUT are refused: the loop died with the session that published them, so restore such an agent as IDLE — its interrupted turn's input is still pending on the snapshot.
+   * @param opts.error The loop error to restore, for state FAILED. Refused with any other state.
+   */
+  rehydrate = async (opts?: AgentRehydrateOpts): Promise<Agent> => {
+    const metadata = {
+      state: { is_enum: true, value_to_name: AgentStateValueToName },
+    }
+
+    const ctx = this._ctx.select("rehydrate", { ...opts, __metadata: metadata })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+   *
+   * This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+   *
+   * The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+   *
+   * Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+   * @param conversation The conversation that becomes the agent's committed history, replacing the current one.
+   */
+  reseed = async (conversation: LLM): Promise<Agent> => {
+    const ctx = this._ctx.select("reseed", { conversation })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+   *
+   * Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+   *
+   * No-op on a running or idle agent.
+   */
+  resume = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("resume")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+   *
+   * Never blocks, never drops; concurrent sends queue in order.
+   *
+   * The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
+   *
+   * Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+   * @param message The message text, appended to the agent's history as a prompt when a turn consumes it.
+   * @param opts.replyTo The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+   */
+  send = async (
+    message: string,
+    opts?: AgentSendOpts,
+  ): Promise<AgentMessage> => {
+    const ctx = this._ctx.select("send", { message, ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new AgentMessage(ctx.copy().selectNode(response, "AgentMessage"))
+  }
+
+  /**
+   * The conversation as of the last committed step: immutable, branchable, persistable.
+   *
+   * The seed conversation if the agent never stepped.
+   *
+   * Branching from it does not affect the agent.
+   */
+  snapshot = (): LLM => {
+    const ctx = this._ctx.select("snapshot")
+    return new LLM(ctx)
+  }
+
+  /**
+   * Start the agent's evaluation loop. No-op if it is already running.
+   *
+   * The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+   */
+  start = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("start")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Computed lifecycle state; never stored.
+   *
+   * An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+   */
+  state = async (): Promise<AgentState> => {
+    if (this._state) {
+      return this._state
+    }
+
+    const ctx = this._ctx.select("state")
+
+    const response: Awaited<AgentState> = await ctx.execute()
+
+    return AgentStateNameToValue(response)
+  }
+
+  /**
+   * Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+   * @param opts.kill Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+   */
+  stop = async (opts?: AgentStopOpts): Promise<Agent> => {
+    const ctx = this._ctx.select("stop", { ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+   *
+   * Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+   */
+  wait = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("wait")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+}
+
+/**
+ * A message delivered to an agent's mailbox.
+ */
+export class AgentMessage extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _delivery?: AgentMessageDelivery = undefined
+  private readonly _ref?: string = undefined
+  private readonly _response?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _delivery?: AgentMessageDelivery,
+    _ref?: string,
+    _response?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._delivery = _delivery
+    this._ref = _ref
+    this._response = _response
+  }
+
+  /**
+   * A unique identifier for this AgentMessage.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+   *
+   * Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
+   */
+  delivery = async (): Promise<AgentMessageDelivery> => {
+    if (this._delivery) {
+      return this._delivery
+    }
+
+    const ctx = this._ctx.select("delivery")
+
+    const response: Awaited<AgentMessageDelivery> = await ctx.execute()
+
+    return AgentMessageDeliveryNameToValue(response)
+  }
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3".
+   *
+   * This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
+   *
+   * Idempotent: cancel and request the response again freely; concurrent waiters share the result.
+   *
+   * Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
+   *
+   * Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+   */
+  response = async (): Promise<string> => {
+    if (this._response) {
+      return this._response
+    }
+
+    const ctx = this._ctx.select("response")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+export class AgentMiddleware extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -3583,7 +4293,7 @@ export class Agent extends BaseClient {
   }
 
   /**
-   * A unique identifier for this Agent.
+   * A unique identifier for this AgentMiddleware.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3647,7 +4357,7 @@ export class Agent extends BaseClient {
   }
 }
 
-export class AgentGroup extends BaseClient {
+export class AgentMiddlewareGroup extends BaseClient {
   private readonly _id?: ID = undefined
 
   /**
@@ -3660,7 +4370,7 @@ export class AgentGroup extends BaseClient {
   }
 
   /**
-   * A unique identifier for this AgentGroup.
+   * A unique identifier for this AgentMiddlewareGroup.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3678,7 +4388,7 @@ export class AgentGroup extends BaseClient {
    * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
    * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
    */
-  compose = (opts?: AgentGroupComposeOpts): LLM => {
+  compose = (opts?: AgentMiddlewareGroupComposeOpts): LLM => {
     const ctx = this._ctx.select("compose", { ...opts })
     return new LLM(ctx)
   }
@@ -3686,7 +4396,7 @@ export class AgentGroup extends BaseClient {
   /**
    * Return a list of individual agents and their details
    */
-  list = async (): Promise<Agent[]> => {
+  list = async (): Promise<AgentMiddleware[]> => {
     type list = {
       id: ID
     }
@@ -3695,7 +4405,10 @@ export class AgentGroup extends BaseClient {
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
+    return response.map(
+      (r) =>
+        new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
+    )
   }
 }
 
@@ -10828,6 +11541,7 @@ export class LLM extends BaseClient {
   private readonly _provider?: string = undefined
   private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
+  private readonly _spawn?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
   private readonly _transcript?: string = undefined
@@ -10847,6 +11561,7 @@ export class LLM extends BaseClient {
     _provider?: string,
     _reasoningEffort?: string,
     _replay?: ID,
+    _spawn?: ID,
     _sync?: ID,
     _tools?: string,
     _transcript?: string,
@@ -10863,6 +11578,7 @@ export class LLM extends BaseClient {
     this._provider = _provider
     this._reasoningEffort = _reasoningEffort
     this._replay = _replay
+    this._spawn = _spawn
     this._sync = _sync
     this._tools = _tools
     this._transcript = _transcript
@@ -10881,6 +11597,18 @@ export class LLM extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Reconstruct a spawned agent from its runtime handle.
+   *
+   * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+   * @param handle The opaque runtime handle minted by the spawn that created the agent.
+   * @param name The agent's display name, as recorded by the spawn.
+   */
+  agent = (handle: string, name: string): Agent => {
+    const ctx = this._ctx.select("agent", { handle, name })
+    return new Agent(ctx)
   }
 
   /**
@@ -11068,6 +11796,20 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+   *
+   * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+   * @param opts.name Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+   */
+  spawn = async (opts?: LLMSpawnOpts): Promise<Agent> => {
+    const ctx = this._ctx.select("spawn", { ...opts })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
    * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
    * @param opts.maxTokens Cap the model's output tokens for this step. Defaults to the model's maximum.
    */
@@ -11148,9 +11890,10 @@ export class LLM extends BaseClient {
   /**
    * Queue a user prompt, to be sent to the model on the next step or loop.
    * @param prompt The prompt to send
+   * @param opts.origin The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
    */
-  withPrompt = (prompt: string): LLM => {
-    const ctx = this._ctx.select("withPrompt", { prompt })
+  withPrompt = (prompt: string, opts?: LLMWithPromptOpts): LLM => {
+    const ctx = this._ctx.select("withPrompt", { prompt, ...opts })
     return new LLM(ctx)
   }
 
@@ -11195,6 +11938,14 @@ export class LLM extends BaseClient {
    */
   withSkills = (directory: Directory): LLM => {
     const ctx = this._ctx.select("withSkills", { directory })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+   */
+  withSmallModel = (): LLM => {
+    const ctx = this._ctx.select("withSmallModel")
     return new LLM(ctx)
   }
 
@@ -11490,6 +12241,24 @@ export class LLMMessage extends BaseClient {
   }
 
   /**
+   * Who put this message on the record, when it arrived through an agent mailbox.
+   *
+   * Null for the user's own prompts and for everything the model or tools produced.
+   */
+  origin = async (): Promise<LLMMessageOrigin | null> => {
+    const ctx = this._ctx.select("origin").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new LLMMessageOrigin(
+      ctx.copy().selectNode(response, "LLMMessageOrigin"),
+    )
+  }
+
+  /**
    * The role that produced this message.
    */
   role = async (): Promise<LLMMessageRole> => {
@@ -11510,6 +12279,130 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * The recorded provenance of a message that arrived through an agent mailbox.
+ */
+export class LLMMessageOrigin extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _agentHandle?: string = undefined
+  private readonly _agentName?: string = undefined
+  private readonly _kind?: LLMMessageOriginKind = undefined
+  private readonly _ref?: string = undefined
+  private readonly _replyTo?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _agentHandle?: string,
+    _agentName?: string,
+    _kind?: LLMMessageOriginKind,
+    _ref?: string,
+    _replyTo?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._agentHandle = _agentHandle
+    this._agentName = _agentName
+    this._kind = _kind
+    this._ref = _ref
+    this._replyTo = _replyTo
+  }
+
+  /**
+   * A unique identifier for this LLMMessageOrigin.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
+   */
+  agentHandle = async (): Promise<string> => {
+    if (this._agentHandle) {
+      return this._agentHandle
+    }
+
+    const ctx = this._ctx.select("agentHandle")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The display name of the agent behind agentHandle.
+   */
+  agentName = async (): Promise<string> => {
+    if (this._agentName) {
+      return this._agentName
+    }
+
+    const ctx = this._ctx.select("agentName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Who put this message on the record.
+   */
+  kind = async (): Promise<LLMMessageOriginKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<LLMMessageOriginKind> = await ctx.execute()
+
+    return LLMMessageOriginKindNameToValue(response)
+  }
+
+  /**
+   * The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The ref of the message this one answers, in the sender's own runtime, if any.
+   */
+  replyTo = async (): Promise<string> => {
+    if (this._replyTo) {
+      return this._replyTo
+    }
+
+    const ctx = this._ctx.select("replyTo")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -15501,10 +16394,11 @@ export class Workspace extends BaseClient {
   /**
    * Return all agent middlewares from modules loaded in the workspace.
    * @param opts.include Only include agents matching the specified patterns
+   * @param opts.exclude Exclude agents matching the specified patterns
    */
-  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
+  agents = (opts?: WorkspaceAgentsOpts): AgentMiddlewareGroup => {
     const ctx = this._ctx.select("agents", { ...opts })
-    return new AgentGroup(ctx)
+    return new AgentMiddlewareGroup(ctx)
   }
 
   /**

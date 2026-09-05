@@ -66,9 +66,7 @@ func (e reportLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	// Copy the slice — the OTel SDK reuses it after Export returns.
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
-	if err := e.s.db.LogExporter().Export(ctx, logsCopy); err != nil {
-		return err
-	}
+	logsCopy = e.s.db.IngestLogs(logsCopy)
 	return e.s.logs.Export(ctx, logsCopy)
 }
 

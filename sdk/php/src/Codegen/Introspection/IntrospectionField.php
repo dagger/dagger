@@ -44,25 +44,33 @@ class IntrospectionField
     }
 
     /**
-     * Returns true if this field returns an ID that should be converted
-     * back to the parent object (like sync()).
+     * Returns true if this field returns an ID handle: an ID the generated
+     * method loads as an object instead of exposing (see idHandleType()).
      */
     public function isConvertID(): bool
     {
+        return $this->idHandleType() !== null;
+    }
+
+    /**
+     * The GraphQL type an ID-returning field loads, or null when the ID is
+     * returned as-is (including the id field itself).
+     *
+     * The @expectedType directive names it: sync-likes return their parent,
+     * and LLM.spawn returns an Agent rather than its ID.
+     */
+    public function idHandleType(): ?string
+    {
         if ($this->name === 'id') {
-            return false;
+            return null;
         }
         $ref = $this->type;
         if ($ref->kind === 'NON_NULL') {
             $ref = $ref->ofType;
         }
         if ($ref->kind !== 'SCALAR') {
-            return false;
+            return null;
         }
-        $expectedType = $this->expectedType();
-        if ($expectedType !== null) {
-            return $expectedType === $this->parentTypeName;
-        }
-        return false;
+        return $this->expectedType();
     }
 }

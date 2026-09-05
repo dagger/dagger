@@ -22,6 +22,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -401,6 +402,148 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 	}
 }
 
+// LLMMessageOriginKind classifies who put a message on the conversation
+// record (hack/designs/agent-messaging.md §4.1).
+type LLMMessageOriginKind string
+
+var LLMMessageOriginKinds = dagql.NewEnum[LLMMessageOriginKind]()
+
+var (
+	LLMMessageOriginUser = LLMMessageOriginKinds.Register("USER",
+		"The user: a prompt submitted by a client rather than sent by an agent.")
+	LLMMessageOriginAgent = LLMMessageOriginKinds.Register("AGENT",
+		"Another agent: the message was sent from within that agent's turn.")
+	LLMMessageOriginEvent = LLMMessageOriginKinds.Register("EVENT",
+		"The engine, reporting a subscribed agent's lifecycle transition.")
+)
+
+func (kind LLMMessageOriginKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessageOriginKind",
+		NonNull:   true,
+	}
+}
+
+func (kind LLMMessageOriginKind) TypeDescription() string {
+	return "Who put a message on the conversation record."
+}
+
+func (kind LLMMessageOriginKind) Decoder() dagql.InputDecoder {
+	return LLMMessageOriginKinds
+}
+
+func (kind LLMMessageOriginKind) ToLiteral() call.Literal {
+	return LLMMessageOriginKinds.Literal(kind)
+}
+
+// LLMMessageOrigin is the recorded provenance of a consumed mailbox message:
+// who sent it, its short ref within the receiving agent's runtime, and the
+// message it answers, if any. It is resolved at the central enqueue path
+// (AgentRuntimes.Send), recorded as a withPrompt argument so the conversation
+// chain itself says who said what, and rendered to the model as a
+// deterministic attribution header at request-build time — never baked into
+// the stored prompt text.
+type LLMMessageOrigin struct {
+	Kind        LLMMessageOriginKind `field:"true" name:"kind" json:"kind" doc:"Who put this message on the record."`
+	AgentHandle string               `field:"true" name:"agentHandle" json:"agent_handle,omitempty" doc:"The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins)."`
+	AgentName   string               `field:"true" name:"agentName" json:"agent_name,omitempty" doc:"The display name of the agent behind agentHandle."`
+	Ref         string               `field:"true" name:"ref" json:"ref,omitempty" doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle."`
+	ReplyTo     string               `field:"true" name:"replyTo" json:"reply_to,omitempty" doc:"The ref of the message this one answers, in the sender's own runtime, if any."`
+}
+
+func (*LLMMessageOrigin) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessageOrigin",
+		NonNull:   true,
+	}
+}
+
+func (*LLMMessageOrigin) TypeDescription() string {
+	return "The recorded provenance of a message that arrived through an agent mailbox."
+}
+
+func (o *LLMMessageOrigin) Clone() *LLMMessageOrigin {
+	cp := *o
+	return &cp
+}
+
+// AttributionHeader renders the deterministic, model-facing header for a
+// non-user message. The ref is a per-runtime ordinal rather than the opaque
+// message handle precisely so this render is stable across identical flows —
+// replay recordings compare wire text byte for byte. Empty for USER origins:
+// the user's own words carry no header.
+func (o *LLMMessageOrigin) AttributionHeader() string {
+	if o == nil {
+		return ""
+	}
+	switch o.Kind {
+	case LLMMessageOriginAgent:
+		if o.ReplyTo != "" {
+			return fmt.Sprintf("[reply from agent %q to your message %s]", o.AgentName, o.ReplyTo)
+		}
+		return fmt.Sprintf("[message %s from agent %q]", o.Ref, o.AgentName)
+	case LLMMessageOriginEvent:
+		return fmt.Sprintf("[event from agent %q]", o.AgentName)
+	default:
+		if o.ReplyTo != "" {
+			return fmt.Sprintf("[reply to your message %s]", o.ReplyTo)
+		}
+		return ""
+	}
+}
+
+// LLMMessageOriginInput is the input-object form of LLMMessageOrigin, for the
+// withPrompt selector the agent loop records when draining its mailbox.
+type LLMMessageOriginInput struct {
+	Kind        LLMMessageOriginKind `doc:"Who put this message on the record."`
+	AgentHandle string               `name:"agentHandle" doc:"The sending or observed agent's runtime handle." default:""`
+	AgentName   string               `name:"agentName" doc:"The display name of the agent behind agentHandle." default:""`
+	Ref         string               `doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\"." default:""`
+	ReplyTo     string               `name:"replyTo" doc:"The ref of the message this one answers, if any." default:""`
+}
+
+func (LLMMessageOriginInput) TypeName() string {
+	return "LLMMessageOriginInput"
+}
+
+func (LLMMessageOriginInput) TypeDescription() string {
+	return "The provenance of a message delivered through an agent mailbox."
+}
+
+// ToLLMMessageOrigin converts the input object to an LLMMessageOrigin.
+func (in LLMMessageOriginInput) ToLLMMessageOrigin() *LLMMessageOrigin {
+	return &LLMMessageOrigin{
+		Kind:        in.Kind,
+		AgentHandle: in.AgentHandle,
+		AgentName:   in.AgentName,
+		Ref:         in.Ref,
+		ReplyTo:     in.ReplyTo,
+	}
+}
+
+// originInput builds the withPrompt origin argument for a recorded origin,
+// via the decoder (a bare InputObject struct literal leaves its internals nil
+// and panics when the selector is serialized to a call literal — see
+// responseSelectorFromBlocks).
+func originInput(origin *LLMMessageOrigin) (dagql.InputObject[LLMMessageOriginInput], error) {
+	var zero dagql.InputObject[LLMMessageOriginInput]
+	decoded, err := (dagql.InputObject[LLMMessageOriginInput]{}).Decoder().DecodeInput(map[string]any{
+		"kind":        string(origin.Kind),
+		"agentHandle": origin.AgentHandle,
+		"agentName":   origin.AgentName,
+		"ref":         origin.Ref,
+		"replyTo":     origin.ReplyTo,
+	})
+	if err != nil {
+		return zero, fmt.Errorf("decode message origin input: %w", err)
+	}
+	input, ok := decoded.(dagql.InputObject[LLMMessageOriginInput])
+	if !ok {
+		return zero, fmt.Errorf("decode message origin input: unexpected type %T", decoded)
+	}
+	return input, nil
+}
+
 // LLMMessage represents a single message in the LLM conversation history.
 // Content is a list of typed content blocks, supporting multi-modal and
 // multi-part messages (e.g. thinking + text + tool calls in one turn).
@@ -410,6 +553,13 @@ type LLMMessage struct {
 
 	// Token usage for this message (all zeros except on assistant responses).
 	TokenUsage *LLMTokenUsage `field:"true" json:"token_usage,omitempty" doc:"Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses."`
+
+	// Origin records who put this message on the record, when it arrived
+	// through an agent mailbox (hack/designs/agent-messaging.md §4.1). Nil for
+	// the user's own prompts and for everything the model or tools produced.
+	// Exposed through an explicit nullable accessor rather than field:"true",
+	// since absent is the common case.
+	Origin *LLMMessageOrigin `json:"origin,omitempty"`
 }
 
 func (*LLMMessage) TypeDescription() string {
@@ -432,6 +582,9 @@ func (m *LLMMessage) Clone() *LLMMessage {
 	if m.TokenUsage != nil {
 		usage := *m.TokenUsage
 		cp.TokenUsage = &usage
+	}
+	if m.Origin != nil {
+		cp.Origin = m.Origin.Clone()
 	}
 	return &cp
 }
@@ -584,23 +737,27 @@ type LLMRouter struct {
 	AnthropicIsOAuth         bool
 	AnthropicBaseURL         string
 	AnthropicModel           string
+	AnthropicSmallModel      string
 	AnthropicReasoningEffort string
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
 	OpenAIBaseURL          string
 	OpenAIModel            string
+	OpenAISmallModel       string
 	OpenAIDisableStreaming bool
 
 	// OpenAI Codex uses the Responses API against the ChatGPT backend with a
 	// ChatGPT subscription OAuth token.
 	OpenAICodexAuthToken       string
 	OpenAICodexModel           string
+	OpenAICodexSmallModel      string
 	OpenAICodexReasoningEffort string
 
 	GeminiAPIKey          string
 	GeminiBaseURL         string
 	GeminiModel           string
+	GeminiSmallModel      string
 	GeminiReasoningEffort string
 
 	// Local is a self-hosted, OpenAI- or Anthropic-compatible endpoint (e.g.
@@ -608,10 +765,11 @@ type LLMRouter struct {
 	// tunneled to the engine through the client's session, since the engine may
 	// not be able to reach the endpoint directly. APICompat selects the wire
 	// protocol ("openai" or "anthropic"); APIKey is optional.
-	LocalBaseURL   string
-	LocalModel     string
-	LocalAPICompat string
-	LocalAPIKey    string
+	LocalBaseURL    string
+	LocalModel      string
+	LocalSmallModel string
+	LocalAPICompat  string
+	LocalAPIKey     string
 
 	// localClient is the client whose configuration supplied LocalBaseURL.
 	// A local endpoint is reachable from that client's host, so the tunnel
@@ -809,6 +967,30 @@ func (r *LLMRouter) DefaultModel() string {
 	return ""
 }
 
+// SmallModel returns the user-configured small model for provider, falling
+// back to Catwalk's recommendation. Unknown and local providers without an
+// explicit small model return no route, allowing the caller to retain the
+// concrete model it is already using.
+func (r *LLMRouter) SmallModel(provider LLMProvider) (string, bool) {
+	var configured string
+	switch provider {
+	case Anthropic:
+		configured = r.AnthropicSmallModel
+	case OpenAI:
+		configured = r.OpenAISmallModel
+	case OpenAICodex:
+		configured = r.OpenAICodexSmallModel
+	case Google:
+		configured = r.GeminiSmallModel
+	case Local:
+		configured = r.LocalSmallModel
+	}
+	if configured != "" {
+		return configured, true
+	}
+	return defaultSmallModel(provider)
+}
+
 // routeProvider dispatches directly to the named provider, bypassing
 // model-name pattern matching.
 func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
@@ -929,6 +1111,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
 	})
 	eg.Go(func() error {
+		return save("ANTHROPIC_SMALL_MODEL", &r.AnthropicSmallModel)
+	})
+	eg.Go(func() error {
 		// OAuth (Claude Code subscription) bearer token, exported client-side
 		// from the persisted llmconfig by `dagger llm`.
 		var v string
@@ -958,6 +1143,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	eg.Go(func() error {
 		return save("OPENAI_MODEL", &r.OpenAIModel)
 	})
+	eg.Go(func() error {
+		return save("OPENAI_SMALL_MODEL", &r.OpenAISmallModel)
+	})
 
 	eg.Go(func() error {
 		// OAuth (ChatGPT subscription) bearer token for the Codex Responses API,
@@ -976,6 +1164,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return save("OPENAI_CODEX_MODEL", &r.OpenAICodexModel)
 	})
 	eg.Go(func() error {
+		return save("OPENAI_CODEX_SMALL_MODEL", &r.OpenAICodexSmallModel)
+	})
+	eg.Go(func() error {
 		return save("OPENAI_CODEX_REASONING_EFFORT", &r.OpenAICodexReasoningEffort)
 	})
 
@@ -987,6 +1178,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("GEMINI_MODEL", &r.GeminiModel)
+	})
+	eg.Go(func() error {
+		return save("GEMINI_SMALL_MODEL", &r.GeminiSmallModel)
 	})
 	eg.Go(func() error {
 		return save("GEMINI_REASONING_EFFORT", &r.GeminiReasoningEffort)
@@ -1005,6 +1199,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("LOCAL_MODEL", &r.LocalModel)
+	})
+	eg.Go(func() error {
+		return save("LOCAL_SMALL_MODEL", &r.LocalSmallModel)
 	})
 	eg.Go(func() error {
 		return save("LOCAL_API_COMPAT", &r.LocalAPICompat)
@@ -1239,6 +1436,35 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 	return model, provider, nil
 }
 
+// SmallModelRoute resolves this conversation's current concrete route, then
+// selects that provider's configured or catalog-recommended small model. If the
+// provider has neither (as with an arbitrary local or unknown provider), the
+// current concrete route is returned unchanged.
+func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return "", "", err
+	}
+	current, err := router.Route(llm.model, llm.provider)
+	if err != nil {
+		return "", "", err
+	}
+	provider := current.Provider
+	small, ok := router.SmallModel(provider)
+	if !ok {
+		return current.Model, string(provider), nil
+	}
+	resolved, err := router.Route(small, string(provider))
+	if err != nil {
+		return "", "", err
+	}
+	return resolved.Model, string(resolved.Provider), nil
+}
+
 func (*LLM) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "LLM",
@@ -1446,6 +1672,14 @@ func (llm *LLM) WithPrompt(
 	// The prompt message.
 	prompt string,
 ) *LLM {
+	return llm.WithPromptOrigin(prompt, nil)
+}
+
+// WithPromptOrigin appends a user prompt carrying its recorded provenance:
+// who sent it (an agent, the engine's event channel) and what it replies to.
+// A nil origin is the user's own prompt — the unmarked common case, which is
+// also what keeps every pre-provenance chain and recording byte-stable.
+func (llm *LLM) WithPromptOrigin(prompt string, origin *LLMMessageOrigin) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
@@ -1453,6 +1687,7 @@ func (llm *LLM) WithPrompt(
 			Kind: LLMContentText,
 			Text: prompt,
 		}},
+		Origin: origin,
 	})
 	return llm
 }
@@ -1621,6 +1856,7 @@ func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*LLMMessage, er
 			return nil, err
 		}
 	}
+	messages := renderMessagesForModel(llm.Messages)
 	if systemPrompt != "" {
 		return append([]*LLMMessage{{
 			Role: LLMMessageRoleSystem,
@@ -1628,9 +1864,52 @@ func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*LLMMessage, er
 				Kind: LLMContentText,
 				Text: systemPrompt,
 			}},
-		}}, llm.Messages...), nil
+		}}, messages...), nil
 	}
-	return llm.Messages, nil
+	return messages, nil
+}
+
+// renderMessagesForModel applies each message's recorded origin as a
+// model-facing attribution header (hack/designs/agent-messaging.md §4.1):
+// the model must be able to tell another agent's words from the user's, so
+// non-user origins render as a deterministic header line prepended to the
+// message text at request-build time. The stored history keeps clean text
+// plus structured origin; only the wire form carries the header.
+func renderMessagesForModel(messages []*LLMMessage) []*LLMMessage {
+	var rendered []*LLMMessage
+	for i, msg := range messages {
+		header := msg.Origin.AttributionHeader()
+		if header == "" || msg.Role != LLMMessageRoleUser {
+			if rendered != nil {
+				rendered = append(rendered, msg)
+			}
+			continue
+		}
+		if rendered == nil {
+			rendered = make([]*LLMMessage, 0, len(messages))
+			rendered = append(rendered, messages[:i]...)
+		}
+		cp := msg.Clone()
+		prepended := false
+		for _, block := range cp.Content {
+			if block.Kind == LLMContentText {
+				block.Text = header + "\n\n" + block.Text
+				prepended = true
+				break
+			}
+		}
+		if !prepended {
+			cp.Content = append([]*LLMContentBlock{{
+				Kind: LLMContentText,
+				Text: header,
+			}}, cp.Content...)
+		}
+		rendered = append(rendered, cp)
+	}
+	if rendered == nil {
+		return messages
+	}
+	return rendered
 }
 
 type ModelFinishedError struct {
@@ -1801,11 +2080,31 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		endRemainingDisplaySpans()
 		return base, nil
 	}
-	if err := srv.Select(ctx, base, &stepped, sels...); err != nil {
-		endRemainingDisplaySpans()
-		return inst, err
+
+	// A canceled tool call still produced protocol-significant history: the
+	// assistant's tool_use above and CallBatch's errored tool_result. Record
+	// those pure selectors on a context detached from cancellation so the next
+	// user prompt sees why the tool ran without sending providers a dangling
+	// tool_use. We still return the cancellation cause below, so the agent loop
+	// commits this state and parks rather than taking another model step.
+	recordCtx := ctx
+	detached := ctx.Err() != nil
+	if detached {
+		recordCtx = context.WithoutCancel(ctx)
+	}
+	err = srv.Select(recordCtx, base, &stepped, sels...)
+	if err != nil && !detached && ctx.Err() != nil {
+		// Cancellation may have raced with the first Select. Its selectors are
+		// immutable history construction, so retrying them is safe.
+		err = srv.Select(context.WithoutCancel(ctx), base, &stepped, sels...)
 	}
 	endRemainingDisplaySpans()
+	if err != nil {
+		return inst, err
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return stepped, cause
+	}
 
 	return stepped, nil
 }
@@ -1975,7 +2274,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest, nil)
+		emitMessageSpan(ctx, msg, llmCallDigest, nil, nil)
 	}
 }
 
@@ -2193,12 +2492,14 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	if dig, digErr := self.RecipeDigest(ctx); digErr == nil {
 		selfDigest = dig.String()
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.String(telemetryattrs.LLMCallDigestAttr, selfDigest),
-	))
+	}
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -2285,19 +2586,51 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
+type replayedToolResult struct {
+	text    string
+	errored bool
+}
+
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during replay. callDigest is the
 // DAG digest enabling TUI branching from that point. resultTokens maps a tool
-// call's ID to the estimated token size of the result it produced (populated
-// only during replay, where the whole conversation is known up front), so a
-// replayed tool-call span carries the same result-size badge as a live one.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
+// call's ID to the estimated token size of the result it produced, while
+// replayedResults carries the authoritative result text so replay can reproduce
+// the same result logs as the live call.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens)
+		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens, replayedResults)
 	}
+}
+
+// messageOriginAttrs renders a recorded message origin as span attributes for
+// the message's telemetry span, so frontends can attribute another agent's
+// words to their sender and render engine lifecycle events compactly
+// (hack/designs/agent-messaging.md §4.1). Nil — the user's own prompt — emits
+// nothing, keeping pre-provenance spans unchanged.
+func messageOriginAttrs(origin *LLMMessageOrigin) []attribute.KeyValue {
+	if origin == nil {
+		return nil
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.LLMMessageOriginKindAttr, string(origin.Kind)),
+	}
+	if origin.AgentHandle != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentIDAttr, origin.AgentHandle))
+	}
+	if origin.AgentName != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentNameAttr, origin.AgentName))
+	}
+	if origin.Ref != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginRefAttr, origin.Ref))
+	}
+	if origin.ReplyTo != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginReplyToAttr, origin.ReplyTo))
+	}
+	return attrs
 }
 
 func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
@@ -2314,6 +2647,8 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
+	attrs = append(attrs, messageOriginAttrs(msg.Origin)...)
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
 	if callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 	}
@@ -2325,7 +2660,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	fmt.Fprint(stdio.Stdout, msg.TextContent())
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]replayedToolResult) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -2377,7 +2712,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 							if !ok {
 								continue
 							}
-							if str, ok := val.(string); ok {
+							if str, ok := toolArgHeaderValue(name, val); ok {
 								toolArgNames = append(toolArgNames, name)
 								toolArgValues = append(toolArgValues, str)
 							}
@@ -2411,12 +2746,13 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			}
 			attrs = append(attrs, extraAttrs...)
-			if callDigest != "" {
-				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
-			}
 			startCtx := ctx
 			if g.kind == LLMContentToolCall {
 				startCtx = toolAnchorCtx
+			}
+			attrs = append(attrs, genAIAgentAttrsFromContext(startCtx)...)
+			if callDigest != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
 			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
 			if g.kind != LLMContentToolCall {
@@ -2431,7 +2767,22 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				case LLMContentText, LLMContentThinking:
 					fmt.Fprint(stdio.Stdout, block.Text)
 				case LLMContentToolCall:
-					fmt.Fprint(stdio.Stdout, string(block.Arguments))
+					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
+				}
+			}
+			if g.kind == LLMContentToolCall {
+				block := g.blocks[0]
+				if result, ok := replayedResults[block.CallID]; ok {
+					if result.errored {
+						span.SetStatus(codes.Error, result.text)
+					}
+					resultAttrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+					if resultType := toolResultContentType(result.text); resultType != "" {
+						resultAttrs = append(resultAttrs, log.String(telemetry.ContentTypeAttr, resultType))
+					}
+					resultStdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary, resultAttrs...)
+					fmt.Fprintln(resultStdio.Stdout, result.text)
+					_ = resultStdio.Close()
 				}
 			}
 		}()
@@ -2441,21 +2792,26 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 // Replay re-emits telemetry spans for all messages in the conversation history.
 // This allows the TUI to display the conversation after loading a saved session.
 func (llm *LLM) Replay(ctx context.Context) {
-	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
-	// replayed tool-call span carries the same result-size badge the live path
-	// stamps in endToolCallDisplay (the result lives in a later user message).
+	// Pre-scan tool results, keyed by call ID, so the assistant tool-call span
+	// can carry the same result-size badge, status, and model-visible output as
+	// the live path even though the result is stored in a later user message.
 	resultTokens := map[string]int64{}
+	replayedResults := map[string]replayedToolResult{}
 	for _, msg := range llm.Messages {
 		for _, block := range msg.Content {
 			if block.Kind == LLMContentToolResult && block.CallID != "" {
 				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+				replayedResults[block.CallID] = replayedToolResult{
+					text:    block.Text,
+					errored: block.Errored,
+				}
 			}
 		}
 	}
 	for _, msg := range llm.Messages {
 		// We don't have per-message call digests for replay, so pass empty.
 		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "", resultTokens)
+		emitMessageSpan(ctx, msg, "", resultTokens, replayedResults)
 	}
 }
 
@@ -2673,11 +3029,24 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 						},
 					})
 				case LLMContentText:
+					args := []dagql.NamedInput{
+						{Name: "prompt", Value: dagql.NewString(block.Text)},
+					}
+					// Provenance survives the portable round trip: a restored
+					// conversation must render the same attribution the live
+					// one did, or replay diverges from what actually happened.
+					if msg.Origin != nil {
+						origin, err := originInput(msg.Origin)
+						if err != nil {
+							return nil, fmt.Errorf("message %d: %w", i, err)
+						}
+						args = append(args, dagql.NamedInput{
+							Name: "origin", Value: dagql.Opt(origin),
+						})
+					}
 					sels = append(sels, dagql.Selector{
 						Field: "withPrompt",
-						Args: []dagql.NamedInput{
-							{Name: "prompt", Value: dagql.NewString(block.Text)},
-						},
+						Args:  args,
 					})
 				default:
 					return nil, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)

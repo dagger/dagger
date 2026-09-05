@@ -38,6 +38,13 @@ const workspaceTypeName = "Workspace"
 // is a continuation: the loop resumes from the returned conversation.
 const llmTypeName = "LLM"
 
+// agentTypeName is the object type the engine auto-injects into a module
+// function's arguments from the calling agent, when the tool call is
+// dispatched from a running agent loop (see core/agent_context.go). Like
+// Workspace and LLM, such arguments are hidden from the generated tool
+// schema — the model never sees or supplies them.
+const agentTypeName = "Agent"
+
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
 // enough to build the toolset (the object's type, via objType) and to dispatch a
 // tool call (the object itself, as the receiver). The object may be held lazily
@@ -584,9 +591,12 @@ func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 // none. There an LLM argument is an ordinary object argument the caller cannot
 // satisfy: a required one disqualifies its method (objectToolEligible), and an
 // optional one is exposed by ID like any other object, so it can at least be
-// left unset.
+// left unset. Agent is filled from the agent loop dispatching the call (see
+// AgentFromContext), which likewise only exists under a conversation, so it
+// follows the same policy as LLM.
 type implicitToolArgs struct {
-	// llm reports whether a conversation is available to fill LLM arguments.
+	// llm reports whether a conversation is available to fill LLM and Agent
+	// arguments.
 	llm bool
 }
 
@@ -600,7 +610,8 @@ var (
 // supplies reports whether MCP fills arg itself under this policy.
 func (p implicitToolArgs) supplies(arg *ast.ArgumentDefinition) bool {
 	return isExpectedTypeArg(arg, workspaceTypeName) ||
-		(p.llm && isExpectedTypeArg(arg, llmTypeName))
+		(p.llm && (isExpectedTypeArg(arg, llmTypeName) ||
+			isExpectedTypeArg(arg, agentTypeName)))
 }
 
 // implicitArgs returns the policy this MCP serves tools under: standalone when
@@ -806,7 +817,7 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 		}
 		val, ok := args[arg.Name]
 		if !ok {
-			implicit, found, err := m.implicitToolInput(astField, arg)
+			implicit, found, err := m.implicitToolInput(ctx, astField, arg)
 			if err != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
@@ -844,13 +855,13 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 	return sel, nil
 }
 
-// implicitToolInput fills the runtime-local arguments supported by the MCP
+// implicitToolInput fills the two runtime-local arguments supported by the MCP
 // object-tool adapter. These values are ordinary explicit selector arguments:
 // module function schemas and general DAGQL input resolution know nothing about
 // this convention. An argument the policy does not supply (see
 // implicitToolArgs) is reported not found, so it is left to the caller like any
 // other object argument.
-func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
+func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
 		return nil, false, nil
@@ -867,6 +878,15 @@ func (m *MCP) implicitToolInput(astField *ast.FieldDefinition, spec dagql.InputS
 			return nil, true, errors.New("function requires the current conversation; invoke it as an LLM tool")
 		}
 		obj = llm
+	case isExpectedTypeArg(astArg, agentTypeName):
+		if !m.implicitArgs().llm {
+			return nil, false, nil
+		}
+		agent, ok := AgentFromContext(ctx)
+		if !ok {
+			return nil, true, errors.New("function requires the calling agent; invoke it from an agent loop (LLM.spawn) — synchronous loop support is planned")
+		}
+		obj = agent
 	default:
 		return nil, false, nil
 	}

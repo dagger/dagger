@@ -146,7 +146,9 @@
               "items": [
                 "api/reference/address",
                 "api/reference/agent",
-                "api/reference/agent-group",
+                "api/reference/agent-message",
+                "api/reference/agent-middleware",
+                "api/reference/agent-middleware-group",
                 "api/reference/check",
                 "api/reference/check-group",
                 "api/reference/client-filesync-mirror",
@@ -189,6 +191,7 @@
                 "api/reference/list-type-def",
                 "api/reference/llm-content-block",
                 "api/reference/llm-message",
+                "api/reference/llm-message-origin",
                 "api/reference/llm-skill",
                 "api/reference/llm-token-usage",
                 "api/reference/module",

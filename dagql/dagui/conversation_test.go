@@ -110,8 +110,18 @@ func TestSurfacedConversationNestsSubAgentUnderToolCall(t *testing.T) {
 }
 
 // TestSurfacedConversationHidesContainedMessages asserts messages behind a
-// Boundary, or on a severed chain that never reaches the root, stay hidden --
-// the same containment SurfacedChecks applies to fixture checks.
+// Boundary stay hidden -- the same containment SurfacedChecks applies to
+// fixture checks -- and pins what "contained" means for a chain that never
+// reaches the root, which the two questions answer differently.
+//
+// Relative to an EXPLICIT root, a severed chain cannot be shown to be inside
+// it, so it is contained. For the WHOLE DB there is no root to reach: a
+// resuming client holds a second trace hanging off a second parentless span
+// (hack/designs/resume-from-trace.md §5.1.3), and every message in it is
+// severed from db.RootSpan by construction. Requiring the live root there
+// dropped the entire restored transcript, so what remains is the containment
+// question alone -- which is what HasConversationForSpan(nil) has always
+// asked.
 func TestSurfacedConversationHidesContainedMessages(t *testing.T) {
 	const (
 		rootID byte = iota + 1
@@ -128,7 +138,7 @@ func TestSurfacedConversationHidesContainedMessages(t *testing.T) {
 		messageSnapshot(realID, "real", spanID(rootID), "user"),
 		boundarySnapshot(boundaryID, rootID),
 		messageSnapshot(containedID, "contained", spanID(boundaryID), "user"),
-		// parent never imported -> severed chain, can't be proven boundary-free.
+		// parent never imported -> severed chain, unreachable from the root.
 		messageSnapshot(severedID, "severed", spanID(missingParentID), "user"),
 	})
 
@@ -136,9 +146,31 @@ func TestSurfacedConversationHidesContainedMessages(t *testing.T) {
 	if !got["real"] {
 		t.Errorf("expected \"real\" to surface (surfaced: %v)", got)
 	}
+	if got["contained"] {
+		t.Errorf("expected \"contained\" to stay hidden, but it surfaced (surfaced: %v)", got)
+	}
+	if !got["severed"] {
+		t.Errorf("expected \"severed\" to surface for the whole-DB question (surfaced: %v)", got)
+	}
+	// The whole-DB answer must agree with the whole-DB predicate; they
+	// disagreeing is the defect §5.1.3 names.
+	if !db.HasConversation() {
+		t.Error("HasConversation and SurfacedConversation disagree about the same trace")
+	}
+
+	// Scoped to the root, both stay hidden: one behind its boundary, the other
+	// because nothing shows it is beneath the root at all.
+	root := db.Spans.Map[spanID(rootID)]
+	if root == nil {
+		t.Fatal("root span not loaded")
+	}
+	scoped := surfacedMessageNames(db.SurfacedConversationForSpan(root))
+	if !scoped["real"] {
+		t.Errorf("expected \"real\" to surface when scoped (surfaced: %v)", scoped)
+	}
 	for _, hidden := range []string{"contained", "severed"} {
-		if got[hidden] {
-			t.Errorf("expected %q to stay hidden, but it surfaced (surfaced: %v)", hidden, got)
+		if scoped[hidden] {
+			t.Errorf("expected %q to stay hidden when scoped, but it surfaced (surfaced: %v)", hidden, scoped)
 		}
 	}
 }

@@ -31,6 +31,41 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class AgentMessageDelivery(Enum):
+    """How a message landed in an agent's evaluation."""
+
+    QUEUED = "QUEUED"
+    """The message is queued: the agent is paused or failed, and a resume will drain it."""
+
+    STARTED = "STARTED"
+    """The message opened a new turn: the agent was idle or newly started."""
+
+    STEERED = "STEERED"
+    """The message was absorbed into the in-flight turn at a step boundary, steering it."""
+
+
+class AgentState(Enum):
+    """Computed lifecycle state of an agent."""
+
+    FAILED = "FAILED"
+    """The loop failed; snapshot holds the completed prefix. Resume retries."""
+
+    IDLE = "IDLE"
+    """Mailbox empty, turn complete; blocked in receive."""
+
+    PAUSED = "PAUSED"
+    """Mailbox accepting but not draining, until resume."""
+
+    RUNNING = "RUNNING"
+    """A model request or tool evaluation is in flight."""
+
+    STOPPED = "STOPPED"
+    """Runtime released; snapshot remains readable."""
+
+    WAITING_INPUT = "WAITING_INPUT"
+    """Blocked on input from the user (derived; see waitingOn)."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -176,6 +211,19 @@ class LLMContentBlockKind(Enum):
 
     TOOL_RESULT = "TOOL_RESULT"
     """A tool/function result."""
+
+
+class LLMMessageOriginKind(Enum):
+    """Who put a message on the conversation record."""
+
+    AGENT = "AGENT"
+    """Another agent: the message was sent from within that agent's turn."""
+
+    EVENT = "EVENT"
+    """The engine, reporting a subscribed agent's lifecycle transition."""
+
+    USER = "USER"
+    """The user: a prompt submitted by a client rather than sent by an agent."""
 
 
 class LLMMessageRole(Enum):
@@ -377,6 +425,27 @@ class LLMContentBlockInput(Input):
 
     tool_name: str | None = ""
     """The name of the tool to call (for TOOL_CALL kind)."""
+
+
+@typecheck
+@dataclass(slots=True)
+class LLMMessageOriginInput(Input):
+    """The provenance of a message delivered through an agent mailbox."""
+
+    kind: LLMMessageOriginKind
+    """Who put this message on the record."""
+
+    agent_handle: str | None = ""
+    """The sending or observed agent's runtime handle."""
+
+    agent_name: str | None = ""
+    """The display name of the agent behind agentHandle."""
+
+    ref: str | None = ""
+    """The message's short ref within the receiving agent's runtime, e.g. "#3"."""
+
+    reply_to: str | None = ""
+    """The ref of the message this one answers, if any."""
 
 
 @typecheck
@@ -711,6 +780,583 @@ class Address(Type):
 
 @typecheck
 class Agent(Type):
+    """A conversation loop running as an addressable, long-lived entity
+    within the session. The conversation itself remains observable at any
+    time as an immutable LLM value."""
+
+    async def error(self) -> str:
+        """Why the loop failed, for a FAILED agent; empty otherwise.
+
+        The snapshot holds the completed prefix — send or resume retries from
+        it.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("error", _args)
+        return await _ctx.execute(str)
+
+    async def handle(self) -> str:
+        """The opaque runtime handle minted by the spawn that created this agent.
+
+        It is the same value the agent's loop span publishes as
+        dagger.io/agent.id, so a client can correlate the agent with what it
+        discovers in the trace. Two spawns of an identical composition have
+        different handles; a display name is shared freely.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("handle", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Agent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def interrupt(self) -> Self:
+        """Preempt the in-flight step, keeping all completed steps, and pause.
+
+        The interrupted turn stays open: messages it consumed remain pending,
+        while unconsumed mailbox messages are discarded. Resume continues the
+        turn from the last committed step.
+
+        On an idle, never-started, or failed agent this is equivalent to
+        pause. Interrupting a stopped agent fails.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "interrupt", _args)
+
+    def message(self, handle: str) -> "AgentMessage":
+        """Look up a previously sent message by its opaque handle.
+
+        This is the lookup send pins its result's identity through: the
+        returned handle's ID is an honest, replayable chain, addressable from
+        any request in the session (the cancel-and-request-again contract).
+
+        Fails if the agent has no runtime entry in this session, or no record
+        of the given handle.
+
+        Parameters
+        ----------
+        handle:
+            The opaque handle generated by the send that enqueued the message.
+        """
+        _args = [
+            Arg("handle", handle),
+        ]
+        _ctx = self._select("message", _args)
+        return AgentMessage(_ctx)
+
+    async def name(self) -> str:
+        """Display label for the agent; carries no identity.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def notify(
+        self,
+        subscriber: Self,
+        *,
+        on: list[AgentState] | None = None,
+    ) -> Self:
+        """Subscribe another agent to this agent's lifecycle: each transition
+        into one of the given states enqueues an event message to the
+        subscriber — steering its open turn, or waking it if idle, like any
+        other message.
+
+        This is how a supervisor hears every completion and failure without
+        polling or blocking: subscribe at spawn time, keep working, and events
+        arrive as attributed messages.
+
+        Events never relaunch a stopped subscriber, and an already-reached
+        state fires immediately at subscribe time, so a fast agent settling
+        before the subscription lands is not missed.
+
+        Idempotent per subscriber; re-subscribing replaces the state set.
+
+        Parameters
+        ----------
+        subscriber:
+            The agent to deliver event messages to. You must hold its handle:
+            subscriptions are capability-based like everything else.
+        on:
+            The lifecycle states that fire an event. IDLE events carry the
+            turn's final reply; FAILED events carry the loop error.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("subscriber", subscriber),
+            Arg(
+                "on",
+                [AgentState.IDLE, AgentState.FAILED] if on is None else on,
+                [AgentState.IDLE, AgentState.FAILED],
+            ),
+        ]
+        return await self._ctx.execute_sync(self, "notify", _args)
+
+    async def pause(self) -> Self:
+        """Stop draining the mailbox once the in-flight step completes.
+
+        Pause takes priority over pending work: a mid-turn pause suspends the
+        turn, which resume continues. Messages sent while paused enqueue with
+        QUEUED delivery until a resume.
+
+        Pausing a never-started agent leaves it paused for its eventual start;
+        pausing a failed agent is allowed (resume decides the retry); pausing
+        a stopped agent fails.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "pause", _args)
+
+    async def rehydrate(
+        self,
+        *,
+        state: AgentState | None = AgentState.IDLE,
+        error: str | None = "",
+    ) -> Self:
+        """Recreate this instance's runtime entry from a persisted conversation,
+        without starting its loop.
+
+        The receiver's snapshot becomes the entry's committed history, so
+        prompting it continues where it left off — the restore verb: rebuild a
+        conversation's ID from a trace, load it, and re-hydrate the instance
+        it belonged to.
+
+        The loop is deliberately not started: a restored agent spends nothing
+        until it is prompted, and any input still pending on its snapshot is
+        stepped then.
+
+        Fails if the instance already has a runtime entry in this session: re-
+        hydration must happen before anything else addresses the instance,
+        since by then it may have stepped.
+
+        Parameters
+        ----------
+        state:
+            The lifecycle state to restore into, as facts on the entry: PAUSED
+            parks it, FAILED holds an error a resume retries past, STOPPED
+            preserves a dormant snapshot that send or resume can relaunch,
+            IDLE is ready to be prompted.
+            RUNNING and WAITING_INPUT are refused: the loop died with the
+            session that published them, so restore such an agent as IDLE —
+            its interrupted turn's input is still pending on the snapshot.
+        error:
+            The loop error to restore, for state FAILED. Refused with any
+            other state.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("state", state, AgentState.IDLE),
+            Arg("error", error, ""),
+        ]
+        return await self._ctx.execute_sync(self, "rehydrate", _args)
+
+    async def reseed(self, conversation: "LLM") -> Self:
+        """Replace this instance's committed conversation with the given one,
+        keeping the entry: identity, mailbox, and lifecycle state are
+        untouched. A paused suspended turn is abandoned and its consumed
+        messages are resolved before replacement.
+
+        This is the continuity verb. Compaction, a workspace rebind, a model
+        change, or rewinding an interrupted prompt produce a new conversation
+        value for the SAME agent; reseed swaps it in place, where a stop-and-
+        respawn would mint a successor instance and split the agent across two
+        roster entries. It is the client-facing form of what a continuation
+        tool already does mid-turn: the agent adopts a new conversation
+        without changing who it is.
+
+        The next turn continues from the reseeded conversation, and queued
+        messages drain onto it. A FAILED agent keeps its error — resume
+        retries from the new conversation.
+
+        Fails if the instance has no runtime entry in this session (only a
+        spawned or re-hydrated instance holds a conversation to replace), if a
+        step is in flight, or if the agent is stopped.
+
+        Parameters
+        ----------
+        conversation:
+            The conversation that becomes the agent's committed history,
+            replacing the current one.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("conversation", conversation),
+        ]
+        return await self._ctx.execute_sync(self, "reseed", _args)
+
+    async def resume(self) -> Self:
+        """Resume draining the mailbox: a suspended turn continues from the last
+        committed step, and queued messages drain.
+
+        Resuming a FAILED agent retries its pending step. Resuming a STOPPED
+        agent relaunches the same instance from its last committed snapshot.
+
+        No-op on a running or idle agent.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "resume", _args)
+
+    async def send(
+        self,
+        message: str,
+        *,
+        reply_to: str | None = "",
+    ) -> "AgentMessage":
+        """Enqueue a message, on the record: it is consumed at a step boundary,
+        appends to the agent's history, and steers the running turn or opens a
+        new one.
+
+        Never blocks, never drops; concurrent sends queue in order.
+
+        The returned message is pinned through the message lookup field, so
+        its handle is re-addressable from any request in the session: cancel a
+        response request and request it again freely.
+
+        Sending to a never-started agent starts it (signal-with-start).
+        Sending to a stopped agent restarts the same instance from its last
+        committed snapshot. Sending to a paused or failed agent enqueues with
+        QUEUED delivery, to be drained by a resume.
+
+        Parameters
+        ----------
+        message:
+            The message text, appended to the agent's history as a prompt when
+            a turn consumes it.
+        reply_to:
+            The ref of a message in the SENDER's own mailbox this send answers
+            (e.g. "#3", from its attribution header). The recipient sees the
+            two paired, and awaiters of the replied-to message resolve with
+            this reply immediately instead of at the sender's turn end.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("message", message),
+            Arg("replyTo", reply_to, ""),
+        ]
+        return await self._ctx.execute_sync(self, "send", _args, AgentMessage)
+
+    def snapshot(self) -> "LLM":
+        """The conversation as of the last committed step: immutable, branchable,
+        persistable.
+
+        The seed conversation if the agent never stepped.
+
+        Branching from it does not affect the agent.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("snapshot", _args)
+        return LLM(_ctx)
+
+    async def start(self) -> Self:
+        """Start the agent's evaluation loop. No-op if it is already running.
+
+        The loop runs detached from the calling request: it steps the
+        conversation while input is pending, then idles awaiting further
+        lifecycle operations.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "start", _args)
+
+    async def state(self) -> AgentState:
+        """Computed lifecycle state; never stored.
+
+        An agent that was never started reports IDLE: its mailbox is empty and
+        no turn is open.
+
+        Returns
+        -------
+        AgentState
+            Computed lifecycle state of an agent.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("state", _args)
+        return await _ctx.execute(AgentState)
+
+    async def stop(self, *, kill: bool | None = False) -> Self:
+        """Release the agent's runtime. The tombstone (state, snapshot) stays
+        readable for the rest of the session.
+
+        Parameters
+        ----------
+        kill:
+            Cancel the loop immediately instead of letting an in-flight step
+            finish. Either way the completed steps are preserved in the
+            snapshot.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("kill", kill, False),
+        ]
+        return await self._ctx.execute_sync(self, "stop", _args)
+
+    async def wait(self) -> Self:
+        """Block until the agent settles: IDLE, FAILED, or STOPPED. Read which
+        from state afterwards.
+
+        Unlike waiting for one exact state, this cannot hang merely because
+        the agent settled in a different outcome.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "wait", _args)
+
+
+@typecheck
+class AgentMessage(Type):
+    """A message delivered to an agent's mailbox."""
+
+    async def delivery(self) -> AgentMessageDelivery:
+        """How the message conclusively landed: opened a new turn (STARTED), was
+        absorbed into the running turn at a step boundary (STEERED), or queued
+        behind it (QUEUED).
+
+        Blocks until provider or native lifecycle evidence is conclusive. Once
+        recorded, the result or cancellation error is immutable.
+
+        Returns
+        -------
+        AgentMessageDelivery
+            How a message landed in an agent's evaluation.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("delivery", _args)
+        return await _ctx.execute(AgentMessageDelivery)
+
+    async def id(self) -> str:
+        """A unique identifier for this AgentMessage.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The message's short ref within the receiving agent's runtime, e.g.
+        "#3".
+
+        This is the deterministic token the recipient's attribution header
+        shows and a reply's replyTo names — quote it when telling the
+        recipient what to answer.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
+        return await _ctx.execute(str)
+
+    async def response(self) -> str:
+        """Block until this message is answered, and return the answer: an
+        explicit reply (a send whose replyTo names this message), or the final
+        reply of the turn that consumed it, whichever comes first.
+
+        Idempotent: cancel and request the response again freely; concurrent
+        waiters share the result.
+
+        Fails if the agent stops before the message resolves. On a failed
+        agent it projects the failure — but the message stays pending, so
+        after a resume consumes it, requesting the response again returns the
+        real reply.
+
+        Refused when called from inside an agent turn whose wait would
+        deadlock: turns should not block on other agents — send without
+        awaiting, and the reply arrives as a message.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("response", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class AgentMiddleware(Type):
     async def description(self) -> str:
         """The description of the agent
 
@@ -733,7 +1379,7 @@ class Agent(Type):
         return await _ctx.execute(str)
 
     async def id(self) -> str:
-        """A unique identifier for this Agent.
+        """A unique identifier for this AgentMiddleware.
 
         Note
         ----
@@ -810,7 +1456,7 @@ class Agent(Type):
 
 
 @typecheck
-class AgentGroup(Type):
+class AgentMiddlewareGroup(Type):
     def compose(self, *, base: "LLM | None" = None) -> "LLM":
         """Compose all selected agent middlewares onto a base LLM, in
         alphabetical module:fn order, and return the composed LLM.
@@ -828,7 +1474,7 @@ class AgentGroup(Type):
         return LLM(_ctx)
 
     async def id(self) -> str:
-        """A unique identifier for this AgentGroup.
+        """A unique identifier for this AgentMiddlewareGroup.
 
         Note
         ----
@@ -855,11 +1501,11 @@ class AgentGroup(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def list_(self) -> list[Agent]:
+    async def list_(self) -> list[AgentMiddleware]:
         """Return a list of individual agents and their details"""
         _args: list[Arg] = []
         _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(Agent)
+        return await _ctx.execute_object_list(AgentMiddleware)
 
 
 @typecheck
@@ -10019,6 +10665,28 @@ class LLM(Type):
     """A conversation with a large language model (LLM): queue prompts,
     expose tools, and step the model until it completes its turn."""
 
+    def agent(self, handle: str, name: str) -> Agent:
+        """Reconstruct a spawned agent from its runtime handle.
+
+        This is the lookup spawn pins its result's identity through: the
+        returned handle's ID is an honest, replayable chain denoting the one
+        instance the spawn minted. It never creates an instance itself.
+
+        Parameters
+        ----------
+        handle:
+            The opaque runtime handle minted by the spawn that created the
+            agent.
+        name:
+            The agent's display name, as recorded by the spawn.
+        """
+        _args = [
+            Arg("handle", handle),
+            Arg("name", name),
+        ]
+        _ctx = self._select("agent", _args)
+        return Agent(_ctx)
+
     async def context_tokens(self) -> int:
         """estimated number of tokens currently occupying the context window;
         unlike tokenUsage this is not cumulative over the session
@@ -10301,6 +10969,36 @@ class LLM(Type):
         _ctx = self._select("skills", _args)
         return await _ctx.execute_object_list(LLMSkill)
 
+    async def spawn(self, *, name: str | None = None) -> Agent:
+        """Spawn the conversation as an agent: a startable, addressable
+        evaluation loop seeded with this conversation's state, tools, and
+        workspace.
+
+        Every spawn mints a unique agent instance — two spawns of an identical
+        conversation are two distinct agents, like two calls to a process
+        spawn. The result is pinned to the instance (via the agent lookup
+        field), so re-loading its ID re-addresses the same agent from any
+        request in the session.
+
+        Parameters
+        ----------
+        name:
+            Display label for the agent — telemetry and error messages;
+            carries no identity. Defaults to a short name derived from the
+            conversation.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name, None),
+        ]
+        return await self._ctx.execute_sync(self, "spawn", _args, Agent)
+
     def step(self, *, max_tokens: int | None = None) -> Self:
         """Advance the conversation by a single step: send the queued prompt or
         tool results to the model, evaluate any tool calls it makes, and queue
@@ -10429,16 +11127,26 @@ class LLM(Type):
         _ctx = self._select("withModel", _args)
         return LLM(_ctx)
 
-    def with_prompt(self, prompt: str) -> Self:
+    def with_prompt(
+        self,
+        prompt: str,
+        *,
+        origin: LLMMessageOriginInput | None = None,
+    ) -> Self:
         """Queue a user prompt, to be sent to the model on the next step or loop.
 
         Parameters
         ----------
         prompt:
             The prompt to send
+        origin:
+            The message's recorded provenance, when it arrived through an
+            agent mailbox rather than from the user. Rendered to the model as
+            an attribution header at request-build time.
         """
         _args = [
             Arg("prompt", prompt),
+            Arg("origin", origin, None),
         ]
         _ctx = self._select("withPrompt", _args)
         return LLM(_ctx)
@@ -10532,6 +11240,16 @@ class LLM(Type):
             Arg("directory", directory),
         ]
         _ctx = self._select("withSkills", _args)
+        return LLM(_ctx)
+
+    def with_small_model(self) -> Self:
+        """Switch to the configured small model for the current provider, or that
+        provider's recommended default. The message history is preserved;
+        unknown providers without a small-model configuration keep their
+        current model.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withSmallModel", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -10862,6 +11580,17 @@ class LLMMessage(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def origin(self) -> "LLMMessageOrigin | None":
+        """Who put this message on the record, when it arrived through an agent
+        mailbox.
+
+        Null for the user's own prompts and for everything the model or tools
+        produced.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("origin", _args)
+        return await _ctx.execute_object(LLMMessageOrigin)
+
     async def role(self) -> LLMMessageRole:
         """The role that produced this message.
 
@@ -10888,6 +11617,147 @@ class LLMMessage(Type):
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
+
+
+@typecheck
+class LLMMessageOrigin(Type):
+    """The recorded provenance of a message that arrived through an agent
+    mailbox."""
+
+    async def agent_handle(self) -> str:
+        """The sending agent's runtime handle (for AGENT origins) or the observed
+        agent's runtime handle (for EVENT origins).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("agentHandle", _args)
+        return await _ctx.execute(str)
+
+    async def agent_name(self) -> str:
+        """The display name of the agent behind agentHandle.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("agentName", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMMessageOrigin.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> LLMMessageOriginKind:
+        """Who put this message on the record.
+
+        Returns
+        -------
+        LLMMessageOriginKind
+            Who put a message on the conversation record.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(LLMMessageOriginKind)
+
+    async def ref(self) -> str:
+        """The message's short ref within the receiving agent's runtime, e.g.
+        "#3": the deterministic token replies name (send's replyTo). Distinct
+        from the opaque message handle.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
+        return await _ctx.execute(str)
+
+    async def reply_to(self) -> str:
+        """The ref of the message this one answers, in the sender's own runtime,
+        if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("replyTo", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -15464,19 +16334,23 @@ class Workspace(Type):
         self,
         *,
         include: list[str] | None = None,
-    ) -> AgentGroup:
+        exclude: list[str] | None = None,
+    ) -> AgentMiddlewareGroup:
         """Return all agent middlewares from modules loaded in the workspace.
 
         Parameters
         ----------
         include:
             Only include agents matching the specified patterns
+        exclude:
+            Exclude agents matching the specified patterns
         """
         _args = [
             Arg("include", include, None),
+            Arg("exclude", exclude, None),
         ]
         _ctx = self._select("agents", _args)
-        return AgentGroup(_ctx)
+        return AgentMiddlewareGroup(_ctx)
 
     def changes(self, *, from_: "Workspace | None" = None) -> Changeset:
         """Return this workspace's changes, with paths relative to its working
@@ -17094,7 +17968,11 @@ __all__ = [
     "LLM",
     "Address",
     "Agent",
-    "AgentGroup",
+    "AgentMessage",
+    "AgentMessageDelivery",
+    "AgentMiddleware",
+    "AgentMiddlewareGroup",
+    "AgentState",
     "BuildArg",
     "Bytes",
     "CacheSharingMode",
@@ -17155,6 +18033,9 @@ __all__ = [
     "LLMContentBlockInput",
     "LLMContentBlockKind",
     "LLMMessage",
+    "LLMMessageOrigin",
+    "LLMMessageOriginInput",
+    "LLMMessageOriginKind",
     "LLMMessageRole",
     "LLMSkill",
     "LLMTokenUsage",

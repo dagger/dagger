@@ -506,8 +506,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function sync(): Container
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\Container::class, new \Dagger\Id((string)$id), 'Container');
     }
 
     /**
