@@ -62,6 +62,7 @@ type Opts struct {
 	Platforms        []ocispecs.Platform
 	NetworkProviders map[pb.NetMode]network.Provider
 	Snapshotter      bkcache.Snapshotter
+	LeaseManager     leases.Manager
 	ContentStore     *containerdsnapshot.Store
 	Applier          diff.Applier
 	Differ           diff.Comparer
@@ -113,6 +114,7 @@ func NewOpts(opts Opts) (*Opts, error) {
 	imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
 		Snapshotter:  opts.Snapshotter,
 		ContentStore: opts.ContentStore,
+		LeaseManager: opts.LeaseManager,
 		Applier:      opts.Applier,
 		Differ:       opts.Differ,
 	})
@@ -131,6 +133,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
 			Snapshotter:  opts.Snapshotter,
 			ContentStore: opts.ContentStore,
+			LeaseManager: opts.LeaseManager,
 			Applier:      opts.Applier,
 			Differ:       opts.Differ,
 		})

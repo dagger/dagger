@@ -426,6 +426,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		Platforms:        srv.enabledPlatforms,
 		NetworkProviders: srv.networkProviders,
 		Snapshotter:      workerSnapshotter,
+		LeaseManager:     srv.leaseManager,
 		ContentStore:     srv.contentStore,
 		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
 		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),

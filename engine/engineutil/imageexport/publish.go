@@ -67,6 +67,8 @@ func Export(
 		return nil, err
 	}
 
+	defer img.Release(context.WithoutCancel(ctx))
+
 	names := append([]string(nil), opts.Names...)
 	if len(names) == 0 && opts.DanglingPrefix != "" {
 		names = append(names, opts.DanglingPrefix+"@"+img.RootDesc.Digest.String())

@@ -33,6 +33,12 @@ type ContainerExport struct {
 type PreparedContainerImage struct {
 	manifest ContainerImageBlob
 	blobs    map[digest.Digest]ContainerImageBlob
+	exported *imageexport.ExportedImage
+}
+
+// OnRelease keeps layer providers alive through the ordinary arbitrary cache lifetime.
+func (image *PreparedContainerImage) OnRelease(ctx context.Context) error {
+	return image.exported.Release(ctx)
 }
 
 type ContainerImageBlob struct {
@@ -186,6 +192,7 @@ func (c *Client) WriteContainerImageTarball(
 	if err != nil {
 		return err
 	}
+	defer exported.Release(context.WithoutCancel(ctx))
 	return archiveexporter.Export(ctx, exported.Provider, w, archiveexporter.WithManifest(exported.RootDesc))
 }
 
@@ -301,6 +308,7 @@ func (c *Client) ExportContainerImage(
 		if err != nil {
 			return nil, err
 		}
+		defer exported.Release(context.WithoutCancel(ctx))
 		if err := archiveexporter.Export(ctx, exported.Provider, imageWriter.Tarball, archiveexporter.WithManifest(exported.RootDesc)); err != nil {
 			return nil, err
 		}
@@ -318,7 +326,7 @@ func (c *Client) PrepareContainerImage(
 	inputByPlatform map[string]ContainerExport,
 	useOCIMediaTypes bool,
 	forceCompression string,
-) (*PreparedContainerImage, error) {
+) (_ *PreparedContainerImage, rerr error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -329,6 +337,12 @@ func (c *Client) PrepareContainerImage(
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		if rerr != nil {
+			_ = exported.Release(context.WithoutCancel(ctx))
+		}
+	}()
 
 	manifestBlob, err := content.ReadBlob(ctx, exported.Provider, exported.RootDesc)
 	if err != nil {
@@ -349,6 +363,7 @@ func (c *Client) PrepareContainerImage(
 	}
 
 	prepared := &PreparedContainerImage{
+		exported: exported,
 		manifest: ContainerImageBlob{
 			descriptor: exported.RootDesc,
 			contents:   manifestBlob,
