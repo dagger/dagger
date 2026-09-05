@@ -247,7 +247,7 @@ plus the metadata needed to reconstruct them. A root is omitted if any result in
 its closure is still attaching, finished attachment with an error, or is missing.
 
 In other words, persistence is trying to serialize the current cache state, not
-just enough information to replay everything later.
+just enough information to reconstruct everything later.
 
 ## What Is Not Persisted
 
@@ -614,7 +614,7 @@ The persistence model makes a few strong performance choices:
 - SQLite opened with `synchronous=OFF`
 - whole-snapshot rewrite on shutdown instead of fine-grained updates
 - graph lock held only for snapshot extraction, not for SQL writes
-- startup import reconstructs in-memory indexes directly instead of replaying the
+- startup import reconstructs in-memory indexes directly instead of re-evaluating the
   whole call graph through normal execution paths
 
 The price paid is lower durability and a willingness to wipe the store if

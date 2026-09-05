@@ -28,7 +28,7 @@ import (
 // the DB being made concurrent.
 //
 // It also KEEPS every export request it was handed, in arrival order, so a
-// capture of a real session can be served back as a replay.
+// capture of a real session can be served back as a recording.
 type agentTraceSink struct {
 	mu     sync.Mutex
 	db     *dagui.DB

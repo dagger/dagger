@@ -193,7 +193,7 @@ func traceRun(cmd *cobra.Command, args []string) error {
 		// most of the tree stays collapsed; once everything expands it just leaves
 		// spans unfetched (report mode renders once, with no lazy expand) or costs
 		// a round-trip per expand. This mirrors IsExpanded's own always-expand
-		// gate (dagql/dagui/types.go).
+		// condition (dagql/dagui/types.go).
 		full := opts.Debug || opts.ExpandCompleted ||
 			opts.Verbosity >= dagui.ExpandCompletedVerbosity
 		loader := newTraceLoader(ctx, tf, client, orgID, traceID, full)
@@ -484,7 +484,7 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 			// Whether the tree is partial isn't known until the initial stream
 			// completes. Deciding "fully loaded, no-op" now would permanently
 			// swallow an expand racing the load (the id latches in l.filter), so
-			// defer it; loadInitial replays pending listens once partial is known.
+			// defer it; loadInitial processes pending listens once partial is known.
 			l.pending = append(l.pending, id)
 			continue
 		}

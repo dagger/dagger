@@ -839,7 +839,7 @@ func (s *Server) InterfaceType(name string) (*Interface, bool) {
 //
 // If a ViewFilter is supplied, the scalar is only emitted in the schema for
 // views that match the filter. The scalar is always available for input
-// decoding, regardless of view — this lets a view-gated field accept the
+// decoding, regardless of view — this lets a field with version-specific visibility accept the
 // scalar as an argument value at runtime.
 func (s *Server) InstallScalar(scalar ScalarType, filter ...ViewFilter) ScalarType {
 	s.installLock.Lock()

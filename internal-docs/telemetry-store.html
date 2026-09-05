@@ -462,7 +462,7 @@ write stretched 100× is the 10s we measured.</p>
 
 <div class="warn"><b>Review outcome (Erik, 2026-07-22): all eight points accepted as written.</b>
 Specifically: (1) reopen-scan cost accepted for v1, mitigate later only if it bites;
-(2) stale-store replay behavior is preserved exactly — the underlying question of whether it's
+(2) stale-store reconstruction behavior is preserved exactly — the underlying question of whether it's
 desirable may be looked at separately, out of scope here; (3) the <code>clientdb-dump</code> tool
 ships with phase&nbsp;2; (4) span-map heap accepted — visible and bounded beats hidden;
 (5) per-append visibility accepted; (6) the new error shape accepted; (7) the in-flight fan-in
@@ -486,7 +486,7 @@ matching the accepted SQLite failure mode.</div>
     ~100MB store scans in well under a second; acceptable, but it's a new cost where SQLite had
     none. <span class="dim">Mitigation if ever needed: periodic checkpoint of the counters into a
     sidecar file; not in v1.</span></li>
-<li><b>Stale-store replay is existing behavior we'd preserve.</b> Nested clients have stable
+<li><b>Stale-store reconstruction is existing behavior we'd preserve.</b> Nested clients have stable
     (digest-derived) IDs. If the same client ID runs again within the 1-hour GC window, today it
     reopens the old SQLite file, continues its IDs, and a fresh subscriber (cursor 0) would
     re-drain the previous run's rows. The replacement reproduces this exactly. Whether that
@@ -531,7 +531,7 @@ matching the accepted SQLite failure mode.</div>
 <li><b>Phase 2 — swap the callers</b>: exporters lose their transaction blocks, SSE fetchers and
     mcp queries call the same-named methods, instrumentation fields updated
     (<code>appendDuration</code>/<code>spillLag</code>; keep the log line name so before/after CI
-    captures stay comparable), <code>hack/clientdb-dump</code>. Gates: focused unit suites, then
+    captures stay comparable), <code>hack/clientdb-dump</code>. Checks: focused unit suites, then
     <code>dagger call engine-dev test --pkg ./dagql/idtui --run='TestTelemetry'</code> (the golden
     suite covers the whole pipeline end to end, including nested-client span delivery after
     Close), then a CI-scale capture compared against the flake baseline

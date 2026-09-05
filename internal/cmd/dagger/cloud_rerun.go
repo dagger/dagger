@@ -13,12 +13,12 @@ import (
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 )
 
-// cloudLoadCheckName is the internal "load" check that gates a commit: it
+// cloudLoadCheckName is the internal "load" check that validates a commit: it
 // discovers and runs the commit's checks. It re-runs through rerunLoad rather
 // than rerunChecks. Mirrors checks.LoadStatusName in the Cloud API.
 const cloudLoadCheckName = "load"
 
-// isCloudLoadCheck reports whether c is the internal load gate. Match on the
+// isCloudLoadCheck reports whether c is the internal load check. Match on the
 // Internal flag as well as the name so a user-defined check that happens to
 // be named "load" (module check names are normally namespaced, but the server
 // owns the naming) is never misrouted through rerunLoad.
@@ -101,7 +101,7 @@ func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Re-run candidates come from the commit's full check set (including internal
-	// checks like "load"), not the visible-filtered rows, so a failed load gate
+	// checks like "load"), not the visible-filtered rows, so a failed load check
 	// is re-runnable even when it hides public checks.
 	targets, err := cloudRerunTargets(latestCloudChecksByName(commit.Checks))
 	if errors.Is(err, errNoCloudRerunTargets) {
@@ -128,7 +128,7 @@ func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
 // (regular checks batched via rerunChecks, failed load checks via rerunLoad) and
 // the ones skipped before triggering, keyed by name with a reason. The only
 // pre-skip today is a non-failed load check: the server rejects re-running one,
-// and re-running a passing gate is meaningless.
+// and re-running a passing check is meaningless.
 func cloudRerunPlan(targets []cloudapi.Check) (checkTargets, loadTargets []cloudapi.Check, skipped map[string]string) {
 	skipped = map[string]string{}
 	for _, c := range targets {
@@ -176,7 +176,7 @@ func cloudRerunTrigger(ctx context.Context, client *cloudapi.Client, orgID strin
 
 // cloudRerunTargetAddress resolves the workspace address whose commit should be
 // re-run: an explicit --commit/--pr override, otherwise the current local
-// checkout's HEAD (honoring -W), matching how 'dagger check' replays past runs.
+// checkout's HEAD (honoring -W), matching the workspace commands.
 func cloudRerunTargetAddress(ctx context.Context) (string, error) {
 	if cloudRerunCommit != "" || cloudRerunPR != "" {
 		version := cloudRerunCommit

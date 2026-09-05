@@ -1,6 +1,6 @@
 ---
 name: engine-debugging
-description: Run Dagger repo tests and debug Dagger engine, core, dagql, filesync, cache, CI trace, panic, hang, leak, and performance issues. Use whenever an agent needs to run tests, choose a test command, or interpret test output in this repository, even before a failure is diagnosed; also use for engine-dev tests, Dagger Cloud trace replay, debug endpoints or pprof, goroutine dumps, panics, hangs, leaks, performance issues, and /debug/dagql/cache snapshots.
+description: Run Dagger repo tests and debug Dagger engine, core, dagql, filesync, cache, CI trace, panic, hang, leak, and performance issues. Use whenever an agent needs to run tests, choose a test command, or interpret test output in this repository, even before a failure is diagnosed; also use for engine-dev tests, Dagger Cloud trace inspection, debug endpoints or pprof, goroutine dumps, panics, hangs, leaks, performance issues, and /debug/dagql/cache snapshots.
 ---
 
 # Engine Debugging
@@ -115,7 +115,7 @@ accidentally capture integration tests or other tests you did not mean to run.
 integration-style test packages, not quick unit loops. Avoid running them during
 tight debug cycles unless you explicitly need those integration paths.
 
-## CI Trace Replay
+## CI Trace Inspection
 
 When a failure happens in CI, start from the trace if one is available. The user
 may provide either a raw trace ID or a command copied from the web UI, such as:
@@ -124,7 +124,7 @@ may provide either a raw trace ID or a command copied from the web UI, such as:
 dagger trace <trace-id>
 ```
 
-Replay that trace locally and capture it to a temp file:
+Load that trace locally and capture it to a temp file:
 
 ```bash
 dagger trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
@@ -141,7 +141,7 @@ PR status with GitHub CLI:
 gh pr checks <pr-url>
 ```
 
-If a failed check points to a Dagger trace, replay it with `dagger trace ...`
+If a failed check points to a Dagger trace, load it with `dagger trace ...`
 and capture output to `/tmp` as described above.
 
 Start with the usual failure scan:
@@ -157,7 +157,7 @@ rg -n "TestName|FieldName|module name|command text" /tmp/ci-trace-<trace-id>.log
 sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
 ```
 
-Use the replayed trace to identify the exact failing call, subtest, generated
+Use the loaded trace to identify the exact failing call, subtest, generated
 command, or engine error. Once the failing surface is clear, decide whether to
 reproduce it locally with a tight `dagger api call engine-dev ...` command or
 debug directly from the recorded CI trace.

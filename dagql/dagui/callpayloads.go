@@ -31,7 +31,7 @@ func IsCallPayloadRecord(record sdklog.Record) bool {
 // ingestCallPayload folds one call-payload log record into db.Calls. It
 // reports whether the record belongs to the call-payload channel. Payload
 // records are always consumed, including malformed ones, so protobuf bytes
-// and tampered data can never fall through to ordinary log rendering.
+// and malformed payloads can never fall through to ordinary log rendering.
 func (db *DB) ingestCallPayload(record sdklog.Record) bool {
 	if !IsCallPayloadRecord(record) {
 		return false

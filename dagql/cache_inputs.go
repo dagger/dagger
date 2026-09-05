@@ -13,7 +13,7 @@ type perClientCacheScopeKey struct{}
 
 // WithPerClientCacheScope gives PerClientInput calls made with ctx a fresh
 // cache namespace while preserving the real client metadata used by resolvers.
-// Use it when a resolution must be replayed against request-scoped state.
+// Use it when a resolution must be re-evaluated against request-scoped state.
 func WithPerClientCacheScope(ctx context.Context) context.Context {
 	return WithNamedPerClientCacheScope(ctx, identity.NewID())
 }

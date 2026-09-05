@@ -206,7 +206,7 @@ func (fe *frontendPretty) renderSpanLogBlock(out TermOutput, logSpan, colorSpan 
 // toolCallExecSpan returns the execution span nested directly beneath a
 // tool-call display span -- the internal Call span (LLMTool set, no LLMRole)
 // whose own logs carry the result, or error, the LLM received. Returns nil when
-// no such child is loaded (a replayed session, or a subtree the incremental
+// no such child is loaded (a restored session, or a subtree the incremental
 // fetch hasn't pulled).
 func toolCallExecSpan(display *dagui.Span) *dagui.Span {
 	if display.LLMTool == "" {
