@@ -693,7 +693,9 @@ func parseGlobalFlags(root *cobra.Command, args []string) []string {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
-	return flags.Args()
+	// Dynamic SDK command registration needs the command path as well as its
+	// positional arguments. resolveCommand removed that path before parsing.
+	return append(strings.Fields(commandName(cmd)), flags.Args()...)
 }
 
 func xReleaseLogLine(msg string) string {

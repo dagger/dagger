@@ -73,15 +73,20 @@ func TestModuleSDKCommandSelection(t *testing.T) {
 }
 
 func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
+	root := testRootCommand()
+	oldAutoApply := autoApply
+	t.Cleanup(func() { autoApply = oldAutoApply })
+
 	for _, test := range []struct {
 		args    []string
 		wantSDK string
 	}{
+		{args: []string{"--auto-apply", "module", "init", "go", "--name", "sdk-smoke", "--path", ".dagger/modules/sdk-smoke"}, wantSDK: "go"},
 		{args: []string{"module", "init", "--name", "demo", "go"}, wantSDK: "go"},
 		{args: []string{"module", "init", "go", "--starter", "empty"}, wantSDK: "go"},
 		{args: []string{"module", "client", "add", "go", "database", "--runtime", "bun"}, wantSDK: "go"},
 	} {
-		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(rootCmd, test.args))
+		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(root, test.args))
 		require.True(t, ok, test.args)
 		require.Equal(t, test.wantSDK, sdk, test.args)
 	}
