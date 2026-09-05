@@ -121,6 +121,10 @@ func (*fakeSnapshotManager) GetMutableBySnapshotID(context.Context, string, ...b
 	panic("unexpected GetMutableBySnapshotID call")
 }
 
+func (*fakeSnapshotManager) ImportChain(context.Context, *bkcache.ExportChain) (bkcache.ImmutableRef, error) {
+	panic("unexpected ImportChain call")
+}
+
 func (*fakeSnapshotManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
 	panic("unexpected ImportImage call")
 }
