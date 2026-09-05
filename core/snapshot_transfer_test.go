@@ -84,20 +84,38 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
 	require.NoError(t, cache.ReleaseSession(ctx, "before"))
 	require.NoError(t, cache.Close(ctx))
+	sentinel, err := consumer.Leases.Create(context.Background(), leases.WithID("unrelated-temporary"), bkcache.MakeTemporary)
+	require.NoError(t, err)
 	remaining, err := consumer.Leases.List(context.Background())
 	require.NoError(t, err)
+	require.Len(t, remaining, 5)
 	for _, owner := range remaining {
 		resources, err := consumer.Leases.ListResources(context.Background(), owner)
 		require.NoError(t, err)
 		t.Logf("after clean cache close: lease=%s labels=%v resources=%v", owner.ID, owner.Labels, resources)
 	}
-	// Release any transfer pin still held by the original object. Persisted
-	// result leases must protect the physical data across the next manager.
-	require.NoError(t, imported.Release(context.Background()))
+	// Leave the old ref unreleased, as retained typed refs are at clean process
+	// exit. Startup must restore durable owners before ending old transfer pins.
 	consumer.GC(t)
 	consumer.Reload(t)
 	require.NoError(t, consumer.Manager.LoadPersistentMetadata(bkcache.PersistentMetadataRows{}))
 	ctx, cache, srv = transferCache(t, consumer, dbPath, "after")
+	require.Equal(t, dagql.CachePersistenceResetNone, cache.PersistenceResetReason())
+	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(ctx, consumer.Leases))
+	remaining, err = consumer.Leases.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, remaining, 4, "startup must remove the old transfer lease")
+	var sentinelSurvives bool
+	for _, owner := range remaining {
+		if owner.ID == sentinel.ID {
+			sentinelSurvives = true
+		} else {
+			require.True(t, strings.HasPrefix(owner.ID, "dagql/result/"))
+		}
+	}
+	require.True(t, sentinelSurvives, "unrelated temporary lease must survive")
+	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
+	consumer.GC(t)
 	reimported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
 	require.NoError(t, err)
 	require.Equal(t, imported.SnapshotID(), reimported.SnapshotID())
@@ -129,6 +147,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	require.EqualValues(t, 2, consumer.Applies.Load())
 	require.NoError(t, cache.ReleaseSession(ctx, "after"))
 	require.NoError(t, cache.Close(ctx))
+	require.NoError(t, consumer.Leases.Delete(context.Background(), sentinel))
 	t.Logf("Container, Directory and File persisted/reopened: source reads=%d apply calls=%d", provider.Reads.Load(), consumer.Applies.Load())
 }
 
