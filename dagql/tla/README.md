@@ -241,5 +241,25 @@ For the bounded snapshot implementation, run the existing quick set through the
 changed runner and the relevant snapshot shapes, probes, and deliberate breaks.
 The approved selected plan supersedes the full-suite instruction for this work.
 Every individual run has a 30-minute ceiling; measure before increasing bounds.
-Initial source review and measurements are in progress. No completed production
-validation is claimed by this model checkpoint.
+Measured on 2026-09-05 with the runner's pinned TLC jar, Java 21, 8 GiB heap,
+and 16 workers: import reached 475,119 distinct states in 4.25 seconds; export
+reached 3,358,215 in 22.85 seconds. The existing quick set passed all 18 shapes
+through the changed runner in 77.19 seconds including Dagger startup.
+
+Private controls retain the selected snapshot handle but send it to byte work,
+omit terminal producer cleanup, remove exclusion, skip snapshot/blob selection,
+skip presence validation, omit blob/ancestor pins, omit export registration,
+omit the existing producer blob pin, and retain failed operation resources.
+All eleven violate their intended assertions. The first source checkpoint
+missed the first two controls; the revised evidence and cleanup assertions
+reject both. Nine basic reachability probes also reached their named states.
+Three additional probes record ordered events for the same snapshot: reuse
+after prefix failure, consumer adoption after another owner releases, and
+provider consumption after another owner releases. These reached 3,653,
+15,236, and 246,413 distinct states in 1.22, 1.52, and 2.79 seconds.
+
+Commands, source/config hashes, logs, mutation copies, and traces are under
+`/tmp/snapshot-foundations-implementation-20260905/implementer`. Early malformed
+scratch probes are recorded as errors, not evidence. The model has a normalized
+root already; root omission and requested compression require Go controls.
+No completed production validation is claimed by this model checkpoint.
