@@ -559,6 +559,10 @@ proof. Runtime reclamation therefore does not require or imply record collection
   one cannot close or substitute a sibling, malformed metadata cannot fall back
   to the bootstrap ID, and a workspace-owner metadata ID cannot replace the held
   executable scope as parent authority.
+- Killing the CLI while module calls are starting, registering, or running
+  their nested clients leaves no session behind once teardown completes, and
+  the engine keeps serving fresh sessions afterwards (integration test against a
+  nested dev engine, observed through the lifecycle debug snapshot).
 
 ### Telemetry tests
 
