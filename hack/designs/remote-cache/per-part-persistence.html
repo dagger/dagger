@@ -30,7 +30,7 @@
 <h1>Preserve evaluated container parts across restart</h1>
 <p class="meta">Revised local design draft · September 5, 2026 · source base <code>563d9211a5a368b414c11a329a34753c42520910</code></p>
 <p class="lead">A retained container should remember which computation finished. Restart should restore its metadata and open each completed snapshot only when that part is demanded. Work that remains pending should keep its existing recipe and group boundaries.</p>
-<p class="meta">This is a design and implementation plan. Source was inspected; the feature, tests, and model extension have not been implemented or run. Council approval of this revision and Erik’s design approval remain pending.</p>
+<p class="meta">This is a design and implementation plan. Source was inspected; the feature, tests, and model extension have not been implemented or run. Council review converged on September 5, 2026. The design awaits Erik’s review.</p>
 </header>
 
 <section id="proposal">
@@ -367,7 +367,7 @@ dagger api call engine-dev test --pkg ./core/integration \
 <tr><td>Defer every Directory/File dependency decode too</td><td>Could support a broader no-open claim.</td><td>The useful mounted-output preservation and completed-container opening behavior do not require it. Keep the measured dependency cost explicit and leave broader decoding to a separate decision.</td></tr>
 </tbody></table></div>
 <p>There is no unresolved scope question blocking this draft. The substantive boundary is explicit: completed container-owned values are deferred; standalone dependency decoding remains as today. The mounted mutation, decode bookkeeping, and ownership arguments are source-based and await the stated implementation evidence.</p>
-<p>Review findings should identify a current source path or reachable trace, its material consequence, and a proportionate correction. Assess each independently. This draft has not received council approval; it does not carry forward acceptance from an older persistence candidate.</p>
+<p>Review findings should identify a current source path or reachable trace, its material consequence, and a proportionate correction. Assess each independently. Council review converged on September 5, 2026. The design awaits Erik’s review; it does not carry forward acceptance from an older persistence candidate.</p>
 </section>
 
 <section id="sources">
