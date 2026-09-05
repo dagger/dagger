@@ -59,6 +59,7 @@ type Accessor interface {
 	GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) // Rebase?
 	GetMutableBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (MutableRef, error)
 	ImportImage(ctx context.Context, img *ImportedImage, opts ImportImageOpts) (ImmutableRef, error)
+	ImportChain(ctx context.Context, chain *ExportChain) (ImmutableRef, error)
 	ApplySnapshotDiff(ctx context.Context, lower, upper ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 	Merge(ctx context.Context, parents []ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 }
@@ -96,6 +97,7 @@ type snapshotManager struct {
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
 	importLayerLocker      *locker.Locker
+	exportLayerLocker      *locker.Locker
 	ownerLeaseLocker       *locker.Locker
 
 	mountPool sharableMountPool
@@ -115,6 +117,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		importLayerLocker:      locker.New(),
+		exportLayerLocker:      locker.New(),
 		ownerLeaseLocker:       locker.New(),
 	}
 
