@@ -599,6 +599,16 @@ Capture heap, alloc, goroutine, and the lifecycle debug dump at every plateau.
 Compare retained objects by client ID so a failure identifies the exact lease or
 durable capability preventing reclamation.
 
+### Heap timeline repro
+
+`hack/heap-repro` is the narrow, automated form of the heap criterion above. It
+drives one Go SDK session through a configurable number of module calls against
+a running dev engine, samples the engine's heap profile after a forced GC along
+with its goroutine count and lifecycle snapshot, and renders the recorded runs
+as a stacked area chart by allocation site so the retained cost per nested
+client can be compared between engine builds. `hack/heap-repro/run.sh` rebuilds
+the engine from a worktree with a fresh state volume before recording.
+
 ## Non-goals
 
 - Reusing client IDs. They remain unique per initialization.

@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine heap by allocation site</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --line: #d0d7de;
+    --panel: #f6f8fa;
+    --accent: #0969da;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 28px 40px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; max-width: 80ch; }
+  .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .panels { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .panel {
+    flex: 1 1 560px;
+    max-width: 720px;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px 8px;
+    background: var(--bg);
+  }
+  .panel h2 { font-size: 15px; margin: 0; }
+  .panel .meta { color: var(--muted); font-size: 12px; margin: 2px 0 8px; }
+  .panel svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .panel .small { margin-top: 6px; }
+  .axis text { font-size: 11px; fill: var(--muted); }
+  .axis line, .axis path { stroke: var(--line); }
+  .grid line { stroke: var(--line); stroke-dasharray: 2 3; }
+  .band { fill: #000; opacity: 0.045; }
+  .band-label { font-size: 11px; fill: var(--muted); }
+  .layer { stroke: var(--bg); stroke-width: 0.6; transition: opacity 120ms; }
+  .layer.dim { opacity: 0.18; }
+  .guide { stroke: var(--fg); stroke-width: 1; opacity: 0.5; pointer-events: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 16px 0 8px; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: default; padding: 2px 4px; border-radius: 4px; }
+  .legend .item:hover { background: var(--panel); }
+  .legend .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+  .legend code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .summary { overflow-x: auto; margin-top: 18px; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 5px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--line); }
+  .tip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--fg);
+    color: var(--bg);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    max-width: 420px;
+    z-index: 10;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .tip table { margin: 4px 0 0; font-size: 12px; }
+  .tip td { padding: 1px 6px; border: 0; color: inherit; }
+  .tip .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 14px; max-width: 90ch; }
+</style>
+</head>
+<body>
+<h1>Engine heap by allocation site during one session</h1>
+<p class="sub">
+  One Dagger session calls a module function repeatedly with a fresh argument each time, so every
+  call spawns a new module runtime that connects back as a nested client. The engine's heap
+  profile is sampled after a forced GC and bucketed by the innermost non-standard-library frame
+  that allocated each object. Shaded bands mark when the calls finished and when the session closed.
+</p>
+<div class="controls">
+  <label><input type="radio" name="mode" value="absolute" checked> in-use heap</label>
+  <label><input type="radio" name="mode" value="growth"> growth since the first sample</label>
+  <span id="status" style="color: var(--muted)"></span>
+</div>
+<div class="panels" id="panels"></div>
+<div class="legend" id="legend"></div>
+<div class="summary"><table id="summary"></table></div>
+<p class="note" id="note"></p>
+<div class="tip" id="tip"></div>
+<script>
+const DATA = /*DATA*/null;
+
+const MB = 1024 * 1024;
+const PALETTE = [
+  "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
+  "#9c755f", "#17becf", "#8c564b", "#bcbd22", "#7f7f7f", "#aec7e8", "#ffbb78", "#98df8a",
+];
+const OTHER = "everything else";
+const OTHER_COLOR = "#d9dde2";
+
+const runs = DATA.runs.map(run => {
+  run.samples.sort((a, b) => a.t - b.t);
+  return run;
+});
+
+// Pick the layers once, for every run: the sites whose in-use bytes grew the
+// most above their first sample in any run. Growth is what tells the two
+// engines apart, and a shared layer set keeps colors comparable.
+function pickLayers(count) {
+  const score = new Map();
+  for (const run of runs) {
+    const first = run.samples[0].sites;
+    const peak = new Map();
+    for (const s of run.samples) {
+      for (const [site, v] of Object.entries(s.sites)) {
+        const g = v - (first[site] || 0);
+        if (g > (peak.get(site) || 0)) peak.set(site, g);
+      }
+    }
+    for (const [site, g] of peak) {
+      if (g > (score.get(site) || 0)) score.set(site, g);
+    }
+  }
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, count)
+    .map(([site]) => site);
+}
+
+const layers = pickLayers(DATA.layers);
+const color = new Map(layers.map((site, i) => [site, PALETTE[i % PALETTE.length]]));
+color.set(OTHER, OTHER_COLOR);
+// Stack the biggest growers right above "everything else" so their slope is
+// easiest to read; the rest go on top in the same order.
+const stackOrder = [OTHER, ...layers];
+
+function seriesFor(run, mode) {
+  const first = run.samples[0];
+  const firstOther = first.heap_inuse - layers.reduce((n, site) => n + (first.sites[site] || 0), 0);
+  return run.samples.map(s => {
+    const values = {};
+    let known = 0;
+    for (const site of layers) {
+      const v = s.sites[site] || 0;
+      known += v;
+      values[site] = mode === "growth" ? Math.max(0, v - (first.sites[site] || 0)) : v;
+    }
+    const other = s.heap_inuse - known;
+    values[OTHER] = mode === "growth" ? Math.max(0, other - firstOther) : other;
+    return { t: s.t, phase: s.phase, calls: s.calls_done, goroutines: s.goroutines, runtimes: s.runtimes, values };
+  });
+}
+
+function fmtMB(bytes, digits = 1) {
+  return (bytes / MB).toFixed(digits) + " MB";
+}
+function fmtPerCall(bytes) {
+  if (Math.abs(bytes) >= MB) return (bytes / MB).toFixed(2) + " MB";
+  return (bytes / 1024).toFixed(0) + " KB";
+}
+function fmtT(sec) {
+  if (sec >= 90) return Math.floor(sec / 60) + "m" + String(Math.round(sec % 60)).padStart(2, "0") + "s";
+  return Math.round(sec) + "s";
+}
+function svgEl(name, attrs = {}, text) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+function niceStep(range, target) {
+  const raw = range / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * mag) return m * mag;
+  return 10 * mag;
+}
+function eventTime(run, kind) {
+  const ev = run.events.find(e => e.kind === kind);
+  return ev ? ev.t : null;
+}
+
+const tip = document.getElementById("tip");
+// ?mode=growth opens the page in growth mode, which is handy for screenshots.
+const initialMode = new URLSearchParams(location.search).get("mode") === "growth" ? "growth" : "absolute";
+const state = { mode: initialMode, highlight: null };
+const panelViews = [];
+
+function buildPanel(run) {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  const h = document.createElement("h2");
+  h.textContent = run.label;
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = `engine ${run.engine_version} · ${run.calls} calls, ${run.concurrency} at a time · sampled every ${run.interval}`;
+  const heap = svgEl("svg");
+  const small = svgEl("svg", { class: "small" });
+  panel.append(h, meta, heap, small);
+  document.getElementById("panels").append(panel);
+  return { run, heap, small };
+}
+
+function drawHeap(view, series, xMax, yMax) {
+  const W = 640, H = 300, L = 58, R = 14, T = 14, B = 30;
+  const svg = view.heap;
+  svg.replaceChildren();
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const x = t => L + (t / xMax) * (W - L - R);
+  const y = v => T + (1 - v / yMax) * (H - T - B);
+
+  // phase bands
+  const run = view.run;
+  const idle = eventTime(run, "idle"), closed = eventTime(run, "closed");
+  const bands = [];
+  if (idle != null) bands.push([idle, closed != null ? closed : xMax, "calls done, session idle"]);
+  if (closed != null) bands.push([closed, xMax, "session closed"]);
+  for (const [a, b, label] of bands) {
+    svg.append(svgEl("rect", { class: "band", x: x(a), y: T, width: Math.max(0, x(b) - x(a)), height: H - T - B }));
+    svg.append(svgEl("text", { class: "band-label", x: x(a) + 4, y: T + 12 }, label));
+  }
+
+  // grid + axes
+  const grid = svgEl("g", { class: "grid" });
+  const axis = svgEl("g", { class: "axis" });
+  const yStep = niceStep(yMax / MB, 5) * MB;
+  for (let v = 0; v <= yMax; v += yStep) {
+    grid.append(svgEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+    axis.append(svgEl("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, (v / MB).toFixed(0) + " MB"));
+  }
+  const xStep = niceStep(xMax, 8);
+  for (let t = 0; t <= xMax; t += xStep) {
+    axis.append(svgEl("line", { x1: x(t), x2: x(t), y1: H - B, y2: H - B + 4 }));
+    axis.append(svgEl("text", { x: x(t), y: H - B + 16, "text-anchor": "middle" }, fmtT(t)));
+  }
+  axis.append(svgEl("line", { x1: L, x2: W - R, y1: H - B, y2: H - B }));
+  svg.append(grid, axis);
+
+  // stacked areas
+  const base = new Array(series.length).fill(0);
+  const areas = svgEl("g");
+  for (const site of stackOrder) {
+    const top = series.map((s, i) => base[i] + s.values[site]);
+    let d = "";
+    series.forEach((s, i) => { d += (i ? " L" : "M") + x(s.t).toFixed(1) + " " + y(top[i]).toFixed(1); });
+    for (let i = series.length - 1; i >= 0; i--) d += " L" + x(series[i].t).toFixed(1) + " " + y(base[i]).toFixed(1);
+    d += " Z";
+    const path = svgEl("path", { class: "layer", d, fill: color.get(site), "data-site": site });
+    path.append(svgEl("title", {}, site));
+    areas.append(path);
+    for (let i = 0; i < base.length; i++) base[i] = top[i];
+  }
+  svg.append(areas);
+
+  // call ticks along the bottom, one per completed call
+  const ticks = svgEl("g", { stroke: "#1f2328", "stroke-opacity": 0.35 });
+  for (const ev of run.events) {
+    if (ev.kind !== "call") continue;
+    ticks.append(svgEl("line", { x1: x(ev.t), x2: x(ev.t), y1: H - B - 4, y2: H - B }));
+  }
+  svg.append(ticks);
+
+  const guide = svgEl("line", { class: "guide", x1: 0, x2: 0, y1: T, y2: H - B, style: "display:none" });
+  svg.append(guide);
+
+  svg.onmousemove = ev => {
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const t = ((p.x - L) / (W - L - R)) * xMax;
+    let best = 0;
+    for (let i = 1; i < series.length; i++) if (Math.abs(series[i].t - t) < Math.abs(series[best].t - t)) best = i;
+    const s = series[best];
+    guide.setAttribute("x1", x(s.t)); guide.setAttribute("x2", x(s.t));
+    guide.style.display = "";
+    const total = stackOrder.reduce((n, site) => n + s.values[site], 0);
+    const rows = [...stackOrder].reverse()
+      .filter(site => s.values[site] > 0)
+      .map(site => `<tr><td><span class="sw" style="background:${color.get(site)}"></span>${escapeHTML(site)}</td><td style="text-align:right">${fmtMB(s.values[site])}</td></tr>`)
+      .join("");
+    const extra = s.runtimes == null ? "" : ` · ${s.runtimes} retained runtimes`;
+    tip.innerHTML = `<b>${escapeHTML(run.label)}</b> at ${fmtT(s.t)}, ${s.calls} calls done, ${s.phase}<br>` +
+      `${state.mode === "growth" ? "growth" : "in use"}: <b>${fmtMB(total)}</b> · ${s.goroutines} goroutines${extra}` +
+      `<table>${rows}</table>`;
+    tip.style.display = "block";
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.min(ev.clientX + 16, window.innerWidth - tw - 8) + "px";
+    tip.style.top = Math.min(ev.clientY + 16, window.innerHeight - th - 8) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; guide.style.display = "none"; };
+}
+
+function drawSmall(view, series, xMax, gMax) {
+  const W = 640, H = 90, L = 58, R = 14, T = 8, B = 22;
+  const svg = view.small;
+  svg.replaceChildren();
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const x = t => L + (t / xMax) * (W - L - R);
+  const y = v => T + (1 - v / gMax) * (H - T - B);
+  const axis = svgEl("g", { class: "axis" });
+  const grid = svgEl("g", { class: "grid" });
+  const step = niceStep(gMax, 3);
+  for (let v = 0; v <= gMax; v += step) {
+    grid.append(svgEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+    axis.append(svgEl("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, v.toLocaleString()));
+  }
+  axis.append(svgEl("line", { x1: L, x2: W - R, y1: H - B, y2: H - B }));
+  axis.append(svgEl("text", { x: L, y: H - B + 15 }, "goroutines"));
+  svg.append(grid, axis);
+  const run = view.run;
+  const idle = eventTime(run, "idle"), closed = eventTime(run, "closed");
+  if (idle != null) svg.append(svgEl("rect", { class: "band", x: x(idle), y: T, width: Math.max(0, x(closed != null ? closed : xMax) - x(idle)), height: H - T - B }));
+  if (closed != null) svg.append(svgEl("rect", { class: "band", x: x(closed), y: T, width: Math.max(0, x(xMax) - x(closed)), height: H - T - B }));
+  let d = "";
+  series.forEach((s, i) => { d += (i ? " L" : "M") + x(s.t).toFixed(1) + " " + y(s.goroutines).toFixed(1); });
+  svg.append(svgEl("path", { d, fill: "none", stroke: "#1f2328", "stroke-width": 1.5 }));
+}
+
+function escapeHTML(s) {
+  return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function render() {
+  const mode = state.mode;
+  const all = runs.map(run => seriesFor(run, mode));
+  const xMax = Math.max(...runs.map(run => run.samples[run.samples.length - 1].t));
+  let yMax = 0, gMax = 0;
+  all.forEach(series => series.forEach(s => {
+    const total = stackOrder.reduce((n, site) => n + s.values[site], 0);
+    if (total > yMax) yMax = total;
+    if (s.goroutines > gMax) gMax = s.goroutines;
+  }));
+  yMax = Math.max(yMax * 1.05, MB);
+  gMax = Math.max(Math.ceil(gMax * 1.1), 10);
+  panelViews.forEach((view, i) => {
+    drawHeap(view, all[i], xMax, yMax);
+    drawSmall(view, all[i], xMax, gMax);
+  });
+  applyHighlight();
+}
+
+function applyHighlight() {
+  document.querySelectorAll(".layer").forEach(el => {
+    el.classList.toggle("dim", state.highlight != null && el.dataset.site !== state.highlight);
+  });
+}
+
+function buildLegend() {
+  const legend = document.getElementById("legend");
+  for (const site of [...layers, OTHER]) {
+    const item = document.createElement("span");
+    item.className = "item";
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = color.get(site);
+    const label = document.createElement("code");
+    label.textContent = site;
+    item.append(sw, label);
+    item.onmouseenter = () => { state.highlight = site; applyHighlight(); };
+    item.onmouseleave = () => { state.highlight = null; applyHighlight(); };
+    legend.append(item);
+  }
+}
+
+// Least-squares slope of in-use heap against calls completed, over the calls phase.
+function bytesPerCall(run) {
+  const pts = run.samples.filter(s => s.phase === "calls" && s.calls_done > 0);
+  if (pts.length < 2) return null;
+  const n = pts.length;
+  const mx = pts.reduce((a, s) => a + s.calls_done, 0) / n;
+  const my = pts.reduce((a, s) => a + s.heap_inuse, 0) / n;
+  let num = 0, den = 0;
+  for (const s of pts) { num += (s.calls_done - mx) * (s.heap_inuse - my); den += (s.calls_done - mx) ** 2; }
+  return den === 0 ? null : num / den;
+}
+
+function buildSummary() {
+  const table = document.getElementById("summary");
+  const head = ["run", "engine", "calls", "heap at start", "heap at end of calls", "growth per call", "peak heap", "heap after close", "goroutines: start → end of calls → closed", "retained runtimes: end of calls → closed"];
+  table.innerHTML = "<thead><tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr></thead>";
+  const body = document.createElement("tbody");
+  for (const run of runs) {
+    const first = run.samples[0];
+    const callsSamples = run.samples.filter(s => s.phase === "calls");
+    const endCalls = callsSamples[callsSamples.length - 1] || first;
+    const last = run.samples[run.samples.length - 1];
+    const peak = Math.max(...run.samples.map(s => s.heap_inuse));
+    const slope = bytesPerCall(run);
+    const rt = first.runtimes == null ? "n/a" : `${endCalls.runtimes} → ${last.runtimes}`;
+    const cells = [
+      run.label, run.engine_version, run.calls,
+      fmtMB(first.heap_inuse), fmtMB(endCalls.heap_inuse),
+      slope == null ? "n/a" : fmtPerCall(slope),
+      fmtMB(peak), fmtMB(last.heap_inuse),
+      `${first.goroutines} → ${endCalls.goroutines} → ${last.goroutines}`,
+      rt,
+    ];
+    const tr = document.createElement("tr");
+    for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.append(td); }
+    body.append(tr);
+  }
+  table.append(body);
+}
+
+for (const run of runs) panelViews.push(buildPanel(run));
+buildLegend();
+buildSummary();
+document.getElementById("note").textContent =
+  `Layers are the ${layers.length} allocation sites whose in-use bytes grew the most above their first sample in any run; ` +
+  `everything else is grouped. Growth per call is the least-squares slope of total in-use heap against calls completed.`;
+document.querySelectorAll('input[name="mode"]').forEach(input => {
+  input.checked = input.value === state.mode;
+  input.onchange = () => { state.mode = input.value; render(); };
+});
+render();
+</script>
+</body>
+</html>
