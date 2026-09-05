@@ -2301,6 +2301,109 @@ export type ModuleServicesOpts = {
   include?: string[]
 }
 
+export type ModuleManifestValidateOpts = {
+  /**
+   * Optional target engine version.
+   */
+  targetEngineVersion?: string
+}
+
+export type ModuleManifestWithLegacyDangRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyElixirRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyGoRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyJavaRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyPhpRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyPythonRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
+export type ModuleManifestWithLegacyRuntimeDependencyOpts = {
+  /**
+   * Optional module name in the legacy runtime schema.
+   */
+  name?: string
+
+  /**
+   * Optional module source pin.
+   */
+  pin?: string
+}
+
+export type ModuleManifestWithLegacyTypescriptRuntimeOpts = {
+  /**
+   * Module source path. The default is the manifest directory.
+   */
+  moduleSource?: string
+
+  /**
+   * Required engine API version. The default is the running engine version.
+   */
+  engineVersion?: string
+}
+
 /**
  * Experimental features of a module
  */
@@ -2650,6 +2753,18 @@ export type ClientLLMOpts = {
    * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
   provider?: string
+}
+
+export type ClientModuleManifestOpts = {
+  /**
+   * Optional dagger-module.toml file to load.
+   */
+  loadTOML?: File
+
+  /**
+   * Optional dagger.json file to load.
+   */
+  loadJSON?: File
 }
 
 export type ClientModuleSourceOpts = {
@@ -3286,6 +3401,13 @@ export type WorkspaceTerminalsOpts = {
   include?: string[]
 }
 
+export type WorkspaceWithClientOpts = {
+  /**
+   * Explicit SDK-module constructor setting overrides for this scope.
+   */
+  settings?: JSON
+}
+
 export type WorkspaceWithConfigEnvOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -3305,53 +3427,28 @@ export type WorkspaceWithConfigValueOpts = {
   here?: boolean
 }
 
-export type WorkspaceWithInitClientOpts = {
+export type WorkspaceWithFileOpts = {
   /**
-   * SDK-specific init arguments.
+   * Permissions of the added file. Defaults to the source file permissions.
    */
-  args?: JSON
-
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
-
-  /**
-   * Skip running the SDK's generators for the new client.
-   */
-  noGenerate?: boolean
+  permissions?: number
 }
 
 export type WorkspaceWithInitModuleOpts = {
   /**
-   * Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
+   * Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
+   */
+  name?: string
+
+  /**
+   * Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
    */
   path?: string
 
   /**
-   * Source subpath within the new module.
+   * Explicit SDK-module constructor setting overrides for this scope.
    */
-  source?: string
-
-  /**
-   * Additional include patterns for the module.
-   */
-  include?: string[]
-
-  /**
-   * SDK-specific init arguments.
-   */
-  args?: JSON
-
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
-
-  /**
-   * Skip running the SDK's generators for the new module.
-   */
-  noGenerate?: boolean
+  settings?: JSON
 }
 
 export type WorkspaceWithModuleOpts = {
@@ -3385,9 +3482,40 @@ export type WorkspaceWithSdkOpts = {
   here?: boolean
 
   /**
-   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   * Optional override for the SDK name conventionally derived from the installed module name.
    */
   asSdkName?: string
+}
+
+export type WorkspaceWithUpdatedClientsOpts = {
+  /**
+   * Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+   */
+  modules?: string[]
+
+  /**
+   * Select clients in every scope instead of only the scopes containing the workspace cwd.
+   */
+  all?: boolean
+
+  /**
+   * Optional SDK name. All installed SDK modules are selected when omitted.
+   */
+  sdk?: string
+}
+
+export type WorkspaceWithUpdatedLockOpts = {
+  /**
+   * Do not regenerate SDK client scopes.
+   */
+  noGenerate?: boolean
+}
+
+export type WorkspaceWithUpdatedModulesOpts = {
+  /**
+   * Installed module names to refresh. An empty list refreshes all installed modules.
+   */
+  names?: string[]
 }
 
 export type WorkspaceWithoutConfigEnvOpts = {
@@ -5796,17 +5924,6 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
-   *
-   * Errors if the current module is not installed as an SDK in this workspace.
-   * @param workspace The workspace to resolve SDK-role data against.
-   */
-  asSDK = (workspace: Workspace): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asSDK", { workspace })
-    return new CurrentModuleAsSDK(ctx)
-  }
-
-  /**
    * The dependencies of the module.
    */
   dependencies = async (): Promise<Module_[]> => {
@@ -5883,238 +6000,6 @@ export class CurrentModule extends BaseClient {
   workdirFile = (path: string): File => {
     const ctx = this._ctx.select("workdirFile", { path })
     return new File(ctx)
-  }
-}
-
-/**
- * The SDK-role data for the currently executing module, as installed in the supplied workspace.
- */
-export class CurrentModuleAsSDK extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this CurrentModuleAsSDK.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The generated clients this SDK produces in the workspace.
-   */
-  clients = async (): Promise<CurrentModuleAsSDKClient[]> => {
-    type clients = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("clients").select("id")
-
-    const response: Awaited<clients[]> = await ctx.execute()
-
-    return response.map(
-      (r) =>
-        new CurrentModuleAsSDKClient(
-          ctx.copy().selectNode(r.id, "CurrentModuleAsSDKClient"),
-        ),
-    )
-  }
-
-  /**
-   * The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
-   */
-  modules = async (): Promise<CurrentModuleAsSDKModule[]> => {
-    type modules = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("modules").select("id")
-
-    const response: Awaited<modules[]> = await ctx.execute()
-
-    return response.map(
-      (r) =>
-        new CurrentModuleAsSDKModule(
-          ctx.copy().selectNode(r.id, "CurrentModuleAsSDKModule"),
-        ),
-    )
-  }
-
-  /**
-   * The user-facing name of this SDK in the workspace.
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
- * A generated client the current SDK produces in the workspace.
- */
-export class CurrentModuleAsSDKClient extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _module?: string = undefined
-  private readonly _path?: string = undefined
-  private readonly _pin?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: ID,
-    _module?: string,
-    _path?: string,
-    _pin?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._module = _module
-    this._path = _path
-    this._pin = _pin
-  }
-
-  /**
-   * A unique identifier for this CurrentModuleAsSDKClient.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The module the client is bound to (workspace-relative path or canonical ref).
-   */
-  module_ = async (): Promise<string> => {
-    if (this._module) {
-      return this._module
-    }
-
-    const ctx = this._ctx.select("module")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The resolved module source this client is bound to, including its dependency closure and pinned version.
-   */
-  moduleSource = (): ModuleSource => {
-    const ctx = this._ctx.select("moduleSource")
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Workspace-root-relative path of the generated client.
-   */
-  path = async (): Promise<string> => {
-    if (this._path) {
-      return this._path
-    }
-
-    const ctx = this._ctx.select("path")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The pinned version of the bound module, if any.
-   */
-  pin = async (): Promise<string> => {
-    if (this._pin) {
-      return this._pin
-    }
-
-    const ctx = this._ctx.select("pin")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
- * A workspace-local module managed by the current SDK.
- */
-export class CurrentModuleAsSDKModule extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _path?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _path?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._path = _path
-  }
-
-  /**
-   * A unique identifier for this CurrentModuleAsSDKModule.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Workspace-root-relative path to the managed module.
-   */
-  path = async (): Promise<string> => {
-    if (this._path) {
-      return this._path
-    }
-
-    const ctx = this._ctx.select("path")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
   }
 }
 
@@ -9150,11 +9035,17 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * The original module in which the generator has been defined
+   * The module that defined the generator, or null for an engine-defined generator
    */
-  originalModule = (): Module_ => {
-    const ctx = this._ctx.select("originalModule")
-    return new Module_(ctx)
+  originalModule = async (): Promise<Module_ | null> => {
+    const ctx = this._ctx.select("originalModule").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Module_(ctx.copy().selectNode(response, "Module"))
   }
 
   /**
@@ -12214,6 +12105,252 @@ export class ModuleConfigClient extends BaseClient {
 }
 
 /**
+ * A Dagger module manifest.
+ */
+export class ModuleManifest extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _validate?: Void = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _validate?: Void) {
+    super(ctx)
+
+    this._id = _id
+    this._validate = _validate
+  }
+
+  /**
+   * A unique identifier for this ModuleManifest.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a directory with all applicable manifest files.
+   */
+  directory = (): Directory => {
+    const ctx = this._ctx.select("directory")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Serialize the legacy fields as dagger.json.
+   */
+  legacyJSONFile = (): File => {
+    const ctx = this._ctx.select("legacyJSONFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Serialize the manifest as dagger-module.toml.
+   */
+  tomlFile = (): File => {
+    const ctx = this._ctx.select("tomlFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Validate the manifest.
+   *
+   * If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+   * @param opts.targetEngineVersion Optional target engine version.
+   */
+  validate = async (opts?: ModuleManifestValidateOpts): Promise<void> => {
+    if (this._validate) {
+      return
+    }
+
+    const ctx = this._ctx.select("validate", { ...opts })
+
+    await ctx.execute()
+  }
+
+  /**
+   * Use the built-in Dang entrypoint.
+   * @param source Entrypoint source address.
+   */
+  withDangEntrypoint = (source: string): ModuleManifest => {
+    const ctx = this._ctx.select("withDangEntrypoint", { source })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Dang runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyDangRuntime = (
+    opts?: ModuleManifestWithLegacyDangRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyDangRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Elixir runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyElixirRuntime = (
+    opts?: ModuleManifestWithLegacyElixirRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyElixirRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Go runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyGoRuntime = (
+    opts?: ModuleManifestWithLegacyGoRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyGoRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add an include path for the legacy runtime.
+   *
+   * This operation is additive.
+   * @param path Path to include.
+   */
+  withLegacyInclude = (path: string): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyInclude", { path })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Java runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyJavaRuntime = (
+    opts?: ModuleManifestWithLegacyJavaRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyJavaRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy PHP runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyPHPRuntime = (
+    opts?: ModuleManifestWithLegacyPhpRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPHPRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy Python runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyPythonRuntime = (
+    opts?: ModuleManifestWithLegacyPythonRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyPythonRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add or replace a module available to the legacy runtime.
+   * @param source Module source address.
+   * @param opts.name Optional module name in the legacy runtime schema.
+   * @param opts.pin Optional module source pin.
+   */
+  withLegacyRuntimeDependency = (
+    source: string,
+    opts?: ModuleManifestWithLegacyRuntimeDependencyOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyRuntimeDependency", {
+      source,
+      ...opts,
+    })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Add the legacy TypeScript runtime.
+   * @param opts.moduleSource Module source path. The default is the manifest directory.
+   * @param opts.engineVersion Required engine API version. The default is the running engine version.
+   */
+  withLegacyTypescriptRuntime = (
+    opts?: ModuleManifestWithLegacyTypescriptRuntimeOpts,
+  ): ModuleManifest => {
+    const ctx = this._ctx.select("withLegacyTypescriptRuntime", { ...opts })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Use another module as the entrypoint.
+   * @param source Entrypoint module address.
+   */
+  withModuleEntrypoint = (source: string): ModuleManifest => {
+    const ctx = this._ctx.select("withModuleEntrypoint", { source })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Set the module name.
+   * @param name Module name.
+   */
+  withName = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("withName", { name })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
+   */
+  withoutLegacyFields = (): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyFields")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove all modules from the legacy runtime.
+   */
+  withoutLegacyRuntimeDependencies = (): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyRuntimeDependencies")
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Remove a module from the legacy runtime by name.
+   * @param name Module name.
+   */
+  withoutLegacyRuntimeDependency = (name: string): ModuleManifest => {
+    const ctx = this._ctx.select("withoutLegacyRuntimeDependency", { name })
+    return new ModuleManifest(ctx)
+  }
+
+  /**
+   * Call the provided function with current ModuleManifest.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: ModuleManifest) => ModuleManifest) => {
+    return arg(this)
+  }
+}
+
+/**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
 export class ModuleSource extends BaseClient {
@@ -12483,17 +12620,6 @@ export class ModuleSource extends BaseClient {
   generate = (workspace: Workspace): Workspace => {
     const ctx = this._ctx.select("generate", { workspace })
     return new Workspace(ctx)
-  }
-
-  /**
-   * Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
-   *
-   * Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
-   * @param workspace The workspace to generate the local dependencies against.
-   */
-  generateLocalDependencies = (workspace: Workspace): Changeset => {
-    const ctx = this._ctx.select("generateLocalDependencies", { workspace })
-    return new Changeset(ctx)
   }
 
   /**
@@ -13581,6 +13707,16 @@ export class Client extends BaseClient {
   module_ = (): Module_ => {
     const ctx = this._ctx.select("module")
     return new Module_(ctx)
+  }
+
+  /**
+   * Construct or load a module manifest.
+   * @param opts.loadTOML Optional dagger-module.toml file to load.
+   * @param opts.loadJSON Optional dagger.json file to load.
+   */
+  moduleManifest = (opts?: ClientModuleManifestOpts): ModuleManifest => {
+    const ctx = this._ctx.select("moduleManifest", { ...opts })
+    return new ModuleManifest(ctx)
   }
 
   /**
@@ -15441,6 +15577,7 @@ export class Workspace extends BaseClient {
   private readonly _configFile?: string = undefined
   private readonly _configRead?: string = undefined
   private readonly _cwd?: string = undefined
+  private readonly _detectScope?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
 
@@ -15454,6 +15591,7 @@ export class Workspace extends BaseClient {
     _configFile?: string,
     _configRead?: string,
     _cwd?: string,
+    _detectScope?: string,
     _export?: Void,
     _findUp?: string,
   ) {
@@ -15464,6 +15602,7 @@ export class Workspace extends BaseClient {
     this._configFile = _configFile
     this._configRead = _configRead
     this._cwd = _cwd
+    this._detectScope = _detectScope
     this._export = _export
     this._findUp = _findUp
   }
@@ -15580,6 +15719,22 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("cwd")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the selected SDK module's current scope at this workspace location.
+   * @param sdk SDK name to probe. Required.
+   */
+  detectScope = async (sdk: string): Promise<string> => {
+    if (this._detectScope) {
+      return this._detectScope
+    }
+
+    const ctx = this._ctx.select("detectScope", { sdk })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -15860,6 +16015,25 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a generated module client added to its detected scope.
+   * @param module Installed module name, local path, or module address to generate a client for.
+   * @param sdk SDK name to use. Required.
+   * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
+   */
+  withClient = (
+    module_: string,
+    sdk: string,
+    opts?: WorkspaceWithClientOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withClient", {
+      module: module_,
+      sdk,
+      ...opts,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a named config environment created.
    * @param name Environment name.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15903,50 +16077,34 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a generated API client initialized.
-   *
-   * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
-   * @param path Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
-   * @param sdk Workspace SDK name or module entry name to use.
-   * @param module Workspace-relative path or canonical ref for the module the client binds to.
-   * @param opts.args SDK-specific init arguments.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.noGenerate Skip running the SDK's generators for the new client.
+   * Return this workspace with a file added or replaced, without mutating the source.
+   * @param path Destination path. Relative paths resolve from the workspace cwd.
+   * @param source File to add.
+   * @param opts.permissions Permissions of the added file. Defaults to the source file permissions.
    */
-  withInitClient = (
+  withFile = (
     path: string,
-    sdk: string,
-    module_: string,
-    opts?: WorkspaceWithInitClientOpts,
+    source: File,
+    opts?: WorkspaceWithFileOpts,
   ): Workspace => {
-    const ctx = this._ctx.select("withInitClient", {
-      path,
-      sdk,
-      module: module_,
-      ...opts,
-    })
+    const ctx = this._ctx.select("withFile", { path, source, ...opts })
     return new Workspace(ctx)
   }
 
   /**
-   * Return this workspace with a new module initialized.
+   * Return this workspace with a location initialized as a module scope.
    *
-   * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
-   * @param name Name of the new module.
-   * @param sdk Workspace SDK name or module entry name to use.
-   * @param opts.path Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
-   * @param opts.source Source subpath within the new module.
-   * @param opts.include Additional include patterns for the module.
-   * @param opts.args SDK-specific init arguments.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.noGenerate Skip running the SDK's generators for the new module.
+   * The selected SDK module records the scope and generates the module source.
+   * @param sdk Workspace SDK name or module entry name to use. Required.
+   * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
+   * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
+   * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
-    name: string,
     sdk: string,
     opts?: WorkspaceWithInitModuleOpts,
   ): Workspace => {
-    const ctx = this._ctx.select("withInitModule", { name, sdk, ...opts })
+    const ctx = this._ctx.select("withInitModule", { sdk, ...opts })
     return new Workspace(ctx)
   }
 
@@ -16019,7 +16177,7 @@ export class Workspace extends BaseClient {
    * @param ref SDK module reference to install.
    * @param opts.name Override name for the installed SDK entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   * @param opts.asSdkName Optional override for the SDK name conventionally derived from the installed module name.
    */
   withSDK = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
     const ctx = this._ctx.select("withSDK", { ref, ...opts })
@@ -16027,10 +16185,39 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with refreshed lockfile state.
+   * Return this workspace with the selected module clients updated.
+   *
+   * The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+   *
+   * The selected SDK module then regenerates every scope that owns one of the targets.
+   * @param opts.modules Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+   * @param opts.all Select clients in every scope instead of only the scopes containing the workspace cwd.
+   * @param opts.sdk Optional SDK name. All installed SDK modules are selected when omitted.
    */
-  withUpdatedLock = (): Workspace => {
-    const ctx = this._ctx.select("withUpdatedLock")
+  withUpdatedClients = (opts?: WorkspaceWithUpdatedClientsOpts): Workspace => {
+    const ctx = this._ctx.select("withUpdatedClients", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with refreshed lockfile state.
+   *
+   * SDK client scopes are regenerated unless noGenerate is true.
+   * @param opts.noGenerate Do not regenerate SDK client scopes.
+   */
+  withUpdatedLock = (opts?: WorkspaceWithUpdatedLockOpts): Workspace => {
+    const ctx = this._ctx.select("withUpdatedLock", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with refreshed lockfile state for installed modules.
+   *
+   * An SDK client scope is regenerated when it targets an updated module.
+   * @param opts.names Installed module names to refresh. An empty list refreshes all installed modules.
+   */
+  withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
+    const ctx = this._ctx.select("withUpdatedModules", { ...opts })
     return new Workspace(ctx)
   }
 
@@ -16040,6 +16227,19 @@ export class Workspace extends BaseClient {
    */
   withWorkdir = (path: string): Workspace => {
     const ctx = this._ctx.select("withWorkdir", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a module client removed from the current scope.
+   *
+   * The selected SDK module regenerates the complete scope.
+   * @param module The recorded target to remove.
+   */
+  withoutClient = (module_: string): Workspace => {
+    const ctx = this._ctx.select("withoutClient", {
+      module: module_,
+    })
     return new Workspace(ctx)
   }
 

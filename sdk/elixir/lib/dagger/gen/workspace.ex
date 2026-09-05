@@ -133,6 +133,17 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return the selected SDK module's current scope at this workspace location.
+  """
+  @spec detect_scope(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def detect_scope(%__MODULE__{} = workspace, sdk) do
+    query_builder =
+      workspace.query_builder |> QB.select("detectScope") |> QB.put_arg("sdk", sdk)
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
@@ -521,6 +532,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a generated module client added to its detected scope.
+  """
+  @spec with_client(t(), String.t(), String.t(), [{:settings, Dagger.JSON.t() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_client(%__MODULE__{} = workspace, module, sdk, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withClient")
+      |> QB.put_arg("module", module)
+      |> QB.put_arg("sdk", sdk)
+      |> QB.maybe_put_arg("settings", optional_args[:settings])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment created.
   """
   @spec with_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -581,25 +611,17 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with a generated API client initialized.
-
-  The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+  Return this workspace with a file added or replaced, without mutating the source.
   """
-  @spec with_init_client(t(), String.t(), String.t(), String.t(), [
-          {:args, Dagger.JSON.t() | nil},
-          {:here, boolean() | nil},
-          {:no_generate, boolean() | nil}
-        ]) :: Dagger.Workspace.t()
-  def with_init_client(%__MODULE__{} = workspace, path, sdk, module, optional_args \\ []) do
+  @spec with_file(t(), String.t(), Dagger.File.t(), [{:permissions, integer() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_file(%__MODULE__{} = workspace, path, source, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("withInitClient")
+      |> QB.select("withFile")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("sdk", sdk)
-      |> QB.put_arg("module", module)
-      |> QB.maybe_put_arg("args", optional_args[:args])
-      |> QB.maybe_put_arg("here", optional_args[:here])
-      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -608,30 +630,23 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with a new module initialized.
+  Return this workspace with a location initialized as a module scope.
 
-  The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+  The selected SDK module records the scope and generates the module source.
   """
-  @spec with_init_module(t(), String.t(), String.t(), [
+  @spec with_init_module(t(), String.t(), [
+          {:name, String.t() | nil},
           {:path, String.t() | nil},
-          {:source, String.t() | nil},
-          {:include, [String.t()]},
-          {:args, Dagger.JSON.t() | nil},
-          {:here, boolean() | nil},
-          {:no_generate, boolean() | nil}
+          {:settings, Dagger.JSON.t() | nil}
         ]) :: Dagger.Workspace.t()
-  def with_init_module(%__MODULE__{} = workspace, name, sdk, optional_args \\ []) do
+  def with_init_module(%__MODULE__{} = workspace, sdk, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withInitModule")
-      |> QB.put_arg("name", name)
       |> QB.put_arg("sdk", sdk)
+      |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("path", optional_args[:path])
-      |> QB.maybe_put_arg("source", optional_args[:source])
-      |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("args", optional_args[:args])
-      |> QB.maybe_put_arg("here", optional_args[:here])
-      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
+      |> QB.maybe_put_arg("settings", optional_args[:settings])
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -760,12 +775,60 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with refreshed lockfile state.
+  Return this workspace with the selected module clients updated.
+
+  The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+
+  The selected SDK module then regenerates every scope that owns one of the targets.
   """
-  @spec with_updated_lock(t()) :: Dagger.Workspace.t()
-  def with_updated_lock(%__MODULE__{} = workspace) do
+  @spec with_updated_clients(t(), [
+          {:modules, [String.t()]},
+          {:all, boolean() | nil},
+          {:sdk, String.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_updated_clients(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("withUpdatedLock")
+      workspace.query_builder
+      |> QB.select("withUpdatedClients")
+      |> QB.maybe_put_arg("modules", optional_args[:modules])
+      |> QB.maybe_put_arg("all", optional_args[:all])
+      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with refreshed lockfile state.
+
+  SDK client scopes are regenerated unless noGenerate is true.
+  """
+  @spec with_updated_lock(t(), [{:no_generate, boolean() | nil}]) :: Dagger.Workspace.t()
+  def with_updated_lock(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withUpdatedLock")
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with refreshed lockfile state for installed modules.
+
+  An SDK client scope is regenerated when it targets an updated module.
+  """
+  @spec with_updated_modules(t(), [{:names, [String.t()]}]) :: Dagger.Workspace.t()
+  def with_updated_modules(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withUpdatedModules")
+      |> QB.maybe_put_arg("names", optional_args[:names])
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -780,6 +843,22 @@ defmodule Dagger.Workspace do
   def with_workdir(%__MODULE__{} = workspace, path) do
     query_builder =
       workspace.query_builder |> QB.select("withWorkdir") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a module client removed from the current scope.
+
+  The selected SDK module regenerates the complete scope.
+  """
+  @spec without_client(t(), String.t()) :: Dagger.Workspace.t()
+  def without_client(%__MODULE__{} = workspace, module) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutClient") |> QB.put_arg("module", module)
 
     %Dagger.Workspace{
       query_builder: query_builder,

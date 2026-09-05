@@ -220,9 +220,7 @@
 <abbr title="Dagger\Container">Container</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Turn the container into a Service.</p></dd><dt><a href="Dagger/Container.html#method_asTarball">
 <abbr title="Dagger\Container">Container</abbr>::asTarball</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Package the container state as an OCI image, and return it as a tar archive</p></dd><dt><a href="Dagger/CurrentModule.html#method_asSDK">
-<abbr title="Dagger\CurrentModule">CurrentModule</abbr>::asSDK</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
-                    <dd><p>Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.</p></dd><dt><a href="Dagger/DiffStat.html#method_addedLines">
+                    <dd><p>Package the container state as an OCI image, and return it as a tar archive</p></dd><dt><a href="Dagger/DiffStat.html#method_addedLines">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::addedLines</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>Number of added lines for this path.</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
 <abbr title="Dagger\Directory">Directory</abbr>::asGit</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -566,7 +564,9 @@
 <abbr title="Dagger\Module">Module</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The doc string of the module, if any</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_directory">
 <abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
-                    <dd><p>The directory the client is generated in.</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
+                    <dd><p>The directory the client is generated in.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_directory">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Return a directory with all applicable manifest files.</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The dependencies of the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_digest">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -586,7 +586,9 @@
 <abbr title="Dagger\TerminalTarget">TerminalTarget</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/TerminalTarget.html"><abbr title="Dagger\TerminalTarget">TerminalTarget</abbr></a></em></dt>
                     <dd><p>The description of the terminal target</p></dd><dt><a href="Dagger/Up.html#method_description">
 <abbr title="Dagger\Up">Up</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
-                    <dd><p>The description of the service</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
+                    <dd><p>The description of the service</p></dd><dt><a href="Dagger/Workspace.html#method_detectScope">
+<abbr title="Dagger\Workspace">Workspace</abbr>::detectScope</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return the selected SDK module's current scope at this workspace location.</p></dd><dt><a href="Dagger/Workspace.html#method_directory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Returns a Directory from the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_description">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -800,9 +802,7 @@
 <abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::generator</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
                     <dd><p>The generator to use</p></dd><dt><a href="Dagger/ModuleSource.html#method_generate">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generate</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Return the supplied workspace with this module's generated context applied.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generateLocalDependencies">
-<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generateLocalDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextChangeset">
+                    <dd><p>Return the supplied workspace with this module's generated context applied.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextChangeset">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextChangeset</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The generated files and directories made on top of the module source's context directory, returned as a Changeset.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -997,7 +997,9 @@
 <abbr title="Dagger\Module">Module</abbr>::introspectionSchemaJSON</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The introspection schema JSON file for this module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_id">
 <abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
+                    <dd><p>A unique identifier for this ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_id">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this ModuleManifest.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>A unique identifier for this ModuleSource.</p></dd><dt><a href="Dagger/ModuleSource.html#method_introspectionSchemaJSON">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::introspectionSchemaJSON</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1132,7 +1134,9 @@
                     <dd><p>A simple key value object that represents a label.</p></dd><dt><a href="Dagger/LabelId.html"><abbr title="Dagger\LabelId">LabelId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a list type in a Module.</p></dd><dt><a href="Dagger/ListTypeDefId.html"><abbr title="Dagger\ListTypeDefId">ListTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleSource.html#method_localContextDirectoryPath">
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_legacyJSONFile">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::legacyJSONFile</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Serialize the legacy fields as dagger.json.</p></dd><dt><a href="Dagger/ModuleSource.html#method_localContextDirectoryPath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::localContextDirectoryPath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.</p></dd><dt><a href="Dagger/SearchResult.html#method_lineNumber">
 <abbr title="Dagger\SearchResult">SearchResult</abbr>::lineNumber</a>() &mdash; <em>Method in class <a href="Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a></em></dt>
@@ -1147,7 +1151,9 @@
 <abbr title="Dagger\Changeset">Changeset</abbr>::modifiedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Files and directories that existed before and were updated in the newer directory.</p></dd><dt><a href="Dagger/Client.html#method_module">
 <abbr title="Dagger\Client">Client</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Create a new module.</p></dd><dt><a href="Dagger/Client.html#method_moduleRuntime">
+                    <dd><p>Create a new module.</p></dd><dt><a href="Dagger/Client.html#method_moduleManifest">
+<abbr title="Dagger\Client">Client</abbr>::moduleManifest</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Construct or load a module manifest.</p></dd><dt><a href="Dagger/Client.html#method_moduleRuntime">
 <abbr title="Dagger\Client">Client</abbr>::moduleRuntime</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client.html#method_moduleSource">
 <abbr title="Dagger\Client">Client</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1185,7 +1191,8 @@
                     <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The client generated for the module.</p></dd><dt><a href="Dagger/ModuleConfigClientId.html"><abbr title="Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Dagger module manifest.</p></dd><dt><a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The name of the module, including any setting via the withName API.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleOriginalName">
@@ -1307,7 +1314,7 @@
 <abbr title="Dagger\Env">Env</abbr>::outputs</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Returns all declared output bindings for the environment</p></dd><dt><a href="Dagger/Generator.html#method_originalModule">
 <abbr title="Dagger\Generator">Generator</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>The original module in which the generator has been defined</p></dd><dt><a href="Dagger/GitBundle.html#method_objectFormat">
+                    <dd><p>The module that defined the generator, or null for an engine-defined generator</p></dd><dt><a href="Dagger/GitBundle.html#method_objectFormat">
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::objectFormat</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Object format capability: sha1 or sha256.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::outputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
@@ -1338,9 +1345,7 @@
 <abbr title="Dagger\Container">Container</abbr>::publish</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_path">
 <abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
-                    <dd><p>Workspace-root-relative path of the generated client.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_pin">
-<abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
-                    <dd><p>The pinned version of the bound module, if any.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html#method_path">
+                    <dd><p>Workspace-root-relative path of the generated client.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html#method_path">
 <abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKModule.html"><abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr></a></em></dt>
                     <dd><p>Workspace-root-relative path to the managed module.</p></dd><dt><a href="Dagger/DiffStat.html#method_path">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
@@ -1674,7 +1679,9 @@
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::tokenUsage</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
                     <dd><p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_totalTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::totalTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
-                    <dd><p>Total tokens consumed, as reported by the provider.</p></dd><dt><a href="Dagger/ModuleSource.html#method_toolchains">
+                    <dd><p>Total tokens consumed, as reported by the provider.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_tomlFile">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::tomlFile</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Serialize the manifest as dagger-module.toml.</p></dd><dt><a href="Dagger/ModuleSource.html#method_toolchains">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::toolchains</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The toolchains referenced by the module source.</p></dd><dt><a href="Dagger/SearchSubmatch.html#method_text">
 <abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr>::text</a>() &mdash; <em>Method in class <a href="Dagger/SearchSubmatch.html"><abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr></a></em></dt>
@@ -1748,7 +1755,9 @@
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Bundle format version (2 or 3).</p></dd><dt><a href="Dagger/Label.html#method_value">
 <abbr title="Dagger\Label">Label</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
-                    <dd><p>The label value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_version">
+                    <dd><p>The label value.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_validate">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::validate</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Validate the manifest.</p></dd><dt><a href="Dagger/ModuleSource.html#method_version">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The specified version of the git repo this source points to.</p></dd><dt><a href="Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A filesystem volume that can be mounted into containers.</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_value">
@@ -2160,7 +2169,37 @@
 <abbr title="Dagger\Module">Module</abbr>::withInterface</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>This module plus the given Interface type and associated functions</p></dd><dt><a href="Dagger/Module.html#method_withObject">
 <abbr title="Dagger\Module">Module</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withBlueprint">
+                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withDangEntrypoint">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withDangEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Use the built-in Dang entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyDangRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyDangRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy Dang runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyElixirRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyElixirRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy Elixir runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyGoRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyGoRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy Go runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyInclude">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyInclude</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add an include path for the legacy runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyJavaRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyJavaRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy Java runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyPHPRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyPHPRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy PHP runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyPythonRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyPythonRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy Python runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyRuntimeDependency">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyRuntimeDependency</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add or replace a module available to the legacy runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withLegacyTypescriptRuntime">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withLegacyTypescriptRuntime</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Add the legacy TypeScript runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withModuleEntrypoint">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withModuleEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Use another module as the entrypoint.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withName">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Set the module name.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutLegacyFields">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutLegacyFields</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutLegacyRuntimeDependencies">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutLegacyRuntimeDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Remove all modules from the legacy runtime.</p></dd><dt><a href="Dagger/ModuleManifest.html#method_withoutLegacyRuntimeDependency">
+<abbr title="Dagger\ModuleManifest">ModuleManifest</abbr>::withoutLegacyRuntimeDependency</a>() &mdash; <em>Method in class <a href="Dagger/ModuleManifest.html"><abbr title="Dagger\ModuleManifest">ModuleManifest</abbr></a></em></dt>
+                    <dd><p>Remove a module from the legacy runtime by name.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withBlueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Set a blueprint for the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withClient">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -2227,17 +2266,19 @@
                     <dd><p>Returns a TypeDef of kind Scalar with the provided name.</p></dd><dt><a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A Dagger workspace detected from the current working directory or constructed from a Directory.</p></dd><dt><a href="Dagger/Workspace.html#method_withChanges">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withChanges</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a changeset applied, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
+                    <dd><p>Return this workspace with a changeset applied, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withClient">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a generated module client added to its detected scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigValue">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigValue</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a directory merged into the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitClient">
-<abbr title="Dagger\Workspace">Workspace</abbr>::withInitClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a generated API client initialized.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitModule">
+                    <dd><p>Return this workspace with a directory merged into the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withFile">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a file added or replaced, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a new module initialized.</p></dd><dt><a href="Dagger/Workspace.html#method_withModule">
+                    <dd><p>Return this workspace with a location initialized as a module scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a module installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withMountedDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withMountedDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2249,11 +2290,17 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with an SDK installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedLock">
+                    <dd><p>Return this workspace with an SDK installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedClients">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withUpdatedClients</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with the selected module clients updated.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedLock">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withUpdatedLock</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with refreshed lockfile state.</p></dd><dt><a href="Dagger/Workspace.html#method_withWorkdir">
+                    <dd><p>Return this workspace with refreshed lockfile state.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedModules">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withUpdatedModules</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with refreshed lockfile state for installed modules.</p></dd><dt><a href="Dagger/Workspace.html#method_withWorkdir">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withWorkdir</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with its working directory pointed at the given workspace-relative path.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutConfigEnv">
+                    <dd><p>Return this workspace with its working directory pointed at the given workspace-relative path.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutClient">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withoutClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a module client removed from the current scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment removed.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutConfigValue">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutConfigValue</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

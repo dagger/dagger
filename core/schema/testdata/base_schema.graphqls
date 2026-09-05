@@ -2812,8 +2812,10 @@ type Generator implements Node {
   """Return the fully qualified name of the generator"""
   name: String!
 
-  """The original module in which the generator has been defined"""
-  originalModule: Module!
+  """
+  The module that defined the generator, or null for an engine-defined generator
+  """
+  originalModule: Module
 
   """The path of the generator within its module"""
   path: [String!]!
@@ -3537,6 +3539,165 @@ scalar ModuleConfigClientID
 """A unique identifier for an object."""
 scalar ModuleID
 
+"""A Dagger module manifest."""
+type ModuleManifest implements Node {
+  """Return a directory with all applicable manifest files."""
+  directory: Directory!
+
+  """A unique identifier for this ModuleManifest."""
+  id: ID!
+
+  """Serialize the legacy fields as dagger.json."""
+  legacyJSONFile: File!
+
+  """Serialize the manifest as dagger-module.toml."""
+  tomlFile: File!
+
+  """
+  Validate the manifest.
+
+  If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+  """
+  validate(
+    """Optional target engine version."""
+    targetEngineVersion: String
+  ): Void!
+
+  """Use the built-in Dang entrypoint."""
+  withDangEntrypoint(
+    """Entrypoint source address."""
+    source: String!
+  ): ModuleManifest!
+
+  """Add or replace a module dependency."""
+  withDependency(
+    """Dependency source address."""
+    source: String!
+
+    """Optional dependency name."""
+    name: String
+
+    """Optional dependency pin."""
+    pin: String
+  ): ModuleManifest!
+
+  """Add the legacy Dang runtime."""
+  withLegacyDangRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Add the legacy Elixir runtime."""
+  withLegacyElixirRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Add the legacy Go runtime."""
+  withLegacyGoRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """
+  Add an include path for the legacy runtime.
+
+  This operation is additive.
+  """
+  withLegacyInclude(
+    """Path to include."""
+    path: String!
+  ): ModuleManifest!
+
+  """Add the legacy Java runtime."""
+  withLegacyJavaRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Add the legacy PHP runtime."""
+  withLegacyPHPRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Add the legacy Python runtime."""
+  withLegacyPythonRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Add the legacy TypeScript runtime."""
+  withLegacyTypescriptRuntime(
+    """Module source path. The default is the manifest directory."""
+    moduleSource: String
+
+    """
+    Required engine API version. The default is the running engine version.
+    """
+    engineVersion: String
+  ): ModuleManifest!
+
+  """Use another module as the entrypoint."""
+  withModuleEntrypoint(
+    """Entrypoint module address."""
+    source: String!
+  ): ModuleManifest!
+
+  """Set the module name."""
+  withName(
+    """Module name."""
+    name: String!
+  ): ModuleManifest!
+
+  """Remove all module dependencies."""
+  withoutDependencies: ModuleManifest!
+
+  """Remove a module dependency by name."""
+  withoutDependency(
+    """Dependency name."""
+    name: String!
+  ): ModuleManifest!
+
+  """
+  Remove the legacy runtime, module source, engine version, and include paths.
+  """
+  withoutLegacyFields: ModuleManifest!
+}
+
+"""A unique identifier for an object."""
+scalar ModuleManifestID
+
 """
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
@@ -4229,6 +4390,9 @@ type Query implements Node {
 
   """Load a Module from its ID."""
   loadModuleFromID(id: ModuleID!): Module!
+
+  """Load a ModuleManifest from its ID."""
+  loadModuleManifestFromID(id: ModuleManifestID!): ModuleManifest!
 
   """Load a ModuleSource from its ID."""
   loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!

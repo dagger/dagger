@@ -21,10 +21,10 @@ dagger --env staging api call deploy
 
 ## Configure an environment
 
-Most per-environment differences are module settings, such as a base image or a package manager. Set them with `dagger settings` and `--env`, which targets that environment's overlay instead of the base configuration:
+Most per-environment differences are module settings, such as a base image or a package manager. Set them with `dagger module settings` and `--env`, which targets that environment's overlay instead of the base configuration:
 
 ```shell
-dagger settings --env staging eslint baseImageAddress node:22-alpine
+dagger module settings --env staging eslint baseImageAddress node:22-alpine
 ```
 
 Writing to a setting under `--env=<name>` is also how the environment gets created. The first write creates the overlay; subsequent writes update it.
@@ -32,7 +32,7 @@ Writing to a setting under `--env=<name>` is also how the environment gets creat
 Reads with `--env` show the *effective* view, the base settings with the overlay applied:
 
 ```shell
-dagger settings --env staging eslint
+dagger module settings --env staging eslint
 ```
 
 Without `--env`, you read and write the base configuration, which every environment inherits.

@@ -65,16 +65,11 @@ query WorkspaceModuleSettings($module: String!) {
 `
 
 var settingsCmd = newSettingsCmd(false)
-
-// workspaceSettingsCmd is retained as a hidden alias under `dagger workspace`
-// for any tests / scripts that still reach for `dagger workspace settings`.
-// It can be removed when there are no remaining callers.
-var workspaceSettingsCmd = newSettingsCmd(true)
+var settingsAliasCmd = newSettingsCmd(false)
 
 func init() {
-	workspaceCmd.AddCommand(workspaceSettingsCmd)
-	addWorkspaceHereFlag(workspaceSettingsCmd)
 	addWorkspaceHereFlag(settingsCmd)
+	addWorkspaceHereFlag(settingsAliasCmd)
 }
 
 var (

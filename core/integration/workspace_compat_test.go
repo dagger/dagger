@@ -569,7 +569,7 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 		copyTestdataFixture(ctx, t, workdir, "modules", "go", "minimal-app")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "./dep")
 		require.Error(t, err)
 		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger setup first")
 

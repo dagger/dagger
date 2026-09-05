@@ -515,6 +515,32 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Construct or load a module manifest.
+  """
+  @spec module_manifest(t(), [
+          {:load_toml, Dagger.File.t() | nil},
+          {:load_json, Dagger.File.t() | nil}
+        ]) :: Dagger.ModuleManifest.t()
+  def module_manifest(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("moduleManifest")
+      |> QB.maybe_put_arg(
+        "loadTOML",
+        if(optional_args[:load_toml], do: Dagger.ID.id!(optional_args[:load_toml]), else: nil)
+      )
+      |> QB.maybe_put_arg(
+        "loadJSON",
+        if(optional_args[:load_json], do: Dagger.ID.id!(optional_args[:load_json]), else: nil)
+      )
+
+    %Dagger.ModuleManifest{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module source instance from a source ref string
   """
   @spec module_source(t(), String.t(), [

@@ -216,6 +216,12 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
+// Construct or load a module manifest.
+func ModuleManifest(opts ...dagger.ModuleManifestOpts) *dagger.ModuleManifest {
+	client := initClient()
+	return client.ModuleManifest(opts...)
+}
+
 // Create a new module source instance from a source ref string
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()

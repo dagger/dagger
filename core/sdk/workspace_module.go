@@ -27,8 +27,8 @@ func WorkspaceModuleForRuntime(runtime string) (WorkspaceModule, bool, error) {
 
 	mod, ok := workspaceModuleForBuiltinSDK(sdkName, suffix)
 	if ok {
-		// Prefix the install name to match `dagger sdk install` (e.g.
-		// "go-sdk" -> "dagger-go-sdk"), reducing collisions with unrelated
+		// Preserve the prefixed name used for migrated builtin runtime installs
+		// (e.g. "go-sdk" -> "dagger-go-sdk"), reducing collisions with unrelated
 		// modules. Source and runtime resolution are unaffected.
 		mod.Name = sdkmeta.InstallNamePrefix + mod.Name
 	}

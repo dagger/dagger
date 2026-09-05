@@ -92,6 +92,10 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	}
 	slices.Sort(names)
 	wanted := overlayIncludedModuleNames(names, include)
+	sdkProviders := make(map[string]bool, len(cfg.SDKs))
+	for _, sdk := range cfg.SDKs {
+		sdkProviders[sdk.Module] = true
+	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -106,9 +110,9 @@ func (s *workspaceSchema) workspaceOverlayModules(
 			}
 		}
 		entry := cfg.Modules[name]
-		// A built-in SDK install entry carries [as-sdk] authoring metadata, not
-		// a loadable module ref (see workspaceConfigPendingModules).
-		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+		// A built-in SDK provider has a runtime name as its source, not a
+		// loadable module ref (see workspaceConfigPendingModules).
+		if sdkProviders[name] && coresdk.IsBuiltinSDKName(entry.Source) {
 			continue
 		}
 		if entry.LegacyDefaultPath {

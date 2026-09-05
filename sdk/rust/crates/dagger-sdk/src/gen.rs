@@ -4435,27 +4435,6 @@ impl Loadable for CurrentModule {
     }
 }
 impl CurrentModule {
-    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
-    /// Errors if the current module is not installed as an SDK in this workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace` - The workspace to resolve SDK-role data against.
-    pub fn as_sdk(&self, workspace: impl IntoID<Id>) -> CurrentModuleAsSdk {
-        let mut query = self.selection.select("asSDK");
-        query = query.arg_lazy(
-            "workspace",
-            Box::new(move || {
-                let workspace = workspace.clone();
-                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
-            }),
-        );
-        CurrentModuleAsSdk {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The dependencies of the module.
     pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("dependencies");
@@ -4589,203 +4568,6 @@ impl CurrentModule {
     }
 }
 impl Node for CurrentModule {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct CurrentModuleAsSdk {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for CurrentModuleAsSdk {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for CurrentModuleAsSdk {
-    fn graphql_type() -> &'static str {
-        "CurrentModuleAsSDK"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl CurrentModuleAsSdk {
-    /// The generated clients this SDK produces in the workspace.
-    pub async fn clients(&self) -> Result<Vec<CurrentModuleAsSdkClient>, DaggerError> {
-        let query = self.selection.select("clients");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| CurrentModuleAsSdkClient {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("CurrentModuleAsSDKClient"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
-    /// A unique identifier for this CurrentModuleAsSDK.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
-    pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, DaggerError> {
-        let query = self.selection.select("modules");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| CurrentModuleAsSdkModule {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("CurrentModuleAsSDKModule"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
-    /// The user-facing name of this SDK in the workspace.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-impl Node for CurrentModuleAsSdk {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct CurrentModuleAsSdkClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for CurrentModuleAsSdkClient {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for CurrentModuleAsSdkClient {
-    fn graphql_type() -> &'static str {
-        "CurrentModuleAsSDKClient"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl CurrentModuleAsSdkClient {
-    /// A unique identifier for this CurrentModuleAsSDKClient.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The module the client is bound to (workspace-relative path or canonical ref).
-    pub async fn module(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("module");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The resolved module source this client is bound to, including its dependency closure and pinned version.
-    pub fn module_source(&self) -> ModuleSource {
-        let query = self.selection.select("moduleSource");
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Workspace-root-relative path of the generated client.
-    pub async fn path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The pinned version of the bound module, if any.
-    pub async fn pin(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("pin");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-impl Node for CurrentModuleAsSdkClient {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct CurrentModuleAsSdkModule {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for CurrentModuleAsSdkModule {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for CurrentModuleAsSdkModule {
-    fn graphql_type() -> &'static str {
-        "CurrentModuleAsSDKModule"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl CurrentModuleAsSdkModule {
-    /// A unique identifier for this CurrentModuleAsSDKModule.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Workspace-root-relative path to the managed module.
-    pub async fn path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-impl Node for CurrentModuleAsSdkModule {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -8415,14 +8197,20 @@ impl Generator {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The original module in which the generator has been defined
-    pub fn original_module(&self) -> Module {
+    /// The module that defined the generator, or null for an engine-defined generator
+    pub async fn original_module(&self) -> Result<Option<Module>, DaggerError> {
         let query = self.selection.select("originalModule");
-        Module {
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Module {
             proc: self.proc.clone(),
-            selection: query,
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Module"),
             graphql_client: self.graphql_client.clone(),
-        }
+        }))
     }
     /// The path of the generator within its module
     pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
@@ -11830,6 +11618,554 @@ impl Node for ModuleConfigClient {
     }
 }
 #[derive(Clone)]
+pub struct ModuleManifest {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestValidateOpts<'a> {
+    /// Optional target engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub target_engine_version: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyDangRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyElixirRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyGoRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyJavaRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyPhpRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyPythonRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyRuntimeDependencyOpts<'a> {
+    /// Optional module name in the legacy runtime schema.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
+    /// Optional module source pin.
+    #[builder(setter(into, strip_option), default)]
+    pub pin: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleManifestWithLegacyTypescriptRuntimeOpts<'a> {
+    /// Required engine API version. The default is the running engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+    /// Module source path. The default is the manifest directory.
+    #[builder(setter(into, strip_option), default)]
+    pub module_source: Option<&'a str>,
+}
+impl IntoID<Id> for ModuleManifest {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ModuleManifest {
+    fn graphql_type() -> &'static str {
+        "ModuleManifest"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ModuleManifest {
+    /// Return a directory with all applicable manifest files.
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this ModuleManifest.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Serialize the legacy fields as dagger.json.
+    pub fn legacy_json_file(&self) -> File {
+        let query = self.selection.select("legacyJSONFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Serialize the manifest as dagger-module.toml.
+    pub fn toml_file(&self) -> File {
+        let query = self.selection.select("tomlFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Validate the manifest.
+    /// If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn validate(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("validate");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Validate the manifest.
+    /// If targetEngineVersion is set, also validate the legacy runtime against that engine version.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn validate_opts<'a>(
+        &self,
+        opts: ModuleManifestValidateOpts<'a>,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("validate");
+        if let Some(target_engine_version) = opts.target_engine_version {
+            query = query.arg("targetEngineVersion", target_engine_version);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Use the built-in Dang entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Entrypoint source address.
+    pub fn with_dang_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withDangEntrypoint");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Dang runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_dang_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyDangRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Dang runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_dang_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyDangRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyDangRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Elixir runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_elixir_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyElixirRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Elixir runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_elixir_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyElixirRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyElixirRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Go runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_go_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyGoRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Go runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_go_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyGoRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyGoRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add an include path for the legacy runtime.
+    /// This operation is additive.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to include.
+    pub fn with_legacy_include(&self, path: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyInclude");
+        query = query.arg("path", path.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Java runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_java_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyJavaRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Java runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_java_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyJavaRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyJavaRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy PHP runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_php_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyPHPRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy PHP runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_php_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyPhpRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyPHPRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Python runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_python_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyPythonRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy Python runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_python_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyPythonRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyPythonRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add or replace a module available to the legacy runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Module source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_runtime_dependency(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyRuntimeDependency");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add or replace a module available to the legacy runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Module source address.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_runtime_dependency_opts<'a>(
+        &self,
+        source: impl Into<String>,
+        opts: ModuleManifestWithLegacyRuntimeDependencyOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyRuntimeDependency");
+        query = query.arg("source", source.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(pin) = opts.pin {
+            query = query.arg("pin", pin);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy TypeScript runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_typescript_runtime(&self) -> ModuleManifest {
+        let query = self.selection.select("withLegacyTypescriptRuntime");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Add the legacy TypeScript runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_legacy_typescript_runtime_opts<'a>(
+        &self,
+        opts: ModuleManifestWithLegacyTypescriptRuntimeOpts<'a>,
+    ) -> ModuleManifest {
+        let mut query = self.selection.select("withLegacyTypescriptRuntime");
+        if let Some(module_source) = opts.module_source {
+            query = query.arg("moduleSource", module_source);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Use another module as the entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Entrypoint module address.
+    pub fn with_module_entrypoint(&self, source: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withModuleEntrypoint");
+        query = query.arg("source", source.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the module name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Module name.
+    pub fn with_name(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withName");
+        query = query.arg("name", name.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the legacy runtime, module source, engine version, include paths, and runtime dependencies.
+    pub fn without_legacy_fields(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutLegacyFields");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove all modules from the legacy runtime.
+    pub fn without_legacy_runtime_dependencies(&self) -> ModuleManifest {
+        let query = self.selection.select("withoutLegacyRuntimeDependencies");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove a module from the legacy runtime by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Module name.
+    pub fn without_legacy_runtime_dependency(&self, name: impl Into<String>) -> ModuleManifest {
+        let mut query = self.selection.select("withoutLegacyRuntimeDependency");
+        query = query.arg("name", name.into());
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for ModuleManifest {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -11990,27 +12326,6 @@ impl ModuleSource {
             }),
         );
         Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
-    /// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace` - The workspace to generate the local dependencies against.
-    pub fn generate_local_dependencies(&self, workspace: impl IntoID<Id>) -> Changeset {
-        let mut query = self.selection.select("generateLocalDependencies");
-        query = query.arg_lazy(
-            "workspace",
-            Box::new(move || {
-                let workspace = workspace.clone();
-                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
-            }),
-        );
-        Changeset {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -12807,6 +13122,15 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryModuleManifestOpts {
+    /// Optional dagger.json file to load.
+    #[builder(setter(into, strip_option), default)]
+    pub load_json: Option<Id>,
+    /// Optional dagger-module.toml file to load.
+    #[builder(setter(into, strip_option), default)]
+    pub load_toml: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
     /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
@@ -13441,6 +13765,38 @@ impl Query {
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");
         Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Construct or load a module manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_manifest(&self) -> ModuleManifest {
+        let query = self.selection.select("moduleManifest");
+        ModuleManifest {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Construct or load a module manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_manifest_opts(&self, opts: QueryModuleManifestOpts) -> ModuleManifest {
+        let mut query = self.selection.select("moduleManifest");
+        if let Some(load_toml) = opts.load_toml {
+            query = query.arg("loadTOML", load_toml);
+        }
+        if let Some(load_json) = opts.load_json {
+            query = query.arg("loadJSON", load_json);
+        }
+        ModuleManifest {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -15648,6 +16004,12 @@ pub struct WorkspaceTerminalsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithClientOpts {
+    /// Explicit SDK-module constructor setting overrides for this scope.
+    #[builder(setter(into, strip_option), default)]
+    pub settings: Option<Json>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigEnvOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -15663,37 +16025,22 @@ pub struct WorkspaceWithConfigValueOpts<'a> {
     pub values: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceWithInitClientOpts {
-    /// SDK-specific init arguments.
+pub struct WorkspaceWithFileOpts {
+    /// Permissions of the added file. Defaults to the source file permissions.
     #[builder(setter(into, strip_option), default)]
-    pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-    /// Skip running the SDK's generators for the new client.
-    #[builder(setter(into, strip_option), default)]
-    pub no_generate: Option<bool>,
+    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
-    /// SDK-specific init arguments.
+    /// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
     #[builder(setter(into, strip_option), default)]
-    pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-    /// Additional include patterns for the module.
-    #[builder(setter(into, strip_option), default)]
-    pub include: Option<Vec<&'a str>>,
-    /// Skip running the SDK's generators for the new module.
-    #[builder(setter(into, strip_option), default)]
-    pub no_generate: Option<bool>,
-    /// Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
+    pub name: Option<&'a str>,
+    /// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
-    /// Source subpath within the new module.
+    /// Explicit SDK-module constructor setting overrides for this scope.
     #[builder(setter(into, strip_option), default)]
-    pub source: Option<&'a str>,
+    pub settings: Option<Json>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithModuleOpts<'a> {
@@ -15712,7 +16059,7 @@ pub struct WorkspaceWithNewFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithSdkOpts<'a> {
-    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    /// Optional override for the SDK name conventionally derived from the installed module name.
     #[builder(setter(into, strip_option), default)]
     pub as_sdk_name: Option<&'a str>,
     /// Write to the workspace config directory at the workspace cwd.
@@ -15721,6 +16068,30 @@ pub struct WorkspaceWithSdkOpts<'a> {
     /// Override name for the installed SDK entry.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithUpdatedClientsOpts<'a> {
+    /// Select clients in every scope instead of only the scopes containing the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub all: Option<bool>,
+    /// Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub modules: Option<Vec<&'a str>>,
+    /// Optional SDK name. All installed SDK modules are selected when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub sdk: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithUpdatedLockOpts {
+    /// Do not regenerate SDK client scopes.
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithUpdatedModulesOpts<'a> {
+    /// Installed module names to refresh. An empty list refreshes all installed modules.
+    #[builder(setter(into, strip_option), default)]
+    pub names: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutConfigEnvOpts {
@@ -15913,6 +16284,16 @@ impl Workspace {
     /// Relative paths in workspace APIs resolve from here.
     pub async fn cwd(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cwd");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the selected SDK module's current scope at this workspace location.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - SDK name to probe. Required.
+    pub async fn detect_scope(&self, sdk: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("detectScope");
+        query = query.arg("sdk", sdk.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
@@ -16390,6 +16771,48 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with a generated module client added to its detected scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `sdk` - SDK name to use. Required.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_client(&self, module: impl Into<String>, sdk: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withClient");
+        query = query.arg("module", module.into());
+        query = query.arg("sdk", sdk.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a generated module client added to its detected scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `sdk` - SDK name to use. Required.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_client_opts(
+        &self,
+        module: impl Into<String>,
+        sdk: impl Into<String>,
+        opts: WorkspaceWithClientOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withClient");
+        query = query.arg("module", module.into());
+        query = query.arg("sdk", sdk.into());
+        if let Some(settings) = opts.settings {
+            query = query.arg("settings", settings);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a named config environment created.
     ///
     /// # Arguments
@@ -16497,59 +16920,53 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+    /// Return this workspace with a file added or replaced, without mutating the source.
     ///
     /// # Arguments
     ///
-    /// * `path` - Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `path` - Destination path. Relative paths resolve from the workspace cwd.
+    /// * `source` - File to add.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_init_client(
-        &self,
-        path: impl Into<String>,
-        sdk: impl Into<String>,
-        module: impl Into<String>,
-    ) -> Workspace {
-        let mut query = self.selection.select("withInitClient");
+    pub fn with_file(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("sdk", sdk.into());
-        query = query.arg("module", module.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+    /// Return this workspace with a file added or replaced, without mutating the source.
     ///
     /// # Arguments
     ///
-    /// * `path` - Output directory for the generated client, relative to the workspace cwd; a leading "/" is relative to the workspace root.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `path` - Destination path. Relative paths resolve from the workspace cwd.
+    /// * `source` - File to add.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_init_client_opts(
+    pub fn with_file_opts(
         &self,
         path: impl Into<String>,
-        sdk: impl Into<String>,
-        module: impl Into<String>,
-        opts: WorkspaceWithInitClientOpts,
+        source: impl IntoID<Id>,
+        opts: WorkspaceWithFileOpts,
     ) -> Workspace {
-        let mut query = self.selection.select("withInitClient");
+        let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("sdk", sdk.into());
-        query = query.arg("module", module.into());
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        if let Some(no_generate) = opts.no_generate {
-            query = query.arg("noGenerate", no_generate);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -16557,17 +16974,15 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+    /// Return this workspace with a location initialized as a module scope.
+    /// The selected SDK module records the scope and generates the module source.
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the new module.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `sdk` - Workspace SDK name or module entry name to use. Required.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_init_module(&self, name: impl Into<String>, sdk: impl Into<String>) -> Workspace {
+    pub fn with_init_module(&self, sdk: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withInitModule");
-        query = query.arg("name", name.into());
         query = query.arg("sdk", sdk.into());
         Workspace {
             proc: self.proc.clone(),
@@ -16575,40 +16990,28 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+    /// Return this workspace with a location initialized as a module scope.
+    /// The selected SDK module records the scope and generates the module source.
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the new module.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `sdk` - Workspace SDK name or module entry name to use. Required.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_init_module_opts<'a>(
         &self,
-        name: impl Into<String>,
         sdk: impl Into<String>,
         opts: WorkspaceWithInitModuleOpts<'a>,
     ) -> Workspace {
         let mut query = self.selection.select("withInitModule");
-        query = query.arg("name", name.into());
         query = query.arg("sdk", sdk.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
         if let Some(path) = opts.path {
             query = query.arg("path", path);
         }
-        if let Some(source) = opts.source {
-            query = query.arg("source", source);
-        }
-        if let Some(include) = opts.include {
-            query = query.arg("include", include);
-        }
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        if let Some(no_generate) = opts.no_generate {
-            query = query.arg("noGenerate", no_generate);
+        if let Some(settings) = opts.settings {
+            query = query.arg("settings", settings);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -16820,9 +17223,107 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with the selected module clients updated.
+    /// The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+    /// The selected SDK module then regenerates every scope that owns one of the targets.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_updated_clients(&self) -> Workspace {
+        let query = self.selection.select("withUpdatedClients");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the selected module clients updated.
+    /// The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+    /// The selected SDK module then regenerates every scope that owns one of the targets.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_updated_clients_opts<'a>(
+        &self,
+        opts: WorkspaceWithUpdatedClientsOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withUpdatedClients");
+        if let Some(modules) = opts.modules {
+            query = query.arg("modules", modules);
+        }
+        if let Some(all) = opts.all {
+            query = query.arg("all", all);
+        }
+        if let Some(sdk) = opts.sdk {
+            query = query.arg("sdk", sdk);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with refreshed lockfile state.
+    /// SDK client scopes are regenerated unless noGenerate is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_updated_lock(&self) -> Workspace {
         let query = self.selection.select("withUpdatedLock");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with refreshed lockfile state.
+    /// SDK client scopes are regenerated unless noGenerate is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_updated_lock_opts(&self, opts: WorkspaceWithUpdatedLockOpts) -> Workspace {
+        let mut query = self.selection.select("withUpdatedLock");
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with refreshed lockfile state for installed modules.
+    /// An SDK client scope is regenerated when it targets an updated module.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_updated_modules(&self) -> Workspace {
+        let query = self.selection.select("withUpdatedModules");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with refreshed lockfile state for installed modules.
+    /// An SDK client scope is regenerated when it targets an updated module.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_updated_modules_opts<'a>(
+        &self,
+        opts: WorkspaceWithUpdatedModulesOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withUpdatedModules");
+        if let Some(names) = opts.names {
+            query = query.arg("names", names);
+        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -16837,6 +17338,21 @@ impl Workspace {
     pub fn with_workdir(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module client removed from the current scope.
+    /// The selected SDK module regenerates the complete scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The recorded target to remove.
+    pub fn without_client(&self, module: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutClient");
+        query = query.arg("module", module.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

@@ -3843,24 +3843,6 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
-    def as_sdk(self, workspace: "Workspace") -> "CurrentModuleAsSDK":
-        """Treat the currently executing module as an SDK installed in the given
-        workspace, exposing the modules and clients it manages.
-
-        Errors if the current module is not installed as an SDK in this
-        workspace.
-
-        Parameters
-        ----------
-        workspace:
-            The workspace to resolve SDK-role data against.
-        """
-        _args = [
-            Arg("workspace", workspace),
-        ]
-        _ctx = self._select("asSDK", _args)
-        return CurrentModuleAsSDK(_ctx)
-
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []
@@ -4005,235 +3987,6 @@ class CurrentModule(Type):
         ]
         _ctx = self._select("workdirFile", _args)
         return File(_ctx)
-
-
-@typecheck
-class CurrentModuleAsSDK(Type):
-    """The SDK-role data for the currently executing module, as installed
-    in the supplied workspace."""
-
-    async def clients(self) -> list["CurrentModuleAsSDKClient"]:
-        """The generated clients this SDK produces in the workspace."""
-        _args: list[Arg] = []
-        _ctx = self._select("clients", _args)
-        return await _ctx.execute_object_list(CurrentModuleAsSDKClient)
-
-    async def id(self) -> str:
-        """A unique identifier for this CurrentModuleAsSDK.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def modules(self) -> list["CurrentModuleAsSDKModule"]:
-        """The managed modules relevant to the bound workspace cwd: every module
-        at or below it, plus the nearest enclosing module when the cwd itself
-        is not managed.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("modules", _args)
-        return await _ctx.execute_object_list(CurrentModuleAsSDKModule)
-
-    async def name(self) -> str:
-        """The user-facing name of this SDK in the workspace.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
-class CurrentModuleAsSDKClient(Type):
-    """A generated client the current SDK produces in the workspace."""
-
-    async def id(self) -> str:
-        """A unique identifier for this CurrentModuleAsSDKClient.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def module(self) -> str:
-        """The module the client is bound to (workspace-relative path or
-        canonical ref).
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("module", _args)
-        return await _ctx.execute(str)
-
-    def module_source(self) -> "ModuleSource":
-        """The resolved module source this client is bound to, including its
-        dependency closure and pinned version.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("moduleSource", _args)
-        return ModuleSource(_ctx)
-
-    async def path(self) -> str:
-        """Workspace-root-relative path of the generated client.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(str)
-
-    async def pin(self) -> str:
-        """The pinned version of the bound module, if any.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("pin", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
-class CurrentModuleAsSDKModule(Type):
-    """A workspace-local module managed by the current SDK."""
-
-    async def id(self) -> str:
-        """A unique identifier for this CurrentModuleAsSDKModule.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def path(self) -> str:
-        """Workspace-root-relative path to the managed module.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(str)
 
 
 @typecheck
@@ -7949,11 +7702,13 @@ class Generator(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
-    def original_module(self) -> "Module":
-        """The original module in which the generator has been defined"""
+    async def original_module(self) -> "Module | None":
+        """The module that defined the generator, or null for an engine-defined
+        generator
+        """
         _args: list[Arg] = []
         _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
+        return await _ctx.execute_object(Module)
 
     async def path(self) -> list[str]:
         """The path of the generator within its module
@@ -11650,6 +11405,373 @@ class ModuleConfigClient(Type):
 
 
 @typecheck
+class ModuleManifest(Type):
+    """A Dagger module manifest."""
+
+    def directory(self) -> Directory:
+        """Return a directory with all applicable manifest files."""
+        _args: list[Arg] = []
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this ModuleManifest.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def legacy_json_file(self) -> File:
+        """Serialize the legacy fields as dagger.json."""
+        _args: list[Arg] = []
+        _ctx = self._select("legacyJSONFile", _args)
+        return File(_ctx)
+
+    def toml_file(self) -> File:
+        """Serialize the manifest as dagger-module.toml."""
+        _args: list[Arg] = []
+        _ctx = self._select("tomlFile", _args)
+        return File(_ctx)
+
+    async def validate(
+        self,
+        *,
+        target_engine_version: str | None = None,
+    ) -> Void:
+        """Validate the manifest.
+
+        If targetEngineVersion is set, also validate the legacy runtime
+        against that engine version.
+
+        Parameters
+        ----------
+        target_engine_version:
+            Optional target engine version.
+
+        Returns
+        -------
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("targetEngineVersion", target_engine_version, None),
+        ]
+        _ctx = self._select("validate", _args)
+        await _ctx.execute()
+
+    def with_dang_entrypoint(self, source: str) -> Self:
+        """Use the built-in Dang entrypoint.
+
+        Parameters
+        ----------
+        source:
+            Entrypoint source address.
+        """
+        _args = [
+            Arg("source", source),
+        ]
+        _ctx = self._select("withDangEntrypoint", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_dang_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Dang runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyDangRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_elixir_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Elixir runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyElixirRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_go_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Go runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyGoRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_include(self, path: str) -> Self:
+        """Add an include path for the legacy runtime.
+
+        This operation is additive.
+
+        Parameters
+        ----------
+        path:
+            Path to include.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withLegacyInclude", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_java_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Java runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyJavaRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_php_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy PHP runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyPHPRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_python_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy Python runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyPythonRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_runtime_dependency(
+        self,
+        source: str,
+        *,
+        name: str | None = None,
+        pin: str | None = None,
+    ) -> Self:
+        """Add or replace a module available to the legacy runtime.
+
+        Parameters
+        ----------
+        source:
+            Module source address.
+        name:
+            Optional module name in the legacy runtime schema.
+        pin:
+            Optional module source pin.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("name", name, None),
+            Arg("pin", pin, None),
+        ]
+        _ctx = self._select("withLegacyRuntimeDependency", _args)
+        return ModuleManifest(_ctx)
+
+    def with_legacy_typescript_runtime(
+        self,
+        *,
+        module_source: str | None = None,
+        engine_version: str | None = None,
+    ) -> Self:
+        """Add the legacy TypeScript runtime.
+
+        Parameters
+        ----------
+        module_source:
+            Module source path. The default is the manifest directory.
+        engine_version:
+            Required engine API version. The default is the running engine
+            version.
+        """
+        _args = [
+            Arg("moduleSource", module_source, None),
+            Arg("engineVersion", engine_version, None),
+        ]
+        _ctx = self._select("withLegacyTypescriptRuntime", _args)
+        return ModuleManifest(_ctx)
+
+    def with_module_entrypoint(self, source: str) -> Self:
+        """Use another module as the entrypoint.
+
+        Parameters
+        ----------
+        source:
+            Entrypoint module address.
+        """
+        _args = [
+            Arg("source", source),
+        ]
+        _ctx = self._select("withModuleEntrypoint", _args)
+        return ModuleManifest(_ctx)
+
+    def with_name(self, name: str) -> Self:
+        """Set the module name.
+
+        Parameters
+        ----------
+        name:
+            Module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return ModuleManifest(_ctx)
+
+    def without_legacy_fields(self) -> Self:
+        """Remove the legacy runtime, module source, engine version, include
+        paths, and runtime dependencies.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutLegacyFields", _args)
+        return ModuleManifest(_ctx)
+
+    def without_legacy_runtime_dependencies(self) -> Self:
+        """Remove all modules from the legacy runtime."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutLegacyRuntimeDependencies", _args)
+        return ModuleManifest(_ctx)
+
+    def without_legacy_runtime_dependency(self, name: str) -> Self:
+        """Remove a module from the legacy runtime by name.
+
+        Parameters
+        ----------
+        name:
+            Module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutLegacyRuntimeDependency", _args)
+        return ModuleManifest(_ctx)
+
+    def with_(
+        self, cb: Callable[["ModuleManifest"], "ModuleManifest"]
+    ) -> "ModuleManifest":
+        """Call the provided callable with current ModuleManifest.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class ModuleSource(Type):
     """The source needed to load and run a module, along with any metadata
     about the source such as versions/urls/etc."""
@@ -11873,28 +11995,6 @@ class ModuleSource(Type):
         ]
         _ctx = self._select("generate", _args)
         return Workspace(_ctx)
-
-    def generate_local_dependencies(self, workspace: "Workspace") -> Changeset:
-        """Generate this module's transitive local dependency closure and return
-        the staged changes as a single changeset against the unstaged
-        workspace root.
-
-        Each local dependency is generated by its own SDK against a workspace
-        scoped to it, carrying the dependency's own already-generated
-        dependencies. Remote (git) dependencies are assumed committed and
-        skipped. Overlay the result onto the workspace before generating this
-        module; it is not this module's own generated code.
-
-        Parameters
-        ----------
-        workspace:
-            The workspace to generate the local dependencies against.
-        """
-        _args = [
-            Arg("workspace", workspace),
-        ]
-        _ctx = self._select("generateLocalDependencies", _args)
-        return Changeset(_ctx)
 
     def generated_context_changeset(self) -> Changeset:
         """The generated files and directories made on top of the module source's
@@ -13330,6 +13430,28 @@ class Query(Root):
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
         return Module(_ctx)
+
+    def module_manifest(
+        self,
+        *,
+        load_toml: File | None = None,
+        load_json: File | None = None,
+    ) -> ModuleManifest:
+        """Construct or load a module manifest.
+
+        Parameters
+        ----------
+        load_toml:
+            Optional dagger-module.toml file to load.
+        load_json:
+            Optional dagger.json file to load.
+        """
+        _args = [
+            Arg("loadTOML", load_toml, None),
+            Arg("loadJSON", load_json, None),
+        ]
+        _ctx = self._select("moduleManifest", _args)
+        return ModuleManifest(_ctx)
 
     def module_source(
         self,
@@ -15611,6 +15733,35 @@ class Workspace(Type):
         _ctx = self._select("cwd", _args)
         return await _ctx.execute(str)
 
+    async def detect_scope(self, sdk: str) -> str:
+        """Return the selected SDK module's current scope at this workspace
+        location.
+
+        Parameters
+        ----------
+        sdk:
+            SDK name to probe. Required.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("sdk", sdk),
+        ]
+        _ctx = self._select("detectScope", _args)
+        return await _ctx.execute(str)
+
     def directory(
         self,
         path: str,
@@ -16092,6 +16243,34 @@ class Workspace(Type):
         _ctx = self._select("withChanges", _args)
         return Workspace(_ctx)
 
+    def with_client(
+        self,
+        module: str,
+        sdk: str,
+        *,
+        settings: JSON | None = None,
+    ) -> Self:
+        """Return this workspace with a generated module client added to its
+        detected scope.
+
+        Parameters
+        ----------
+        module:
+            Installed module name, local path, or module address to generate a
+            client for.
+        sdk:
+            SDK name to use. Required.
+        settings:
+            Explicit SDK-module constructor setting overrides for this scope.
+        """
+        _args = [
+            Arg("module", module),
+            Arg("sdk", sdk),
+            Arg("settings", settings, None),
+        ]
+        _ctx = self._select("withClient", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -16171,96 +16350,66 @@ class Workspace(Type):
         _ctx = self._select("withDirectory", _args)
         return Workspace(_ctx)
 
-    def with_init_client(
+    def with_file(
         self,
         path: str,
-        sdk: str,
-        module: str,
+        source: File,
         *,
-        args: JSON | None = None,
-        here: bool | None = False,
-        no_generate: bool | None = False,
+        permissions: int | None = None,
     ) -> Self:
-        """Return this workspace with a generated API client initialized.
-
-        The SDK's generators run for the new client, so the returned workspace
-        carries its generated bindings.
+        """Return this workspace with a file added or replaced, without mutating
+        the source.
 
         Parameters
         ----------
         path:
-            Output directory for the generated client, relative to the
-            workspace cwd; a leading "/" is relative to the workspace root.
-        sdk:
-            Workspace SDK name or module entry name to use.
-        module:
-            Workspace-relative path or canonical ref for the module the client
-            binds to.
-        args:
-            SDK-specific init arguments.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        no_generate:
-            Skip running the SDK's generators for the new client.
+            Destination path. Relative paths resolve from the workspace cwd.
+        source:
+            File to add.
+        permissions:
+            Permissions of the added file. Defaults to the source file
+            permissions.
         """
         _args = [
             Arg("path", path),
-            Arg("sdk", sdk),
-            Arg("module", module),
-            Arg("args", args, None),
-            Arg("here", here, False),
-            Arg("noGenerate", no_generate, False),
+            Arg("source", source),
+            Arg("permissions", permissions, None),
         ]
-        _ctx = self._select("withInitClient", _args)
+        _ctx = self._select("withFile", _args)
         return Workspace(_ctx)
 
     def with_init_module(
         self,
-        name: str,
         sdk: str,
         *,
+        name: str | None = "",
         path: str | None = "",
-        source: str | None = "",
-        include: list[str] | None = None,
-        args: JSON | None = None,
-        here: bool | None = False,
-        no_generate: bool | None = False,
+        settings: JSON | None = None,
     ) -> Self:
-        """Return this workspace with a new module initialized.
+        """Return this workspace with a location initialized as a module scope.
 
-        The SDK's generators run for the new module, so the returned workspace
-        carries the generated code it needs to be loadable.
+        The selected SDK module records the scope and generates the module
+        source.
 
         Parameters
         ----------
-        name:
-            Name of the new module.
         sdk:
-            Workspace SDK name or module entry name to use.
+            Workspace SDK name or module entry name to use. Required.
+        name:
+            Module name. The engine infers it from path, the active config
+            file, or the workspace root when omitted.
         path:
-            Path for the new module, relative to the workspace cwd; a leading
-            "/" is relative to the workspace root. Defaults to
-            .dagger/modules/<name> beside the workspace config.
-        source:
-            Source subpath within the new module.
-        include:
-            Additional include patterns for the module.
-        args:
-            SDK-specific init arguments.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        no_generate:
-            Skip running the SDK's generators for the new module.
+            Module path relative to the workspace cwd, or an absolute
+            workspace path. Defaults to .dagger/modules/<name> beside the
+            active workspace config.
+        settings:
+            Explicit SDK-module constructor setting overrides for this scope.
         """
         _args = [
-            Arg("name", name),
             Arg("sdk", sdk),
+            Arg("name", name, ""),
             Arg("path", path, ""),
-            Arg("source", source, ""),
-            Arg("include", [] if include is None else include, []),
-            Arg("args", args, None),
-            Arg("here", here, False),
-            Arg("noGenerate", no_generate, False),
+            Arg("settings", settings, None),
         ]
         _ctx = self._select("withInitModule", _args)
         return Workspace(_ctx)
@@ -16411,8 +16560,8 @@ class Workspace(Type):
         here:
             Write to the workspace config directory at the workspace cwd.
         as_sdk_name:
-            User-facing SDK name to persist under `[modules.<name>.as-sdk]
-            name = ...`.
+            Optional override for the SDK name conventionally derived from the
+            installed module name.
         """
         _args = [
             Arg("ref", ref),
@@ -16423,10 +16572,77 @@ class Workspace(Type):
         _ctx = self._select("withSDK", _args)
         return Workspace(_ctx)
 
-    def with_updated_lock(self) -> Self:
-        """Return this workspace with refreshed lockfile state."""
-        _args: list[Arg] = []
+    def with_updated_clients(
+        self,
+        *,
+        modules: list[str] | None = None,
+        all: bool | None = False,
+        sdk: str | None = "",
+    ) -> Self:
+        """Return this workspace with the selected module clients updated.
+
+        The engine re-reads the source of each selected client target and
+        writes the lock entries that those targets reach.
+
+        The selected SDK module then regenerates every scope that owns one of
+        the targets.
+
+        Parameters
+        ----------
+        modules:
+            Recorded client targets to update. All targets in the selected
+            scopes are updated when omitted.
+        all:
+            Select clients in every scope instead of only the scopes
+            containing the workspace cwd.
+        sdk:
+            Optional SDK name. All installed SDK modules are selected when
+            omitted.
+        """
+        _args = [
+            Arg("modules", [] if modules is None else modules, []),
+            Arg("all", all, False),
+            Arg("sdk", sdk, ""),
+        ]
+        _ctx = self._select("withUpdatedClients", _args)
+        return Workspace(_ctx)
+
+    def with_updated_lock(
+        self,
+        *,
+        no_generate: bool | None = False,
+    ) -> Self:
+        """Return this workspace with refreshed lockfile state.
+
+        SDK client scopes are regenerated unless noGenerate is true.
+
+        Parameters
+        ----------
+        no_generate:
+            Do not regenerate SDK client scopes.
+        """
+        _args = [
+            Arg("noGenerate", no_generate, False),
+        ]
         _ctx = self._select("withUpdatedLock", _args)
+        return Workspace(_ctx)
+
+    def with_updated_modules(self, *, names: list[str] | None = None) -> Self:
+        """Return this workspace with refreshed lockfile state for installed
+        modules.
+
+        An SDK client scope is regenerated when it targets an updated module.
+
+        Parameters
+        ----------
+        names:
+            Installed module names to refresh. An empty list refreshes all
+            installed modules.
+        """
+        _args = [
+            Arg("names", [] if names is None else names, []),
+        ]
+        _ctx = self._select("withUpdatedModules", _args)
         return Workspace(_ctx)
 
     def with_workdir(self, path: str) -> Self:
@@ -16442,6 +16658,23 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withWorkdir", _args)
+        return Workspace(_ctx)
+
+    def without_client(self, module: str) -> Self:
+        """Return this workspace with a module client removed from the current
+        scope.
+
+        The selected SDK module regenerates the complete scope.
+
+        Parameters
+        ----------
+        module:
+            The recorded target to remove.
+        """
+        _args = [
+            Arg("module", module),
+        ]
+        _ctx = self._select("withoutClient", _args)
         return Workspace(_ctx)
 
     def without_config_env(
@@ -17109,9 +17342,6 @@ __all__ = [
     "Cloud",
     "Container",
     "CurrentModule",
-    "CurrentModuleAsSDK",
-    "CurrentModuleAsSDKClient",
-    "CurrentModuleAsSDKModule",
     "DiffStat",
     "DiffStatKind",
     "Directory",
@@ -17162,6 +17392,7 @@ __all__ = [
     "ListTypeDef",
     "Module",
     "ModuleConfigClient",
+    "ModuleManifest",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",
