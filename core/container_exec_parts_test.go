@@ -82,10 +82,16 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	encoded, err := child.EncodePersistedObject(ctx, cache)
 	require.NoError(t, err)
 	var persisted struct {
-		Form string `json:"form"`
+		Metadata struct {
+			Consumed bool `json:"consumed"`
+		} `json:"metadata"`
+		Parts    map[dagql.PartKey]persistedContainerPart `json:"parts"`
+		LazyJSON json.RawMessage                          `json:"lazyJSON"`
 	}
 	require.NoError(t, json.Unmarshal(encoded.JSON, &persisted))
-	require.Equal(t, persistedContainerFormReady, persisted.Form)
+	require.True(t, persisted.Metadata.Consumed)
+	require.Empty(t, persisted.LazyJSON)
+	require.Equal(t, containerPartDirectory, persisted.Parts[ContainerPartMount("/ro")].Kind)
 }
 
 func newExecPartsTestChild(t *testing.T, baseRes dagql.ObjectResult[*Container], base *Container) *Container {

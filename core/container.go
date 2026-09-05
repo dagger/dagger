@@ -70,6 +70,9 @@ type Container struct {
 	// do not change container state can preserve it by returning the same value.
 	fromContentDigestSafe bool
 
+	// Allocated only when the internal container-part diagnostic is enabled.
+	partDiagnostics *containerPartDiagnostics
+
 	// The container's root filesystem.
 	FS *LazyAccessor[*Directory, *Container]
 
@@ -122,6 +125,11 @@ type Container struct {
 	DefaultArgs bool
 
 	Lazy Lazy[*Container]
+
+	// storedParts records completed values decoded from persistence. It is
+	// immutable after construction, survives Lazy clearing, and is not copied
+	// into schema children. Accessors hold only values opened in this process.
+	storedParts map[dagql.PartKey]containerStoredPart
 
 	// lazyOpMu orders the op-pointer reads that no group-state guard
 	// covers (the resolution-phase read and the direct narrow force,
@@ -492,13 +500,12 @@ type TmpfsMountSource struct {
 type ContainerMounts []ContainerMount
 
 type persistedContainerMountPayload struct {
-	Target               string          `json:"target"`
-	Readonly             bool            `json:"readonly,omitempty"`
-	Kind                 string          `json:"kind"`
-	Value                json.RawMessage `json:"value,omitempty"`
-	CacheSourceResultID  uint64          `json:"cacheSourceResultID,omitempty"`
-	VolumeSourceResultID uint64          `json:"volumeSourceResultID,omitempty"`
-	TmpfsSize            int             `json:"tmpfsSize,omitempty"`
+	Target               string `json:"target"`
+	Readonly             bool   `json:"readonly,omitempty"`
+	Kind                 string `json:"kind"`
+	CacheSourceResultID  uint64 `json:"cacheSourceResultID,omitempty"`
+	VolumeSourceResultID uint64 `json:"volumeSourceResultID,omitempty"`
+	TmpfsSize            int    `json:"tmpfsSize,omitempty"`
 }
 
 type persistedContainerSecretPayload struct {
@@ -516,11 +523,6 @@ type persistedContainerSocketPayload struct {
 }
 
 const (
-	persistedContainerValueFormMaterialized = "materialized"
-	persistedContainerValueFormPending      = "pending"
-)
-
-const (
 	persistedContainerMountKindDirectory = "directory"
 	persistedContainerMountKindFile      = "file"
 	persistedContainerMountKindCache     = "cache"
@@ -528,33 +530,18 @@ const (
 	persistedContainerMountKindTmpfs     = "tmpfs"
 )
 
-type persistedContainerDirectoryValue struct {
-	Form  string          `json:"form"`
-	Value json.RawMessage `json:"value"`
-}
-
-type persistedContainerFileValue struct {
-	Form  string          `json:"form"`
-	Value json.RawMessage `json:"value"`
-}
-
-type decodedContainerDirectoryValue struct {
-	Dir  *Directory
-	Kind string
-}
-
-type decodedContainerFileValue struct {
-	File *File
-	Kind string
-}
-
-type decodedContainerMount struct {
-	Kind string
-}
-
 type persistedContainerPayload struct {
-	Form               string                              `json:"form"`
-	FS                 json.RawMessage                     `json:"fs,omitempty"`
+	Metadata persistedContainerMetadata               `json:"metadata"`
+	Parts    map[dagql.PartKey]persistedContainerPart `json:"parts"`
+	LazyJSON json.RawMessage                          `json:"lazyJSON,omitempty"`
+}
+
+type persistedContainerMetadata struct {
+	Consumed bool                            `json:"consumed"`
+	Value    persistedContainerMetadataValue `json:"value"`
+}
+
+type persistedContainerMetadataValue struct {
 	Config             dockerspec.DockerOCIImageConfig     `json:"config"`
 	EnabledGPUs        []string                            `json:"enabledGPUs,omitempty"`
 	Mounts             []persistedContainerMountPayload    `json:"mounts,omitempty"`
@@ -569,13 +556,7 @@ type persistedContainerPayload struct {
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
-	LazyJSON           json.RawMessage                     `json:"lazyJSON,omitempty"`
 }
-
-const (
-	persistedContainerFormReady = "ready"
-	persistedContainerFormLazy  = "lazy"
-)
 
 type persistedContainerWithEntrypointLazy struct {
 	ParentResultID  uint64   `json:"parentResultID"`
@@ -1275,56 +1256,29 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 			}
 		}
 	}
+	for _, stored := range container.storedParts {
+		if stored.SnapshotID != "" {
+			link := dagql.PersistedSnapshotRefLink{RefKey: stored.SnapshotID, Role: stored.Role}
+			if !slices.Contains(links, link) {
+				links = append(links, link)
+			}
+		}
+	}
 	return links
 }
 
 func (container *Container) CacheUsageIdentities() []string {
-	if container == nil {
-		return nil
-	}
-
 	seen := make(map[string]struct{})
-	identities := make([]string, 0, 1+len(container.Mounts)*2)
-	add := func(identity string) {
-		if identity == "" {
-			return
+	var identities []string
+	for _, link := range container.PersistedSnapshotRefLinks() {
+		if link.RefKey == "" {
+			continue
 		}
-		if _, ok := seen[identity]; ok {
-			return
-		}
-		seen[identity] = struct{}{}
-		identities = append(identities, identity)
-	}
-
-	if container.MetaSnapshot != nil {
-		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
-			add(snapshot.SnapshotID())
+		if _, ok := seen[link.RefKey]; !ok {
+			seen[link.RefKey] = struct{}{}
+			identities = append(identities, link.RefKey)
 		}
 	}
-	if container.FS != nil {
-		if dir, ok := container.FS.Peek(); ok && dir != nil {
-			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-				add(snapshot.SnapshotID())
-			}
-		}
-	}
-	for _, mnt := range container.Mounts {
-		if mnt.DirectorySource != nil {
-			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-					add(snapshot.SnapshotID())
-				}
-			}
-		}
-		if mnt.FileSource != nil {
-			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
-					add(snapshot.SnapshotID())
-				}
-			}
-		}
-	}
-
 	slices.Sort(identities)
 	return identities
 }
@@ -1403,128 +1357,17 @@ func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dag
 	return size, true, nil
 }
 
-func remapContainerSnapshotLinks(links []dagql.PersistedSnapshotRefLink, role string) []dagql.PersistedSnapshotRefLink {
-	if len(links) == 0 {
-		return nil
-	}
-	remapped := make([]dagql.PersistedSnapshotRefLink, 0, len(links))
-	for _, link := range links {
-		if link.Role != "snapshot" {
-			continue
-		}
-		remapped = append(remapped, dagql.PersistedSnapshotRefLink{
-			RefKey: link.RefKey,
-			Role:   role,
-		})
-	}
-	return remapped
-}
-
-func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.PersistedObjectCache, dir *Directory, role string) (json.RawMessage, []dagql.PersistedSnapshotRefLink, error) {
-	if dir == nil {
-		encoded, err := json.Marshal(persistedContainerDirectoryValue{Form: persistedContainerValueFormPending})
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal pending container directory value: %w", err)
-		}
-		return encoded, nil, nil
-	}
-	encoding, err := dir.EncodePersistedObject(ctx, cache)
-	if err != nil {
-		return nil, nil, err
-	}
-	encoded, err := json.Marshal(persistedContainerDirectoryValue{
-		Form:  persistedContainerValueFormMaterialized,
-		Value: encoding.JSON,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return encoded, remapContainerSnapshotLinks(encoding.SnapshotLinks, role), nil
-}
-
-func encodePersistedContainerFileValue(ctx context.Context, cache dagql.PersistedObjectCache, file *File, role string) (json.RawMessage, []dagql.PersistedSnapshotRefLink, error) {
-	if file == nil {
-		encoded, err := json.Marshal(persistedContainerFileValue{Form: persistedContainerValueFormPending})
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal pending container file value: %w", err)
-		}
-		return encoded, nil, nil
-	}
-	encoding, err := file.EncodePersistedObject(ctx, cache)
-	if err != nil {
-		return nil, nil, err
-	}
-	encoded, err := json.Marshal(persistedContainerFileValue{
-		Form:  persistedContainerValueFormMaterialized,
-		Value: encoding.JSON,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return encoded, remapContainerSnapshotLinks(encoding.SnapshotLinks, role), nil
-}
-
-func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
-	var wrapped persistedContainerDirectoryValue
-	if err := json.Unmarshal(payload, &wrapped); err != nil {
-		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: %w", err)
-	}
-	if wrapped.Form == "" {
-		wrapped.Form = persistedContainerValueFormMaterialized
-		wrapped.Value = payload
-	}
-
-	switch wrapped.Form {
-	case persistedContainerValueFormPending:
-		return decodedContainerDirectoryValue{Dir: nil, Kind: wrapped.Form}, nil
-	case persistedContainerValueFormMaterialized:
-		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
-		if err != nil {
-			return decodedContainerDirectoryValue{}, err
-		}
-		return decodedContainerDirectoryValue{Dir: dir, Kind: wrapped.Form}, nil
-	default:
-		return decodedContainerDirectoryValue{}, fmt.Errorf("decode persisted container directory value: unsupported form %q", wrapped.Form)
-	}
-}
-
-func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerFileValue, error) {
-	var wrapped persistedContainerFileValue
-	if err := json.Unmarshal(payload, &wrapped); err != nil {
-		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: %w", err)
-	}
-	if wrapped.Form == "" {
-		wrapped.Form = persistedContainerValueFormMaterialized
-		wrapped.Value = payload
-	}
-
-	switch wrapped.Form {
-	case persistedContainerValueFormPending:
-		return decodedContainerFileValue{File: nil, Kind: wrapped.Form}, nil
-	case persistedContainerValueFormMaterialized:
-		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
-		if err != nil {
-			return decodedContainerFileValue{}, err
-		}
-		return decodedContainerFileValue{File: file, Kind: wrapped.Form}, nil
-	default:
-		return decodedContainerFileValue{}, fmt.Errorf("decode persisted container file value: unsupported form %q", wrapped.Form)
-	}
-}
-
 //nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
-func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (container *Container) encodeContainerMetadata(ctx context.Context, cache dagql.PersistedObjectCache) (persistedContainerMetadataValue, error) {
 	if container == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
+		return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container: nil container")
 	}
 	services, err := encodePersistedServiceBindings(cache, "container", container.Services)
 	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
+		return persistedContainerMetadataValue{}, err
 	}
 
-	var snapshotLinks []dagql.PersistedSnapshotRefLink
-	payload := persistedContainerPayload{
-		Form:               persistedContainerFormReady,
+	payload := persistedContainerMetadataValue{
 		Config:             container.Config,
 		EnabledGPUs:        slices.Clone(container.EnabledGPUs),
 		Mounts:             make([]persistedContainerMountPayload, 0, len(container.Mounts)),
@@ -1540,35 +1383,8 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
 	}
-	if lazy := container.lazyOpForRouting(); lazy != nil {
-		lazyJSON, err := lazy.EncodePersisted(ctx, cache)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
-		}
-		payload.Form = persistedContainerFormLazy
-		payload.LazyJSON = lazyJSON
-	}
-	if container.MetaSnapshot != nil {
-		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
-			snapshotLinks = append(snapshotLinks, dagql.PersistedSnapshotRefLink{
-				RefKey: snapshot.SnapshotID(),
-				Role:   "meta",
-			})
-		}
-	}
-	if container.FS != nil {
-		fsValue, ok := container.FS.Peek()
-		if ok && fsValue != nil {
-			encoded, links, err := encodePersistedContainerDirectoryValue(ctx, cache, fsValue, "fs")
-			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
-			}
-			payload.FS = encoded
-			snapshotLinks = append(snapshotLinks, links...)
-		}
-	}
 
-	for i, mnt := range container.Mounts {
+	for _, mnt := range container.Mounts {
 		encoded := persistedContainerMountPayload{
 			Target:   mnt.Target,
 			Readonly: mnt.Readonly,
@@ -1576,50 +1392,34 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		switch {
 		case mnt.DirectorySource != nil:
 			encoded.Kind = persistedContainerMountKindDirectory
-			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				val, links, err := encodePersistedContainerDirectoryValue(ctx, cache, dir, fmt.Sprintf("mount_dir:%d", i))
-				if err != nil {
-					return dagql.PersistedObjectEncoding{}, err
-				}
-				encoded.Value = val
-				snapshotLinks = append(snapshotLinks, links...)
-			}
 		case mnt.FileSource != nil:
 			encoded.Kind = persistedContainerMountKindFile
-			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				val, links, err := encodePersistedContainerFileValue(ctx, cache, file, fmt.Sprintf("mount_file:%d", i))
-				if err != nil {
-					return dagql.PersistedObjectEncoding{}, err
-				}
-				encoded.Value = val
-				snapshotLinks = append(snapshotLinks, links...)
-			}
 		case mnt.CacheSource != nil:
 			encoded.Kind = persistedContainerMountKindCache
 			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedContainerMetadataValue{}, err
 			}
 			encoded.CacheSourceResultID = id
 		case mnt.VolumeSource != nil:
 			encoded.Kind = persistedContainerMountKindVolume
 			id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedContainerMetadataValue{}, err
 			}
 			encoded.VolumeSourceResultID = id
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
 		default:
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
+			return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
 		payload.Mounts = append(payload.Mounts, encoded)
 	}
 	for _, secret := range container.Secrets {
 		secretID, err := encodePersistedObjectRef(cache, secret.Secret, "container secret")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedContainerMetadataValue{}, err
 		}
 		payload.Secrets = append(payload.Secrets, persistedContainerSecretPayload{
 			SecretResultID: secretID,
@@ -1632,7 +1432,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	for _, socket := range container.Sockets {
 		sourceID, err := encodePersistedObjectRef(cache, socket.Source, "container socket")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedContainerMetadataValue{}, err
 		}
 		payload.Sockets = append(payload.Sockets, persistedContainerSocketPayload{
 			SourceResultID: sourceID,
@@ -1641,72 +1441,29 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		})
 	}
 
-	enc, err := json.Marshal(payload)
-	if err != nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container payload: %w", err)
-	}
-	return dagql.PersistedObjectEncoding{
-		JSON:          enc,
-		SnapshotLinks: snapshotLinks,
-	}, nil
+	return payload, nil
 }
 
 //nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
-	var persisted persistedContainerPayload
-	if err := json.Unmarshal(payload, &persisted); err != nil {
+	var envelope persistedContainerPayload
+	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
 	}
-	if persisted.Form == "" {
-		persisted.Form = persistedContainerFormReady
-	}
-
+	persisted := envelope.Metadata.Value
 	fs := new(LazyAccessor[*Directory, *Container])
-	var decodedRootFS decodedContainerDirectoryValue
-	if len(persisted.FS) > 0 {
-		rootfs, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, "fs", persisted.FS)
-		if err != nil {
-			return nil, err
-		}
-		decodedRootFS = rootfs
-		if rootfs.Dir != nil {
-			fs.setValue(rootfs.Dir)
-		}
-	}
 
 	mounts := make(ContainerMounts, 0, len(persisted.Mounts))
-	decodedMounts := make([]decodedContainerMount, 0, len(persisted.Mounts))
 	for _, persistedMount := range persisted.Mounts {
 		mnt := ContainerMount{
 			Target:   persistedMount.Target,
 			Readonly: persistedMount.Readonly,
 		}
-		decodedMount := decodedContainerMount{Kind: persistedMount.Kind}
 		switch persistedMount.Kind {
 		case persistedContainerMountKindDirectory:
 			mnt.DirectorySource = new(LazyAccessor[*Directory, *Container])
-			if len(persistedMount.Value) > 0 {
-				dirVal, err := decodePersistedContainerDirectoryValue(ctx, dag, resultID, fmt.Sprintf("mount_dir:%d", len(mounts)), persistedMount.Value)
-				if err != nil {
-					return nil, err
-				}
-				decodedMount.Kind = dirVal.Kind
-				if dirVal.Dir != nil {
-					mnt.DirectorySource.setValue(dirVal.Dir)
-				}
-			}
 		case persistedContainerMountKindFile:
 			mnt.FileSource = new(LazyAccessor[*File, *Container])
-			if len(persistedMount.Value) > 0 {
-				fileVal, err := decodePersistedContainerFileValue(ctx, dag, resultID, fmt.Sprintf("mount_file:%d", len(mounts)), persistedMount.Value)
-				if err != nil {
-					return nil, err
-				}
-				decodedMount.Kind = fileVal.Kind
-				if fileVal.File != nil {
-					mnt.FileSource.setValue(fileVal.File)
-				}
-			}
 		case persistedContainerMountKindCache:
 			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
 			if err != nil {
@@ -1725,7 +1482,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			return nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
 		}
 		mounts = append(mounts, mnt)
-		decodedMounts = append(decodedMounts, decodedMount)
 	}
 	secrets := make([]ContainerSecret, 0, len(persisted.Secrets))
 	for _, persistedSecret := range persisted.Secrets {
@@ -1763,17 +1519,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	if err != nil {
 		return nil, err
 	}
-	for _, link := range links {
-		if link.Role != "meta" {
-			continue
-		}
-		metaSnapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", "meta")
-		if err != nil {
-			return nil, err
-		}
-		metaAccessor.setValue(metaSnapshot)
-		break
-	}
 
 	container := &Container{
 		FS:                 fs,
@@ -1793,14 +1538,18 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
 	}
-	if persisted.Form != persistedContainerFormLazy {
-		return container, nil
+	var recipe Lazy[*Container]
+	if len(envelope.LazyJSON) != 0 {
+		if call == nil {
+			return nil, fmt.Errorf("decode persisted container: missing call for recipe")
+		}
+		recipe, err = decodePersistedContainerRecipe(ctx, dag, call, envelope.LazyJSON)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if call == nil {
-		return nil, fmt.Errorf("decode persisted container payload: missing call for lazy form")
-	}
-	if err := decodePersistedContainerLazy(ctx, dag, call, container, persisted.LazyJSON, decodedRootFS, decodedMounts); err != nil {
-		return nil, err
+	if err := container.installContainerParts(ctx, dag, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
+		return nil, fmt.Errorf("decode persisted container: %w", err)
 	}
 	return container, nil
 }
@@ -4619,273 +4368,254 @@ func (lazy *ContainerImportLazy) EncodePersisted(ctx context.Context, cache dagq
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func decodePersistedContainerLazy(
+func decodePersistedContainerRecipe(
 	ctx context.Context,
 	dag *dagql.Server,
 	call *dagql.ResultCall,
-	container *Container,
 	payload json.RawMessage,
-	decodedRootFS decodedContainerDirectoryValue,
-	decodedMounts []decodedContainerMount,
-) error {
+) (Lazy[*Container], error) {
 	switch call.Field {
 	case "withEntrypoint":
 		var persisted persistedContainerWithEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withEntrypoint lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withEntrypoint lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEntrypoint parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithEntrypointLazy{
+		return &ContainerWithEntrypointLazy{
 			LazyState:       NewLazyState(),
 			Parent:          parent,
 			Args:            persisted.Args,
 			KeepDefaultArgs: persisted.KeepDefaultArgs,
-		}
-		return nil
+		}, nil
 	case "withoutEntrypoint":
 		var persisted persistedContainerWithoutEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutEntrypoint lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutEntrypoint lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEntrypoint parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutEntrypointLazy{
+		return &ContainerWithoutEntrypointLazy{
 			LazyState:       NewLazyState(),
 			Parent:          parent,
 			KeepDefaultArgs: persisted.KeepDefaultArgs,
-		}
-		return nil
+		}, nil
 	case "withDefaultArgs":
 		var persisted persistedContainerWithDefaultArgsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withDefaultArgs lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withDefaultArgs lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultArgs parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithDefaultArgsLazy{
+		return &ContainerWithDefaultArgsLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Args:      persisted.Args,
-		}
-		return nil
+		}, nil
 	case "withoutDefaultArgs":
 		var persisted persistedContainerWithoutDefaultArgsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutDefaultArgs lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutDefaultArgs lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutDefaultArgs parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutDefaultArgsLazy{
+		return &ContainerWithoutDefaultArgsLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
-		}
-		return nil
+		}, nil
 	case "withUser":
 		var persisted persistedContainerWithUserLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withUser lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withUser lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withUser parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithUserLazy{
+		return &ContainerWithUserLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withoutUser":
 		var persisted persistedContainerWithoutUserLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutUser lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutUser lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutUser parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutUserLazy{
+		return &ContainerWithoutUserLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
-		}
-		return nil
+		}, nil
 	case "withWorkdir":
 		var persisted persistedContainerWithWorkdirLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withWorkdir lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withWorkdir lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withWorkdir parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithWorkdirLazy{
+		return &ContainerWithWorkdirLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Path:      persisted.Path,
 			Expand:    persisted.Expand,
-		}
-		return nil
+		}, nil
 	case "withoutWorkdir":
 		var persisted persistedContainerWithoutWorkdirLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutWorkdir lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutWorkdir lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutWorkdir parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutWorkdirLazy{
+		return &ContainerWithoutWorkdirLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
-		}
-		return nil
+		}, nil
 	case "withEnvVariable":
 		var persisted persistedContainerWithEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withEnvVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withEnvVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithEnvVariableLazy{
+		return &ContainerWithEnvVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
 			Value:     persisted.Value,
 			Expand:    persisted.Expand,
-		}
-		return nil
+		}, nil
 	case "withEnvFileVariables":
 		var persisted persistedContainerWithEnvFileVariablesLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withEnvFileVariables lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withEnvFileVariables lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvFileVariables parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*EnvFile](ctx, dag, persisted.SourceResultID, "container withEnvFileVariables source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithEnvFileVariablesLazy{
+		return &ContainerWithEnvFileVariablesLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Source:    source,
-		}
-		return nil
+		}, nil
 	case "__withSystemEnvVariable":
 		var persisted persistedContainerWithSystemEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withSystemEnvVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withSystemEnvVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSystemEnvVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithSystemEnvVariableLazy{
+		return &ContainerWithSystemEnvVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withVolatileVariable":
 		var persisted persistedContainerWithVolatileVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolatileVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithVolatileVariableLazy{
+		return &ContainerWithVolatileVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
 			Value:     persisted.Value,
-		}
-		return nil
+		}, nil
 	case "withoutEnvVariable":
 		var persisted persistedContainerWithoutEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutEnvVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutEnvVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEnvVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutEnvVariableLazy{
+		return &ContainerWithoutEnvVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withoutVolatileVariable":
 		var persisted persistedContainerWithoutVolatileVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutVolatileVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutVolatileVariableLazy{
+		return &ContainerWithoutVolatileVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withLabel":
 		var persisted persistedContainerWithLabelLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withLabel lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withLabel lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withLabel parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithLabelLazy{
+		return &ContainerWithLabelLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
 			Value:     persisted.Value,
-		}
-		return nil
+		}, nil
 	case "withoutLabel":
 		var persisted persistedContainerWithoutLabelLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutLabel lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutLabel lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutLabel parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutLabelLazy{
+		return &ContainerWithoutLabelLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "__withImageConfigMetadata":
 		var persisted persistedContainerWithImageConfigMetadataLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withImageConfigMetadata lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withImageConfigMetadata lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withImageConfigMetadata parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithImageConfigMetadataLazy{
+		return &ContainerWithImageConfigMetadataLazy{
 			LazyState:   NewLazyState(),
 			Parent:      parent,
 			Healthcheck: persisted.Healthcheck,
@@ -4893,192 +4623,180 @@ func decodePersistedContainerLazy(
 			Shell:       persisted.Shell,
 			Volumes:     persisted.Volumes,
 			StopSignal:  persisted.StopSignal,
-		}
-		return nil
+		}, nil
 	case "withDockerHealthcheck":
 		var persisted persistedContainerWithHealthcheckLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withHealthcheck lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withHealthcheck lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withHealthcheck parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithHealthcheckLazy{
+		return &ContainerWithHealthcheckLazy{
 			LazyState:   NewLazyState(),
 			Parent:      parent,
 			Healthcheck: persisted.Healthcheck,
-		}
-		return nil
+		}, nil
 	case "withoutDockerHealthcheck":
 		var persisted persistedContainerWithoutHealthcheckLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutHealthcheck lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutHealthcheck lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutHealthcheck parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutHealthcheckLazy{
+		return &ContainerWithoutHealthcheckLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
-		}
-		return nil
+		}, nil
 	case "experimentalWithGPU", "experimentalWithAllGPUs":
 		var persisted persistedContainerSetGPUsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container setGPUs parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerSetGPUsLazy{
+		return &ContainerSetGPUsLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Devices:   persisted.Devices,
-		}
-		return nil
+		}, nil
 	case "withAnnotation":
 		var persisted persistedContainerWithAnnotationLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withAnnotation lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withAnnotation lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withAnnotation parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithAnnotationLazy{
+		return &ContainerWithAnnotationLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
 			Value:     persisted.Value,
-		}
-		return nil
+		}, nil
 	case "withoutAnnotation":
 		var persisted persistedContainerWithoutAnnotationLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutAnnotation lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutAnnotation lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutAnnotation parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutAnnotationLazy{
+		return &ContainerWithoutAnnotationLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withSecretVariable":
 		var persisted persistedContainerWithSecretVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withSecretVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withSecretVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSecretVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SecretResultID, "container withSecretVariable secret")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithSecretVariableLazy{
+		return &ContainerWithSecretVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
 			Secret:    secret,
-		}
-		return nil
+		}, nil
 	case "withoutSecretVariable":
 		var persisted persistedContainerWithoutSecretVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutSecretVariable lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutSecretVariable lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutSecretVariable parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutSecretVariableLazy{
+		return &ContainerWithoutSecretVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
-		}
-		return nil
+		}, nil
 	case "withServiceBinding":
 		var persisted persistedContainerWithServiceBindingLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withServiceBinding lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withServiceBinding lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withServiceBinding parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		svc, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.ServiceResultID, "container withServiceBinding service")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithServiceBindingLazy{
+		return &ContainerWithServiceBindingLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Service:   svc,
 			Alias:     persisted.Alias,
-		}
-		return nil
+		}, nil
 	case "withExposedPort":
 		var persisted persistedContainerWithExposedPortLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withExposedPort lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withExposedPort lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withExposedPort parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithExposedPortLazy{
+		return &ContainerWithExposedPortLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Port:      persisted.Port,
-		}
-		return nil
+		}, nil
 	case "withoutExposedPort":
 		var persisted persistedContainerWithoutExposedPortLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutExposedPort lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutExposedPort lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutExposedPort parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutExposedPortLazy{
+		return &ContainerWithoutExposedPortLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Port:      persisted.Port,
 			Protocol:  persisted.Protocol,
-		}
-		return nil
+		}, nil
 	case "withDefaultTerminalCmd":
 		var persisted persistedContainerWithDefaultTerminalCmdLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultTerminalCmd parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithDefaultTerminalCmdLazy{
+		return &ContainerWithDefaultTerminalCmdLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Opts:      persisted.Opts,
-		}
-		return nil
+		}, nil
 	case "from":
 		var persisted persistedContainerFromLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container from lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container from lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container from parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		lazy := &ContainerFromImageRefLazy{
 			Parent:            parent,
@@ -5093,326 +4811,309 @@ func decodePersistedContainerLazy(
 		if len(persisted.RegistryServices) > 0 {
 			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			lazy.RegistryServices = services
 		}
-		container.Lazy = lazy
-		return nil
+		return lazy, nil
 	case "withRootfs":
 		var persisted persistedContainerWithRootFSLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withRootfs lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withRootfs lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withRootfs parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withRootfs source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithRootFSLazy{
+		return &ContainerWithRootFSLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Source:    source,
-		}
-		return nil
+		}, nil
 	case "withDirectory":
 		var persisted persistedContainerWithDirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withDirectory lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withDirectory lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDirectory parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withDirectory source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithDirectoryLazy{
+		return &ContainerWithDirectoryLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Path:      persisted.Path,
 			Source:    source,
 			Filter:    persisted.Filter,
 			Owner:     persisted.Owner,
-		}
-		return nil
+		}, nil
 	case "withFile", "withNewFile":
 		var persisted persistedContainerWithFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container %s lazy payload: %w", call.Field, err)
+			return nil, fmt.Errorf("decode persisted container %s lazy payload: %w", call.Field, err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container "+call.Field+" parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container "+call.Field+" source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithFileLazy{
+		return &ContainerWithFileLazy{
 			LazyState:   NewLazyState(),
 			Parent:      parent,
 			Path:        persisted.Path,
 			Source:      source,
 			Permissions: persisted.Permissions,
 			Owner:       persisted.Owner,
-		}
-		return nil
+		}, nil
 	case "withMountedDirectory":
 		var persisted persistedContainerWithMountedDirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedDirectory lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedDirectory lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedDirectory parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedDirectory source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedDirectoryLazy{
+		return &ContainerWithMountedDirectoryLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Source:    source,
 			Owner:     persisted.Owner,
 			Readonly:  persisted.Readonly,
-		}
-		return nil
+		}, nil
 	case "withMountedFile":
 		var persisted persistedContainerWithMountedFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedFile lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedFile lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedFile parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container withMountedFile source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedFileLazy{
+		return &ContainerWithMountedFileLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Source:    source,
 			Owner:     persisted.Owner,
 			Readonly:  persisted.Readonly,
-		}
-		return nil
+		}, nil
 	case "__withMountedPathDockerfileCompat":
 		var persisted persistedContainerWithMountedPathDockerfileCompatLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedPathDockerfileCompat lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedPathDockerfileCompat lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedPathDockerfileCompat parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedPathDockerfileCompat source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedPathDockerfileCompatLazy{
+		return &ContainerWithMountedPathDockerfileCompatLazy{
 			LazyState:  NewLazyState(),
 			Parent:     parent,
 			Target:     persisted.Target,
 			Source:     source,
 			SourcePath: persisted.SourcePath,
 			Readonly:   persisted.Readonly,
-		}
-		return nil
+		}, nil
 	case "withMountedCache":
 		var persisted persistedContainerWithMountedCacheLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedCache lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedCache lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedCache parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cacheVolume, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persisted.CacheResultID, "container withMountedCache cache")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedCacheLazy{
+		return &ContainerWithMountedCacheLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Cache:     cacheVolume,
-		}
-		return nil
+		}, nil
 	case "withMountedVolume":
 		var persisted persistedContainerWithMountedVolumeLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedVolume lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedVolume lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedVolume parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		volume, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persisted.VolumeResultID, "container withMountedVolume volume")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedVolumeLazy{
+		return &ContainerWithMountedVolumeLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Volume:    volume,
 			Readonly:  persisted.Readonly,
-		}
-		return nil
+		}, nil
 	case "withMountedTemp":
 		var persisted persistedContainerWithMountedTempLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedTemp lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedTemp lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedTemp parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedTempLazy{
+		return &ContainerWithMountedTempLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Size:      persisted.Size,
-		}
-		return nil
+		}, nil
 	case "withMountedSecret":
 		var persisted persistedContainerWithMountedSecretLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withMountedSecret lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withMountedSecret lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedSecret parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SourceResultID, "container withMountedSecret source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithMountedSecretLazy{
+		return &ContainerWithMountedSecretLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Source:    source,
 			Owner:     persisted.Owner,
 			Mode:      persisted.Mode,
-		}
-		return nil
+		}, nil
 	case "withoutMount":
 		var persisted persistedContainerWithoutMountLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutMount lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutMount lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutMount parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutMountLazy{
+		return &ContainerWithoutMountLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
-		}
-		return nil
+		}, nil
 	case "withoutDirectory", "withoutFile", "withoutFiles":
 		var persisted persistedContainerWithoutPathLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutPath lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutPath lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutPath parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutPathLazy{
+		return &ContainerWithoutPathLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Path:      persisted.Path,
-		}
-		return nil
+		}, nil
 	case "withSymlink":
 		var persisted persistedContainerWithSymlinkLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withSymlink lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withSymlink lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSymlink parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithSymlinkLazy{
+		return &ContainerWithSymlinkLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			LinkPath:  persisted.LinkPath,
-		}
-		return nil
+		}, nil
 	case "withUnixSocket":
 		var persisted persistedContainerWithUnixSocketLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withUnixSocket lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withUnixSocket lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withUnixSocket parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dag, persisted.SourceResultID, "container withUnixSocket source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithUnixSocketLazy{
+		return &ContainerWithUnixSocketLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
 			Source:    source,
 			Owner:     persisted.Owner,
-		}
-		return nil
+		}, nil
 	case "withoutUnixSocket":
 		var persisted persistedContainerWithoutUnixSocketLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withoutUnixSocket lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container withoutUnixSocket lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutUnixSocket parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerWithoutUnixSocketLazy{
+		return &ContainerWithoutUnixSocketLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Target:    persisted.Target,
-		}
-		return nil
+		}, nil
 	case "import":
 		var persisted persistedContainerImportLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container import lazy payload: %w", err)
+			return nil, fmt.Errorf("decode persisted container import lazy payload: %w", err)
 		}
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container import parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container import source")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerImportLazy{
+		return &ContainerImportLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Source:    source,
 			Tag:       persisted.Tag,
-		}
-		return nil
+		}, nil
 	case "withExec":
-		return decodePersistedContainerExecLazy(ctx, dag, container, payload, decodedRootFS, decodedMounts)
+		return decodePersistedContainerExecLazy(ctx, dag, payload)
 	default:
-		return fmt.Errorf("decode persisted container lazy payload: unsupported field %q", call.Field)
+		return nil, fmt.Errorf("decode persisted container lazy payload: unsupported field %q", call.Field)
 	}
 }
 
@@ -5841,7 +5542,8 @@ func (container *Container) WithDirectory(
 	if err != nil {
 		return nil, err
 	}
-	if err := dir.WithDirectory(ctx, targetParent, mntSubpath, src, filter, resolvedOwner, nil); err != nil {
+	container.recordPartDiagnostic("writerBody", "")
+	if err := dir.withDirectory(ctx, targetParent, mntSubpath, src, filter, resolvedOwner, nil, container.directoryCommitObserver()); err != nil {
 		return nil, err
 	}
 	container.ImageRef = ""

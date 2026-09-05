@@ -210,6 +210,18 @@ type HasLazyEvaluationParts interface {
 	LazyEvalFuncForGroup(LazyGroupKey) LazyEvalFunc
 }
 
+// HasLazyEvaluationReporting distinguishes remaining computation from opening
+// an already computed local part. Operational evaluation and child construction
+// still use HasLazyEvaluation. These methods must not perform I/O or evaluation.
+type HasLazyEvaluationReporting interface {
+	HasPendingLazyComputation() bool
+
+	// LazyGroupStoredPart returns the saved part opened by this group, or the
+	// empty key for ordinary computation. The answer remains stable after body
+	// consumption and operation clearing, including bookkeeping-only retries.
+	LazyGroupStoredPart(LazyGroupKey) PartKey
+}
+
 // HasDependencyResults is implemented by resolver-returned values that embed
 // dependency results which must be normalized onto attached/cache-backed
 // results before lifecycle bookkeeping or persistence.
