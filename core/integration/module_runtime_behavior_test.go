@@ -216,8 +216,8 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		c2 := connect(ctx, t)
 		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		// Result-ID loads are gated on the session's bound resources, so the
-		// replay is refused at load time instead of being served and failing
+		// Result-ID loads check the session's bound resources, so the
+		// request is refused at load time instead of being served and failing
 		// later at plaintext resolution.
 		_, err = dagger.Ref[*dagger.Secret](c2, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)

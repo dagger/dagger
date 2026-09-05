@@ -143,8 +143,9 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 	return hashutil.HashStrings(inputs...).String(), nil
 }
 
-// Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
-// instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
+// Pipelines can query the same remote with different credentials (for example,
+// while checking a credential rotation), so scope the cache key by
+// authentication configuration rather than sharing entries across methods.
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {

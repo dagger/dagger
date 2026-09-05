@@ -72,7 +72,7 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
-	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session")
 
 	// Add the eager module loading flag to disable lazy load on runtime.
 	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")

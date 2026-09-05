@@ -69,7 +69,7 @@ func New(
 // stamping into built binaries. Errors are swallowed — a build proceeds with
 // whatever we collected (possibly nothing). Only the resolved scalars are
 // threaded onward; the Workspace itself is never stored or passed into a
-// build, which would taint the cache key of everything it touches.
+// build, which would make every affected cache key session-specific.
 func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bool) {
 	if ws == nil {
 		return "", false
