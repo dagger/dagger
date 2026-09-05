@@ -71,6 +71,7 @@ type EGraphDebugResult struct {
 
 type CacheDebugResult struct {
 	EGraphDebugResult
+	ValueState                            any              `json:"value_state,omitempty"`
 	ResultCall                            *ResultCall      `json:"result_call,omitempty"`
 	ResultCallRecipeDigest                string           `json:"result_call_recipe_digest,omitempty"`
 	ResultCallRecipeDigestError           string           `json:"result_call_recipe_digest_error,omitempty"`
@@ -1316,6 +1317,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 
 			if err := writeElem(CacheDebugResult{
+				ValueState: func() any {
+					if value, ok := UnwrapAs[interface{ CacheDebugValue() any }](state.self); ok {
+						return value.CacheDebugValue()
+					}
+					return nil
+				}(),
 				EGraphDebugResult: EGraphDebugResult{
 					SharedResultID:           uint64(res.id),
 					OutputEqClassIDs:         outputEqIDs,

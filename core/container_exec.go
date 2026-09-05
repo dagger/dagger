@@ -2260,6 +2260,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 
 		execErrCh := make(chan error, 1)
 		go func() {
+			container.recordPartDiagnostic("execRun", "")
 			execErrCh <- engineClient.Run(
 				execCtx,
 				"",
@@ -2367,34 +2368,30 @@ func execInputMounts(mounts ContainerMounts, parent *Container) (ContainerMounts
 func decodePersistedContainerExecLazy(
 	ctx context.Context,
 	dag *dagql.Server,
-	container *Container,
 	payload json.RawMessage,
-	decodedRootFS decodedContainerDirectoryValue,
-	decodedMounts []decodedContainerMount,
-) error {
+) (Lazy[*Container], error) {
 	var persisted persistedContainerExecLazy
 	if err := json.Unmarshal(payload, &persisted); err != nil {
-		return fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
+		return nil, fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
 	}
 	if persisted.VolatileCacheHitParentResultID != 0 {
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		container.Lazy = &ContainerVolatileExecCacheHitLazy{
+		return &ContainerVolatileExecCacheHitLazy{
 			LazyState:   NewLazyState(),
 			Parent:      parent,
 			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
-		}
-		return nil
+		}, nil
 	}
 	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "container exec module context")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	state := &ContainerExecState{
 		LazyState:     NewLazyState(),
@@ -2403,24 +2400,7 @@ func decodePersistedContainerExecLazy(
 		ExecMD:        persisted.ExecMD,
 		ModuleContext: moduleContext,
 	}
-	container.Lazy = &ContainerExecLazy{State: state}
-	container.ImageRef = ""
-	container.MetaSnapshot = new(LazyAccessor[bkcache.ImmutableRef, *Container])
-	if decodedRootFS.Kind == persistedContainerValueFormPending {
-		container.FS = new(LazyAccessor[*Directory, *Container])
-	}
-	for i, decodedMount := range decodedMounts {
-		if container.Mounts[i].Readonly || decodedMount.Kind != persistedContainerValueFormPending {
-			continue
-		}
-		switch {
-		case container.Mounts[i].DirectorySource != nil:
-			container.Mounts[i].DirectorySource = new(LazyAccessor[*Directory, *Container])
-		case container.Mounts[i].FileSource != nil:
-			container.Mounts[i].FileSource = new(LazyAccessor[*File, *Container])
-		}
-	}
-	return nil
+	return &ContainerExecLazy{State: state}, nil
 }
 
 func addDefaultEnvvar(env []string, k, v string) []string {

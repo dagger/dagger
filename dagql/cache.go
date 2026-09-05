@@ -136,7 +136,7 @@ type persistedEdge struct {
 // persisted as result refs. Older snapshots may hold untracked scalar handle
 // strings whose referents were never retained (and whose IDs may have been
 // reused), so they are wiped rather than imported.
-const cachePersistenceSchemaVersion = "17"
+const cachePersistenceSchemaVersion = "18"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -1056,6 +1056,39 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		}
 	}
 	return lazyEvalFuncOfResult(res) != nil
+}
+
+// HasPendingLazyComputation is a reporting query. Local stored-part opening
+// remains operational work, but does not turn completed computation pending.
+func HasPendingLazyComputation(res AnyResult) bool {
+	reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res)
+	if !ok {
+		return HasPendingLazyEvaluation(res)
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return false
+	}
+	shared.lazyMu.Lock()
+	defer shared.lazyMu.Unlock()
+	return pendingLazyComputationLocked(shared, reporting)
+}
+
+// Read attempts and owed bookkeeping before object consumption. Their purpose
+// belongs to the typed value and stays valid after its operation is cleared.
+func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluationReporting) bool {
+	if shared.lazyEvalComplete {
+		return false
+	}
+	if !shared.lazyWhole.settled() {
+		return true
+	}
+	for key, group := range shared.lazyPartGroups {
+		if reporting.LazyGroupStoredPart(key) == "" && !group.settled() {
+			return true
+		}
+	}
+	return reporting.HasPendingLazyComputation()
 }
 
 // acquireSessionArbitraryLocked records an arbitrary-value session edge and
@@ -3894,6 +3927,9 @@ func (g *lazyGroupState) settled() bool {
 // depends on Container.runLazyGroup consuming final parent delegations before
 // its callback returns. lazyMu must be held.
 func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool {
+	if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok {
+		return pendingLazyComputationLocked(shared, reporting)
+	}
 	for _, group := range shared.lazyPartGroups {
 		if !group.settled() || !group.complete {
 			return true
@@ -4088,8 +4124,12 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			lazyCallbackCtx = evalCtx
 			lazyIsResume    bool
 		)
+		var storedPart PartKey
+		if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok {
+			storedPart = reporting.LazyGroupStoredPart(group)
+		}
 		if OTelProfActive(evalCtx) && !producerSkip {
-			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall)
+			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
 			attempt.spanCtx = lazySpan.SpanContext()
 		}
 		g.attempt = attempt
@@ -4162,7 +4202,7 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 			// reporting stale partial work, while callers still observe an ended
 			// and exported span when their wait completes.
 			if lazySpan != nil {
-				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, &err)
+				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, &err)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
