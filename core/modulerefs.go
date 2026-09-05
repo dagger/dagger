@@ -68,6 +68,10 @@ func ParseRefString(
 			},
 		}, nil
 	case ModuleSourceKindGit:
+		refString, err := ResolveDaggerGetRedirect(ctx, refString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve module ref string: %w", err)
+		}
 		parsedGitRef, err := ParseGitRefString(ctx, refString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
@@ -91,6 +95,10 @@ func ParseRefString(
 	}
 
 	// Parse scheme and attempt to parse as git endpoint
+	refString, err := ResolveDaggerGetRedirect(ctx, refString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve module ref string: %w", err)
+	}
 	parsedGitRef, err := ParseGitRefString(ctx, refString)
 	switch {
 	case err == nil:

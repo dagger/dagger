@@ -171,18 +171,43 @@ func selectedSHAEntry(
 }
 
 func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (string, error) {
-	switch {
-	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationOCILatest:
+	if entry.Namespace != workspace.CoreLockNamespace {
+		return "", fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
+	}
+
+	switch entry.Operation {
+	case workspace.LockOperationOCILatest:
 		return updateOCILatestLockEntry(ctx, query, entry)
-	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationOCISHA:
+	case workspace.LockOperationOCISHA:
 		return updateOCISHALockEntry(ctx, query, entry)
-	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationGitLatest:
+	case workspace.LockOperationGitLatest:
 		return updateGitLatestLockEntry(ctx, entry)
-	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationGitSHA:
+	case workspace.LockOperationGitSHA:
 		return updateGitSHALockEntry(ctx, entry)
+	case workspace.LockOperationVanityURL:
+		return updateVanityURLLockEntry(ctx, entry)
 	default:
 		return "", fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
 	}
+}
+
+func updateVanityURLLockEntry(ctx context.Context, entry workspace.LookupEntry) (string, error) {
+	required, options, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s inputs %v: %w", entry.Operation, entry.Inputs, err)
+	}
+	if len(required) != 1 || len(options) != 0 {
+		return "", fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
+	}
+	sourceURL, ok := required[0].(string)
+	if !ok || sourceURL == "" {
+		return "", fmt.Errorf("invalid %s source URL %v", entry.Operation, required[0])
+	}
+	resolved := daggerGetProbe(ctx, sourceURL)
+	if resolved == sourceURL {
+		return "", fmt.Errorf("refresh vanity-url %q: no valid redirect received", sourceURL)
+	}
+	return resolved, nil
 }
 
 type ociLockInputs struct {

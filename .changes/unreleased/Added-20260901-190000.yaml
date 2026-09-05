@@ -1,0 +1,24 @@
+kind: Added
+body: |
+  Module and workspace refs now support an https vanity-URL redirect mechanism:
+  when resolving an https (or schemeless) ref, the engine probes
+  `<ref>?dagger-get=1` and, if the host answers with a single 3xx redirect to an
+  absolute https `Location` that echoes the `dagger-get=1` marker, resolution
+  continues at that destination (with only the `dagger-get` param stripped).
+  Any `@version`/`@sha` suffix is stripped before the probe and re-applied to
+  the destination; a version supplied by the redirect acts as a default that an
+  explicit caller version overrides. Redirects that do not echo the marker
+  (e.g. auth walls) or that merely canonicalize the same repository URL
+  (e.g. `repo.git` -> `repo`) are ignored.
+
+  Successful resolutions are recorded as `vanity-url` entries in the workspace
+  lockfile (keyed by the https source URL, shared by schemeless and explicit
+  refs) and are re-used from the lock thereafter; a server-side redirect change
+  takes effect on `dagger update`, which refreshes the entries and fails if a
+  locked vanity URL no longer returns a valid redirect. Without a lock entry,
+  results are cached per session. Resolution runs only when session
+  infrastructure is available; git-protocol, ssh, and http refs are untouched.
+time: 2026-09-01T19:00:00Z
+custom:
+  Author: marcosnils tiborvass
+  PR: ""

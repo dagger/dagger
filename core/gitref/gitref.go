@@ -226,6 +226,19 @@ func isSCPLike(ref string) bool {
 	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
 }
 
+// Scheme classifies the transport scheme of a ref string, including SCP-like
+// ("git@host:path") refs. It is a pure, network-free helper so callers can
+// decide eligibility (e.g. for the https-only dagger-get redirect probe)
+// without importing the engine.
+func Scheme(refString string) SchemeType {
+	refString = strings.Replace(refString, "#", "@", 1)
+	scheme, schemeless := parseScheme(refString)
+	if scheme == NoScheme && isSCPLike(schemeless) {
+		return SchemeSCPLike
+	}
+	return scheme
+}
+
 func parseScheme(refString string) (SchemeType, string) {
 	schemes := []SchemeType{
 		SchemeHTTP,

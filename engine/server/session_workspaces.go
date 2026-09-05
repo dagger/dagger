@@ -302,6 +302,14 @@ type workspaceRemoteRef struct {
 }
 
 func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRemoteRef, error) {
+	return parseWorkspaceRemoteRefWithResolver(ctx, remoteRef, core.ResolveDaggerGetRedirect)
+}
+
+func parseWorkspaceRemoteRefWithResolver(
+	ctx context.Context,
+	remoteRef string,
+	resolve func(context.Context, string) (string, error),
+) (workspaceRemoteRef, error) {
 	// Fragment refs are parsed via the same git URL parser used by Address.*.
 	if strings.Contains(remoteRef, "#") {
 		gitURL, err := gitutil.ParseURL(remoteRef)
@@ -318,14 +326,38 @@ func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRe
 		if err != nil {
 			return workspaceRemoteRef{}, fmt.Errorf("invalid git subdir in workspace ref %q: %w", remoteRef, err)
 		}
+		cloneRef := gitURL.Remote()
+		resolvedRef, err := resolve(ctx, cloneRef)
+		if err != nil {
+			return workspaceRemoteRef{}, err
+		}
+		if resolvedRef != cloneRef {
+			parsedRef, err := core.ParseGitRefString(ctx, resolvedRef)
+			if err != nil {
+				return workspaceRemoteRef{}, err
+			}
+			cloneRef = parsedRef.SourceCloneRef
+			resolvedSubdir := parsedRef.RepoRootSubdir
+			if resolvedSubdir == "/" {
+				resolvedSubdir = "."
+			}
+			workspaceSubdir, err = normalizeWorkspaceRemoteSubdir(filepath.Join(resolvedSubdir, workspaceSubdir))
+			if err != nil {
+				return workspaceRemoteRef{}, err
+			}
+		}
 		return workspaceRemoteRef{
-			cloneRef:        gitURL.Remote(),
+			cloneRef:        cloneRef,
 			version:         version,
 			workspaceSubdir: workspaceSubdir,
 		}, nil
 	}
 
 	// Preserve legacy @ref parsing semantics for existing workspace refs.
+	remoteRef, err := resolve(ctx, remoteRef)
+	if err != nil {
+		return workspaceRemoteRef{}, err
+	}
 	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
 	if err != nil {
 		return workspaceRemoteRef{}, err
