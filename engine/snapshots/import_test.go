@@ -702,3 +702,66 @@ func TestExportChainCanceledWaiter(t *testing.T) {
 	_, err = content.ReadBlob(ctx, exported.chain.Provider, exported.chain.Layers[0].Descriptor)
 	require.NoError(t, err)
 }
+
+func TestImportChainCanceledWaiter(t *testing.T) {
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "independent prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "active suffix")
+	chain := exportChain(t, ab)
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+	prefix := importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers[:1], Provider: provider})
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	finishSource := sync.OnceFunc(func() { close(proceed) })
+	defer finishSource()
+	provider.BeforeRead = func(context.Context, ocispecs.Descriptor) error { close(entered); <-proceed; return nil }
+	waitingPinned := make(chan struct{})
+	var owners sync.Map
+	var count atomic.Int64
+	var waitingLease string
+	consumer.AfterAdd = func(_ context.Context, lease leases.Lease, resource leases.Resource) {
+		if resource != (leases.Resource{Type: "snapshots/native", ID: prefix.SnapshotID()}) {
+			return
+		}
+		if _, loaded := owners.LoadOrStore(lease.ID, true); !loaded && count.Add(1) == 2 {
+			waitingLease = lease.ID
+			close(waitingPinned)
+		}
+	}
+	type result struct {
+		ref bkcache.ImmutableRef
+		err error
+	}
+	active := make(chan result, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+		active <- result{ref, err}
+	}()
+	<-entered
+	waiting, cancel := context.WithCancel(ctx)
+	defer cancel()
+	canceled := make(chan error, 1)
+	go func() { _, err := consumer.Manager.ImportChain(waiting, supplied(chain, provider)); canceled <- err }()
+	<-waitingPinned
+	cancel()
+	select {
+	case err := <-canceled:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled importer remained blocked by active source")
+	}
+	live, err := consumer.Leases.List(ctx)
+	require.NoError(t, err)
+	for _, lease := range live {
+		require.NotEqual(t, waitingLease, lease.ID)
+	}
+	consumer.GC(t)
+	testutil.CheckFile(t, prefix, "a.txt", "independent prefix")
+	finishSource()
+	completed := <-active
+	require.NoError(t, completed.err)
+	defer completed.ref.Release(ctx)
+	testutil.CheckFile(t, completed.ref, "b.txt", "active suffix")
+	require.EqualValues(t, 2, provider.Reads.Load())
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}

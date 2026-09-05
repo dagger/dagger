@@ -7,26 +7,26 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-// exportLocker lets a canceled exporter drop its private pins while another
-// exporter continues using the same snapshot. Entries last only while in use.
-type exportLocker struct {
+// keyedLocker lets a canceled transfer drop its private pins while another
+// transfer continues using the same key. Entries last only while in use.
+type keyedLocker struct {
 	mu      sync.Mutex
-	entries map[string]*exportLock
+	entries map[string]*keyedLock
 }
 
-type exportLock struct {
+type keyedLock struct {
 	semaphore *semaphore.Weighted
 	users     int
 }
 
-func (l *exportLocker) acquire(ctx context.Context, key string) (func(), error) {
+func (l *keyedLocker) acquire(ctx context.Context, key string) (func(), error) {
 	l.mu.Lock()
 	if l.entries == nil {
-		l.entries = make(map[string]*exportLock)
+		l.entries = make(map[string]*keyedLock)
 	}
 	entry := l.entries[key]
 	if entry == nil {
-		entry = &exportLock{semaphore: semaphore.NewWeighted(1)}
+		entry = &keyedLock{semaphore: semaphore.NewWeighted(1)}
 		l.entries[key] = entry
 	}
 	entry.users++
