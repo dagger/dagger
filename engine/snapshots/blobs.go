@@ -39,11 +39,11 @@ func (cm *snapshotManager) ensureExportBlob(
 
 	// A caller owns its own pins while waiting and doing I/O. Serializing by
 	// snapshot avoids sharing a canceled caller's ref or lease with waiters.
-	cm.exportLayerLocker.Lock(ref.SnapshotID())
-	defer cm.exportLayerLocker.Unlock(ref.SnapshotID())
-	if err := ctx.Err(); err != nil {
+	unlock, err := cm.exportLayerLocker.acquire(ctx, ref.SnapshotID())
+	if err != nil {
 		return ocispecs.Descriptor{}, false, err
 	}
+	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
 		if blobDigest := ref.md.getBlob(); blobDigest != "" {
 			present, err := cm.pinContent(ctx, ocispecs.Descriptor{Digest: blobDigest})

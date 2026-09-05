@@ -97,7 +97,7 @@ type snapshotManager struct {
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
 	importLayerLocker      *locker.Locker
-	exportLayerLocker      *locker.Locker
+	exportLayerLocker      exportLocker
 	ownerLeaseLocker       *locker.Locker
 
 	mountPool sharableMountPool
@@ -117,7 +117,6 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		importLayerLocker:      locker.New(),
-		exportLayerLocker:      locker.New(),
 		ownerLeaseLocker:       locker.New(),
 	}
 
