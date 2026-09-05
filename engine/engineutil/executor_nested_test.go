@@ -62,11 +62,11 @@ func TestNestedClientParentUsesHeldScopeNotContextMetadata(t *testing.T) {
 	ctx, err = engine.ContextWithClientScope(ctx, scope)
 	require.NoError(t, err)
 
-	parentClientID, err := nestedClientParentID(ctx, "session")
+	parentClientID, err := engine.NestedClientParentID(ctx, "session")
 	require.NoError(t, err)
 	require.Equal(t, "executable-client", parentClientID)
 
-	_, err = nestedClientParentID(ctx, "other-session")
+	_, err = engine.NestedClientParentID(ctx, "other-session")
 	require.ErrorContains(t, err, "does not match")
 }
 

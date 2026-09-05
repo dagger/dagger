@@ -32,23 +32,32 @@ import (
 // shut down when fn returns; any error it hit while serving is returned.
 // In-engine SDK clients pass inertAttachables to reject implicit access to the
 // caller's host while still allowing graph values explicitly passed to them.
+//
+// The nested client's parent is the client whose scope ctx holds, exactly as
+// for container execs: workspace operations run under a scope other than the
+// client their request metadata names, and the session only accepts a child
+// registered by its held parent scope.
 func WithNestedClientServer(
 	ctx context.Context,
 	query *core.Query,
 	nestedClientMetadata *engine.ClientMetadata,
-	callerClientID string,
 	inertAttachables bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	fn func(ctx context.Context, gqlClient graphql.Client) ([]byte, error),
 ) ([]byte, error) {
+	parentClientID, err := engine.NestedClientParentID(ctx, nestedClientMetadata.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 	defer l.Close()
 
-	transport, err := query.RegisterNestedClientTransport(ctx, nestedClientMetadata, callerClientID)
+	transport, err := query.RegisterNestedClientTransport(ctx, nestedClientMetadata, parentClientID)
 	if err != nil {
 		return nil, fmt.Errorf("register nested client transport: %w", err)
 	}
@@ -58,7 +67,7 @@ func WithNestedClientServer(
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, callerClientID, inertAttachables, moduleContext, fnCall)
+			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, parentClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
 	defer func() {
@@ -101,12 +110,12 @@ func checkServerError(srvErrCh <-chan error) error {
 	return nil
 }
 
-// NewNestedClientMetadata returns the caller's client metadata along with
-// fresh metadata for a nested client to evaluate Dang code under.
-func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, error) {
+// NewNestedClientMetadata returns fresh metadata for a nested client to
+// evaluate Dang code under, in the caller's session.
+func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	nestedClientMetadata := &engine.ClientMetadata{
@@ -118,7 +127,7 @@ func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engi
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 	}
 
-	return clientMetadata, nestedClientMetadata, nil
+	return nestedClientMetadata, nil
 }
 
 // ConvertError converts an error from Dang evaluation into a *core.Error,
