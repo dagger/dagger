@@ -2387,6 +2387,7 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	if err != nil {
 		return nil, err
 	}
+	readPath := lockPath
 
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
@@ -2402,6 +2403,7 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 				}
 				return nil, fmt.Errorf("reading legacy lock: %w", err)
 			}
+			readPath = legacyPath
 		} else {
 			return nil, fmt.Errorf("reading lock: %w", err)
 		}
@@ -2409,7 +2411,15 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing lock: %w", err)
+		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+			return nil, versionErr
+		}
+		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
+		console(ctx, "Warning: resetting invalid workspace lockfile.")
+		slog.WarnContext(ctx, "invalid workspace lockfile; using an empty lock", "path", readPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }
@@ -2468,7 +2478,15 @@ func readWorkspaceLockFromRootfs(
 	}
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing lock: %w", err)
+		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+			return nil, versionErr
+		}
+		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
+		console(ctx, "Warning: ignoring invalid workspace lockfile.")
+		slog.WarnContext(ctx, "invalid workspace lockfile in immutable Git workspace; ignoring it", "path", lockPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }

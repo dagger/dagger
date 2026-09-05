@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type workspaceOverlayLock struct {
@@ -153,7 +154,14 @@ func (s *workspaceSchema) readWorkspaceLockForOverlay(
 	}
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse workspace lock: %w", err)
+		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+			return nil, versionErr
+		}
+		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
+		slog.WarnContext(ctx, "invalid workspace lockfile; resetting it", "path", lockPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }

@@ -2409,7 +2409,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	}
 	ws.SetHostPath("/repo")
 
-	lock, err := readWorkspaceLockState(t.Context(), fakeWorkspaceLockStateReader{
+	lock, err := readWorkspaceLockState(t.Context(), &fakeWorkspaceLockStateReader{
 		files: map[string][]byte{
 			filepath.Join("/repo", ".dagger", "lock"): legacyBytes,
 		},
@@ -2419,6 +2419,29 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	got, ok := lock.GetLookup("", "oci-sha", []any{"alpine:latest"})
 	require.True(t, ok)
 	require.Equal(t, "sha256:deadbeef", got)
+}
+
+func TestReadWorkspaceLockStateDoesNotWriteInvalidLock(t *testing.T) {
+	t.Parallel()
+
+	ws := &core.Workspace{
+		ConfigFile: "dagger.toml",
+		LockFile:   "dagger.lock",
+	}
+	ws.SetHostPath("/repo")
+	lockPath := filepath.Join("/repo", "dagger.lock")
+	lockContents := []byte(`[["version","1"]]`)
+	reader := &fakeWorkspaceLockStateReader{
+		files: map[string][]byte{
+			lockPath: lockContents,
+		},
+	}
+
+	lock, err := readWorkspaceLockState(t.Context(), reader, ws)
+	require.NoError(t, err)
+	require.Empty(t, lock.Entries())
+	require.Contains(t, reader.files, lockPath)
+	require.Equal(t, lockContents, reader.files[lockPath])
 }
 
 type fakeWorkspaceLockStateReader struct {

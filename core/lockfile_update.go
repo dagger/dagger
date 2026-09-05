@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -29,6 +30,9 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 
 		result, err := updateWorkspaceLockEntry(ctx, query, entry)
 		if err != nil {
+			if ignoreUnsupportedLockEntry(ctx, entry, err) {
+				continue
+			}
 			return err
 		}
 		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
@@ -75,6 +79,9 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		}
 		result, err := updateWorkspaceLockEntry(ctx, query, entry)
 		if err != nil {
+			if ignoreUnsupportedLockEntry(ctx, entry, err) {
+				continue
+			}
 			return err
 		}
 		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
@@ -83,6 +90,22 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 	}
 
 	return nil
+}
+
+var errUnsupportedLockEntry = errors.New("unsupported lock entry")
+
+func ignoreUnsupportedLockEntry(ctx context.Context, entry workspace.LookupEntry, err error) bool {
+	if !errors.Is(err, errUnsupportedLockEntry) {
+		return false
+	}
+	slog.GlobalLogger(ctx, InstrumentationLibrary).Warn(
+		"ignoring unsupported workspace lock entry",
+		"namespace", entry.Namespace,
+		"operation", entry.Operation,
+		"inputs", entry.Inputs,
+		"error", err,
+	)
+	return true
 }
 
 func isLatestLockEntry(entry workspace.LookupEntry) bool {
@@ -172,7 +195,12 @@ func selectedSHAEntry(
 
 func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (string, error) {
 	if entry.Namespace != workspace.CoreLockNamespace {
-		return "", fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
+		return "", fmt.Errorf(
+			"%w %q %q",
+			errUnsupportedLockEntry,
+			entry.Namespace,
+			entry.Operation,
+		)
 	}
 
 	switch entry.Operation {
@@ -187,7 +215,12 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	case workspace.LockOperationVanityURL:
 		return updateVanityURLLockEntry(ctx, entry)
 	default:
-		return "", fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
+		return "", fmt.Errorf(
+			"%w %q %q",
+			errUnsupportedLockEntry,
+			entry.Namespace,
+			entry.Operation,
+		)
 	}
 }
 
@@ -513,8 +546,9 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 
 func unsupportedLockOptionError(operation, name string) error {
 	return fmt.Errorf(
-		"cannot update %s: unsupported option %q; "+
+		"%w: cannot update %s: unsupported option %q; "+
 			"upgrade Dagger or remove the option",
+		errUnsupportedLockEntry,
 		operation,
 		name,
 	)

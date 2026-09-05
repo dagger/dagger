@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -1067,7 +1068,14 @@ func workspaceMigrationLegacyLockMoves(
 		}
 		data, err = workspaceMigrationFilterLegacyLockData(data)
 		if err != nil {
-			return nil, fmt.Errorf("filter legacy workspace lock %q: %w", sourcePath, err)
+			if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+				return nil, versionErr
+			}
+			if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+				return nil, conflictErr
+			}
+			slog.WarnContext(ctx, "invalid legacy workspace lockfile; deleting it", "path", sourcePath, "error", err)
+			data = nil
 		}
 
 		targetPath, err := workspaceMigrationRootPathForProject(ws, projectRoot, workspace.LockFileName)
