@@ -629,76 +629,9 @@ During the code-facing transition, an SDK module can generate its legacy module 
 
 The engine must parse and validate the output config.
 
-The engine exposes one module manifest builder. An SDK constructs a manifest with structured values. The engine owns the file names, default values, schemas, and serialization.
-
-```graphql
-extend type Query {
-  moduleManifest(
-    loadTOML: FileID
-    loadJSON: FileID
-  ): ModuleManifest!
-}
-
-type ModuleManifest {
-  withName(name: String!): ModuleManifest!
-  withLegacyRuntimeDependency(source: String!, name: String, pin: String): ModuleManifest!
-  withoutLegacyRuntimeDependency(name: String!): ModuleManifest!
-  withoutLegacyRuntimeDependencies: ModuleManifest!
-
-  withDangEntrypoint(source: String!): ModuleManifest!
-  withModuleEntrypoint(source: String!): ModuleManifest!
-
-  withLegacyGoRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyDangRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyPythonRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyTypescriptRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyPHPRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyElixirRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyJavaRuntime(moduleSource: String, engineVersion: String): ModuleManifest!
-  withLegacyInclude(path: String!): ModuleManifest!
-  withoutLegacyFields: ModuleManifest!
-
-  validate(targetEngineVersion: String): Void!
-  tomlFile: File!
-  legacyJSONFile: File!
-  directory: Directory!
-}
-
-extend type Workspace {
-  withFile(
-    path: String!
-    source: File!
-    permissions: Int
-  ): Workspace!
-}
-```
-
-`withDangEntrypoint` sets an embedded Dang entrypoint. `withModuleEntrypoint` sets a module entrypoint. If both functions are called, the last call replaces the earlier entrypoint.
-
-The typed legacy runtime functions cover all module runtimes built into the engine: Go, Dang, Python, TypeScript, PHP, Elixir, and Java. Rust is a client SDK, not a module runtime. Each function sets the legacy runtime, module source, and engine version as one unit. A null module source omits `source`; the legacy loader then uses the manifest directory. A null engine version uses the running engine version. `withLegacyRuntimeDependency` adds a module to the schema used by the legacy runtime. `withLegacyInclude` is additive and keeps call order. `withoutLegacyFields` removes the runtime, module source, engine version, include paths, and runtime dependencies.
-
-`tomlFile` returns `dagger-module.toml`. It contains the entrypoint and any legacy fallback fields. `legacyJSONFile` returns `dagger.json`. It contains only the legacy fields and returns an error if no legacy runtime is set.
-
-`directory` always returns the applicable manifest file overlay. It contains `dagger-module.toml`. It also contains `dagger.json` when a legacy runtime is set.
-
 The TOML schema has no explicit manifest version. An entrypoint selects the new loading path. A new engine uses the entrypoint and ignores the legacy fields. An engine that does not support entrypoints ignores the entrypoint and uses the legacy runtime. An invalid entrypoint is an error. The engine must not fall back to the legacy runtime after an entrypoint error.
 
-The builder can generate entrypoint manifests before the engine supports loading them. Entrypoint loading is a separate change.
-
-For example, a Dang SDK can generate the current manifest and its legacy fallback without TOML or JSON logic:
-
-```dang
-ws.withDirectory(
-  ".",
-  moduleManifest
-    .withName(name: name)
-    .withDangEntrypoint(source: "main.dang")
-    .withLegacyDangRuntime
-    .directory,
-)
-```
-
-The SDK can leave an existing manifest unchanged during normal regeneration. Later manifest read and edit helpers can extend the same type without changing the SDK-module interface.
+SDKs can use the `github.com/dagger/sdk-helpers` module to construct module manifests. The manifest builder is not part of the engine schema.
 
 ## SDK settings and CLI flags
 

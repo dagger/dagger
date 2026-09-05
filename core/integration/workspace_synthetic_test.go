@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -245,79 +244,6 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(
 	require.NoError(t, err)
 	requireEntry(t, afterBaseEntries, "base.txt")
 	requireNoEntry(t, afterBaseEntries, "new.txt")
-}
-
-// TestWorkspaceWithModuleManifestDirectory verifies that the manifest helper
-// returns both current and legacy files for a fat manifest.
-func (WorkspaceSuite) TestWorkspaceWithModuleManifestDirectory(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	base := c.Directory().AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
-	manifest := c.ModuleManifest().
-		WithName("payments").
-		WithDangEntrypoint("./internal/dagger/main.dang").
-		WithLegacyGoRuntime(dagger.ModuleManifestWithLegacyGoRuntimeOpts{
-			ModuleSource:  "./src",
-			EngineVersion: "v0.20.3",
-		}).
-		WithLegacyInclude("**/*.go").
-		WithLegacyInclude("go.mod")
-	tomlName, err := manifest.TomlFile().Name(ctx)
-	require.NoError(t, err)
-	require.Equal(t, modules.Filename, tomlName)
-	jsonName, err := manifest.LegacyJSONFile().Name(ctx)
-	require.NoError(t, err)
-	require.Equal(t, modules.LegacyFilename, jsonName)
-
-	updated := base.WithDirectory(".", manifest.Directory())
-
-	tomlContents, err := updated.File("dagger-module.toml").Contents(ctx)
-	require.NoError(t, err)
-	cfg, err := modules.ParseModuleConfigForFilename([]byte(tomlContents), modules.Filename)
-	require.NoError(t, err)
-	require.Equal(t, "payments", cfg.Name)
-	require.Equal(t, "./src", cfg.Source)
-	require.Equal(t, "go", cfg.SDK.Source)
-	require.Equal(t, []string{"**/*.go", "go.mod"}, cfg.Include)
-	require.Equal(t, "v0.20.3", cfg.EngineVersion)
-	require.Contains(t, tomlContents, "[entrypoint]")
-
-	jsonContents, err := updated.File("dagger.json").Contents(ctx)
-	require.NoError(t, err)
-	legacyCfg, err := modules.ParseModuleConfigForFilename([]byte(jsonContents), modules.LegacyFilename)
-	require.NoError(t, err)
-	require.Equal(t, "payments", legacyCfg.Name)
-	require.Equal(t, "./src", legacyCfg.Source)
-	require.Equal(t, "go", legacyCfg.SDK.Source)
-	require.Equal(t, []string{"**/*.go", "go.mod"}, legacyCfg.Include)
-	require.NotContains(t, jsonContents, "entrypoint")
-
-	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: base}).AddedPaths(ctx)
-	require.NoError(t, err)
-	require.Contains(t, added, "dagger-module.toml")
-	require.Contains(t, added, "dagger.json")
-}
-
-func (WorkspaceSuite) TestWorkspaceWithCurrentModuleManifestDirectory(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	manifest := c.ModuleManifest().
-		WithName("payments").
-		WithDangEntrypoint("./internal/dagger/entrypoint")
-	directory := manifest.Directory()
-
-	entries, err := directory.Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"dagger-module.toml"}, entries)
-
-	contents, err := directory.File("dagger-module.toml").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, `name = "payments"
-
-[entrypoint]
-  kind = "dang"
-  source = "./internal/dagger/entrypoint"
-`, contents)
 }
 
 // TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource asserts the

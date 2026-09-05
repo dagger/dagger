@@ -39,9 +39,12 @@ type ModuleMaxLifecycle {
       let withConfig = if (exists(ws, "dagger-module.toml")) {
         ws
       } else {
-        ws.withDirectory(
-          ".",
-          moduleManifest.withName(name).withLegacyGoRuntime.directory,
+        ws.withNewFile(
+          "dagger-module.toml",
+          "name = " + JSON.encode(name) + "\n" +
+            "engineVersion = \"latest\"\n\n" +
+            "[runtime]\n" +
+            "  source = \"go\"\n",
         )
       }
       let withGoMod = if (exists(withConfig, "go.mod")) {

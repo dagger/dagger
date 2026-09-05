@@ -199,7 +199,11 @@ module = "init-fixture"
 }`).
 		WithNewFile("sdk/init-fixture/main.go", `package main
 
-import "dagger/init-fixture/internal/dagger"
+import (
+	"encoding/json"
+
+	"dagger/init-fixture/internal/dagger"
+)
 
 type InitFixture struct{}
 
@@ -215,9 +219,13 @@ func (m *InitFixture) GenerateScope(ws *dagger.Workspace, isModule bool, name st
 	if !isModule {
 		return ws
 	}
-	manifest := dag.ModuleManifest().WithName(name).WithLegacyGoRuntime().TomlFile()
+	nameJSON, _ := json.Marshal(name)
+	manifest := "name = " + string(nameJSON) + "\n" +
+		"engineVersion = \"latest\"\n\n" +
+		"[runtime]\n" +
+		"  source = \"go\"\n"
 	scaffold := dag.Directory().WithNewFile("scaffold.txt", name+"\n")
-	return ws.WithFile("dagger-module.toml", manifest).WithDirectory(".", scaffold)
+	return ws.WithNewFile("dagger-module.toml", manifest).WithDirectory(".", scaffold)
 }
 `)
 }
