@@ -385,6 +385,49 @@ func TestSharedCallUsesOneClientScopeLeaseForAllWaiters(t *testing.T) {
 	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond)
 }
 
+func TestSharedCallReleasesLeaseWhenLastWaiterCancelsAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	var released atomic.Int32
+	rootLease := engine.NewClientLifecycleLease(
+		engine.ClientLeaseRequest,
+		"request",
+		func() {},
+		func(kind engine.ClientLeaseKind, ownerID string) (*engine.ClientLifecycleLease, error) {
+			return engine.NewClientLifecycleLease(kind, ownerID, func() { released.Add(1) }, nil), nil
+		},
+	)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "client"}, rootLease)
+	assert.NilError(t, err)
+	baseCtx, err := engine.ContextWithClientScope(cacheTestContext(t.Context()), scope)
+	assert.NilError(t, err)
+	cache, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	baseCtx = ContextWithCache(baseCtx, cache)
+	ctx, cancel := context.WithCancelCause(baseCtx)
+	defer cancel(nil)
+
+	// The callback finishes successfully while its only waiter is still
+	// admitted, so it delegates publication and lease release to the waiters.
+	// That waiter is then canceled before it observes completion, which is what
+	// happens to every in-flight call of a query whose client disconnects.
+	waiterDone := make(chan struct{})
+	cache.testAfterCallbackWaiterCheck = func() {
+		cancel(errors.New("client disconnected"))
+		<-waiterDone
+	}
+
+	frame := cacheTestIntCall("orphaned-completion")
+	req := &CallRequest{ResultCall: frame, ConcurrencyKey: "orphaned-completion"}
+	_, err = cache.GetOrInitCall(ctx, "session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	close(waiterDone)
+	assert.ErrorContains(t, err, "client disconnected")
+	require.Eventually(t, func() bool { return released.Load() == 1 }, time.Second, time.Millisecond,
+		"shared-work lease orphaned: the callback saw a waiter and the waiter left without publishing")
+}
+
 func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
 	t.Parallel()
 

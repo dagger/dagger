@@ -1865,6 +1865,7 @@ type Cache struct {
 	testAfterSessionReleaseRecord   func()
 	testAfterHandoffHoldAcquired    func(*ongoingCall)
 	testAfterLazyEvalFinish         func(*lazyEvalAttempt)
+	testAfterCallbackWaiterCheck    func()
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
@@ -2366,6 +2367,10 @@ type ongoingCall struct {
 	clientScopeLease            *engine.ClientLifecycleLease
 	releaseOperationLeaseFn     func(context.Context) error
 	releaseSharedWorkLeasesOnce sync.Once
+	// fnDone is set under callsMu once the callback has returned. A callback
+	// that returns successfully while waiters remain delegates publication and
+	// lease release to them, so the last waiter to leave must check it.
+	fnDone bool
 
 	// profOpID is the wcprof op for the shared execution of this call, when
 	// profiling is enabled. Waiters record wait events against it.
@@ -4620,8 +4625,12 @@ func (c *Cache) getOrInitCallInner(
 		EndProfSpan(execSpan, &err)
 
 		c.callsMu.Lock()
+		oc.fnDone = true
 		noWaiters := oc.waiters == 0
 		c.callsMu.Unlock()
+		if c.testAfterCallbackWaiterCheck != nil {
+			c.testAfterCallbackWaiterCheck()
+		}
 		if err != nil || noWaiters {
 			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
 		}
@@ -4799,11 +4808,21 @@ func (c *Cache) wait(
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
 		releaseHandoff := lastWaiter && oc.handoffHoldActive
+		// The callback releases the shared leases itself only if it finishes
+		// with an error or with no waiters left. If it already finished
+		// successfully while this waiter was admitted, it delegated release to
+		// the waiters, and the last one leaving without publishing must do it
+		// or the leases are orphaned. Both sides decide under callsMu, so
+		// exactly one of them observes the other's state.
+		orphaned := lastWaiter && oc.fnDone
 		if lastWaiter {
 			delete(c.ongoingCalls, oc.callConcurrencyKeys)
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
+		if orphaned {
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
+		}
 		if releaseHandoff {
 			if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 				return nil, errors.Join(canceledErr, relErr)
