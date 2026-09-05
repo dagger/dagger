@@ -295,8 +295,9 @@ type SpanSnapshot struct {
 
 	// ServiceURLs marks a service-readiness marker span: the local URLs at
 	// which a just-started service is reachable (`dagger up`'s `ready <url>`
-	// span). Surfaced alongside the service's display span when a run leads
-	// with its services (see DB.PromoteServicesTo).
+	// span). Also stamped on the service's display span itself, so its
+	// collapsed row can show where to point a browser (see idtui's
+	// renderServiceURLs).
 	ServiceURLs []string `json:",omitempty"`
 
 	ActorEmoji  string `json:",omitempty"`

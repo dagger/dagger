@@ -132,16 +132,6 @@ type CommandFrontend interface {
 	Live() bool
 }
 
-// ServicesFrontend is implemented by frontends that can lead with the
-// services a run starts. `dagger up` declares itself through this: service
-// spans are ambient (any run that binds a service has one), so "this run is
-// ABOUT its services" cannot be inferred from span data — the command owns
-// that call, the way it already owns its primary span. Commands treat it as
-// an optional capability; streaming frontends simply don't implement it.
-type ServicesFrontend interface {
-	SetServicesPrimary(bool)
-}
-
 // ViewFactory constructs a command screen using services owned by the pretty
 // frontend. It is invoked on the Tuist event loop.
 type ViewFactory func(ViewContext) CommandView
@@ -158,6 +148,16 @@ type CommandView interface {
 // intentionally not mutable by commands.
 type ViewContext interface {
 	SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView
+
+	// ServiceList returns a span list that leads with the run's per-service
+	// display spans (see dagui.ServiceDisplaySpans), discovered live beneath
+	// root() — the row set for a command that is ABOUT the services it
+	// starts (`dagger up`). Service spans are ambient (any run that binds a
+	// service has one), so this view is only ever installed by such a
+	// command, never inferred from span data. Until the first display span
+	// appears the list falls back to root()'s own children, so the screen
+	// still shows setup progress.
+	ServiceList(root func() dagui.SpanID) *SpanListView
 }
 
 // ViewHandle serializes command model mutations with rendering.
@@ -909,6 +909,26 @@ func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
 	}
 	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
 	fmt.Fprint(out, badge)
+}
+
+// renderServiceURLs shows, inline on a service's display row, the local URLs
+// where the service is reachable (ServiceURLs, stamped by core's PrepareUp
+// once the health check passes). The chip makes a collapsed service row
+// self-sufficient: no need to expand it to find where to point a browser.
+// Only display rows chip — the engine's service-instance span carries no
+// URLs, and the `ready <url>` marker (no service name) already says its URL
+// in its own name.
+func (r renderer) renderServiceURLs(out TermOutput, span *dagui.Span) {
+	if span == nil || span.ServiceName == "" || span.Service || len(span.ServiceURLs) == 0 {
+		return
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	for i, url := range span.ServiceURLs {
+		if i > 0 {
+			fmt.Fprint(out, " ")
+		}
+		fmt.Fprint(out, out.String(url).Foreground(termenv.ANSICyan))
+	}
 }
 
 // tokenSizeColor grades a token count so a context-bloating tool result reads as

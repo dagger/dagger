@@ -8,7 +8,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -106,14 +105,12 @@ func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGro
 func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
 	defer zoomSpan.End()
-	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
-	// This run is ABOUT the services it starts: have the frontend lead with
-	// them (each service's display span, its rolled-up health-check and
-	// service logs, and its `ready <url>` marker) instead of the setup tree.
-	// Optional capability: streaming frontends just show the plain stream.
-	if fe, ok := Frontend.(idtui.ServicesFrontend); ok {
-		fe.SetServicesPrimary(true)
-	}
+	zoomID := dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()}
+	Frontend.SetPrimary(zoomID)
+	// This run is ABOUT the services it starts: install the command screen
+	// that leads with each service's display span (its rolled-up health-check
+	// and service logs, and its ready-URL chip) instead of the setup tree.
+	installUpView(Frontend, zoomID)
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// Run blocks until context cancellation (Ctrl+C). Treat that as a clean
 	// shutdown rather than surfacing a cancellation error to the user.

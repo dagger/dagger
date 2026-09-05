@@ -317,63 +317,30 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 // callers.
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
-// RunUp starts the service and returns a result that must be cleaned up.
-// It does NOT block — the caller (UpGroup.Run) handles the blocking wait.
+// PrepareUp opens the service's display span and evaluates the +up function
+// beneath it, returning the prepared service without starting anything. The
+// caller decides when (and whether) to Start it — UpGroup.Run evaluates every
+// service first and refuses to start any of them on a host-port collision.
 //
-// gate, when non-nil, is the up group's start barrier (see upStartGate):
-// after evaluating the service value beneath this service's own span, the
-// service reports its host ports and waits for the group-wide port-collision
-// verdict before creating tunnels or starting anything.
-func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, portMappings []PortForward, gate *upStartGate) (*runUpStartResult, error) {
-	var result *runUpStartResult
-	err := node.Run(ctx,
-		func(n *ModTreeNode) bool { return n.IsUp },
-		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
-			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
-				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.String(ServiceNameAttr, n.PathString()),
-				),
-			)
-			defer func() {
-				telemetry.EndWithCause(span, &rerr)
-			}()
-			var err error
-			result, err = n.runUpLocally(ctx, span, portMappings, gate)
-			return err
-		},
-		include, exclude)
-	return result, err
-}
-
-// runUpStartResult is the result of starting a single service in runUpLocally.
-// It contains everything needed to display status and clean up after ctx cancellation.
-type runUpStartResult struct {
-	ReadySpan trace.Span
-}
-
-// runUpLocally evaluates the +up function, parks at the group's start gate
-// (when part of a group), creates a host tunnel, starts the service, and
-// returns immediately. It does NOT block — the caller is responsible for
-// blocking on ctx.Done() after all services have started. This two-phase
-// design ensures that if one service fails to start, sibling goroutines are
-// not left hanging on <-ctx.Done() forever.
-//
-// The evaluation deliberately happens beneath parentSpan (this service's
-// display span): the API spans it creates are where dagui routes the
-// service's stdio, so this is what puts the service's log stream under its
-// own row in `dagger up`.
-func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span, portMappings []PortForward, gate *upStartGate) (*runUpStartResult, error) {
-	// Until this service reports its ports, a failure here (evaluation, span
-	// rename plumbing) must release the gate, or waiting siblings would hang.
-	arrived := false
-	if gate != nil {
-		defer func() {
-			if !arrived {
-				gate.abort()
-			}
-		}()
+// The evaluation deliberately happens beneath the display span: the API spans
+// it creates are where dagui routes the service's stdio, so this is what puts
+// the service's log stream under its own row in `dagger up`. The display span
+// stays open until Start or Abort ends it.
+func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForward) (_ *preparedUp, rerr error) {
+	if !node.IsUp {
+		return nil, fmt.Errorf("%s is not a service function", node.PathString())
 	}
+	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.String(ServiceNameAttr, node.PathString()),
+		),
+	)
+	defer func() {
+		if rerr != nil {
+			telemetry.EndWithCause(span, &rerr)
+		}
+	}()
 
 	// Evaluate the +up function to get the Service
 	var svcResult dagql.ObjectResult[*Service]
@@ -402,7 +369,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		}
 	}
 
-	// Update parent span name with port info.
+	// Update the display span name with port info.
 	if len(hostPorts) > 0 {
 		portStrs := make([]string, 0, len(hostPorts))
 		if len(portMappings) > 0 {
@@ -414,17 +381,56 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 				portStrs = append(portStrs, fmt.Sprintf(":%d", p.port))
 			}
 		}
-		parentSpan.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
+		span.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
 	}
 
-	// Report to the group and wait for the collision-free verdict before
-	// starting anything.
-	if gate != nil {
-		arrived = true
-		if err := gate.arrive(ctx, node.PathString(), hostPorts); err != nil {
-			return nil, err
-		}
-	}
+	return &preparedUp{
+		node:         node,
+		span:         span,
+		svc:          svcResult,
+		portMappings: portMappings,
+		hostPorts:    hostPorts,
+	}, nil
+}
+
+// preparedUp is a service that has been evaluated beneath its own display
+// span and is ready to start: PrepareUp's output, Start's receiver. Its
+// display span stays open until exactly one of Start or Abort runs.
+type preparedUp struct {
+	node         *ModTreeNode
+	span         trace.Span
+	svc          dagql.ObjectResult[*Service]
+	portMappings []PortForward
+	hostPorts    []upHostPort
+}
+
+func (p *preparedUp) Name() string {
+	return p.node.PathString()
+}
+
+// Abort ends the display span without starting the service — the group's
+// answer when a sibling failed to evaluate or the port-collision verdict
+// refused the whole group.
+func (p *preparedUp) Abort(err error) {
+	telemetry.EndWithCause(p.span, &err)
+}
+
+// runUpStartResult is the result of starting a single service.
+// It contains everything needed to display status and clean up after ctx cancellation.
+type runUpStartResult struct {
+	ReadySpan trace.Span
+}
+
+// Start creates the host tunnel, starts the service, and returns immediately
+// once it is healthy — the caller is responsible for blocking on ctx.Done()
+// afterwards. It runs beneath the display span PrepareUp opened and ends it on
+// return; the returned ReadySpan (the `ready <url>` marker) stays open until
+// the caller ends it at shutdown, keeping the display row visibly live.
+func (p *preparedUp) Start(ctx context.Context) (_ *runUpStartResult, rerr error) {
+	ctx = trace.ContextWithSpan(ctx, p.span)
+	defer func() {
+		telemetry.EndWithCause(p.span, &rerr)
+	}()
 
 	// Set up the host tunnel
 	srv, err := CurrentDagqlServer(ctx)
@@ -433,17 +439,17 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	}
 
 	var hostSvc dagql.Result[*Service]
-	svcID, err := svcResult.ID()
+	svcID, err := p.svc.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service ID: %w", err)
 	}
 	tunnelArgs := []dagql.NamedInput{
 		{Name: "service", Value: dagql.NewID[*Service](svcID)},
 	}
-	if len(portMappings) > 0 {
+	if len(p.portMappings) > 0 {
 		// Use explicit port mappings instead of native 1:1 tunneling.
-		portInputs := make([]dagql.InputObject[PortForward], len(portMappings))
-		for i, pf := range portMappings {
+		portInputs := make([]dagql.InputObject[PortForward], len(p.portMappings))
+		for i, pf := range p.portMappings {
 			inputMap := map[string]any{
 				"backend": pf.Backend,
 			}
@@ -476,7 +482,7 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	// mark the tunnel span internal (it's an engine-side call), and internal
 	// spans block the log roll-up walk — which would strand the service's
 	// stdio beneath machinery instead of rolling it up into the service's
-	// display row (parentSpan, see above).
+	// display row (the span PrepareUp opened, see above).
 	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &hostSvc,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{
@@ -515,7 +521,13 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, port.Port))
 	}
 
-	// Create a "ready" child span visible in the TUI.
+	// Stamp the URLs on the display span itself: it ends right below, and the
+	// end export delivers them, so the TUI can show where to point a browser
+	// on the service's own collapsed row (see idtui's renderStepTitle).
+	p.span.SetAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls))
+
+	// Create a "ready" child span visible in the TUI. It stays open while the
+	// service runs, which also keeps the display row's rolled-up logs live.
 	readyName := "ready"
 	if len(urls) > 0 {
 		readyName = "ready " + strings.Join(urls, " ")

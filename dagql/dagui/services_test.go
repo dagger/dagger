@@ -104,107 +104,48 @@ func TestSurfacedServicesName(t *testing.T) {
 	}
 }
 
-// TestServiceDisplaySpan covers the live-tree anchor walk: the display span
-// is the nearest displayable (received, non-passthrough, non-internal)
-// ancestor of the service exec span below host -- for `dagger up`, the
-// per-service span RunUp starts -- falling back to the exec span itself when
-// nothing below host qualifies.
-func TestServiceDisplaySpan(t *testing.T) {
+// TestServiceDisplaySpans covers the live-dashboard anchor for `dagger up`:
+// per-service display spans (a service name WITHOUT the engine's
+// service-instance mark) surface in start order from the moment they exist,
+// wherever they sit beneath the root; instance and boundary-contained spans
+// stay out.
+func TestServiceDisplaySpans(t *testing.T) {
 	const (
 		rootID byte = iota + 1
-		displayID
-		startID
-		execID
-		bareSvcID
-		orphanSvcID
+		runID
+		displayAID
+		displayBID
+		execAID
+		boundaryID
+		hiddenID
 	)
+	markDisplay := func(snap SpanSnapshot, name string) SpanSnapshot {
+		snap.ServiceName = name
+		return snap
+	}
 	db := NewDB()
-	display := serviceTestSnapshot(displayID, "web :80", spanID(rootID))
-	starter := serviceTestSnapshot(startID, "service.start", spanID(displayID))
-	starter.Passthrough = true
-	svc := markService(serviceTestSnapshot(execID, "exec nginx", spanID(startID)), "web.dagger.local")
-	svc.Passthrough = true
-	// A displayable service span is its own display span.
-	bare := markService(serviceTestSnapshot(bareSvcID, "exec bare", spanID(rootID)), "bare.dagger.local")
-	// A hidden service span with no displayable ancestor below host falls
-	// back to itself (no origin links in this synthetic trace).
-	orphan := markService(serviceTestSnapshot(orphanSvcID, "exec orphan", spanID(rootID)), "orphan.dagger.local")
-	orphan.Passthrough = true
+	boundary := serviceTestSnapshot(boundaryID, "fixture", spanID(rootID))
+	boundary.Boundary = true
+	// Import the later-starting display span first to prove the sort.
 	db.ImportSnapshots([]SpanSnapshot{
 		serviceTestSnapshot(rootID, "root", SpanID{}),
-		display,
-		starter,
-		svc,
-		bare,
-		orphan,
+		// the call machinery the display spans live under
+		serviceTestSnapshot(runID, "UpGroup.run", spanID(rootID)),
+		markDisplay(serviceTestSnapshot(displayBID, "b :81", spanID(runID)), "b"),
+		markDisplay(serviceTestSnapshot(displayAID, "a :80", spanID(runID)), "a"),
+		// the engine's service-instance span is NOT a display span
+		markService(serviceTestSnapshot(execAID, "exec a", spanID(displayAID)), "a.dagger.local"),
+		boundary,
+		// a display span contained behind a boundary (a test fixture) stays out
+		markDisplay(serviceTestSnapshot(hiddenID, "hidden :99", spanID(boundaryID)), "hidden"),
 	})
 
-	host := db.RootSpan
-	roots := db.SurfacedServices()
-	if len(roots) != 3 {
-		t.Fatalf("roots = %d, want 3 services", len(roots))
+	displays := db.ServiceDisplaySpans(db.RootSpan)
+	names := make([]string, len(displays))
+	for i, span := range displays {
+		names[i] = span.Name
 	}
-	if got := roots[0].DisplaySpan(host); got == nil || got.Name != "web :80" {
-		t.Fatalf("DisplaySpan = %+v, want the visible display span above the passthrough chain", got)
-	}
-	if got := roots[1].DisplaySpan(host); got == nil || got.Name != "exec bare" {
-		t.Fatalf("bare DisplaySpan = %+v, want the exec span itself", got)
-	}
-	if got := roots[2].DisplaySpan(host); got == nil || got.Name != "exec orphan" {
-		t.Fatalf("orphan DisplaySpan = %+v, want the exec-span fallback", got)
-	}
-}
-
-// TestPromoteServicesToWiresDisplayAndReadySpans covers the live-tree wiring
-// for runs that lead with their services (`dagger up`): the display span
-// lands in host.RevealedSpans, and the service's readiness marker (the
-// `ready <url>` span, recognized by ServiceURLs) lands in the display span's
-// own RevealedSpans -- so the display row's expansion shows exactly the
-// readiness state, not the evaluation machinery.
-func TestPromoteServicesToWiresDisplayAndReadySpans(t *testing.T) {
-	const (
-		rootID byte = iota + 1
-		displayID
-		evalID
-		startID
-		execID
-		readyID
-	)
-	db := NewDB()
-	display := serviceTestSnapshot(displayID, "web :80", spanID(rootID))
-	// evaluation machinery beneath the display span: must NOT be revealed
-	eval := serviceTestSnapshot(evalID, "HelloWithServices.web", spanID(displayID))
-	starter := serviceTestSnapshot(startID, "service.start", spanID(displayID))
-	starter.Passthrough = true
-	svc := markService(serviceTestSnapshot(execID, "exec nginx", spanID(startID)), "web.dagger.local")
-	svc.Passthrough = true
-	ready := serviceTestSnapshot(readyID, "ready http://localhost:80", spanID(displayID))
-	ready.ServiceURLs = []string{"http://localhost:80"}
-	db.ImportSnapshots([]SpanSnapshot{
-		serviceTestSnapshot(rootID, "root", SpanID{}),
-		display,
-		eval,
-		starter,
-		svc,
-		ready,
-	})
-
-	host := db.RootSpan
-	if !db.HasServicesForSpan(host) {
-		t.Fatal("HasServicesForSpan must report true when a service surfaces")
-	}
-	db.PromoteServicesTo(host)
-	if got := host.RevealedSpans.Order; len(got) != 1 || got[0].Name != "web :80" {
-		t.Fatalf("host revealed = %+v, want just the display span", got)
-	}
-	displaySpan := host.RevealedSpans.Order[0]
-	if got := displaySpan.RevealedSpans.Order; len(got) != 1 || got[0].Name != "ready http://localhost:80" {
-		t.Fatalf("display revealed = %+v, want just the readiness marker", got)
-	}
-	// Idempotent: re-promotion must not duplicate.
-	db.PromoteServicesTo(host)
-	if len(host.RevealedSpans.Order) != 1 || len(displaySpan.RevealedSpans.Order) != 1 {
-		t.Fatalf("re-promotion duplicated revealed spans: host=%d display=%d",
-			len(host.RevealedSpans.Order), len(displaySpan.RevealedSpans.Order))
+	if len(displays) != 2 || names[0] != "a :80" || names[1] != "b :81" {
+		t.Fatalf("displays = %v, want [a :80 b :81]", names)
 	}
 }

@@ -204,6 +204,11 @@ type DB struct {
 	surfacedServicesRoot SpanID
 	surfacedServicesInit bool
 
+	serviceDisplays     []*Span
+	serviceDisplaysAt   uint64
+	serviceDisplaysRoot SpanID
+	serviceDisplaysInit bool
+
 	testIndex *TestIndex
 }
 

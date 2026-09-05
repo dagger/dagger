@@ -195,14 +195,6 @@ type frontendPretty struct {
 	// frontendPretty.primarySpan.
 	reportPrimary dagui.SpanID
 
-	// servicesPrimary marks this run as being ABOUT the services it starts
-	// (`dagger up`, via ServicesFrontend.SetServicesPrimary), which gates
-	// promoteServicesLocked. It's a command-declared fact, not a data-derived
-	// one: service spans appear in any run that binds a service, so promoting
-	// whenever one surfaces would hide ordinary call trees behind their
-	// incidental services.
-	servicesPrimary bool
-
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -320,8 +312,6 @@ var (
 
 var _ CommandFrontend = (*frontendPretty)(nil)
 
-var _ ServicesFrontend = (*frontendPretty)(nil)
-
 // Live reports whether command components are being rendered interactively.
 // Report mode still uses their final rendering, but cannot surface forms or
 // transient login instructions.
@@ -335,6 +325,26 @@ type commandViewContext struct {
 
 func (ctx commandViewContext) SpanList(root func() dagui.SpanID, include func() []dagui.SpanID) *SpanListView {
 	return newSpanListView(ctx.fe, root, include)
+}
+
+// ServiceList implements ViewContext: a span list led by the per-service
+// display spans discovered live beneath root() (dagui.ServiceDisplaySpans).
+// The display spans sit deep under the machinery that opened them (module
+// load, the UpGroup.run call), so the list hoists each one to the top level
+// (see SpanListView.hoist) — the rows render as if the services were root()'s
+// direct children, with everything else passed through.
+func (ctx commandViewContext) ServiceList(root func() dagui.SpanID) *SpanListView {
+	fe := ctx.fe
+	list := newSpanListView(fe, root, func() []dagui.SpanID {
+		displays := fe.db.ServiceDisplaySpans(fe.db.Spans.Map[root()])
+		ids := make([]dagui.SpanID, 0, len(displays))
+		for _, span := range displays {
+			ids = append(ids, span.ID)
+		}
+		return ids
+	})
+	list.hoist = true
+	return list
 }
 
 type commandViewHandle struct {
@@ -1595,17 +1605,6 @@ func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 		fe.db.SetPrimarySpan(spanID)
 		fe.ZoomedSpan = spanID
 		fe.FocusedSpan = spanID
-		fe.recalculateViewLocked()
-		fe.Update()
-	})
-}
-
-// SetServicesPrimary declares this run to be about the services it starts
-// (see ServicesFrontend). promoteServicesLocked then leads the live tree with
-// each surfaced service's display span.
-func (fe *frontendPretty) SetServicesPrimary(v bool) {
-	fe.dispatch(func() {
-		fe.servicesPrimary = v
 		fe.recalculateViewLocked()
 		fe.Update()
 	})
@@ -3496,7 +3495,6 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.promoteChecksLocked()
 		fe.promoteConversationLocked()
 		fe.promoteGeneratorsLocked()
-		fe.promoteServicesLocked()
 	}
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
@@ -3832,44 +3830,6 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	for _, skip := range fe.db.SkippedModuleSpans() {
 		host.RevealedSpans.Add(skip)
 	}
-	host.Passthrough = true
-	if !fe.ZoomedSpan.IsValid() {
-		fe.ZoomedSpan = fe.db.PrimarySpan
-	}
-}
-
-// promoteServicesLocked is the service analog of promoteConversationLocked,
-// for runs that declared themselves to be ABOUT the services they start
-// (`dagger up`, via SetServicesPrimary). There is deliberately no data-only
-// gate like the other promotions have: service spans are ambient — any run
-// that binds a service has one — so promoting whenever one surfaces would
-// hide ordinary call trees behind their incidental services.
-//
-// When declared, wire each surfaced service's display span into the host's
-// RevealedSpans (DB.PromoteServicesTo) and mark the host Passthrough so
-// RowsView leads with the services. For `dagger up` each display span is the
-// per-service span RunUp starts: the port-suffixed name, the rolled-up
-// health-check and service logs, and the `ready <url>` child — the setup
-// noise (module load, session connect) drops away.
-func (fe *frontendPretty) promoteServicesLocked() {
-	if !fe.servicesPrimary || fe.db == nil {
-		return
-	}
-	// SetPrimary explicitly zooms interactive commands to the CLI root, while
-	// RootSpan is merely the first parentless span received and may be a remote
-	// query root. Promote the span RowsView is actually zoomed to, and ask the
-	// surfacing question about that same span: relative to the trace root it
-	// may be unanswerable when the primary is a sibling parentless span.
-	host := fe.db.RootSpan
-	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
-		host = primary
-	}
-	if host == nil || !fe.db.HasServicesForSpan(host) {
-		return
-	}
-	fe.db.PromoteServicesTo(host)
-	// For `dagger up` the host is already passthrough (the CLI's `services`
-	// zoom span); set it all the same so the promotion stands on its own.
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
@@ -6332,6 +6292,9 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// Flag how many tokens a tool call's result added to the model's
 		// context, so an outsized one stands out at a glance.
 		r.renderToolResultTokens(out, span)
+
+		// Show where a ready service is reachable, right on its own row.
+		r.renderServiceURLs(out, span)
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {

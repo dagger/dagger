@@ -399,17 +399,7 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	neverExpand := (row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans) &&
 		verbosity < ExpandCompletedVerbosity
 
-	// A promoted service display span (ServiceNameAttr, not the engine's
-	// hidden exec span) with revealed children -- its `ready <url>` markers,
-	// wired in by DB.PromoteServicesTo -- always expands to show them. This
-	// does not punch through its rollup boundary: expansion shows exactly the
-	// revealed spans (ShouldShowRevealedSpans), so `dagger up` renders each
-	// service's rolled-up health-check and service logs with its readiness
-	// URL beneath, and none of the evaluation machinery.
-	serviceExpand := row.Span.ServiceName != "" && !row.Span.Service &&
-		len(row.Span.RevealedSpans.Order) > 0 && row.ShouldShowRevealedSpans(opts)
-
-	return serviceExpand || ((autoExpand || alwaysExpand) && !neverExpand)
+	return (autoExpand || alwaysExpand) && !neverExpand
 }
 
 func (row *TraceTree) Depth() int {

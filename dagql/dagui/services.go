@@ -34,28 +34,6 @@ func (node *ServiceNode) Origin() *Span {
 	return nil
 }
 
-// DisplaySpan returns the row that best represents this service in the live
-// tree: the nearest displayable (received, non-passthrough, non-internal)
-// ancestor of the service exec span, stopping at host. The exec span itself
-// is deliberately passthrough (its logs are routed away and its failure
-// propagates to its origin), so revealing it directly would render nothing
-// useful; for `dagger up` the walk lands on the per-service display span
-// core/modtree.go's RunUp starts — the row carrying the port-suffixed name,
-// the rolled-up health-check and service logs, and the `ready <url>` child.
-// When no ancestor below host qualifies, fall back to the origin API span,
-// then to the exec span itself.
-func (node *ServiceNode) DisplaySpan(host *Span) *Span {
-	for s := node.Span; s != nil && s != host; s = s.ParentSpan {
-		if s.Received && !s.Passthrough && !s.Internal {
-			return s
-		}
-	}
-	if origin := node.Origin(); origin != nil {
-		return origin
-	}
-	return node.Span
-}
-
 // SurfacedServices returns the whole trace's service instances as a tree. It
 // is SurfacedServicesForSpan relative to the trace root.
 func (db *DB) SurfacedServices() []*ServiceNode {
@@ -145,55 +123,44 @@ func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 	return roots
 }
 
-// HasServices reports whether the trace's surfaced service view is non-empty.
-func (db *DB) HasServices() bool {
-	return db.HasServicesForSpan(nil)
-}
-
-// HasServicesForSpan reports whether the root-relative surfaced service view
-// is non-empty. A nil root means the live trace root.
-func (db *DB) HasServicesForSpan(root *Span) bool {
-	return len(db.SurfacedServicesForSpan(root)) > 0
-}
-
-// PromoteServicesTo wires each surfaced service's display span into
-// host.RevealedSpans (and each nested service's into its parent's display
-// span) so the live tree can lead with a run's services — the service analog
-// of PromoteConversationTo. Unlike checks or the conversation, service spans
-// are ambient (any run that binds a service has one), so this is NOT applied
-// to every trace: only a command that declares itself to be about its
-// services (`dagger up`, see idtui's promoteServicesLocked) promotes them.
-// Idempotent: re-adds are no-ops on the set.
+// ServiceDisplaySpans returns the per-service display spans beneath root, in
+// start order: the spans core's ModTreeNode.PrepareUp opens for each `dagger
+// up` service, recognizable by a service name (ServiceNameAttr) WITHOUT the
+// engine's service-instance mark (ServiceAttr). Each carries the service's
+// port-suffixed name, its rolled-up evaluation/health-check/service logs, its
+// readiness URLs (ServiceURLs, stamped once the health check passes), and the
+// `ready <url>` child span.
 //
-// A service's readiness markers — the `ready <url>` spans `dagger up` starts
-// beneath the display span once a health check passes, recognized by
-// ServiceURLs — are wired into the display span's own RevealedSpans. The
-// display span rolls up its logs, so its expansion shows exactly its
-// revealed spans (see TraceTree.ShouldShowRevealedSpans) — the readiness
-// URL beneath the rolled-up health-check and service logs, with the
-// evaluation machinery staying hidden — and IsExpanded auto-expands a
-// service display span with revealed children to make that the default.
-//
-// Callers mark host Passthrough so RowsView iterates these revealed spans
-// instead of host's raw children.
-func (db *DB) PromoteServicesTo(host *Span) {
-	if host == nil {
-		return
+// This is the live-dashboard anchor for `dagger up`'s command screen (see
+// idtui's ViewContext.ServiceList): unlike SurfacedServicesForSpan — which
+// anchors on the engine-marked exec span and only sees a service once it is
+// actually running — a display span exists from the moment the service's
+// evaluation begins, so the dashboard shows every service row (with its build
+// logs streaming) from the start. The same zoom-relative containment as the
+// other surfaced kinds applies. The result is cached per DB mutation and per
+// root; callers must treat the returned slice as read-only.
+func (db *DB) ServiceDisplaySpans(root *Span) []*Span {
+	r := db.surfaceRoot(root)
+	key := surfaceRootID(r)
+	if db.serviceDisplaysInit && db.serviceDisplaysAt == db.mutations && db.serviceDisplaysRoot == key {
+		return db.serviceDisplays
 	}
-	var wire func(parent *Span, nodes []*ServiceNode)
-	wire = func(parent *Span, nodes []*ServiceNode) {
-		for _, node := range nodes {
-			display := node.DisplaySpan(host)
-			if display != parent {
-				parent.RevealedSpans.Add(display)
-			}
-			for _, child := range display.ChildSpans.Order {
-				if len(child.ServiceURLs) > 0 {
-					display.RevealedSpans.Add(child)
-				}
-			}
-			wire(display, node.Children)
+	var displays []*Span
+	for span := range db.Spans.Iter() {
+		if span.ServiceName == "" || span.Service || span.Internal || !span.Received {
+			continue
 		}
+		if !spanMayRollUp(span, r, nil) {
+			continue
+		}
+		displays = append(displays, span)
 	}
-	wire(host, db.SurfacedServicesForSpan(host))
+	sort.SliceStable(displays, func(i, j int) bool {
+		return displays[i].Before(displays[j])
+	})
+	db.serviceDisplays = displays
+	db.serviceDisplaysAt = db.mutations
+	db.serviceDisplaysRoot = key
+	db.serviceDisplaysInit = true
+	return displays
 }
