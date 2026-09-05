@@ -84,12 +84,26 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
 	require.NoError(t, cache.ReleaseSession(ctx, "before"))
 	require.NoError(t, cache.Close(ctx))
+	remaining, err := consumer.Leases.List(context.Background())
+	require.NoError(t, err)
+	for _, owner := range remaining {
+		resources, err := consumer.Leases.ListResources(context.Background(), owner)
+		require.NoError(t, err)
+		t.Logf("after clean cache close: lease=%s labels=%v resources=%v", owner.ID, owner.Labels, resources)
+	}
 	// Release any transfer pin still held by the original object. Persisted
 	// result leases must protect the physical data across the next manager.
 	require.NoError(t, imported.Release(context.Background()))
 	consumer.GC(t)
 	consumer.Reload(t)
+	require.NoError(t, consumer.Manager.LoadPersistentMetadata(bkcache.PersistentMetadataRows{}))
 	ctx, cache, srv = transferCache(t, consumer, dbPath, "after")
+	reimported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+	require.NoError(t, err)
+	require.Equal(t, imported.SnapshotID(), reimported.SnapshotID())
+	require.EqualValues(t, 2, provider.Reads.Load())
+	require.EqualValues(t, 2, consumer.Applies.Load())
+	require.NoError(t, reimported.Release(context.Background()))
 	loaded := make([]dagql.AnyResult, len(ids))
 	for i, id := range ids {
 		loaded[i], err = cache.LoadResultByResultID(ctx, "after", srv, id)
