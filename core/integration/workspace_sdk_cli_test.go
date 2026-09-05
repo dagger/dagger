@@ -48,9 +48,9 @@ func (WorkspaceSuite) TestSDKListCLI(ctx context.Context, t *testctx.T) {
 	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "sdk", "list")
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"NAME", "MODULE",
-		"go", "go-sdk",
-		"python", "python-sdk",
+		"SDK", "SOURCE",
+		"go", "github.com/dagger/go-sdk",
+		"python", "github.com/dagger/python-sdk",
 	}, strings.Fields(string(out)))
 }
 

@@ -387,7 +387,6 @@ func cloneManifestConfig(config *modules.ModuleConfigWithUserFields) *modules.Mo
 		return nil
 	}
 	cloned := *config
-	cloned.ModuleConfig = config.ModuleConfig
 	cloned.SDK = cloneManifestSDK(config.SDK)
 	cloned.Blueprint = cloneManifestDependency(config.Blueprint)
 	cloned.Toolchains = cloneManifestDependencies(config.Toolchains)
@@ -397,7 +396,6 @@ func cloneManifestConfig(config *modules.ModuleConfigWithUserFields) *modules.Mo
 	if config.Codegen != nil {
 		cloned.Codegen = config.Codegen.Clone()
 	}
-	cloned.Exclude = slices.Clone(config.Exclude)
 	cloned.Clients = make([]*modules.ModuleConfigClient, 0, len(config.Clients))
 	for _, client := range config.Clients {
 		if client != nil {
@@ -416,8 +414,6 @@ func cloneManifestSDK(sdk *modules.SDK) *modules.SDK {
 		return nil
 	}
 	cloned := *sdk
-	cloned.Config = maps.Clone(sdk.Config)
-	cloned.Experimental = maps.Clone(sdk.Experimental)
 	return &cloned
 }
 
