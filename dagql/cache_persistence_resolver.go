@@ -11,12 +11,12 @@ type sharedResultLookupMode uint8
 const (
 	sharedResultLookupExact sharedResultLookupMode = iota
 	sharedResultLookupCanonicalEquivalent
-	// sharedResultLookupCanonicalEquivalentGated additionally refuses to
+	// sharedResultLookupCanonicalEquivalentForSession additionally refuses to
 	// serve a result whose required session resources the session has not
 	// bound. Value loads use it: without the check, an exact-ID load served
 	// the result whenever no canonical candidate passed the session filter,
-	// bypassing the gating that request and digest lookups enforce.
-	sharedResultLookupCanonicalEquivalentGated
+	// omitting the resource checks that request and digest lookups enforce.
+	sharedResultLookupCanonicalEquivalentForSession
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -101,7 +101,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		// exact result it asked for is settled and healthy.
 		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), true)
 	}
-	if mode == sharedResultLookupCanonicalEquivalentGated &&
+	if mode == sharedResultLookupCanonicalEquivalentForSession &&
 		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
 		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
@@ -128,7 +128,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
 	mode := sharedResultLookupExact
 	if sessionID != "" {
-		mode = sharedResultLookupCanonicalEquivalentGated
+		mode = sharedResultLookupCanonicalEquivalentForSession
 	}
 
 	lookup, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)

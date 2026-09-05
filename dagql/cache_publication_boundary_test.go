@@ -191,20 +191,20 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 		hitErrCh <- err
 	}()
 
-	poisoned := waitForSessionResult(t, c, "persistable-hit")
+	attachFailedResult := waitForSessionResult(t, c, "persistable-hit")
 	c.egraphMu.RLock()
-	_, persistedBeforeFailure := c.persistedEdgesByResult[poisoned.id]
+	_, persistedBeforeFailure := c.persistedEdgesByResult[attachFailedResult.id]
 	c.egraphMu.RUnlock()
 	assert.Assert(t, !persistedBeforeFailure)
 
 	close(allowFailure)
 	assert.ErrorIs(t, <-leaderErrCh, attachErr)
 	assert.ErrorContains(t, <-hitErrCh, attachErr.Error())
-	assert.Equal(t, resultAttachmentFailed, poisoned.attachmentState())
+	assert.Equal(t, resultAttachmentFailed, attachFailedResult.attachmentState())
 
 	c.egraphMu.Lock()
-	assert.Assert(t, c.resultsByID[poisoned.id] == poisoned)
-	_, persistedAfterFailure := c.persistedEdgesByResult[poisoned.id]
+	assert.Assert(t, c.resultsByID[attachFailedResult.id] == attachFailedResult)
+	_, persistedAfterFailure := c.persistedEdgesByResult[attachFailedResult.id]
 	c.egraphMu.Unlock()
 	assert.Assert(t, !persistedAfterFailure)
 
@@ -218,7 +218,7 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !replacement.HitCache())
 	assert.Equal(t, int32(2), initCalls.Load())
-	assert.Assert(t, replacement.cacheSharedResult().id != poisoned.id)
+	assert.Assert(t, replacement.cacheSharedResult().id != attachFailedResult.id)
 
 	resolvedID, err := c.resultIDForCall(call)
 	assert.NilError(t, err)
@@ -229,13 +229,13 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.Assert(t, hit)
 	assert.Equal(t, replacement.cacheSharedResult().id, digestHit.cacheSharedResult().id)
 
-	idHit, err := c.LoadResultByResultID(t.Context(), "id-load", srv, uint64(poisoned.id))
+	idHit, err := c.LoadResultByResultID(t.Context(), "id-load", srv, uint64(attachFailedResult.id))
 	assert.NilError(t, err)
 	assert.Equal(t, replacement.cacheSharedResult().id, idHit.cacheSharedResult().id)
 
 	assert.NilError(t, c.ReleaseSession(t.Context(), "persistable-hit"))
 	c.egraphMu.RLock()
-	assert.Assert(t, c.resultsByID[poisoned.id] == nil)
+	assert.Assert(t, c.resultsByID[attachFailedResult.id] == nil)
 	c.egraphMu.RUnlock()
 	assert.NilError(t, c.ReleaseSession(t.Context(), "replacement"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "digest"))
