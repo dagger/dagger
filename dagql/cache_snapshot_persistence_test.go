@@ -66,6 +66,9 @@ type fakeSnapshotManager struct {
 	deleteStaleCallSeen bool
 	attachStarted       chan struct{}
 	allowAttach         chan struct{}
+	// attachBlockDone makes the attachStarted/allowAttach block apply to the
+	// first AttachLease call only, so a retried sync proceeds unblocked.
+	attachBlockDone bool
 }
 
 func (*fakeSnapshotManager) Search(context.Context, string, bool) ([]bkcache.RefMetadata, error) {
@@ -135,10 +138,14 @@ func (*fakeSnapshotManager) IdentityMapping() *idtools.IdentityMapping {
 }
 
 func (m *fakeSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
-	_ = ctx
-	if m.attachStarted != nil {
+	if m.attachStarted != nil && !m.attachBlockDone {
+		m.attachBlockDone = true
 		close(m.attachStarted)
-		<-m.allowAttach
+		select {
+		case <-m.allowAttach:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
 	}
 	m.attachCalls = append(m.attachCalls, struct{ LeaseID, SnapshotID string }{
 		LeaseID:    leaseID,
