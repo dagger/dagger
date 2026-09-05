@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,149 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
+
+type containerImagePartsConcurrencyTestOp struct {
+	core.LazyState
+	fsBodyHook func()
+}
+
+func (op *containerImagePartsConcurrencyTestOp) ContainerLazyParent() dagql.ObjectResult[*core.Container] {
+	return dagql.ObjectResult[*core.Container]{}
+}
+
+func (op *containerImagePartsConcurrencyTestOp) Evaluate(ctx context.Context, ctr *core.Container) error {
+	if err := op.EvaluateContainerGroup(ctx, ctr, core.ContainerLazyGroupMetadata); err != nil {
+		return err
+	}
+	if err := op.EvaluateContainerGroup(ctx, ctr, core.ContainerLazyGroupWrite); err != nil {
+		return err
+	}
+	ctr.Lazy = nil
+	return nil
+}
+
+func (op *containerImagePartsConcurrencyTestOp) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (op *containerImagePartsConcurrencyTestOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return nil, nil
+}
+
+func (op *containerImagePartsConcurrencyTestOp) ContainerLazyGroups(_ context.Context, _ *core.Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	if parts == nil {
+		return []dagql.LazyGroupKey{core.ContainerLazyGroupMetadata, core.ContainerLazyGroupWrite}, nil
+	}
+	groups := make([]dagql.LazyGroupKey, 0, len(parts))
+	seen := map[dagql.LazyGroupKey]struct{}{}
+	for _, part := range parts {
+		group := core.ContainerLazyGroupWrite
+		if part == core.ContainerPartMetadata {
+			group = core.ContainerLazyGroupMetadata
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func (op *containerImagePartsConcurrencyTestOp) EvaluateContainerGroup(ctx context.Context, _ *core.Container, group dagql.LazyGroupKey) error {
+	return op.LazyState.EvaluateGroup(ctx, "test.containerImagePartsConcurrency", group, func(context.Context) error {
+		if group == core.ContainerLazyGroupWrite && op.fsBodyHook != nil {
+			op.fsBodyHook()
+		}
+		return nil
+	})
+}
+
+func attachContainerInternalTestObject[T dagql.Typed](
+	t *testing.T,
+	ctx context.Context,
+	cache *dagql.Cache,
+	srv *dagql.Server,
+	sessionID string,
+	syntheticOp string,
+	self T,
+) dagql.ObjectResult[T] {
+	t.Helper()
+	frame := &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: syntheticOp,
+		Type:        dagql.NewResultCallType(self.Type()),
+	}
+	res, err := cache.GetOrInitCall(ctx, sessionID, srv, &dagql.CallRequest{ResultCall: frame}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(self, srv, frame)
+	})
+	require.NoError(t, err)
+	return res.(dagql.ObjectResult[T])
+}
+
+func TestEvaluateContainerImagePartsRunsContainersConcurrently(t *testing.T) {
+	const sessionID = "container-image-parts-concurrency-session"
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "container-image-parts-concurrency-client",
+		SessionID: sessionID,
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, cache.CloseDiscardingPersistence())
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv, err := dagql.NewServer(ctx, &core.Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Container]{Typed: &core.Container{}}))
+
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+
+	containers := make([]dagql.ObjectResult[*core.Container], 0, 2)
+	for _, syntheticOp := range []string{"image-parts-concurrency-a", "image-parts-concurrency-b"} {
+		op := &containerImagePartsConcurrencyTestOp{
+			LazyState: core.NewLazyState(),
+			fsBodyHook: func() {
+				entered <- struct{}{}
+				<-release
+			},
+		}
+		ctr := core.NewContainer(core.Platform{})
+		ctr.Lazy = op
+		containers = append(containers, attachContainerInternalTestObject(t, ctx, cache, srv, sessionID, syntheticOp, ctr))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- evaluateContainerImageParts(ctx, cache, containers...)
+	}()
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for range containers {
+		select {
+		case <-entered:
+		case err := <-done:
+			t.Fatalf("image part evaluation returned before both rootfs bodies entered: %v", err)
+		case <-timer.C:
+			t.Fatal("timed out waiting for concurrent rootfs evaluation")
+		}
+	}
+	unblock()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-timer.C:
+		t.Fatal("timed out waiting for image part evaluation")
+	}
+	for _, ctr := range containers {
+		require.Nil(t, ctr.Self().Lazy)
+	}
+}
 
 func TestShouldSelectLatestImageRelease(t *testing.T) {
 	t.Parallel()
@@ -128,6 +272,157 @@ func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	child, _, err := cloneContainerForSchemaChild(t.Context(), parent)
 	require.NoError(t, err)
 	require.False(t, child.CanUseFromContentDigest())
+}
+
+func TestEagerContainerMountMetadataResolvers(t *testing.T) {
+	const sessionID = "eager-container-mount-resolvers-session"
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "eager-container-mount-resolvers-client",
+		SessionID: sessionID,
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, cache.CloseDiscardingPersistence())
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+	queryServer := &currentTypeDefsTestServer{}
+	query := core.NewRoot(queryServer)
+	dag, err := dagql.NewServer(ctx, query)
+	require.NoError(t, err)
+	queryServer.dag = dag
+	ctx = core.ContextWithQuery(ctx, query)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Container]{Typed: &core.Container{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Volume]{Typed: &core.Volume{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Secret]{Typed: &core.Secret{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Socket]{Typed: &core.Socket{}}))
+	schema := &containerSchema{}
+
+	t.Run("without mount", func(t *testing.T) {
+		parentSelf := core.NewContainer(core.Platform{})
+		parentSelf.ImageRef = "parent-image"
+		parentSelf.Mounts = core.ContainerMounts{{
+			Target:      "/old",
+			TmpfsSource: &core.TmpfsMountSource{},
+		}}
+		parent, err := dagql.NewObjectResultForCall(parentSelf, dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-without-mount-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withoutMount(ctx, parent, containerWithoutMountArgs{Path: "/old"})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Empty(t, child.Mounts)
+		require.Empty(t, child.ImageRef)
+	})
+
+	t.Run("mounted temp", func(t *testing.T) {
+		parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-mounted-temp-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withMountedTemp(ctx, parent, containerWithMountedTempArgs{Path: "/tmp"})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Len(t, child.Mounts, 1)
+		require.Equal(t, "/tmp", child.Mounts[0].Target)
+		require.NotNil(t, child.Mounts[0].TmpfsSource)
+	})
+
+	t.Run("mounted volume", func(t *testing.T) {
+		volume := attachContainerInternalTestObject(t, ctx, cache, dag, sessionID, "eager-mounted-volume-source", &core.Volume{})
+		volumeID, err := volume.ID()
+		require.NoError(t, err)
+		parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-mounted-volume-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withMountedVolume(ctx, parent, containerWithMountedVolumeArgs{
+			Path:     "/volume",
+			Volume:   dagql.NewID[*core.Volume](volumeID),
+			ReadOnly: true,
+		})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Len(t, child.Mounts, 1)
+		require.Equal(t, "/volume", child.Mounts[0].Target)
+		require.True(t, child.Mounts[0].Readonly)
+		require.Same(t, volume.Self(), child.Mounts[0].VolumeSource.Volume.Self())
+	})
+
+	t.Run("mounted secret without owner", func(t *testing.T) {
+		secret := attachContainerInternalTestObject(t, ctx, cache, dag, sessionID, "eager-mounted-secret-source", &core.Secret{NameVal: "test"})
+		secretID, err := secret.ID()
+		require.NoError(t, err)
+		parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-mounted-secret-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withMountedSecret(ctx, parent, containerWithMountedSecretArgs{
+			Path:   "/secret",
+			Source: dagql.NewID[*core.Secret](secretID),
+			Mode:   0o400,
+		})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Len(t, child.Secrets, 1)
+		require.Equal(t, "/secret", child.Secrets[0].MountPath)
+		require.Nil(t, child.Secrets[0].Owner)
+		require.Same(t, secret.Self(), child.Secrets[0].Secret.Self())
+	})
+
+	t.Run("unix socket without owner", func(t *testing.T) {
+		socket := attachContainerInternalTestObject(t, ctx, cache, dag, sessionID, "eager-unix-socket-source", &core.Socket{Kind: core.SocketKindUnixOpaque})
+		socketID, err := socket.ID()
+		require.NoError(t, err)
+		parent, err := dagql.NewObjectResultForCall(core.NewContainer(core.Platform{}), dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-unix-socket-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withUnixSocket(ctx, parent, containerWithUnixSocketArgs{
+			Path:   "/socket",
+			Source: dagql.NewID[*core.Socket](socketID),
+		})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Len(t, child.Sockets, 1)
+		require.Equal(t, "/socket", child.Sockets[0].ContainerPath)
+		require.Nil(t, child.Sockets[0].Owner)
+		require.Same(t, socket.Self(), child.Sockets[0].Source.Self())
+	})
+
+	t.Run("without unix socket", func(t *testing.T) {
+		parentSelf := core.NewContainer(core.Platform{})
+		parentSelf.ImageRef = "parent-image"
+		parentSelf.Sockets = []core.ContainerSocket{{ContainerPath: "/old.sock"}}
+		parent, err := dagql.NewObjectResultForCall(parentSelf, dag, &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "eager-without-unix-socket-parent",
+			Type:        dagql.NewResultCallType((&core.Container{}).Type()),
+		})
+		require.NoError(t, err)
+
+		child, err := schema.withoutUnixSocket(ctx, parent, containerWithoutUnixSocketArgs{Path: "/old.sock"})
+		require.NoError(t, err)
+		require.Nil(t, child.Lazy)
+		require.Empty(t, child.Sockets)
+		require.Empty(t, child.ImageRef)
+	})
 }
 
 func TestWithImageConfigMetadataMutatesContainerConfig(t *testing.T) {

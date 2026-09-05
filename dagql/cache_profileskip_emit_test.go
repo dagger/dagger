@@ -317,7 +317,7 @@ func TestProfileSkipLazyCrossRecipeForcerStaysClean(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
+		joined := shared.lazyWhole.attempt != nil && shared.lazyWhole.attempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break
@@ -402,7 +402,7 @@ func TestProfileSkipDoesNotBlindInvalidTargetDetector(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared.lazyMu.Lock()
-		joined := shared.lazyEvalAttempt != nil && shared.lazyEvalAttempt.waiters >= 2
+		joined := shared.lazyWhole.attempt != nil && shared.lazyWhole.attempt.waiters >= 2
 		shared.lazyMu.Unlock()
 		if joined {
 			break
