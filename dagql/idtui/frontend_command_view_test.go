@@ -66,6 +66,36 @@ func TestPushConfirmationReportMode(t *testing.T) {
 	}
 }
 
+func TestPushPassphraseMaskedAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	var passphrase string
+	field := huh.NewInput().Title("SSH key passphrase").EchoMode(huh.EchoModePassword).Value(&passphrase)
+	form := huh.NewForm(huh.NewGroup(field))
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	field.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fixture-secret")})
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	if passphrase != "fixture-secret" || strings.Contains(frame, passphrase) {
+		t.Fatal("passphrase input must accept text without displaying it")
+	}
+	questionAt, inputAt := strings.Index(frame, "SSH key passphrase"), strings.Index(frame, "unfinished draft")
+	if questionAt < 0 || inputAt < questionAt {
+		t.Fatal("passphrase form must appear above the input")
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+		t.Fatal("dismissal must preserve the draft and remove the secret form")
+	}
+}
+
 func TestPushConfirmationCancellation(t *testing.T) {
 	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
 	fe.setupTUI()

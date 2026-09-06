@@ -79,17 +79,53 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	if err != nil {
 		return nil, err
 	}
-	// Human approval time does not consume the network operation's deadline.
+	// Prepare history before asking the owner to unlock a key. Local fetch also
+	// spawns upload-pack; cancel its entire process group on timeout.
+	local = local.New(gitutil.WithExec(runProcessGroup))
+	tmp, err := os.MkdirTemp("", "dagger-git-push-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	local = local.New(gitutil.WithGitDir(tmp))
+	prepareCtx, prepareCancel := context.WithTimeout(ctx, GitPushTimeout)
+	defer prepareCancel()
+	format := "sha1"
+	if len(ref.Ref.SHA) == 64 {
+		format = "sha256"
+	}
+	if _, err := local.Run(prepareCtx, "init", "--bare", "--object-format="+format); err != nil {
+		return nil, err
+	}
+	err = ref.Repo.Self().Backend.mount(prepareCtx, 0, false, []GitRefBackend{ref.Backend}, func(source *gitutil.GitCLI) error {
+		url, err := source.URL(prepareCtx)
+		if err != nil {
+			return err
+		}
+		_, err = local.Run(prepareCtx, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, ref.Ref.SHA+":refs/dagger/push/source")
+		return err
+	})
+	prepareCancel()
+	if err != nil {
+		return nil, fmt.Errorf("prepare push history: %w", err)
+	}
+	// Preparing owner credentials can ask for a passphrase. Only a push reaches
+	// this request, after authorization; reads never initialize/unlock an agent.
+	sshAuthPath, err := prepareGitPushSSHAuth(ctx, query, owner, destination)
+	if err != nil {
+		return nil, err
+	}
+	// Human approval and key unlocking do not consume the network deadline.
 	ctx, cancel := context.WithTimeout(ctx, GitPushTimeout)
 	defer cancel()
 	authCtx := engine.ContextWithClientMetadata(ctx, owner)
 	var sshAuthSock string
-	if destination.URL.Scheme == gitutil.SSHProtocol && destination.SSHAuthSocket.Self() == nil && owner.SSHAuthSocketPath != "" {
+	if destination.URL.Scheme == gitutil.SSHProtocol && destination.SSHAuthSocket.Self() == nil && sshAuthPath != "" {
 		// Mount only for this operation, without registering a socket handle or
 		// returning an authenticated GitRepository to the module.
 		socket := &Socket{
 			Kind:           SocketKindUnixOpaque,
-			URLVal:         (&url.URL{Scheme: "unix", Path: owner.SSHAuthSocketPath}).String(),
+			URLVal:         (&url.URL{Scheme: "unix", Path: sshAuthPath}).String(),
 			SourceClientID: owner.ClientID,
 		}
 		var cleanup func() error
@@ -99,9 +135,6 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 		}
 		defer cleanup()
 	}
-	// Local fetch also spawns upload-pack. Cancel its whole process group so
-	// inherited pipes cannot keep the operation alive past the deadline.
-	local = local.New(gitutil.WithExec(runProcessGroup))
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, err
@@ -130,31 +163,23 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 			pushGit = pushGit.New(gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username))
 		} // Missing credentials are permitted for anonymous writable remotes.
 	}
-	tmp, err := os.MkdirTemp("", "dagger-git-push-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tmp)
-	local = local.New(gitutil.WithGitDir(tmp))
-	format := "sha1"
-	if len(ref.Ref.SHA) == 64 {
-		format = "sha256"
-	}
-	if _, err := local.Run(ctx, "init", "--bare", "--object-format="+format); err != nil {
-		return nil, err
-	}
-	err = ref.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref.Backend}, func(source *gitutil.GitCLI) error {
-		url, err := source.URL(ctx)
-		if err != nil {
-			return err
-		}
-		_, err = local.Run(ctx, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, ref.Ref.SHA+":refs/dagger/push/source")
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prepare push history: %w", err)
-	}
 	return runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, opts.ExpectedRemoteSHA)
+}
+
+func prepareGitPushSSHAuth(ctx context.Context, query *Query, owner *engine.ClientMetadata, destination *RemoteGitRepository) (string, error) {
+	if destination.URL.Scheme != gitutil.SSHProtocol || destination.SSHAuthSocket.Self() != nil || owner.SSHAuthSocketPath != "" {
+		return owner.SSHAuthSocketPath, nil
+	}
+	authCtx := engine.ContextWithClientMetadata(ctx, owner)
+	bk, err := query.Engine(authCtx)
+	if err != nil {
+		return "", err
+	}
+	path, err := bk.PrepareGitPushSSHAuth(authCtx, destination.URL.Remote())
+	if err != nil {
+		return "", fmt.Errorf("prepare SSH push authentication: %w", err)
+	}
+	return path, nil
 }
 
 func gitPushCLIOptions() []gitutil.Option {

@@ -5,6 +5,8 @@ package dagger.git;
 option go_package = "git";
 
 service Git {
+  // Engine-internal: call only after push authorization, never for Git reads.
+  rpc PreparePushSSHAuth(PreparePushSSHAuthRequest) returns (PreparePushSSHAuthResponse);
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
@@ -270,4 +272,13 @@ message CaptureGitCandidate {
   int64 bytes = 4;
   // approval_token binds approval to the path's reviewed type, mode, and bytes.
   string approval_token = 5;
+}
+
+message PreparePushSSHAuthRequest {
+  string remote = 1;
+}
+
+message PreparePushSSHAuthResponse {
+  // Operation-local socket; never publish it as a module capability.
+  string socket_path = 1;
 }
