@@ -216,6 +216,9 @@ message CaptureGitPolicy {
   int32 max_untracked_files = 6;
   int64 max_tracked_file_bytes = 7;
   int64 max_total_bytes = 8;
+  // Omit all untracked paths before inspecting their contents. Host files are
+  // never deleted. Tracked changes remain subject to the usual capture policy.
+  bool drop_untracked = 9;
 }
 
 message CaptureGitResponse {

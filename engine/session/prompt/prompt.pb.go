@@ -249,37 +249,209 @@ func (m *StringResponse) GetResponse() string {
 	return ""
 }
 
+type SelectChoice struct {
+	Id    string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+}
+
+func (m *SelectChoice) Reset()      { *m = SelectChoice{} }
+func (*SelectChoice) ProtoMessage() {}
+func (*SelectChoice) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{4}
+}
+func (m *SelectChoice) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SelectChoice) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SelectChoice.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SelectChoice) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SelectChoice.Merge(m, src)
+}
+func (m *SelectChoice) XXX_Size() int {
+	return m.Size()
+}
+func (m *SelectChoice) XXX_DiscardUnknown() {
+	xxx_messageInfo_SelectChoice.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SelectChoice proto.InternalMessageInfo
+
+func (m *SelectChoice) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+func (m *SelectChoice) GetLabel() string {
+	if m != nil {
+		return m.Label
+	}
+	return ""
+}
+
+type SelectRequest struct {
+	Title   string          `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Prompt  string          `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Choices []*SelectChoice `protobuf:"bytes,3,rep,name=choices,proto3" json:"choices,omitempty"`
+	// Required: must name a choice. Never implicitly select the first action.
+	DefaultChoice string `protobuf:"bytes,4,opt,name=default_choice,json=defaultChoice,proto3" json:"default_choice,omitempty"`
+}
+
+func (m *SelectRequest) Reset()      { *m = SelectRequest{} }
+func (*SelectRequest) ProtoMessage() {}
+func (*SelectRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{5}
+}
+func (m *SelectRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SelectRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SelectRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SelectRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SelectRequest.Merge(m, src)
+}
+func (m *SelectRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SelectRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SelectRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SelectRequest proto.InternalMessageInfo
+
+func (m *SelectRequest) GetTitle() string {
+	if m != nil {
+		return m.Title
+	}
+	return ""
+}
+
+func (m *SelectRequest) GetPrompt() string {
+	if m != nil {
+		return m.Prompt
+	}
+	return ""
+}
+
+func (m *SelectRequest) GetChoices() []*SelectChoice {
+	if m != nil {
+		return m.Choices
+	}
+	return nil
+}
+
+func (m *SelectRequest) GetDefaultChoice() string {
+	if m != nil {
+		return m.DefaultChoice
+	}
+	return ""
+}
+
+type SelectResponse struct {
+	Choice string `protobuf:"bytes,1,opt,name=choice,proto3" json:"choice,omitempty"`
+}
+
+func (m *SelectResponse) Reset()      { *m = SelectResponse{} }
+func (*SelectResponse) ProtoMessage() {}
+func (*SelectResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{6}
+}
+func (m *SelectResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SelectResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SelectResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SelectResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SelectResponse.Merge(m, src)
+}
+func (m *SelectResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SelectResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SelectResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SelectResponse proto.InternalMessageInfo
+
+func (m *SelectResponse) GetChoice() string {
+	if m != nil {
+		return m.Choice
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*BoolRequest)(nil), "dagger.prompt.BoolRequest")
 	proto.RegisterType((*BoolResponse)(nil), "dagger.prompt.BoolResponse")
 	proto.RegisterType((*StringRequest)(nil), "dagger.prompt.StringRequest")
 	proto.RegisterType((*StringResponse)(nil), "dagger.prompt.StringResponse")
+	proto.RegisterType((*SelectChoice)(nil), "dagger.prompt.SelectChoice")
+	proto.RegisterType((*SelectRequest)(nil), "dagger.prompt.SelectRequest")
+	proto.RegisterType((*SelectResponse)(nil), "dagger.prompt.SelectResponse")
 }
 
 func init() { proto.RegisterFile("prompt.proto", fileDescriptor_2532b5caf780ac64) }
 
 var fileDescriptor_2532b5caf780ac64 = []byte{
-	// 311 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x29, 0x28, 0xca, 0xcf,
-	0x2d, 0x28, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x4d, 0x49, 0x4c, 0x4f, 0x4f, 0x2d,
-	0xd2, 0x83, 0x08, 0x2a, 0x55, 0x73, 0x71, 0x3b, 0xe5, 0xe7, 0xe7, 0x04, 0xa5, 0x16, 0x96, 0xa6,
-	0x16, 0x97, 0x08, 0x89, 0x71, 0xb1, 0x41, 0x24, 0x24, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0xa0,
-	0x3c, 0x21, 0x15, 0x2e, 0xde, 0x82, 0xd4, 0xa2, 0xe2, 0xcc, 0xe2, 0x92, 0xd4, 0xbc, 0x12, 0xef,
-	0xd4, 0x4a, 0x09, 0x26, 0xb0, 0x34, 0xaa, 0xa0, 0x90, 0x04, 0x17, 0x7b, 0x4a, 0x6a, 0x5a, 0x62,
-	0x69, 0x4e, 0x89, 0x04, 0xb3, 0x02, 0xa3, 0x06, 0x47, 0x10, 0x8c, 0x2b, 0x24, 0xc2, 0xc5, 0x5a,
-	0x92, 0x59, 0x92, 0x93, 0x2a, 0xc1, 0x02, 0xd6, 0x07, 0xe1, 0x28, 0x69, 0x71, 0xf1, 0x40, 0x2c,
-	0x2f, 0x2e, 0xc8, 0xcf, 0x2b, 0x4e, 0x15, 0x92, 0xe2, 0xe2, 0x28, 0x82, 0xb2, 0xc1, 0xf6, 0x73,
-	0x04, 0xc1, 0xf9, 0x4a, 0xe1, 0x5c, 0xbc, 0xc1, 0x25, 0x45, 0x99, 0x79, 0xe9, 0x84, 0x9c, 0x8a,
-	0xe4, 0x08, 0x88, 0x23, 0x31, 0x1d, 0xc1, 0x8c, 0xec, 0x08, 0x1d, 0x2e, 0x3e, 0x98, 0xc1, 0x38,
-	0x9c, 0xc1, 0x89, 0x70, 0x86, 0xd1, 0x1c, 0x46, 0x2e, 0xb6, 0x00, 0x88, 0x45, 0xae, 0x5c, 0x5c,
-	0x10, 0x16, 0xc8, 0x0f, 0x42, 0x52, 0x7a, 0x28, 0x01, 0xab, 0x87, 0x14, 0xaa, 0x52, 0xd2, 0x58,
-	0xe5, 0xa0, 0xb6, 0x79, 0x73, 0xf1, 0x40, 0x8c, 0x81, 0xb8, 0x42, 0x48, 0x06, 0x4d, 0x31, 0x8a,
-	0xaf, 0xa5, 0x64, 0x71, 0xc8, 0x42, 0x0c, 0x73, 0xb2, 0xb9, 0xf0, 0x50, 0x8e, 0xe1, 0xc6, 0x43,
-	0x39, 0x86, 0x0f, 0x0f, 0xe5, 0x18, 0x1b, 0x1e, 0xc9, 0x31, 0xae, 0x78, 0x24, 0xc7, 0x78, 0xe2,
-	0x91, 0x1c, 0xe3, 0x85, 0x47, 0x72, 0x8c, 0x0f, 0x1e, 0xc9, 0x31, 0xbe, 0x78, 0x24, 0xc7, 0xf0,
-	0xe1, 0x91, 0x1c, 0xe3, 0x84, 0xc7, 0x72, 0x0c, 0x17, 0x1e, 0xcb, 0x31, 0xdc, 0x78, 0x2c, 0xc7,
-	0x10, 0x05, 0x0d, 0xba, 0x24, 0x36, 0x70, 0x12, 0x31, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0xe6,
-	0x81, 0xde, 0x61, 0x32, 0x02, 0x00, 0x00,
+	// 428 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x93, 0xb1, 0x8e, 0x9b, 0x40,
+	0x10, 0x86, 0x59, 0x48, 0xb0, 0x3d, 0x06, 0x8a, 0x55, 0x64, 0x21, 0x9c, 0xac, 0x2c, 0x94, 0x48,
+	0x28, 0x8a, 0x28, 0x9c, 0xa4, 0x4b, 0xe5, 0x28, 0x95, 0x9b, 0x08, 0x17, 0x91, 0xd2, 0x44, 0xb6,
+	0xd9, 0x38, 0x48, 0xc4, 0x10, 0x58, 0x17, 0xd1, 0x35, 0xf7, 0x08, 0xd7, 0xdf, 0x0b, 0xdc, 0xa3,
+	0x5c, 0xe9, 0xd2, 0xe5, 0x19, 0x37, 0x77, 0x9d, 0x1f, 0xe1, 0x64, 0x76, 0xb1, 0x16, 0x73, 0xd6,
+	0x75, 0x3b, 0x33, 0xbb, 0xf3, 0x7f, 0x33, 0x3f, 0x80, 0x91, 0x66, 0xc9, 0xdf, 0x94, 0xf9, 0x69,
+	0x96, 0xb0, 0x04, 0x9b, 0xe1, 0x74, 0xb1, 0xa0, 0x99, 0xcf, 0x93, 0xee, 0x05, 0x74, 0x47, 0x49,
+	0x12, 0x07, 0xf4, 0xdf, 0x8a, 0xe6, 0x0c, 0xf7, 0x40, 0xe7, 0x05, 0x1b, 0x0d, 0x90, 0xd7, 0x09,
+	0x44, 0x84, 0xdf, 0x82, 0x99, 0xd2, 0x2c, 0x8f, 0x72, 0x46, 0x97, 0x6c, 0x4c, 0xff, 0xdb, 0x6a,
+	0x59, 0xae, 0x27, 0xb1, 0x0d, 0xad, 0x90, 0xfe, 0x9e, 0xae, 0x62, 0x66, 0x6b, 0x03, 0xe4, 0xb5,
+	0x83, 0x2a, 0xc4, 0xaf, 0xe0, 0x25, 0x8b, 0x58, 0x4c, 0xed, 0x17, 0xe5, 0x3b, 0x1e, 0xb8, 0xef,
+	0xc1, 0xe0, 0xe2, 0x79, 0x9a, 0x2c, 0x73, 0x8a, 0x1d, 0x68, 0x67, 0xe2, 0x5c, 0xea, 0xb7, 0x83,
+	0x63, 0xec, 0xfe, 0x00, 0x73, 0xc2, 0xb2, 0x68, 0xb9, 0x78, 0x0e, 0x55, 0x82, 0xe0, 0x90, 0x4d,
+	0x08, 0x4d, 0x86, 0xf8, 0x00, 0x56, 0xd5, 0xf8, 0x0c, 0x46, 0x47, 0xc2, 0xf8, 0x04, 0xc6, 0x84,
+	0xc6, 0x74, 0xce, 0xbe, 0xfe, 0x49, 0xa2, 0x39, 0xc5, 0x16, 0xa8, 0x51, 0x28, 0x6e, 0xa9, 0x51,
+	0x78, 0xd0, 0x88, 0xa7, 0x33, 0x1a, 0x0b, 0x6d, 0x1e, 0xb8, 0xd7, 0x08, 0x4c, 0xfe, 0xac, 0xa2,
+	0x3f, 0xb2, 0x20, 0x89, 0x45, 0x9a, 0x49, 0xad, 0xcd, 0xf4, 0x19, 0x5a, 0xf3, 0x52, 0x2f, 0xb7,
+	0xb5, 0x81, 0xe6, 0x75, 0x87, 0x7d, 0xbf, 0x66, 0xa3, 0x2f, 0x33, 0x05, 0xd5, 0x5d, 0xfc, 0x0e,
+	0x2c, 0x31, 0xfb, 0x2f, 0x9e, 0x12, 0xeb, 0x37, 0x45, 0x96, 0xdf, 0x77, 0x3d, 0xb0, 0x2a, 0x38,
+	0xb1, 0x81, 0x1e, 0xe8, 0xe2, 0x81, 0xd8, 0x2d, 0x8f, 0x86, 0x0f, 0x08, 0xf4, 0xef, 0x1c, 0xe9,
+	0x1b, 0x00, 0x3f, 0x1d, 0x1c, 0xc4, 0xce, 0x09, 0x8f, 0xf4, 0x4d, 0x39, 0xfd, 0x27, 0x6b, 0x42,
+	0x69, 0x0c, 0x06, 0x6f, 0xc3, 0x3d, 0xc0, 0xaf, 0x4f, 0x07, 0x93, 0x3d, 0x77, 0xde, 0x9c, 0xa9,
+	0x36, 0x9a, 0x95, 0xe3, 0x34, 0x9b, 0xc9, 0x16, 0x34, 0x9b, 0xd5, 0x76, 0x30, 0xfa, 0xb2, 0xde,
+	0x12, 0x65, 0xb3, 0x25, 0xca, 0x7e, 0x4b, 0xd0, 0x65, 0x41, 0xd0, 0x4d, 0x41, 0xd0, 0x6d, 0x41,
+	0xd0, 0xba, 0x20, 0xe8, 0xae, 0x20, 0xe8, 0xbe, 0x20, 0xca, 0xbe, 0x20, 0xe8, 0x6a, 0x47, 0x94,
+	0xf5, 0x8e, 0x28, 0x9b, 0x1d, 0x51, 0x7e, 0x0a, 0xc7, 0x66, 0x7a, 0xf9, 0xb7, 0x7d, 0x7c, 0x0c,
+	0x00, 0x00, 0xff, 0xff, 0xa6, 0x8d, 0x16, 0x58, 0x7d, 0x03, 0x00, 0x00,
 }
 
 func (this *BoolRequest) Equal(that interface{}) bool {
@@ -393,6 +565,95 @@ func (this *StringResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SelectChoice) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SelectChoice)
+	if !ok {
+		that2, ok := that.(SelectChoice)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Id != that1.Id {
+		return false
+	}
+	if this.Label != that1.Label {
+		return false
+	}
+	return true
+}
+func (this *SelectRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SelectRequest)
+	if !ok {
+		that2, ok := that.(SelectRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Title != that1.Title {
+		return false
+	}
+	if this.Prompt != that1.Prompt {
+		return false
+	}
+	if len(this.Choices) != len(that1.Choices) {
+		return false
+	}
+	for i := range this.Choices {
+		if !this.Choices[i].Equal(that1.Choices[i]) {
+			return false
+		}
+	}
+	if this.DefaultChoice != that1.DefaultChoice {
+		return false
+	}
+	return true
+}
+func (this *SelectResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SelectResponse)
+	if !ok {
+		that2, ok := that.(SelectResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Choice != that1.Choice {
+		return false
+	}
+	return true
+}
 func (this *BoolRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -438,6 +699,42 @@ func (this *StringResponse) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *SelectChoice) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&prompt.SelectChoice{")
+	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
+	s = append(s, "Label: "+fmt.Sprintf("%#v", this.Label)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SelectRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&prompt.SelectRequest{")
+	s = append(s, "Title: "+fmt.Sprintf("%#v", this.Title)+",\n")
+	s = append(s, "Prompt: "+fmt.Sprintf("%#v", this.Prompt)+",\n")
+	if this.Choices != nil {
+		s = append(s, "Choices: "+fmt.Sprintf("%#v", this.Choices)+",\n")
+	}
+	s = append(s, "DefaultChoice: "+fmt.Sprintf("%#v", this.DefaultChoice)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SelectResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&prompt.SelectResponse{")
+	s = append(s, "Choice: "+fmt.Sprintf("%#v", this.Choice)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringPrompt(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -461,6 +758,7 @@ const _ = grpc.SupportPackageIsVersion4
 type PromptClient interface {
 	PromptBool(ctx context.Context, in *BoolRequest, opts ...grpc.CallOption) (*BoolResponse, error)
 	PromptString(ctx context.Context, in *StringRequest, opts ...grpc.CallOption) (*StringResponse, error)
+	PromptSelect(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
 }
 
 type promptClient struct {
@@ -489,10 +787,20 @@ func (c *promptClient) PromptString(ctx context.Context, in *StringRequest, opts
 	return out, nil
 }
 
+func (c *promptClient) PromptSelect(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error) {
+	out := new(SelectResponse)
+	err := c.cc.Invoke(ctx, "/dagger.prompt.Prompt/PromptSelect", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PromptServer is the server API for Prompt service.
 type PromptServer interface {
 	PromptBool(context.Context, *BoolRequest) (*BoolResponse, error)
 	PromptString(context.Context, *StringRequest) (*StringResponse, error)
+	PromptSelect(context.Context, *SelectRequest) (*SelectResponse, error)
 }
 
 // UnimplementedPromptServer can be embedded to have forward compatible implementations.
@@ -504,6 +812,9 @@ func (*UnimplementedPromptServer) PromptBool(ctx context.Context, req *BoolReque
 }
 func (*UnimplementedPromptServer) PromptString(ctx context.Context, req *StringRequest) (*StringResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptString not implemented")
+}
+func (*UnimplementedPromptServer) PromptSelect(ctx context.Context, req *SelectRequest) (*SelectResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptSelect not implemented")
 }
 
 func RegisterPromptServer(s *grpc.Server, srv PromptServer) {
@@ -546,6 +857,24 @@ func _Prompt_PromptString_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Prompt_PromptSelect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServer).PromptSelect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dagger.prompt.Prompt/PromptSelect",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServer).PromptSelect(ctx, req.(*SelectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Prompt_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.prompt.Prompt",
 	HandlerType: (*PromptServer)(nil),
@@ -557,6 +886,10 @@ var _Prompt_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromptString",
 			Handler:    _Prompt_PromptString_Handler,
+		},
+		{
+			MethodName: "PromptSelect",
+			Handler:    _Prompt_PromptSelect_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -724,6 +1057,131 @@ func (m *StringResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *SelectChoice) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SelectChoice) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SelectChoice) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Label) > 0 {
+		i -= len(m.Label)
+		copy(dAtA[i:], m.Label)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Label)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Id) > 0 {
+		i -= len(m.Id)
+		copy(dAtA[i:], m.Id)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Id)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SelectRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SelectRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SelectRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.DefaultChoice) > 0 {
+		i -= len(m.DefaultChoice)
+		copy(dAtA[i:], m.DefaultChoice)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.DefaultChoice)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Choices) > 0 {
+		for iNdEx := len(m.Choices) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Choices[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintPrompt(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.Prompt) > 0 {
+		i -= len(m.Prompt)
+		copy(dAtA[i:], m.Prompt)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Prompt)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Title) > 0 {
+		i -= len(m.Title)
+		copy(dAtA[i:], m.Title)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Title)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SelectResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SelectResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SelectResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Choice) > 0 {
+		i -= len(m.Choice)
+		copy(dAtA[i:], m.Choice)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Choice)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintPrompt(dAtA []byte, offset int, v uint64) int {
 	offset -= sovPrompt(v)
 	base := offset
@@ -805,6 +1263,63 @@ func (m *StringResponse) Size() (n int) {
 	return n
 }
 
+func (m *SelectChoice) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Id)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Label)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+
+func (m *SelectRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Title)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Prompt)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if len(m.Choices) > 0 {
+		for _, e := range m.Choices {
+			l = e.Size()
+			n += 1 + l + sovPrompt(uint64(l))
+		}
+	}
+	l = len(m.DefaultChoice)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+
+func (m *SelectResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Choice)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+
 func sovPrompt(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -852,6 +1367,45 @@ func (this *StringResponse) String() string {
 	}
 	s := strings.Join([]string{`&StringResponse{`,
 		`Response:` + fmt.Sprintf("%v", this.Response) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SelectChoice) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SelectChoice{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Label:` + fmt.Sprintf("%v", this.Label) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SelectRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForChoices := "[]*SelectChoice{"
+	for _, f := range this.Choices {
+		repeatedStringForChoices += strings.Replace(f.String(), "SelectChoice", "SelectChoice", 1) + ","
+	}
+	repeatedStringForChoices += "}"
+	s := strings.Join([]string{`&SelectRequest{`,
+		`Title:` + fmt.Sprintf("%v", this.Title) + `,`,
+		`Prompt:` + fmt.Sprintf("%v", this.Prompt) + `,`,
+		`Choices:` + repeatedStringForChoices + `,`,
+		`DefaultChoice:` + fmt.Sprintf("%v", this.DefaultChoice) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SelectResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SelectResponse{`,
+		`Choice:` + fmt.Sprintf("%v", this.Choice) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1306,6 +1860,382 @@ func (m *StringResponse) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Response = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SelectChoice) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SelectChoice: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SelectChoice: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Id = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Label", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Label = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SelectRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SelectRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SelectRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Title", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Title = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Prompt", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Prompt = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Choices", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Choices = append(m.Choices, &SelectChoice{})
+			if err := m.Choices[len(m.Choices)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DefaultChoice", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DefaultChoice = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SelectResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SelectResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SelectResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Choice", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Choice = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

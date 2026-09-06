@@ -405,6 +405,40 @@ func TestCaptureGitTrackedChangesNeedNoApproval(t *testing.T) {
 	require.NotEmpty(t, captured.metadata(t).WorktreeSha)
 }
 
+func TestCaptureGitDropUntracked(t *testing.T) {
+	repo, home, remote := initCaptureRepo(t)
+	commitFile(t, repo, home, "deleted.txt", "delete me", "tracked deletion fixture")
+	gitCmd(t, home, repo, "push", "origin", "main")
+	require.NoError(t, os.Remove(filepath.Join(repo, "deleted.txt")))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "base.txt"), []byte("tracked edit"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "cruft.txt"), []byte("leave me locally"), 0600))
+	first := captureGit(t, repo, &CaptureGitPolicy{}).metadata(t)
+	require.NotEmpty(t, first.ApprovalCandidates)
+	// Newly appearing, oversized, and nested-repository cruft must also be
+	// omitted, before scanning/limits. No literal path exclusion list is used.
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "new.pem"), []byte("-----BEGIN PRIVATE KEY-----\nfixture"), 0600))
+	gitCmd(t, home, "", "init", filepath.Join(repo, "nested"))
+	before := gitCmd(t, home, repo, "status", "--porcelain")
+	srv := captureGit(t, repo, &CaptureGitPolicy{DropUntracked: true, Include: []string{"*"}, MaxUntrackedFileBytes: 1})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.Error)
+	require.EqualValues(t, 2, meta.TrackedFiles)
+	require.Zero(t, meta.UntrackedFiles)
+	require.Equal(t, before, gitCmd(t, home, repo, "status", "--porcelain"))
+	require.Equal(t, "leave me locally", string(mustReadFile(t, filepath.Join(repo, "cruft.txt"))))
+	require.DirExists(t, filepath.Join(repo, "nested", ".git"))
+	bundlePath := filepath.Join(t.TempDir(), "drop.bundle")
+	require.NoError(t, os.WriteFile(bundlePath, srv.payload(CAPTURE_CHUNK_BUNDLE), 0600))
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", remote, clone)
+	gitCmd(t, home, clone, "fetch", bundlePath, captureWorktreeRef+":"+captureWorktreeRef)
+	gitCmd(t, home, clone, "checkout", "--detach", meta.WorktreeSha)
+	require.Equal(t, "tracked edit", string(mustReadFile(t, filepath.Join(clone, "base.txt"))))
+	for _, p := range []string{"cruft.txt", "new.pem", "deleted.txt", "nested"} {
+		require.NoFileExists(t, filepath.Join(clone, p))
+	}
+}
+
 func TestCaptureGitLocalFallbackStillRequiresApproval(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, _ := initCaptureRepo(t)

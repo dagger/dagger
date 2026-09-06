@@ -642,9 +642,12 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 	if err != nil {
 		return nil, 0, 0, 0, errors.New("enumerate tracked worktree changes failed")
 	}
-	untrackedOut, err := runHostGitBytes(ctx, checkout, nil, nil, "ls-files", "--others", "--exclude-standard", "-z", "--")
-	if err != nil {
-		return nil, 0, 0, 0, errors.New("enumerate untracked worktree files failed")
+	var untrackedOut []byte
+	if !policy.GetDropUntracked() {
+		untrackedOut, err = runHostGitBytes(ctx, checkout, nil, nil, "ls-files", "--others", "--exclude-standard", "-z", "--")
+		if err != nil {
+			return nil, 0, 0, 0, errors.New("enumerate untracked worktree files failed")
+		}
 	}
 	for _, p := range splitNullPaths(untrackedOut) {
 		if matchesAnyCapturePattern(p, policy.GetExclude()) {

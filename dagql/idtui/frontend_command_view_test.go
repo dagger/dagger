@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
+	sessionprompt "github.com/dagger/dagger/engine/session/prompt"
 	"github.com/vito/tuist"
 )
 
@@ -63,6 +64,47 @@ func TestPushConfirmationReportMode(t *testing.T) {
 	}
 	if allowed {
 		t.Fatal("report mode granted permission")
+	}
+}
+
+func TestCheckpointSelectAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	form, selected, err := sessionprompt.SelectForm(&sessionprompt.SelectRequest{
+		Title: "Checkpoint selection", Prompt: "Local files stay untouched.",
+		Choices: []*sessionprompt.SelectChoice{{Id: "include", Label: "Include"}, {Id: "drop", Label: "Drop"}, {Id: "cancel", Label: "Cancel"}}, DefaultChoice: "cancel",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	for _, label := range []string{"Include", "Drop", "Cancel"} {
+		if !strings.Contains(frame, label) {
+			t.Fatalf("missing %s: %s", label, frame)
+		}
+	}
+	if *selected != "cancel" {
+		t.Fatal("must default to Cancel")
+	}
+	if strings.Index(frame, "Checkpoint selection") > strings.Index(frame, "unfinished draft") {
+		t.Fatal("choice must appear above input")
+	}
+	form.GetFocusedField().Update(tea.KeyMsg{Type: tea.KeyUp})
+	if *selected != "drop" {
+		t.Fatal("up should select Drop")
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" {
+		t.Fatal("must preserve draft")
 	}
 }
 

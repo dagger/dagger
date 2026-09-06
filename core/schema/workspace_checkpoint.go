@@ -18,6 +18,8 @@ import (
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type workspaceCheckpointArgs struct {
@@ -172,26 +174,26 @@ func (s *workspaceSchema) checkpointClientLocal(
 		if !errors.As(err, &approvalErr) {
 			break
 		}
+		if policy.DropUntracked {
+			return inst, fmt.Errorf("client did not honor dropping untracked files; upgrade the dagger CLI")
+		}
 		if len(approvalErr.Candidates) == 0 {
 			return inst, fmt.Errorf("workspace checkpoint approval required without selected paths")
 		}
 		summary := checkpointApprovalSummary(approvalErr.Candidates)
-		approved, promptErr := checkpointPrompt(clientCtx, bk, summary)
+		choice, promptErr := checkpointPrompt(clientCtx, bk, summary)
 		if promptErr != nil {
 			return inst, fmt.Errorf("workspace checkpoint requires approval; pass include patterns in noninteractive use: %s: %w", summary, promptErr)
 		}
-		if !approved {
-			return inst, fmt.Errorf("workspace checkpoint rejected selected dirty paths")
-		}
-		for _, candidate := range approvalErr.Candidates {
-			if candidate.ApprovalToken == "" {
-				return inst, fmt.Errorf("workspace checkpoint approval candidate %s has no state token", strconv.Quote(candidate.Path))
-			}
-			policy.ApprovalTokens = append(policy.ApprovalTokens, candidate.ApprovalToken)
+		if err := applyCheckpointDecision(policy, approvalErr.Candidates, choice); err != nil {
+			return inst, err
 		}
 	}
 	if err != nil {
 		return inst, fmt.Errorf("capture workspace checkpoint: %w", err)
+	}
+	if policy.DropUntracked && metadata.UntrackedFiles != 0 {
+		return inst, fmt.Errorf("client included untracked files despite Drop; upgrade the dagger CLI")
 	}
 
 	bundle := slices.Concat(checkpointBundleChunks(chunks)...)
@@ -707,22 +709,80 @@ func workspaceWithConfigEnvironment(parent *core.Workspace, name string) *core.W
 	return ws
 }
 
-func checkpointPrompt(ctx context.Context, bk *engineutil.Client, summary string) (bool, error) {
+const (
+	checkpointInclude = "include"
+	checkpointDrop    = "drop"
+	checkpointCancel  = "cancel"
+)
+
+func applyCheckpointDecision(policy *gitsession.CaptureGitPolicy, candidates []*gitsession.CaptureGitCandidate, choice string) error {
+	switch choice {
+	case checkpointDrop:
+		policy.DropUntracked = true
+		policy.Include = nil
+		policy.ApprovalTokens = nil
+	case checkpointInclude:
+		for _, candidate := range candidates {
+			if candidate.ApprovalToken == "" {
+				return fmt.Errorf("workspace checkpoint approval candidate %s has no state token", strconv.Quote(candidate.Path))
+			}
+			policy.ApprovalTokens = append(policy.ApprovalTokens, candidate.ApprovalToken)
+		}
+	case checkpointCancel:
+		return fmt.Errorf("workspace checkpoint rejected selected dirty paths")
+	default:
+		return fmt.Errorf("invalid workspace checkpoint choice")
+	}
+	return nil
+}
+
+func checkpointPrompt(ctx context.Context, bk *engineutil.Client, summary string) (string, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	caller, err := bk.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
+	return checkpointPromptClient(ctx, prompt.NewPromptClient(caller.Conn()), caller.Supports("/dagger.prompt.Prompt/PromptSelect"), summary)
+}
+
+func checkpointPromptClient(ctx context.Context, client prompt.PromptClient, supportsSelect bool, summary string) (string, error) {
+	if supportsSelect {
+		response, err := client.PromptSelect(ctx, &prompt.SelectRequest{
+			Title:  "Include workspace changes?",
+			Prompt: summary + "\n\nDrop omits all untracked files from the checkpoint, keeps tracked changes, and leaves local files untouched.",
+			Choices: []*prompt.SelectChoice{
+				{Id: checkpointInclude, Label: "Include"},
+				{Id: checkpointDrop, Label: "Drop"},
+				{Id: checkpointCancel, Label: "Cancel"},
+			},
+			DefaultChoice: checkpointCancel,
+		})
+		if err == nil {
+			switch response.GetChoice() {
+			case checkpointInclude, checkpointDrop, checkpointCancel:
+				return response.Choice, nil
+			default:
+				return "", fmt.Errorf("invalid workspace checkpoint choice")
+			}
+		}
+		// A new proxy can advertise the RPC while its upstream client is old.
+		if status.Code(err) != codes.Unimplemented {
+			return "", err
+		}
+	}
+	response, err := client.PromptBool(ctx, &prompt.BoolRequest{
 		Title: "Include workspace changes?", Prompt: summary,
 	})
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return response.Response, nil
+	if response.Response {
+		return checkpointInclude, nil
+	}
+	return checkpointCancel, nil
 }
 
 func (s *workspaceSchema) portable(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ struct{}) (dagql.Boolean, error) {
