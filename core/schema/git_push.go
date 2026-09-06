@@ -3,10 +3,12 @@ package schema
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type gitPushArgs struct {
@@ -17,8 +19,6 @@ type gitPushArgs struct {
 
 func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitPushArgs) (dagql.ObjectResult[*core.GitPushResult], error) {
 	var inst dagql.ObjectResult[*core.GitPushResult]
-	ctx, cancel := context.WithTimeout(ctx, core.GitPushTimeout)
-	defer cancel()
 	opts := core.GitPushOpts{Branch: args.Branch, ExpectedRemoteSHA: args.ExpectedRemoteSHA}
 	if _, err := opts.Ref(parent.Self().Ref); err != nil {
 		return inst, err
@@ -28,6 +28,7 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, err
 	}
 	repo := parent.Self().Repo
+	var destinationURL string
 	if args.To.Valid {
 		repo, err = args.To.Value.Load(ctx, srv)
 		if err != nil {
@@ -36,21 +37,27 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	} else if len(repo.Self().PushURLs) > 1 {
 		return inst, fmt.Errorf("source has multiple push URLs; pass an explicit destination repository with to")
 	} else if len(repo.Self().PushURLs) == 1 {
-		if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{Field: "git", Args: []dagql.NamedInput{
-			{Name: "url", Value: dagql.NewString(repo.Self().PushURLs[0])},
-		}}); err != nil {
-			return inst, err
-		}
+		destinationURL = repo.Self().PushURLs[0]
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
 		if !repo.Self().URL.Valid || repo.Self().URL.Value.String() == "" {
 			return inst, fmt.Errorf("push requires an explicit destination repository: source has no remote URL")
 		}
-		if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{Field: "git", Args: []dagql.NamedInput{{Name: "url", Value: repo.Self().URL.Value}}}); err != nil {
-			return inst, err
-		}
+		destinationURL = repo.Self().URL.Value.String()
 	}
 	remote, ok := repo.Self().Backend.(*core.RemoteGitRepository)
-	if !ok {
+	if destinationURL != "" {
+		// Do not select Query.git here: it can probe the remote and acquire
+		// credentials before the push approval. This ephemeral destination is
+		// never returned to the module or entered into a portable recipe.
+		parsed, err := gitutil.ParseURL(destinationURL)
+		if err != nil {
+			return inst, fmt.Errorf("invalid push destination URL")
+		}
+		if parsed.Scheme == gitutil.SSHProtocol && parsed.User == nil {
+			parsed.User = url.User("git")
+		}
+		remote = &core.RemoteGitRepository{URL: parsed}
+	} else if !ok {
 		return inst, fmt.Errorf("push destination must be a remote Git repository, not a Directory; use Workspace.export for a local checkout")
 	}
 	result, err := parent.Self().Push(ctx, remote, opts)

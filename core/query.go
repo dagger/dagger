@@ -81,6 +81,10 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// AuthorizeGitPush checks session-local permission before any destination
+	// credentials are used. The returned client owns the approved credentials.
+	AuthorizeGitPush(context.Context, string, string, bool) (*engine.ClientMetadata, error)
+
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 

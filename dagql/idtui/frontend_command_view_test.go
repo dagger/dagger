@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -15,6 +16,93 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
 )
+
+func TestPushConfirmationAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	allowed := false
+	question := "Allow pushing to ssh://root@172.17.0.9/qa/remote.git @ refs/heads/approval-qa?"
+	field := NewExplicitConfirm("Yes", "No", &allowed).Title(question).Inline(true)
+	form := huh.NewForm(huh.NewGroup(field))
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	questionAt, inputAt := strings.Index(frame, question), strings.Index(frame, "unfinished draft")
+	if questionAt < 0 || inputAt < questionAt {
+		t.Fatalf("question must precede input:\n%s", frame)
+	}
+	if !strings.Contains(frame, "▶ No") || allowed {
+		t.Fatalf("permission must default to No:\n%s\nfield=%q form=%q", frame, field.View(), form.View())
+	}
+	// Long targets must wrap rather than hiding choices or the end of a ref.
+	field.WithWidth(40)
+	wrapped := ansi.Strip(field.View())
+	if !strings.Contains(wrapped, "▶ No") || !strings.Contains(strings.ReplaceAll(wrapped, "\n", ""), "refs/heads/approval-qa?") {
+		t.Fatalf("narrow confirmation clipped the target or choices: %q", wrapped)
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+		t.Fatal("dismissal must preserve the input and remove the question")
+	}
+}
+
+func TestPushConfirmationReportMode(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true
+	allowed := false
+	if err := fe.HandlePrompt(context.Background(), "Allow pushing?", "", &allowed); !errors.Is(err, ErrNonInteractive) {
+		t.Fatalf("report mode approval = %v", err)
+	}
+	if allowed {
+		t.Fatal("report mode granted permission")
+	}
+}
+
+func TestPushConfirmationCancellation(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("keep this draft")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		allowed := false
+		done <- fe.HandlePrompt(ctx, "", "Allow pushing?", &allowed)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for fe.formWrap == nil && time.Now().Before(deadline) {
+		fe.tui.Step()
+		time.Sleep(time.Millisecond)
+	}
+	if fe.formWrap == nil {
+		t.Fatal("confirmation was not mounted")
+	}
+	cancel()
+	for time.Now().Before(deadline) {
+		fe.tui.Step()
+		select {
+		case err := <-done:
+			fe.tui.Step() // drain dismissal queued before the handler returned
+			if !errors.Is(err, context.Canceled) || fe.formWrap != nil || fe.textInput.Value() != "keep this draft" {
+				t.Fatalf("canceled prompt: err=%v form=%v draft=%q", err, fe.formWrap, fe.textInput.Value())
+			}
+			return
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	t.Fatal("canceled confirmation did not return")
+}
 
 func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	theme := frontendFormTheme()

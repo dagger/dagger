@@ -51,6 +51,10 @@ type mockServer struct {
 	lockWritable   bool
 }
 
+func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool) (*engine.ClientMetadata, error) {
+	panic("unexpected AuthorizeGitPush")
+}
+
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 

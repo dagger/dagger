@@ -1,0 +1,6 @@
+kind: Added
+body: Ask the owning client before module or agent Git pushes, once per session for each destination and ref, with separate force-push approval. Approved pushes can use the owner's Git credentials or SSH agent without exposing them to the module.
+time: 2026-09-06T02:00:00.000000000Z
+custom:
+  Author: vito
+  PR: ""

@@ -23,6 +23,7 @@ type ExplicitConfirm struct {
 	negative    string
 	focused     bool
 	inline      bool
+	width       int
 	title       string
 	titleLink   string
 	description string
@@ -108,13 +109,19 @@ func (field *ExplicitConfirm) View() string {
 	}
 	if !field.inline && view.Len() > 0 {
 		view.WriteString("\n\n")
+	} else if field.inline && view.Len() > 0 {
+		view.WriteByte(' ')
 	}
 
 	selected := field.value != nil && *field.value
 	view.WriteString(field.renderChoice(styles, field.affirmative, selected))
 	view.WriteString("     ")
 	view.WriteString(field.renderChoice(styles, field.negative, !selected))
-	return styles.Base.Render(view.String())
+	content := view.String()
+	if field.width > 0 {
+		content = ansi.Wrap(content, max(1, field.width-styles.Base.GetHorizontalFrameSize()), "")
+	}
+	return styles.Base.Render(content)
 }
 
 func explicitConfirmTitleStyle(styles *huh.FieldStyles) lipgloss.Style {
@@ -166,7 +173,7 @@ func (field *ExplicitConfirm) Run() error {
 }
 
 func (field *ExplicitConfirm) RunAccessible(w io.Writer, r io.Reader) error {
-	field.confirm.Title(fmt.Sprintf("%s? (No: %s)", field.affirmative, field.negative))
+	field.confirm.Title(fmt.Sprintf("%s %s? (No: %s)", field.title, field.affirmative, field.negative))
 	return field.confirm.RunAccessible(w, r)
 }
 
@@ -201,6 +208,7 @@ func (field *ExplicitConfirm) WithKeyMap(keymap *huh.KeyMap) huh.Field {
 }
 
 func (field *ExplicitConfirm) WithWidth(width int) huh.Field {
+	field.width = width
 	field.confirm.WithWidth(width)
 	return field
 }

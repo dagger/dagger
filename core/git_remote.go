@@ -207,11 +207,22 @@ func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.Object
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	return repo.setupWithSSHAuthSock(ctx, "")
+}
+
+// sshAuthSock is an operation-local agent mount, never a repository capability.
+func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAuthSock string) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	if repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
+		return nil, nil, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	var opts []gitutil.Option
+	if sshAuthSock != "" {
+		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
+	}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
