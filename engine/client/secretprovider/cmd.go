@@ -1,6 +1,7 @@
 package secretprovider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -19,5 +20,15 @@ func cmdProvider(ctx context.Context, cmd string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to run secret command %q: %w", cmd, err)
 	}
-	return stdoutBytes, nil
+	return trimCommandOutput(stdoutBytes), nil
+}
+
+// Like shell command substitution, strip trailing newlines, including CRLF
+// emitted by Windows commands. Preserve spaces and embedded line endings.
+func trimCommandOutput(output []byte) []byte {
+	for bytes.HasSuffix(output, []byte("\n")) {
+		output = bytes.TrimSuffix(output, []byte("\n"))
+		output = bytes.TrimSuffix(output, []byte("\r"))
+	}
+	return output
 }
