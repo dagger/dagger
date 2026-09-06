@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Capture the effective push URLs from Git's pushurl, insteadOf, and
+  pushInsteadOf configuration in workspace checkpoints. Default GitRef.push
+  destinations retain that routing through commits, pulls, and portable
+  recipes without granting credential access. Multiple push URLs require
+  an explicit to destination; pushes never silently fan out.
+time: 2026-09-06T01:10:00Z
+custom:
+  Author: vito
+  PR: ""

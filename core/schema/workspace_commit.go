@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -209,6 +210,7 @@ func (s *workspaceSchema) commitRepository(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 	repo.URL = head.Self().Repo.Self().URL
+	repo.PushURLs = slices.Clone(head.Self().Repo.Self().PushURLs)
 	repo.DiscardGitDir = head.Self().Repo.Self().DiscardGitDir
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }

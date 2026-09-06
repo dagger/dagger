@@ -168,6 +168,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("bundle"),
 				dagql.Arg("prerequisiteRef"),
 			),
+		dagql.Func("__withPushURLs", s.withPushURLs).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Record push routing metadata. Does not grant credential access."),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
@@ -1267,6 +1271,7 @@ func (s *gitSchema) withBundle(
 		return inst, fmt.Errorf("open imported git bundle repository: %w", err)
 	}
 	repo.URL = parent.Self().URL
+	repo.PushURLs = slices.Clone(parent.Self().PushURLs)
 	repo.DiscardGitDir = parent.Self().DiscardGitDir
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
@@ -1432,6 +1437,11 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		repo.URL.Value.String(),
 		string(ref.Digest()),
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// The same commit with different push routing is a different GitRef:
+		// merging these results could send a push to the wrong destination.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
@@ -1827,6 +1837,10 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		repo.URL.Value.String(),
 		ref.SHA,
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// GitCommit retains its repository, including its push routing.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the

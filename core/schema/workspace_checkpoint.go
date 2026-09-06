@@ -320,6 +320,15 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		repo = imported
 	}
 
+	if len(metadata.RemotePushUrls) > 0 {
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withPushURLs",
+			Args:  []dagql.NamedInput{{Name: "urls", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(metadata.RemotePushUrls...))}},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace push destinations: %w", err)
+		}
+	}
+
 	var head dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, repo, &head, dagql.Selector{
 		Field: "ref",

@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -32,6 +33,14 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
+	} else if len(repo.Self().PushURLs) > 1 {
+		return inst, fmt.Errorf("source has multiple push URLs; pass an explicit destination repository with to")
+	} else if len(repo.Self().PushURLs) == 1 {
+		if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{Field: "git", Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.NewString(repo.Self().PushURLs[0])},
+		}}); err != nil {
+			return inst, err
+		}
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
 		if !repo.Self().URL.Valid || repo.Self().URL.Value.String() == "" {
 			return inst, fmt.Errorf("push requires an explicit destination repository: source has no remote URL")
@@ -55,6 +64,14 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		{Name: "sha", Value: dagql.NewString(result.SHA)}, {Name: "disposition", Value: result.Disposition},
 	}})
 	return inst, err
+}
+
+func (s *gitSchema) withPushURLs(_ context.Context, parent *core.GitRepository, args struct {
+	URLs []string `name:"urls"`
+}) (*core.GitRepository, error) {
+	repo := parent.CloneWithBackend(parent.Backend)
+	repo.PushURLs = slices.Clone(args.URLs)
+	return repo, nil
 }
 
 func (s *gitSchema) pushResult(_ context.Context, _ *core.Query, args struct {

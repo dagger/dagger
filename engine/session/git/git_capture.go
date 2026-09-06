@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ type captureLimits struct {
 type captureRemote struct {
 	name, sanitizedURL, ref, advertisedSHA, baseSHA string
 	distance                                        int
+	pushURLs                                        []string
 }
 
 // captureAdvertisedRef is one ref a remote currently advertises, reduced to
@@ -172,6 +174,12 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		}
 		remote = captureRemote{baseSHA: state.headSHA}
 	}
+	if remote.name != "" {
+		remote.pushURLs, err = capturePushURLs(ctx, checkout, remote.name, remote.sanitizedURL)
+		if err != nil {
+			return nil, err
+		}
+	}
 	approvals := stringSet(policy.GetApprovalTokens())
 	committedBytes, err := scanCommittedObjects(ctx, checkout, remote.baseSHA, state.headSHA, limits)
 	if err != nil {
@@ -219,6 +227,7 @@ func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGi
 		FormatVersion:       captureGitFormatVersion,
 		ObjectFormat:        state.objectFormat,
 		RemoteUrl:           remote.sanitizedURL,
+		RemotePushUrls:      remote.pushURLs,
 		RemoteRef:           remote.ref,
 		BaseSha:             remote.baseSHA,
 		HeadSha:             state.headSHA,
@@ -519,7 +528,40 @@ func sanitizeRemoteURL(raw string) string {
 	return u.String()
 }
 
+// Let Git apply pushurl, insteadOf and pushInsteadOf with its own precedence.
+// Preserve multiple destinations so push can reject implicit fan-out rather
+// than silently selecting one. Never probe or authenticate to these URLs here.
+func capturePushURLs(ctx context.Context, checkout, name, fetchURL string) ([]string, error) {
+	out, err := runHostGit(ctx, checkout, "remote", "get-url", "--push", "--all", name)
+	if err != nil {
+		return nil, errors.New("read checkpoint push destinations failed")
+	}
+	var urls []string
+	for _, raw := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		if raw == "" {
+			return nil, errors.New("checkpoint remote has an empty push destination")
+		}
+		// The sanitizer permits non-URL Git spellings (SCP and local paths).
+		// A malformed scheme URL must not take that fallback and retain an
+		// embedded password. Do not include its text in the error either.
+		if strings.Contains(raw, "://") {
+			if _, err := url.Parse(raw); err != nil {
+				return nil, errors.New("checkpoint remote has an invalid push URL")
+			}
+		}
+		urls = append(urls, sanitizeRemoteURL(raw))
+	}
+	if len(urls) == 1 && urls[0] == fetchURL {
+		return nil, nil
+	}
+	return urls, nil
+}
+
 func revalidateCaptureRemote(ctx context.Context, checkout string, remote captureRemote) error {
+	pushURLs, err := capturePushURLs(ctx, checkout, remote.name, remote.sanitizedURL)
+	if err != nil || !slices.Equal(pushURLs, remote.pushURLs) {
+		return errors.New("remote push destinations changed during capture; retry")
+	}
 	out, err := runHostGit(ctx, checkout, "ls-remote", "--refs", remote.name, remote.ref)
 	if err != nil {
 		return errors.New("remote advertisement changed during capture; retry")

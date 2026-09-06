@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -176,5 +177,6 @@ func (s *workspaceSchema) pullRepository(ctx context.Context, parent dagql.Objec
 		return inst, err
 	}
 	repo.URL, repo.DiscardGitDir = head.Self().Repo.Self().URL, head.Self().Repo.Self().DiscardGitDir
+	repo.PushURLs = slices.Clone(head.Self().Repo.Self().PushURLs)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }

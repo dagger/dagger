@@ -189,6 +189,23 @@ func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	anonymous := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
 	_, err = pushGitRef(ctx, c, base, anonymous, "anonymous", nil)
 	require.Error(t, err)
+	// Routing metadata must not transfer source credentials, even when the
+	// recorded push URL happens to be the source's own authenticated remote.
+	repoID, err := repo.ID(ctx)
+	require.NoError(t, err)
+	var routed any
+	err = c.Do(ctx, &dagger.Request{
+		Query: `query($repo: ID!, $url: String!) {
+			node(id: $repo) { ... on GitRepository {
+				__withPushURLs(urls: [$url]) { branch(name: "main") {
+					push(branch: "routing-is-not-auth") { disposition }
+				} }
+			} }
+		}`,
+		Variables: map[string]any{"repo": repoID, "url": url},
+	}, &dagger.Response{Data: &routed})
+	require.Error(t, err, "a push URL is not a credential grant")
+	require.NotContains(t, err.Error(), "push-test-password")
 	header := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service,
 		HTTPAuthHeader: c.SetSecret("push-header", "Basic "+base64.StdEncoding.EncodeToString([]byte("writer:push-test-password")))})
 	_, err = pushGitRef(ctx, c, base, header, "header", nil)
@@ -220,4 +237,65 @@ func (GitSuite) TestPushHTTPCallerCredentials(ctx context.Context, t *testctx.T)
 	result, err := pushGitRef(ctx, c, repo.Branch("main"), nil, "implicit", nil)
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", result.Disposition)
+}
+
+func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fetchService, fetchURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "fetch"))
+	pushService, pushURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "divergent push history"))
+	_, err := fetchService.Start(ctx)
+	require.NoError(t, err)
+	_, err = pushService.Start(ctx)
+	require.NoError(t, err)
+	fetchRepo := c.Git(fetchURL, dagger.GitOpts{ExperimentalServiceHost: fetchService})
+	fetchSHA, err := fetchRepo.Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	pushSHA := pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/main")
+
+	checkout := c.Container().From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithServiceBinding("fetch", fetchService).
+		WithExec([]string{"git", "clone", fetchURL, "/work"}).
+		WithWorkdir("/work").
+		WithExec([]string{"git", "config", "remote.origin.pushurl", pushURL})
+	// The capture's owner exits before this recipe is restored by the outer
+	// client. Routing data must survive without carrying any authorization.
+	recipe, err := checkout.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | checkpoint) | portable-id`)).Stdout(ctx)
+	require.NoError(t, err)
+	frozen := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
+	head, err := frozen.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fetchSHA, head, "push URL must not change the fetch source")
+	// Exercise propagation through both commit and pull repository rebuilds.
+	committed := frozen.WithNewFile("new", "committed").WithCommit("commit before push", workspaceCommitDate)
+	updated := frozen.WithCommitsFrom(committed).Checkpoint()
+	sha, err := updated.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	_, err = pushGitRef(ctx, c, updated.Git().Head(), nil, "main", nil)
+	require.ErrorContains(t, err, "rejected", "default push must reach the divergent push remote, not the fetch remote")
+	require.Equal(t, fetchSHA, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/main"))
+	require.Equal(t, pushSHA, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/main"))
+	result, err := pushGitRef(ctx, c, updated.Git().Head(), nil, "new-branch", nil)
+	require.NoError(t, err)
+	require.Equal(t, "CREATED", result.Disposition)
+	require.Equal(t, sha, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/new-branch"))
+	require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/new-branch"))
+	_, err = pushGitRef(ctx, c, updated.Git().Head(), fetchRepo, "explicit", nil)
+	require.NoError(t, err)
+	require.Equal(t, sha, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/explicit"))
+	require.Empty(t, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/explicit"))
+
+	// Capturing multiple pushurls must not silently turn one API call into a
+	// fan-out push or choose just the first URL. An explicit to remains usable.
+	multiRecipe, err := checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}).
+		With(daggerShell(`llm | with-workspace --workspace $(current-workspace | checkpoint) | portable-id`)).Stdout(ctx)
+	require.NoError(t, err)
+	multi := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(multiRecipe))).Workspace()
+	_, err = pushGitRef(ctx, c, multi.Git().Head(), nil, "multiple", nil)
+	require.ErrorContains(t, err, "multiple push URLs")
+	require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/multiple"))
+	require.Empty(t, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/multiple"))
+	_, err = pushGitRef(ctx, c, multi.Git().Head(), fetchRepo, "multiple-explicit", nil)
+	require.NoError(t, err)
 }

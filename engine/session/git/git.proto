@@ -258,6 +258,9 @@ message CaptureGitMetadata {
   repeated CaptureGitCandidate approval_candidates = 16;
   // Pins a session-only host reconstruction to the captured checkout state.
   string checkout_state_digest = 17;
+  // Effective push destinations computed by the owner's Git configuration.
+  // Routing metadata only, never authorization. Empty means remote_url.
+  repeated string remote_push_urls = 18;
 }
 
 message CaptureGitCandidate {
