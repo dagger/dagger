@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -290,6 +291,93 @@ func TestCaptureGitChoosesClosestAdvertisedAncestorAcrossRemotes(t *testing.T) {
 	require.Equal(t, near, meta.GetBaseSha(), "preferred origin must not win with an older ancestor")
 	require.Equal(t, "refs/heads/main", meta.GetRemoteRef())
 	require.Equal(t, other, meta.GetRemoteUrl())
+}
+
+func TestCaptureGitAdvertisedHeadSkipsLaterRemotes(t *testing.T) {
+	skipIfNoGit(t)
+	for _, tagged := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tagged=%t", tagged), func(t *testing.T) {
+			repo, home, _ := initCaptureRepo(t)
+			wantRef := "refs/heads/main"
+			if tagged {
+				commitFile(t, repo, home, "tagged.txt", "tagged\n", "tagged")
+				gitCmd(t, home, repo, "tag", "-a", "v1", "-m", "v1")
+				gitCmd(t, home, repo, "push", "origin", "v1")
+				wantRef = "refs/tags/v1"
+			}
+			head := gitCmd(t, home, repo, "rev-parse", "HEAD")
+			gitCmd(t, home, repo, "remote", "add", "unrelated", filepath.Join(t.TempDir(), "missing.git"))
+
+			// Record real Git invocations so querying and ignoring an unavailable
+			// later remote cannot silently pass. No timing/network dependency.
+			realGit, err := exec.LookPath("git")
+			require.NoError(t, err)
+			bin := t.TempDir()
+			logPath := filepath.Join(t.TempDir(), "git.log")
+			require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(`#!/bin/sh
+printf '%s\n' "$*" >> "$CAPTURE_GIT_COMMAND_LOG"
+exec "$CAPTURE_REAL_GIT" "$@"
+`), 0700))
+			t.Setenv("CAPTURE_REAL_GIT", realGit)
+			t.Setenv("CAPTURE_GIT_COMMAND_LOG", logPath)
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			remote, err := selectCaptureRemote(t.Context(), repo, head)
+			require.NoError(t, err)
+			require.Equal(t, "origin", remote.name)
+			require.Equal(t, wantRef, remote.ref)
+			require.Equal(t, head, remote.baseSHA)
+			var advertisements []string
+			for _, line := range strings.Split(string(mustReadFile(t, logPath)), "\n") {
+				if strings.Contains(line, " ls-remote ") {
+					advertisements = append(advertisements, line)
+				}
+			}
+			require.Equal(t, []string{"-C " + repo + " ls-remote --refs --heads --tags origin"}, advertisements)
+		})
+	}
+}
+
+func TestCaptureGitDiscoversFallbackRemotesConcurrently(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+	commitFile(t, repo, home, "near.txt", "near\n", "near")
+	near := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	for _, name := range []string{"first", "second"} {
+		remote := filepath.Join(t.TempDir(), name+".git")
+		gitCmd(t, home, "", "init", "--bare", remote)
+		gitCmd(t, home, repo, "remote", "add", name, remote)
+		gitCmd(t, home, repo, "push", name, "main")
+	}
+	commitFile(t, repo, home, "local.txt", "local\n", "local")
+	head := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	bin := t.TempDir()
+	// Each fallback query must start before either can finish. This tests
+	// overlap without relying on wall-clock performance or real networking.
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(`#!/bin/sh
+if [ "$3" = ls-remote ]; then
+  for remote in "$@"; do :; done
+  case "$remote" in
+    first|second)
+      touch "$CAPTURE_BARRIER_DIR/$remote"
+      while [ ! -f "$CAPTURE_BARRIER_DIR/first" ] || [ ! -f "$CAPTURE_BARRIER_DIR/second" ]; do sleep 0.01; done
+      ;;
+  esac
+fi
+exec "$CAPTURE_REAL_GIT" "$@"
+`), 0700))
+	t.Setenv("CAPTURE_REAL_GIT", realGit)
+	t.Setenv("CAPTURE_BARRIER_DIR", t.TempDir())
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	remote, err := selectCaptureRemote(ctx, repo, head)
+	require.NoError(t, err)
+	require.NoError(t, ctx.Err())
+	require.Equal(t, near, remote.baseSHA)
+	require.Equal(t, "first", remote.name, "network response order must not change remote preference")
 }
 
 func TestCaptureGitSelectsBaseWithoutReachingForUnknownAdvertisedRefs(t *testing.T) {

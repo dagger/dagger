@@ -273,15 +273,15 @@ func normalizeCaptureLimits(policy *CaptureGitPolicy) (captureLimits, error) {
 // advertises, and names the ref a restore fetches to get it.
 //
 // The work is bounded by the number of remotes, not by how many refs they
-// advertise. One listing per remote is unavoidable, but everything after it
-// answers for the whole candidate set at once: a single batched object probe,
-// a single history walk, and a halving search for the ref that carries the
-// base. A repository whose remotes advertise tens of thousands of refs costs
-// the same handful of local git invocations as one with a dozen.
+// advertise. Each queried remote gets one listing and a batched object probe;
+// discovery stops early if HEAD itself is advertised. A single history walk
+// and a halving search then find the ref that carries the base. A repository
+// whose remotes advertise tens of thousands of refs costs the same handful of
+// local git invocations as one with a dozen.
 func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRemote, error) {
 	unproven := errors.New("no currently advertised remote-backed ancestor was found")
 
-	advertised := advertisedCaptureRefs(ctx, checkout)
+	advertised := advertisedCaptureRefs(ctx, checkout, head)
 	if len(advertised) == 0 {
 		return captureRemote{}, unproven
 	}
@@ -320,41 +320,76 @@ func selectCaptureRemote(ctx context.Context, checkout, head string) (captureRem
 // advertises, in remote preference order, keeping only the refs that can
 // actually prove a base: ones a restore can fetch by name, and whose commit the
 // checkout already has.
-func advertisedCaptureRefs(ctx context.Context, checkout string) []captureAdvertisedRef {
+func advertisedCaptureRefs(ctx context.Context, checkout, head string) []captureAdvertisedRef {
 	var refs []captureAdvertisedRef
 	seen := map[string]struct{}{}
-	for _, remote := range orderedCaptureRemotes(ctx, checkout) {
-		out, err := runHostGit(ctx, checkout, "ls-remote", "--refs", remote)
-		if err != nil {
+	remotes := orderedCaptureRemotes(ctx, checkout)
+	for offset := 0; offset < len(remotes) && ctx.Err() == nil; {
+		// Try the preferred remote alone first: a published HEAD needs no
+		// other queries. Otherwise overlap network waits in bounded batches.
+		size := min(4, len(remotes)-offset)
+		if offset == 0 {
+			size = 1
+		}
+		batch := make([][]captureAdvertisedRef, size)
+		var wg sync.WaitGroup
+		for i := range size {
+			wg.Go(func() {
+				batch[i] = advertisedCaptureRemoteRefs(ctx, checkout, remotes[offset+i])
+			})
+		}
+		wg.Wait()
+		offset += size
+		// Consume in preference order, never network completion order.
+		for _, local := range batch {
+			foundHead := false
+			for _, ref := range local {
+				if _, ok := seen[ref.sha]; ok {
+					continue
+				}
+				seen[ref.sha] = struct{}{}
+				refs = append(refs, ref)
+				foundHead = foundHead || ref.commit == head
+			}
+			if foundHead {
+				// No later remote can improve on HEAD itself. Keep earlier
+				// candidates so ref selection still honors preference order.
+				return refs
+			}
+		}
+	}
+	return refs
+}
+
+func advertisedCaptureRemoteRefs(ctx context.Context, checkout, remote string) []captureAdvertisedRef {
+	// Restrict the advertisement itself, not just the parsed result. In
+	// protocol v2 this avoids transferring forge-managed refs/pull/*, which
+	// can dwarf the branches and tags in a long-lived repository.
+	out, err := runHostGit(ctx, checkout, "ls-remote", "--refs", "--heads", "--tags", remote)
+	if err != nil {
+		return nil
+	}
+	urlOut, err := runHostGit(ctx, checkout, "remote", "get-url", remote)
+	if err != nil {
+		return nil
+	}
+	url := strings.TrimSpace(urlOut)
+	var refs []captureAdvertisedRef
+	seen := map[string]struct{}{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
 			continue
 		}
-		urlOut, err := runHostGit(ctx, checkout, "remote", "get-url", remote)
-		if err != nil {
+		sha, ref := fields[0], fields[1]
+		if !strings.HasPrefix(ref, "refs/heads/") && !strings.HasPrefix(ref, "refs/tags/") {
 			continue
 		}
-		url := strings.TrimSpace(urlOut)
-		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				continue
-			}
-			sha, ref := fields[0], fields[1]
-			// Branches and tags are the refs a restore can name. Forge-managed
-			// namespaces such as refs/pull/* and mirrored refs/remotes/* are not
-			// something a checkout is based on, and on a large repository they
-			// are the bulk of the advertisement.
-			if !strings.HasPrefix(ref, "refs/heads/") && !strings.HasPrefix(ref, "refs/tags/") {
-				continue
-			}
-			// Remotes share history, so the same commit is usually advertised
-			// many times over. Keeping the first sighting keeps the preferred
-			// remote's name for it.
-			if _, ok := seen[sha]; ok {
-				continue
-			}
-			seen[sha] = struct{}{}
-			refs = append(refs, captureAdvertisedRef{remote: remote, url: url, ref: ref, sha: sha})
+		if _, ok := seen[sha]; ok {
+			continue
 		}
+		seen[sha] = struct{}{}
+		refs = append(refs, captureAdvertisedRef{remote: remote, url: url, ref: ref, sha: sha})
 	}
 	return localAdvertisedCommits(ctx, checkout, refs)
 }
