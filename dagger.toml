@@ -156,6 +156,12 @@ remote = "dagger/dagger"
 [modules.go-cli]
 source = ".dagger/modules/go-cli"
 
+[modules.staff]
+source = "github.com/vito/agents/staff"
+
+[modules.committer]
+source = "github.com/vito/agents/committer"
+
 # TODO: Migrate this repository to [sdks.*] after that schema is available in
 # the released CLI used to bootstrap CI.
 [modules.dagger-dang-sdk.as-sdk]
