@@ -118,6 +118,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
+	initialLLM *dagger.LLM,
 ) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:          dag,
@@ -126,6 +127,7 @@ func NewLLMSession(
 		frontend:     frontend,
 		autoCompact:  true,
 		autoCompactL: new(sync.Mutex),
+		initialLLM:   initialLLM,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -147,14 +149,24 @@ func NewLLMSession(
 		sink.SetLLMCostFunc(modelcatalog.Cost)
 	}
 
-	s.reset()
-
-	// Grab the model to check for a valid config
-	model, err := s.llm.Model(ctx)
+	// Install the supplied agent before any status/sidebar reads. Constructing
+	// a temporary currentWorkspace-bound LLM here would recapture the host
+	// repository only to discard it immediately afterward.
+	llm := initialLLM
+	if llm == nil {
+		llm = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(dag.CurrentWorkspace())
+	}
+	baselineID, err := llm.Workspace().ID(ctx)
 	if err != nil {
+		// A module can return a conversational LLM with no workspace. Preview
+		// setup must not prevent using it or invent a host-workspace binding.
+		slog.Debug("could not initialize workspace preview baseline", "error", err)
+	} else {
+		s.workspaceBaseline = dagger.Ref[*dagger.Workspace](dag, baselineID)
+	}
+	if err := s.updateLLM(llm); err != nil {
 		return nil, err
 	}
-	s.model = model
 
 	return s, nil
 }
@@ -190,8 +202,10 @@ func (s *LLMSession) reset() {
 			llm = llm.WithModel(s.model)
 		}
 	} else {
-		llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-			WithWorkspace(s.dag.CurrentWorkspace())
+		llm = s.dag.LLM(dagger.LLMOpts{Model: s.model})
+		if s.workspaceBaseline == nil {
+			llm = llm.WithWorkspace(s.dag.CurrentWorkspace())
+		}
 	}
 	if s.workspaceBaseline != nil {
 		llm = llm.WithWorkspace(s.workspaceBaseline)
@@ -443,7 +457,7 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 	}
 	s.frontend.SetStatusLine(statusData)
 
-	// Best-effort: refresh the "Changes" preview from the workspace overlay diff.
+	// Best-effort: refresh changes relative to the session's checkpoint.
 	// Never fail a turn on a preview error (e.g. an unbound/rootless workspace).
 	if err := s.updateChangesPreview(llm); err != nil {
 		slog.Debug("could not refresh changes preview", "error", err)
@@ -454,7 +468,10 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 
 // Keep commit-only changes visible after the overlay has been committed.
 func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
-	preview, err := previewWorkspaceChanges(s.plumbingCtx, s.dag, llm.Workspace())
+	if s.workspaceBaseline == nil {
+		return nil
+	}
+	preview, err := previewWorkspaceChanges(s.plumbingCtx, s.dag, llm.Workspace(), s.workspaceBaseline)
 	if err != nil {
 		return err
 	}
@@ -491,14 +508,14 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("rebind workspace after export: %w", err)
 	}
+	s.workspaceBaseline = baseline
 	if err := s.updateLLM(rebound); err != nil {
 		return err
 	}
-	s.workspaceBaseline = baseline
 	if s.onStep != nil {
 		s.onStep(s)
 	}
-	return s.updateChangesPreview(s.llm)
+	return nil
 }
 
 // ResetWorkspace discards the agent's unsaved commits and edits, replacing them
@@ -515,14 +532,14 @@ func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
+	s.workspaceBaseline = baseline
 	if err := s.updateLLM(reset); err != nil {
 		return err
 	}
-	s.workspaceBaseline = baseline
 	if s.onStep != nil {
 		s.onStep(s)
 	}
-	return s.updateChangesPreview(s.llm)
+	return nil
 }
 
 const autoCompactReserveTokens = 16_384
@@ -858,8 +875,10 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
 	// describes a workspace that is now partially fiction, so tell it what
 	// needs resolving rather than letting it stumble over the markers.
-	if cue := conflictMarkerCue(ctx, loadedLLM, s.dag.CurrentWorkspace()); cue != "" {
-		loadedLLM = loadedLLM.WithSystemPrompt(cue)
+	if s.workspaceBaseline != nil {
+		if cue := conflictMarkerCue(ctx, loadedLLM, s.workspaceBaseline); cue != "" {
+			loadedLLM = loadedLLM.WithSystemPrompt(cue)
+		}
 	}
 
 	// updateLLM refreshes the status line from the restored conversation's stats.

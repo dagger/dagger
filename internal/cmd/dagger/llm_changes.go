@@ -21,49 +21,61 @@ type changesCommit struct {
 }
 
 type workspaceChangesPreview struct {
-	Uncommitted        []patchpreview.Entry
+	Files              []patchpreview.Entry
 	Outgoing, Incoming []changesCommit
 	HistoryError       string
 }
 
 func (p workspaceChangesPreview) empty() bool {
-	return len(p.Uncommitted) == 0 && len(p.Outgoing) == 0 && len(p.Incoming) == 0 && p.HistoryError == ""
+	return len(p.Files) == 0 && len(p.Outgoing) == 0 && len(p.Incoming) == 0 && p.HistoryError == ""
 }
 
 // Read both directions in one request, with one extra entry to distinguish a
 // complete list from a truncated preview. Never request unlimited history.
-const changesHistoryQuery = `query ChangesHistory($workspace: ID!, $checkout: ID!, $limit: Int!) {
+const changesHistoryQuery = `query ChangesHistory($workspace: ID!, $baseline: ID!, $limit: Int!) {
   outgoing: node(id: $workspace) { ... on GitRef {
-    log(base: $checkout, limit: $limit) { sha messageHeadline }
+    log(base: $baseline, limit: $limit) { sha messageHeadline }
   } }
-  incoming: node(id: $checkout) { ... on GitRef {
+  incoming: node(id: $baseline) { ... on GitRef {
     log(base: $workspace, limit: $limit) { sha messageHeadline }
   } }
 }`
 
-func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace) (workspaceChangesPreview, error) {
+func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) (workspaceChangesPreview, error) {
 	var preview workspaceChangesPreview
-	entries, err := idtui.PreviewPatch(ctx, dag, ws.Git().Uncommitted())
+	workspaceID, err := ws.ID(ctx)
 	if err != nil {
 		return preview, err
 	}
-	preview.Uncommitted = entries
-	if err := preview.loadHistory(ctx, dag, ws); err != nil {
+	baselineID, err := baseline.ID(ctx)
+	if err != nil {
+		return preview, err
+	}
+	if workspaceID == baselineID {
+		return preview, nil
+	}
+	entries, err := idtui.PreviewPatch(ctx, dag, ws.Changes(dagger.WorkspaceChangesOpts{From: baseline}))
+	if err != nil {
+		return preview, err
+	}
+	preview.Files = entries
+	if err := preview.loadHistory(ctx, dag, ws, baseline); err != nil {
 		// A non-Git/unborn checkout still has useful pending edits to display.
 		// Also avoid silently hiding commits on a failed history query.
-		preview.HistoryError = "History unavailable; could not compare checkout"
+		preview.HistoryError = "History unavailable; could not compare checkpoint"
 		slog.Debug("could not preview workspace history", "error", err)
 	}
 	return preview, nil
 }
 
-func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace) error {
+func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.Client, ws, baseline *dagger.Workspace) error {
 	workspace, err := ws.Git().Head().ID(ctx)
 	if err != nil {
 		return err
 	}
-	// Refresh only the live comparison side, never the agent's frozen value.
-	checkout, err := dag.CurrentWorkspace().Reloaded().Git().Head().ID(ctx)
+	// Sidebar reads compare immutable session values. Only explicit save or
+	// reload operations should inspect the live checkout and advance the base.
+	base, err := baseline.Git().Head().ID(ctx)
 	if err != nil {
 		return err
 	}
@@ -72,7 +84,7 @@ func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.C
 	}
 	if err := dag.Do(ctx, &dagger.Request{
 		Query:     changesHistoryQuery,
-		Variables: map[string]any{"workspace": workspace, "checkout": checkout, "limit": changesHistoryLimit + 1},
+		Variables: map[string]any{"workspace": workspace, "baseline": base, "limit": changesHistoryLimit + 1},
 	}, &dagger.Response{Data: &response}); err != nil {
 		return err
 	}
@@ -82,9 +94,9 @@ func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.C
 
 func (p workspaceChangesPreview) render(width int) string {
 	var buf strings.Builder
-	if len(p.Uncommitted) > 0 {
-		buf.WriteString("Uncommitted\n")
-		patchpreview.Summarize(idtui.NewOutput(&buf), p.Uncommitted, width)
+	if len(p.Files) > 0 {
+		buf.WriteString("Files since checkpoint\n")
+		patchpreview.Summarize(idtui.NewOutput(&buf), p.Files, width)
 	}
 	section := func(title string, commits []changesCommit) {
 		if len(commits) == 0 {
@@ -114,7 +126,7 @@ func (p workspaceChangesPreview) render(width int) string {
 		}
 	}
 	section("Commits to save", p.Outgoing)
-	section("Checkout-only commits", p.Incoming)
+	section("Checkpoint-only commits", p.Incoming)
 	if p.HistoryError != "" {
 		if buf.Len() > 0 {
 			buf.WriteString("\n\n")

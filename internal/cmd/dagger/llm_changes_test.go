@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"dagger.io/dagger"
@@ -21,20 +20,20 @@ import (
 func TestWorkspaceChangesRendering(t *testing.T) {
 	require.True(t, (workspaceChangesPreview{}).empty())
 	p := workspaceChangesPreview{
-		Uncommitted: []patchpreview.Entry{{Path: "pending.txt", Kind: "ADDED", Added: 1}},
-		Incoming:    []changesCommit{{SHA: strings.Repeat("b", 40), MessageHeadline: "checkout commit"}},
+		Files:    []patchpreview.Entry{{Path: "pending.txt", Kind: "ADDED", Added: 1}},
+		Incoming: []changesCommit{{SHA: strings.Repeat("b", 40), MessageHeadline: "checkout commit"}},
 	}
 	for i := range changesHistoryLimit + 1 {
 		p.Outgoing = append(p.Outgoing, changesCommit{SHA: strings.Repeat("a", 40), MessageHeadline: fmt.Sprintf("commit %02d", i)})
 	}
 	text := ansi.Strip(p.render(80))
-	require.Contains(t, text, "Uncommitted\npending.txt")
+	require.Contains(t, text, "Files since checkpoint\npending.txt")
 	require.Contains(t, text, "Commits to save (20+)")
 	require.Contains(t, text, "commit 19")
 	require.NotContains(t, text, "commit 20")
 	require.Contains(t, text, "more commits not shown")
-	require.Contains(t, text, "Checkout-only commits (1)\nbbbbbbb checkout commit")
-	p.Uncommitted, p.Incoming = nil, nil
+	require.Contains(t, text, "Checkpoint-only commits (1)\nbbbbbbb checkout commit")
+	p.Files, p.Incoming = nil, nil
 	p.Outgoing = []changesCommit{{SHA: "abcdefghi", MessageHeadline: "subject\x1b[2J\n\rwith a long suffix"}}
 	require.False(t, p.empty(), "commit-only changes must keep the panel visible")
 	text = p.render(24)
@@ -65,6 +64,8 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("base\n"), 0o644))
 	git("add", ".")
 	git("commit", "-m", "base")
+	// Pre-existing dirt is part of the baseline, not a change by the agent.
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("initial dirt\n"), 0o644))
 	dag, err := dagger.Connect(ctx, dagger.WithWorkdir(checkout))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
@@ -72,14 +73,27 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	start := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline)
 	var changes idtui.SidebarSection
-	s := &LLMSession{
-		dag: dag, llm: start, initialLLM: start, workspaceBaseline: baseline,
-		plumbingCtx: ctx, autoCompactL: new(sync.Mutex),
-		frontend: &idtui.FrontendMock{
+	// Startup and preview must work entirely from the checkpoint even when
+	// the host Git repository is unavailable. The old throwaway LLM and live
+	// history reads both require it.
+	gitDir := filepath.Join(checkout, ".git")
+	parkedGitDir := filepath.Join(t.TempDir(), "checkout.git")
+	require.NoError(t, os.Rename(gitDir, parkedGitDir))
+	t.Cleanup(func() {
+		if _, err := os.Stat(parkedGitDir); err == nil {
+			require.NoError(t, os.Rename(parkedGitDir, gitDir))
+		}
+	})
+	s, err := NewLLMSession(ctx, dag, "", nil,
+		&idtui.FrontendMock{
 			SetSidebarContentFunc: func(section idtui.SidebarSection) { changes = section },
 			SetStatusLineFunc:     func(idtui.StatusLineData) {},
-		},
-	}
+		}, start)
+	require.NoError(t, err)
+	require.Empty(t, changes.Body(80), "initial dirt must not appear as an agent change")
+	unbound, err := NewLLMSession(ctx, dag, "", nil, s.frontend, dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}))
+	require.NoError(t, err, "a conversational LLM need not have a workspace")
+	require.Nil(t, unbound.workspaceBaseline)
 	const date = "2026-09-05T12:00:00Z"
 	id, err := baseline.WithNewFile("saved.txt", "committed\n").WithCommit("agent commit", date).ID(ctx)
 	require.NoError(t, err)
@@ -88,12 +102,21 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, s.updateChangesPreview(s.llm))
 	require.Contains(t, changes.Body(80), "Commits to save (1)")
 	require.Contains(t, changes.Body(80), "agent commit")
+	require.Contains(t, changes.Body(80), "saved.txt")
+	require.NotContains(t, changes.Body(80), "base.txt")
+	require.NotContains(t, changes.Body(80), "History unavailable")
 	require.NotContains(t, changes.Body(80), "Uncommitted")
 	require.Len(t, changes.KeyMap, 2)
 	_, err = os.Stat(filepath.Join(checkout, "saved.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	sha, err := committed.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
+	require.NoError(t, os.Rename(parkedGitDir, gitDir))
+	// The agent commit also commits the captured initial dirt. Export correctly
+	// refuses to advance HEAD over a dirty tracked file, so clean that host
+	// file before testing successful export (the checkpoint stays unchanged).
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("base\n"), 0o644))
+	git("update-index", "--refresh")
 	require.NoError(t, s.ExportChanges(ctx))
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
 	require.Empty(t, changes.Body(80), "saving commit-only changes clears the panel")
@@ -105,23 +128,27 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	// A later edit to the same path remains separate from its committed version.
 	s.llm = s.llm.WithWorkspace(s.llm.Workspace().WithNewFile("saved.txt", "pending\n"))
 	require.NoError(t, s.updateChangesPreview(s.llm))
-	require.Contains(t, changes.Body(80), "Uncommitted")
+	require.Contains(t, changes.Body(80), "Files since checkpoint")
 	require.NotContains(t, changes.Body(80), "Commits to save")
 	require.NoError(t, s.ExportChanges(ctx))
 	contents, err := os.ReadFile(filepath.Join(checkout, "saved.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "pending\n", string(contents))
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
+	require.NoError(t, s.updateChangesPreview(s.llm))
+	require.Empty(t, changes.Body(80), "saved pending edits become the new baseline")
 
-	// Moved checkout history is shown in the opposite direction. Saving a
-	// divergent agent commit hands off without replacing either side's history.
+	// Host-only commits don't change the preview baseline. Saving still checks
+	// the live checkout and preserves both sides on divergence.
 	git("add", "saved.txt")
 	git("commit", "-m", "checkout commit")
 	hostSHA := git("rev-parse", "HEAD")
+	require.NoError(t, s.updateChangesPreview(s.llm))
+	require.Empty(t, changes.Body(80), "host commits must not change the sidebar")
 	s.llm = s.llm.WithWorkspace(s.llm.Workspace().WithNewFile("agent.txt", "agent\n").WithCommit("divergent agent", date))
 	require.NoError(t, s.updateChangesPreview(s.llm))
-	require.Contains(t, changes.Body(80), "Checkout-only commits (1)")
-	require.Contains(t, changes.Body(80), "checkout commit")
+	require.NotContains(t, changes.Body(80), "Checkpoint-only commits")
+	require.NotContains(t, changes.Body(80), "checkout commit")
 	require.Contains(t, changes.Body(80), "divergent agent")
 	before, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
