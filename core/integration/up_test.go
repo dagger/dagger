@@ -271,6 +271,47 @@ settings.base = "container-provider:image"
 		require.Contains(t, out, "container-provider")
 	})
 
+	t.Run("entrypoint module ref via settings", func(ctx context.Context, t *testctx.T) {
+		// The referenced module is the workspace entrypoint. Its functions are
+		// hoisted onto the sugared Query root and its constructor field is only
+		// installed on the canonical server, so the resolver must look the
+		// module up there (see resolveModuleRef in core/schema/address.go).
+		// Regression: this used to fail with "module is the workspace
+		// entrypoint; its functions are hoisted to the root and cannot be
+		// referenced" (github.com/dagger/dagger/issues/14058).
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:image"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		// Filtered check: only the consumer loads up front, so the entrypoint
+		// module must be demand-loaded when the wiring resolves.
+		out, err = modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "hello-with-services:web"
+`).
+			With(daggerExec("check", "service-ref-consumer:check-service")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+	})
+
 	t.Run("artifact refs via settings", func(ctx context.Context, t *testctx.T) {
 		ctr := modGen.
 			WithWorkdir("app").

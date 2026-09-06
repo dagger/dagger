@@ -30,11 +30,16 @@ type moduleRefCycleKey struct{}
 //     parts on both sides. Strings containing "://" (URL-ish, e.g. "tcp://...")
 //     are never module refs.
 //   - The first segment is normalized to a gql field name and looked up on the
-//     (non-canonical) current Query root's object type. Only if a field of that
-//     name EXISTS — AND carries module provenance (FieldSpec.Module != nil),
-//     which distinguishes a module entrypoint from a reserved core
-//     field like "git" or "secret" that shares the root namespace — is the
-//     string committed as a module ref.
+//     CANONICAL Query root's object type. Only if a field of that name EXISTS
+//     — AND carries module provenance (FieldSpec.Module != nil), which
+//     distinguishes a module constructor from a reserved core field like
+//     "git" or "secret" that shares the root namespace — is the string
+//     committed as a module ref. The canonical server is used because the
+//     workspace entrypoint's constructor is only installed there: the sugared
+//     (client-facing) server hoists its functions onto the root as proxies
+//     and never installs the module field itself, so resolving against the
+//     sugared root would make an entrypoint module unreferenceable (see
+//     hack/designs/entrypoint-proxy.md).
 //   - Once committed, any subsequent failure (unknown function, type mismatch,
 //     cycle) is a HARD error and does NOT fall through to image/URL handling.
 //
@@ -57,12 +62,15 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 		return false, nil
 	}
 
-	// Use the non-canonical current server: module fields live on the
-	// outer Query root, not the canonical core schema.
+	// Resolve against the canonical server: every module's constructor
+	// lives there, including the workspace entrypoint's, whose field is
+	// skipped on the sugared server in favor of hoisted function proxies.
+	// For servers without an entrypoint Canonical() returns the receiver.
 	srv := dagql.CurrentDagqlServer(ctx)
 	if srv == nil {
 		return false, nil
 	}
+	srv = srv.Canonical()
 	root := srv.Root()
 	moduleField := strcase.ToLowerCamel(module)
 	// Detect whether the module is actually installed by checking the Query
@@ -87,7 +95,7 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 			// a module ref and the load failure is the real error.
 			return true, fmt.Errorf("resolve module reference %q: load module %q: %w", addr, module, loadErr)
 		}
-		srv = refreshed
+		srv = refreshed.Canonical()
 		root = srv.Root()
 		spec, exists = root.ObjectType().FieldSpec(moduleField, srv.View)
 		if !exists {
@@ -200,23 +208,14 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 		return nil, false, nil
 	}
 	want := strcase.ToKebab(name)
-	isEntrypoint := false
-	for installedName, entry := range cfg.Modules {
+	for installedName := range cfg.Modules {
 		if strcase.ToKebab(installedName) == want {
 			installed = true
-			isEntrypoint = entry.Entrypoint
 			break
 		}
 	}
 	if !installed {
 		return nil, false, nil
-	}
-	// An entrypoint module's functions are hoisted onto the Query root and no
-	// module field is served for it, so a <module>:<function> reference can
-	// never resolve. Committed: report that directly instead of loading the
-	// module only to miss the retry and fall back to the generic address error.
-	if isEntrypoint {
-		return nil, true, fmt.Errorf("module %q is the workspace entrypoint; its functions are hoisted to the root and cannot be referenced as %q", name, name+":<function>")
 	}
 	// Strict (non-best-effort) load: the consumer's constructor requires this
 	// module, so a load failure is that resolution's real error. This does not
