@@ -2358,6 +2358,10 @@ func (s *workspaceSchema) overlayEdit(
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
+	deltaBase, err = s.seedDeltaRootParents(ctx, srv, deltaBase, sparseBase, touchedAll)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	if len(seededAll) > 0 {
 		deltaBase, err = s.seedDeltaRoot(ctx, srv, ws, deltaBase, sparseBase, seededAll)
 		if err != nil {
@@ -2388,6 +2392,83 @@ func (s *workspaceSchema) overlayEdit(
 		mutate(newWS)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, newWS)
+}
+
+// seedDeltaRootParents adds to the delta root the parent directories of the
+// outermost touched paths that the sparse base already holds, so a file
+// removal diffs as that file rather than as its parent directory (which the
+// export would RemoveAll — dagger/dagger#14057).
+func (s *workspaceSchema) seedDeltaRootParents(
+	ctx context.Context,
+	srv *dagql.Server,
+	delta dagql.ObjectResult[*core.Directory],
+	base dagql.ObjectResult[*core.Directory],
+	touched []string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	parents := touchedParentDirs(touched)
+	if len(parents) == 0 {
+		return delta, nil
+	}
+	for _, dir := range parents {
+		var exists dagql.Boolean
+		if err := srv.Select(ctx, base, &exists, dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("seed overlay delta root parents: %w", err)
+		}
+		if !exists {
+			continue
+		}
+		var seeded dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, delta, &seeded, dagql.Selector{
+			Field: "withNewDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("seed overlay delta root parents: %w", err)
+		}
+		delta = seeded
+	}
+	return delta, nil
+}
+
+// touchedParentDirs returns the de-duplicated parent directories of the touched
+// paths that are not nested under another touched path.
+func touchedParentDirs(touched []string) []string {
+	cleaned := make([]string, 0, len(touched))
+	for _, p := range touched {
+		p = path.Clean(filepath.ToSlash(p))
+		if p == "." || p == "/" {
+			continue
+		}
+		cleaned = append(cleaned, strings.TrimPrefix(p, "/"))
+	}
+	slices.Sort(cleaned)
+	seen := make(map[string]struct{})
+	var out []string
+outer:
+	for _, p := range cleaned {
+		for _, other := range cleaned {
+			if other != p && strings.HasPrefix(p, other+"/") {
+				continue outer
+			}
+		}
+		parent := path.Dir(p)
+		if parent == "." {
+			continue
+		}
+		if _, ok := seen[parent]; ok {
+			continue
+		}
+		seen[parent] = struct{}{}
+		out = append(out, parent)
+	}
+	return out
 }
 
 // seedDeltaRoot layers the workspace's current content at the given paths onto
@@ -2537,17 +2618,24 @@ func sparseIncludePatterns(paths []string) dagql.ArrayInput[dagql.String] {
 	return includes
 }
 
-// changesetTouchedPaths returns the workspace-relative paths a changeset affects
-// (added, modified, and removed), used to size the sparse diff base.
+// changesetTouchedPaths returns the workspace-relative file paths a changeset
+// affects, used to size the sparse diff base. Directory entries are skipped: a
+// directory in the sparse base pulls in the whole host subtree, which then
+// reads as removed (dagger/dagger#14057).
 func changesetTouchedPaths(ctx context.Context, ch *core.Changeset) ([]string, error) {
 	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(paths.Added)+len(paths.Modified)+len(paths.AllRemoved))
-	out = append(out, paths.Added...)
-	out = append(out, paths.Modified...)
-	out = append(out, paths.AllRemoved...)
+	for _, group := range [][]string{paths.Added, paths.Modified, paths.AllRemoved} {
+		for _, p := range group {
+			if strings.HasSuffix(p, "/") {
+				continue
+			}
+			out = append(out, p)
+		}
+	}
 	return out, nil
 }
 
