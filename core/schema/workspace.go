@@ -50,14 +50,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("commitsFrom", s.commitsFrom).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.",
+			DoNotCache("Captures local receivers before planning integration").
+			Doc("Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.",
 				"Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Frozen source workspace."),
 				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.",
+			DoNotCache("Captures local receivers before integrating commits").
+			Doc("Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.",
 				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.",
 				"Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Frozen source workspace."),
@@ -65,6 +67,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
 		dagql.NodeFunc("__pullRepository", s.pullRepository).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Open the pulled repository, preserving its logical origin."),
+		dagql.NodeFunc("__exportDirectory", s.exportDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Prepared integration is bound to a client checkout").Doc("(Internal-only) Bundle a prepared integration and its before/after worktrees."),
+		dagql.NodeFunc("__withExportBase", s.withExportBase).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Bind a prepared integration to its captured checkout."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Checkpoints host-backed receivers before committing").
@@ -429,9 +433,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes workspace commits and changes to the calling client's host").
 			Doc("Write this workspace's commits and uncommitted changes to a local Git checkout.",
-				"The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.",
-				"Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.").
-			Args(dagql.Arg("to").Doc("Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.")),
+				"Integrate frozen commits with currentWorkspace.withCommitsFrom first. Export validates the prepared integration against the live checkout, preserving unrelated local edits and refusing stale or conflicting writes. History is never rewritten.",
+				"Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host."),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -2349,24 +2352,12 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceExportArgs,
+	_ struct{},
 ) (core.Void, error) {
 	ws := parent.Self()
-	srv, err := core.CurrentDagqlServer(ctx)
+	hostPath, err := ws.ExportHostPath()
 	if err != nil {
-		return core.Void{}, err
-	}
-	target := ws
-	if args.To.Valid {
-		result, err := args.To.Value.Load(ctx, srv)
-		if err != nil {
-			return core.Void{}, fmt.Errorf("load export target: %w", err)
-		}
-		target = result.Self()
-	}
-	hostPath, err := target.ExportHostPath()
-	if err != nil {
-		return core.Void{}, fmt.Errorf("%w; pass a local Git workspace with to", err)
+		return core.Void{}, fmt.Errorf("%w; integrate into currentWorkspace with withCommitsFrom first", err)
 	}
 
 	changes, ok := ws.OverlayChanges()
@@ -2376,29 +2367,9 @@ func (s *workspaceSchema) export(
 			invalidateExportedWorkspace(ctx)
 		}
 	}()
-	// A live workspace exported to itself has no engine-side commits to land.
-	// Preserve its file-only export behavior (including unborn repositories).
-	// Frozen values and explicit destinations transfer committed history first.
-	if args.To.Valid || !ws.ClientLocalBase() {
-		frozen, err := s.checkpoint(ctx, parent, workspaceCheckpointArgs{})
-		if err != nil {
-			return core.Void{}, err
-		}
-		if err := srv.Select(ctx, frozen, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
-			return core.Void{}, err
-		}
-		ok = changes.Self() != nil
-		// Evaluate the overlay before mutating the checkout. Ref invalidation
-		// must also happen if filesync later fails, since HEAD already moved.
-		if ok {
-			if _, err := changes.Self().IsEmpty(ctx); err != nil {
-				return core.Void{}, err
-			}
-		}
-		wrote = true // A transport error can follow a completed client-side write.
-		if err := s.exportWorkspaceGit(ctx, frozen, hostPath); err != nil {
-			return core.Void{}, err
-		}
+	if ws.ExportBase.Self() != nil {
+		wrote = true
+		return core.Void{}, s.exportWorkspaceGit(ctx, parent, hostPath)
 	}
 	if !ok || changes.Self() == nil {
 		return core.Void{}, nil

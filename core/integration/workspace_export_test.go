@@ -13,18 +13,13 @@ import (
 )
 
 func exportWorkspace(ctx context.Context, c *dagger.Client, source, target *dagger.Workspace) error {
-	sourceID, err := source.ID(ctx)
+	id, err := target.WithCommitsFrom(source).ID(ctx)
 	if err != nil {
 		return err
 	}
-	targetID, err := target.ID(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Do(ctx, &dagger.Request{
-		Query:     `query($source: ID!, $target: ID!) { node(id: $source) { ... on Workspace { export(to: $target) } } }`,
-		Variables: map[string]any{"source": sourceID, "target": targetID},
-	}, &dagger.Response{})
+	integrated := dagger.Ref[*dagger.Workspace](c, id)
+	merged := integrated.Directory("/").Changes(source.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).WithChangeset(source.Git().Uncommitted())
+	return integrated.WithChanges(merged).Export(ctx)
 }
 
 func workspaceExportCheckout(ctx context.Context, t *testctx.T) (string, func(...string) string) {
@@ -43,6 +38,97 @@ func workspaceExportCheckout(ctx context.Context, t *testctx.T) (string, func(..
 	git("add", ".")
 	git("commit", "-m", "initial")
 	return checkout, git
+}
+
+func (WorkspaceSuite) TestWorkspaceExportIndependentAgents(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	baseID, err := c.CurrentWorkspace().Checkpoint().ID(ctx)
+	require.NoError(t, err)
+	base := dagger.Ref[*dagger.Workspace](c, baseID)
+	a := base.WithNewFile("agent-a.txt", "a").WithCommit("agent A", workspaceCommitDate)
+	b := base.WithNewFile("agent-b.txt", "b").WithCommit("agent B", workspaceCommitDate)
+	aID, err := a.ID(ctx)
+	require.NoError(t, err)
+	bID, err := b.ID(ctx)
+	require.NoError(t, err)
+	a, b = dagger.Ref[*dagger.Workspace](c, aID), dagger.Ref[*dagger.Workspace](c, bID)
+	// Prepare both against the same checkout. A stale prepared save must fail;
+	// recomposing against currentWorkspace integrates the other agent's work.
+	staleID, err := c.CurrentWorkspace().WithCommitsFrom(b).ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(a).Export(ctx))
+	first := git("rev-parse", "HEAD")
+	require.Error(t, dagger.Ref[*dagger.Workspace](c, staleID).Export(ctx))
+	require.Equal(t, first, git("rev-parse", "HEAD"))
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(b).Export(ctx))
+	second := git("rev-parse", "HEAD")
+	require.Contains(t, git("log", "--format=%H"), first)
+	sourceSHA, err := b.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, sourceSHA, second)
+	require.Contains(t, git("log", "-1", "--format=%B"), sourceSHA)
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(b).Export(ctx))
+	require.Equal(t, second, git("rev-parse", "HEAD"))
+	require.Empty(t, git("status", "--porcelain"))
+	for _, name := range []string{"agent-a.txt", "agent-b.txt"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.NoError(t, err)
+	}
+}
+
+func (WorkspaceSuite) TestWorkspaceExportCapturedDirt(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("captured dirt"), 0o644))
+	agentID, err := c.CurrentWorkspace().Checkpoint().WithCommit("commit captured cleanup", workspaceCommitDate).ID(ctx)
+	require.NoError(t, err)
+	agent := dagger.Ref[*dagger.Workspace](c, agentID)
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(agent).Export(ctx))
+	require.Empty(t, git("status", "--porcelain"))
+	require.Equal(t, "captured dirt", git("show", "HEAD:base.txt"))
+	// Pending files are deliberately not part of a commit-only save.
+	agent = agent.WithNewFile("pending.txt", "not committed")
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(agent).Export(ctx))
+	_, err = os.Stat(filepath.Join(checkout, "pending.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func (WorkspaceSuite) TestWorkspaceExportIntegrationConflicts(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	agentID, err := c.CurrentWorkspace().Checkpoint().WithNewFile("base.txt", "agent").WithCommit("agent", workspaceCommitDate).ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("user"), 0o644))
+	git("commit", "-am", "user")
+	head := git("rev-parse", "HEAD")
+	require.Error(t, c.CurrentWorkspace().WithCommitsFrom(dagger.Ref[*dagger.Workspace](c, agentID)).Export(ctx))
+	require.Equal(t, head, git("rev-parse", "HEAD"))
+	require.Empty(t, git("status", "--porcelain"))
+}
+
+func (WorkspaceSuite) TestWorkspaceExportPendingGitEdges(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, ".gitignore"), []byte("ignored.txt\n"), 0o644))
+	git("add", ".gitignore")
+	git("commit", "-m", "ignore file")
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	baseID, err := c.CurrentWorkspace().Checkpoint().ID(ctx)
+	require.NoError(t, err)
+	base := dagger.Ref[*dagger.Workspace](c, baseID)
+	head := git("rev-parse", "HEAD")
+	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(base).WithNewFile("ignored.txt", "intentional edit").Export(ctx))
+	contents, err := os.ReadFile(filepath.Join(checkout, "ignored.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "intentional edit", string(contents))
+	require.Equal(t, head, git("rev-parse", "HEAD"))
+	require.Empty(t, git("status", "--porcelain"))
+	empty := c.Directory().WithNewDirectory("empty").Changes(c.Directory())
+	err = c.CurrentWorkspace().WithCommitsFrom(base).WithChanges(empty).Export(ctx)
+	require.ErrorContains(t, err, "cannot export empty directories")
+	_, err = os.Stat(filepath.Join(checkout, "empty"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Equal(t, head, git("rev-parse", "HEAD"))
 }
 
 func (WorkspaceSuite) TestWorkspaceExportCommitsAndOverlay(ctx context.Context, t *testctx.T) {
@@ -77,10 +163,10 @@ func (WorkspaceSuite) TestWorkspaceExportCommitsAndOverlay(ctx context.Context, 
 	require.Equal(t, "committed", contents)
 	// Repeated exports are effectful and do not produce duplicate commits.
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "pending.txt"), []byte("changed outside"), 0o644))
-	require.NoError(t, exportWorkspace(ctx, c, frozen, target))
+	require.Error(t, exportWorkspace(ctx, c, frozen, target))
 	data, err := os.ReadFile(filepath.Join(checkout, "pending.txt"))
 	require.NoError(t, err)
-	require.Equal(t, "pending", string(data))
+	require.Equal(t, "changed outside", string(data))
 	require.Equal(t, committed.Git.Head.Commit, git("rev-parse", "HEAD"))
 	// The frozen source remains the same after saving.
 	sha, err := frozen.Git().Head().CommitSHA(ctx)
@@ -97,6 +183,9 @@ func (WorkspaceSuite) TestWorkspaceExportParksCommits(ctx context.Context, t *te
 			committed, err := commitWorkspace(ctx, c, target.WithNewFile("base.txt", "engine edit").WithNewFile("pending.txt", "pending"), "engine commit", []string{"base.txt"})
 			require.NoError(t, err)
 			frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
+			preparedID, err := target.WithCommitsFrom(frozen).WithChanges(frozen.Git().Uncommitted()).ID(ctx)
+			require.NoError(t, err)
+			prepared := dagger.Ref[*dagger.Workspace](c, preparedID)
 			if scenario == "behind" {
 				require.NoError(t, exportWorkspace(ctx, c, frozen, target))
 				require.NoError(t, os.Remove(filepath.Join(checkout, "pending.txt")))
@@ -106,7 +195,7 @@ func (WorkspaceSuite) TestWorkspaceExportParksCommits(ctx context.Context, t *te
 				git("commit", "-am", "user commit")
 			}
 			head, status := git("rev-parse", "HEAD"), git("status", "--porcelain")
-			err = exportWorkspace(ctx, c, frozen, target)
+			err = prepared.Export(ctx)
 			require.Error(t, err)
 			parked := "refs/dagger/checkpoints/" + committed.Git.Head.Commit[:12]
 			require.ErrorContains(t, err, parked)
@@ -136,9 +225,7 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
 	// Destination is another checkout; cwd must not shift repo-root paths.
 	destination := connect(ctx, t, dagger.WithWorkdir(linked))
-	targetID, err := destination.CurrentWorkspace().ID(ctx)
-	require.NoError(t, err)
-	require.NoError(t, exportWorkspace(ctx, c, frozen, dagger.Ref[*dagger.Workspace](c, targetID)))
+	require.NoError(t, exportWorkspace(ctx, destination, dagger.Ref[*dagger.Workspace](destination, committed.ID), destination.CurrentWorkspace()))
 	for _, name := range []string{"a.txt", "b.txt"} {
 		data, err := os.ReadFile(filepath.Join(linked, "sub", name))
 		require.NoError(t, err)
@@ -147,9 +234,9 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 	require.NotEqual(t, committed.Git.Head.Commit, git("rev-parse", "HEAD"))
 	require.Equal(t, committed.Git.Head.Commit, git("rev-parse", "refs/heads/linked"))
 	err = frozen.Export(ctx)
-	require.ErrorContains(t, err, "pass a local Git workspace with to")
+	require.ErrorContains(t, err, "withCommitsFrom first")
 	err = exportWorkspace(ctx, c, frozen, c.Directory().AsWorkspace())
-	require.ErrorContains(t, err, "cannot export a synthetic workspace")
+	require.Error(t, err)
 }
 
 func (WorkspaceSuite) TestWorkspaceExportCheckpointWithoutCommits(ctx context.Context, t *testctx.T) {
@@ -180,7 +267,7 @@ func (WorkspaceSuite) TestWorkspaceExportUnrelatedAndUnborn(ctx context.Context,
 			sourceGit("commit", "-m", "independent history")
 			c := connect(ctx, t, dagger.WithWorkdir(sourcePath))
 			frozen := c.CurrentWorkspace().Checkpoint().WithNewFile("pending.txt", "must not export")
-			sha, err := frozen.Git().Head().CommitSHA(ctx)
+			sourceID, err := frozen.ID(ctx)
 			require.NoError(t, err)
 			targetPath := t.TempDir()
 			if unborn {
@@ -189,17 +276,8 @@ func (WorkspaceSuite) TestWorkspaceExportUnrelatedAndUnborn(ctx context.Context,
 				targetPath, _ = workspaceExportCheckout(ctx, t)
 			}
 			destination := connect(ctx, t, dagger.WithWorkdir(targetPath))
-			targetID, err := destination.CurrentWorkspace().ID(ctx)
-			require.NoError(t, err)
-			err = exportWorkspace(ctx, c, frozen, dagger.Ref[*dagger.Workspace](c, targetID))
-			require.ErrorContains(t, err, "refs/dagger/checkpoints/"+sha[:12])
-			if unborn {
-				require.ErrorContains(t, err, "HEAD is unborn")
-			}
-			cmd := exec.CommandContext(ctx, "git", "-C", targetPath, "rev-parse", "refs/dagger/checkpoints/"+sha[:12])
-			out, err := cmd.CombinedOutput()
-			require.NoError(t, err, "%s", out)
-			require.Equal(t, sha, strings.TrimSpace(string(out)))
+			err = exportWorkspace(ctx, destination, dagger.Ref[*dagger.Workspace](destination, sourceID), destination.CurrentWorkspace())
+			require.Error(t, err)
 			_, err = os.Stat(filepath.Join(targetPath, "pending.txt"))
 			require.ErrorIs(t, err, os.ErrNotExist)
 		})

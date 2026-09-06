@@ -15562,9 +15562,8 @@ class Workspace(Type):
         commits: list[str] | None = None,
         max_commits: int | None = 100,
     ) -> list["WorkspaceCommitPick"]:
-        """Classify source commits oldest first, as if earlier pickable commits
-        had been applied. Both workspaces must be frozen; call checkpoint
-        first.
+        """Classify frozen source commits oldest first, as if earlier pickable
+        commits had been applied. Local receivers are checkpointed first.
 
         Planning is bounded and fails rather than truncating. Source
         uncommitted changes are ignored. Divergent merge commits require
@@ -15759,25 +15758,18 @@ class Workspace(Type):
         _ctx = self._select("envList", _args)
         return await _ctx.execute(list[str])
 
-    async def export(self, *, to: "Workspace | None" = None) -> Void:
+    async def export(self) -> Void:
         """Write this workspace's commits and uncommitted changes to a local Git
         checkout.
 
-        The checkout is fast-forwarded when its HEAD is an ancestor of this
-        workspace's HEAD. Divergence or conflicting local edits leave the
-        commits on refs/dagger/checkpoints/<short-sha> and fail naming that
-        ref. History is never rewritten. Remaining uncommitted changes are
-        then written as files.
+        Integrate frozen commits with currentWorkspace.withCommitsFrom first.
+        Export validates the prepared integration against the live checkout,
+        preserving unrelated local edits and refusing stale or conflicting
+        writes. History is never rewritten.
 
         Like Directory.export, writes affect the client making the call, never
         the client that created the workspace. Inside a module, this cannot
         reach the caller's host.
-
-        Parameters
-        ----------
-        to:
-            Destination checkout on the current client's host. Required for a
-            frozen workspace; defaults to this workspace when host-backed.
 
         Returns
         -------
@@ -15792,9 +15784,7 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args = [
-            Arg("to", to, None),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("export", _args)
         await _ctx.execute()
 
@@ -16298,8 +16288,9 @@ class Workspace(Type):
         max_commits: int | None = 100,
     ) -> Self:
         """Pull commits from a frozen workspace, preserving this workspace's
-        uncommitted changes and metadata. Both inputs must be frozen; call
-        checkpoint first.
+        uncommitted changes and metadata. A local receiver is checkpointed
+        first and retains its checkout destination for export; the checkout is
+        not modified until export.
 
         Fast-forward when the selected commits include all new ancestors of
         their tip; otherwise cherry-pick in order with origin trailers,

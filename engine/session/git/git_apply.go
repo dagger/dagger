@@ -79,6 +79,13 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundlePath stri
 	if meta == nil || meta.CheckoutPath == "" || !validExportSHA(meta.TargetSha) || meta.ExpectedStateDigest == "" {
 		return applyBundleError("checkout path, full target commit SHA and expected ref state are required")
 	}
+	advertised := meta.TargetSha
+	if meta.IntegrationWorktreeSha != "" {
+		if !validExportSHA(meta.IntegrationWorktreeSha) {
+			return applyBundleError("invalid integration worktree SHA")
+		}
+		advertised = meta.IntegrationWorktreeSha
+	}
 	checkout := filepath.Clean(meta.CheckoutPath)
 	if !checkoutHasGitEntry(checkout) {
 		return applyBundleError("workspace export requires a local Git checkout")
@@ -107,7 +114,7 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundlePath stri
 		if err != nil {
 			return applyBundleError(err.Error())
 		}
-		if strings.TrimSpace(out) != meta.TargetSha+" "+meta.BundleRef {
+		if strings.TrimSpace(out) != advertised+" "+meta.BundleRef {
 			return applyBundleError("export bundle ref does not match the requested commit")
 		}
 		if _, err := runExportGit(ctx, checkout, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--no-auto-maintenance", bundlePath, meta.BundleRef); err != nil {
@@ -138,7 +145,7 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundlePath stri
 			return park(fmt.Errorf("checkout HEAD %s is not an ancestor of %s", state.headSHA, meta.TargetSha))
 		}
 	}
-	if err := fastForwardExport(ctx, checkout, state, meta.TargetSha); err != nil {
+	if err := fastForwardExport(ctx, checkout, state, meta.TargetSha, meta.IntegrationWorktreeSha); err != nil {
 		return park(err)
 	}
 	if created {
@@ -177,7 +184,7 @@ func parkExportCommit(ctx context.Context, checkout, sha string) (string, bool, 
 // overlapping edits and untracked obstructions. No staging, reset or rebase is
 // used to make a dirty checkout acceptable. Hooks and recursive submodule
 // updates are deliberately disabled.
-func fastForwardExport(ctx context.Context, checkout string, state checkoutState, target string) error {
+func fastForwardExport(ctx context.Context, checkout string, state checkoutState, target string, worktree ...string) error {
 	gitDir, err := runExportGit(ctx, checkout, "rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return err
@@ -235,7 +242,16 @@ func fastForwardExport(ctx context.Context, checkout string, state checkoutState
 	if strings.TrimSpace(actualRef) != state.headRef {
 		return errors.New("checkout branch changed while preparing export")
 	}
-	if state.headSHA != target {
+	if len(worktree) > 0 && worktree[0] != "" {
+		index, unlock, err := lockIntegrationIndex(ctx, checkout)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		if err := applyIntegrationWorktree(ctx, checkout, state.headSHA, target, worktree[0], index); err != nil {
+			return err
+		}
+	} else if state.headSHA != target {
 		if err := checkExportUntrackedPaths(ctx, checkout, state.headSHA, target); err != nil {
 			return err
 		}

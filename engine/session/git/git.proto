@@ -31,6 +31,10 @@ message ApplyBundleMetadata {
   string target_sha = 2;
   string expected_state_digest = 3;
   string bundle_ref = 4;
+  // Prepared integration: bundle_ref advertises this transport commit, whose
+  // parents are target_sha and a before-worktree snapshot (parented by the
+  // expected checkout HEAD). Its tree is the desired final worktree.
+  string integration_worktree_sha = 5;
   // Empty bundles are allowed when the checkout already contains target_sha.
   // Nonempty bundles must advertise target_sha under bundle_ref.
 }

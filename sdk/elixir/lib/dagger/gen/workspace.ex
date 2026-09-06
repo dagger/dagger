@@ -116,7 +116,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+  Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
 
   Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
   """
@@ -243,19 +243,14 @@ defmodule Dagger.Workspace do
   @doc """
   Write this workspace's commits and uncommitted changes to a local Git checkout.
 
-  The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+  Integrate frozen commits with currentWorkspace.withCommitsFrom first. Export validates the prepared integration against the live checkout, preserving unrelated local edits and refusing stale or conflicting writes. History is never rewritten.
 
   Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
   """
-  @spec export(t(), [{:to, Dagger.Workspace.t() | nil}]) :: :ok | {:error, term()}
-  def export(%__MODULE__{} = workspace, optional_args \\ []) do
+  @spec export(t()) :: :ok | {:error, term()}
+  def export(%__MODULE__{} = workspace) do
     query_builder =
-      workspace.query_builder
-      |> QB.select("export")
-      |> QB.maybe_put_arg(
-        "to",
-        if(optional_args[:to], do: Dagger.ID.id!(optional_args[:to]), else: nil)
-      )
+      workspace.query_builder |> QB.select("export")
 
     case Client.execute(workspace.client, query_builder) do
       {:ok, _} -> :ok
@@ -660,7 +655,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+  Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
 
   Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
 

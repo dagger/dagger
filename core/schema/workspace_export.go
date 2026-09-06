@@ -9,8 +9,54 @@ import (
 	gitsession "github.com/dagger/dagger/engine/session/git"
 )
 
-type workspaceExportArgs struct {
-	To dagql.Optional[dagql.ID[*core.Workspace]]
+func (s *workspaceSchema) withExportBase(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
+	Base        dagql.ID[*core.Workspace]
+	Path        string
+	StateDigest string
+}) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	base, err := args.Base.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws := parent.Self().Clone()
+	ws.ExportBase, ws.ExportPath, ws.ExportStateDigest = base, args.Path, args.StateDigest
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func (s *workspaceSchema) exportDirectory(ctx context.Context, source dagql.ObjectResult[*core.Workspace], _ struct{}) (dagql.ObjectResult[*core.Directory], error) {
+	var result dagql.ObjectResult[*core.Directory]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return result, err
+	}
+	base := source.Self().ExportBase
+	if base.Self() == nil {
+		return result, fmt.Errorf("workspace has no prepared checkout integration")
+	}
+	var repo dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "__commitBase"}); err != nil {
+		return result, err
+	}
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, base, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return result, err
+	}
+	var before, after dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, base, &before, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return result, err
+	}
+	if err := srv.Select(ctx, source, &after, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return result, err
+	}
+	dir, err := core.WorkspaceExportDirectory(ctx, repo, head.Self().Ref.SHA, before.Self(), after.Self())
+	if err != nil {
+		return result, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *workspaceSchema) exportWorkspaceGit(ctx context.Context, source dagql.ObjectResult[*core.Workspace], hostPath string) error {
@@ -26,84 +72,42 @@ func (s *workspaceSchema) exportWorkspaceGit(ctx context.Context, source dagql.O
 	if err != nil {
 		return err
 	}
-	// Resolve the actual destination on the *calling* client, not the target
-	// object's owner or cached workspace read epoch. This digest keys its
-	// reconstruction and is checked again by ApplyBundle as a ref-state lease.
-	state, err := bk.GitCheckoutState(ctx, hostPath)
-	if err != nil {
-		return fmt.Errorf("read export destination: %w", err)
-	}
-	var targetRepo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, srv.Root(), &targetRepo,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "__gitDir", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(hostPath)},
-			{Name: "stateDigest", Value: dagql.NewString(state)},
-			{Name: "validateState", Value: dagql.NewBoolean(true)},
-		}},
-		dagql.Selector{Field: "asGit"},
-	); err != nil {
-		return fmt.Errorf("resolve export destination repository: %w", err)
-	}
-	remote, err := targetRepo.Self().LoadRemote(ctx)
-	if err != nil {
-		return err
-	}
-	var target dagql.ObjectResult[*core.GitRef]
-	if remote.Get("HEAD") != nil || (remote.Head != nil && remote.Head.SHA != "") {
-		if err := srv.Select(ctx, targetRepo, &target, dagql.Selector{Field: "head"}); err != nil {
-			return fmt.Errorf("resolve export destination HEAD: %w", err)
-		}
-	}
-	var head dagql.ObjectResult[*core.GitRef]
+	var head, base dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, source, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 		return err
 	}
-	metadata := &gitsession.ApplyBundleMetadata{CheckoutPath: hostPath, TargetSha: head.Self().Ref.SHA, ExpectedStateDigest: state}
-	if target.Self() != nil && metadata.TargetSha == target.Self().Ref.SHA {
-		return bk.ApplyGitBundle(ctx, metadata, nil)
-	}
-
-	// Materialize the selected commit as HEAD, independently of whether the
-	// original ref was a branch, tag or detached SHA and of keepGitDir. This is
-	// a clean repository; neither the overlay nor mounts enter the bundle.
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "__commitBase"}, dagql.Selector{Field: "asGit"}); err != nil {
+	if err := srv.Select(ctx, source.Self().ExportBase, &base, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 		return err
 	}
-	// A common ancestor keeps the transfer thin even when histories diverged.
-	// No common ancestor (or an unavailable optimization) falls back to a full
-	// bundle, so the client can still retain the commits for manual integration.
-	var base *core.GitRef
-	if target.Self() != nil {
-		base, _ = core.MergeBase(ctx, head.Self(), target.Self())
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "__exportDirectory"}, dagql.Selector{Field: "asGit"}); err != nil {
+		return err
 	}
-	if base != nil && base.Ref.SHA == metadata.TargetSha {
-		base = nil // Bundling an ancestor with itself excluded would be empty.
+	var prerequisite dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, repo, &prerequisite, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(base.Self().Ref.SHA)}}}); err != nil {
+		return err
 	}
-	args := []dagql.NamedInput{{Name: "refs", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("HEAD")}}}
-	if base != nil {
-		var baseRef dagql.ObjectResult[*core.GitRef]
-		if err := srv.Select(ctx, repo, &baseRef, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString(base.Ref.SHA)},
-		}}); err != nil {
-			return err
-		}
-		baseID, err := baseRef.ID()
-		if err != nil {
-			return err
-		}
-		args = append(args, dagql.NamedInput{Name: "base", Value: dagql.Opt(dagql.NewID[*core.GitRef](baseID))})
+	baseID, err := prerequisite.ID()
+	if err != nil {
+		return err
 	}
 	var bundle dagql.ObjectResult[*core.GitBundle]
-	if err := srv.Select(ctx, repo, &bundle, dagql.Selector{Field: "bundle", Args: args}); err != nil {
-		return fmt.Errorf("create workspace export bundle: %w", err)
+	if err := srv.Select(ctx, repo, &bundle, dagql.Selector{Field: "bundle", Args: []dagql.NamedInput{
+		{Name: "refs", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("HEAD")}},
+		{Name: "base", Value: dagql.Opt(dagql.NewID[*core.GitRef](baseID))},
+	}}); err != nil {
+		return err
 	}
-	// HEAD may be advertised under its canonical branch name by GitBundle.
-	if len(bundle.Self().Refs) != 1 || bundle.Self().Refs[0].SHA != metadata.TargetSha {
-		return fmt.Errorf("workspace export bundle does not contain the selected HEAD")
+	if len(bundle.Self().Refs) != 1 {
+		return fmt.Errorf("workspace export bundle must contain one transport ref")
 	}
-	metadata.BundleRef = bundle.Self().Refs[0].Name
+	metadata := &gitsession.ApplyBundleMetadata{
+		CheckoutPath:           hostPath,
+		TargetSha:              head.Self().Ref.SHA,
+		ExpectedStateDigest:    source.Self().ExportStateDigest,
+		BundleRef:              bundle.Self().Refs[0].Name,
+		IntegrationWorktreeSha: bundle.Self().Refs[0].SHA,
+	}
 	file := bundle.Self().File
 	reader, err := file.Self().Open(ctx, file)
 	if err != nil {

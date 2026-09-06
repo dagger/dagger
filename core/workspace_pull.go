@@ -65,7 +65,8 @@ type WorkspacePullPick struct {
 // WorkspacePullCommits uses the same speculative fold for planning and apply.
 // All Git writes are confined to a scratch snapshot; even a late conflict
 // leaves both input workspaces intact. Only source HEAD is fetched, not its
-// working tree or overlay. The result is a clean committed repository.
+// working tree or overlay. The result contains the integrated HEAD and the
+// receiver's remaining uncommitted changes, merged against that HEAD.
 func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Directory], source *GitRef, dirty *Changeset, opts WorkspacePullOpts, apply bool) (*Directory, []WorkspacePullPick, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
@@ -77,6 +78,10 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		return nil, nil, err
 	}
 	dirtyPaths := pullDirtyPaths(paths)
+	content, err := dirty.content(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	var picks []WorkspacePullPick
 	dir, err := withGitMergeWorkspace(ctx, base, "Workspace pull commits", func(ws *gitMergeWorkspace) error {
 		err := source.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{source.Backend}, func(git *gitutil.GitCLI) error {
@@ -90,9 +95,59 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		if err != nil {
 			return fmt.Errorf("fetch source commits: %w", err)
 		}
-		picks, err = foldWorkspacePull(ctx, ws.workDir, source.Ref.SHA, dirtyPaths, opts)
+		base, err := runWorkspacePullGit(ctx, ws.workDir, nil, "rev-parse", "HEAD")
 		if err != nil {
 			return err
+		}
+		base = strings.TrimSpace(base)
+		if err := ws.applyContent(ctx, content); err != nil {
+			return err
+		}
+		dirtySHA, err := workspaceSnapshotCommit(ctx, ws.workDir, base)
+		if err != nil {
+			return err
+		}
+		if _, err := runWorkspacePullGit(ctx, ws.workDir, nil, "reset", "--hard", base); err != nil {
+			return err
+		}
+		// File contents are merged after folding committed history. Identical
+		// pre-existing dirt can thus be incorporated into incoming commits.
+		// Empty directories still need explicit obstruction checks: Git cannot
+		// represent them in a tree.
+		var directories []string
+		for _, p := range slices.Concat(paths.Added, paths.Modified) {
+			if strings.HasSuffix(p, "/") && slices.Contains(dirtyPaths, strings.TrimSuffix(p, "/")) {
+				directories = append(directories, strings.TrimSuffix(p, "/"))
+			}
+		}
+		picks, err = foldWorkspacePull(ctx, ws.workDir, source.Ref.SHA, directories, opts)
+		if err != nil {
+			return err
+		}
+		merged, mergeErr := runWorkspacePullGit(ctx, ws.workDir, nil, "merge-tree", "--write-tree", "--merge-base="+base, "HEAD", dirtySHA)
+		if mergeErr != nil {
+			// merge-tree reports conflict paths following the result tree. Keep
+			// the public plan useful without exposing its scratch repository.
+			if merged == "" {
+				return mergeErr
+			}
+			for i := range picks {
+				if picks[i].Status != WorkspaceCommitPickable {
+					continue
+				}
+				touched, err := pullCommitPaths(ctx, ws.workDir, picks[i].SHA)
+				if err != nil {
+					return err
+				}
+				if conflicts := pullOverlappingPaths(touched, dirtyPaths); len(conflicts) > 0 {
+					picks[i].Status, picks[i].Reason, picks[i].ConflictPaths = WorkspaceCommitConflict, WorkspaceCommitPickReasonDirty, conflicts
+				}
+			}
+		} else {
+			tree := strings.Fields(merged)[0]
+			if _, err := runWorkspacePullGit(ctx, ws.workDir, nil, "read-tree", "--reset", "-u", tree); err != nil {
+				return err
+			}
 		}
 		if apply {
 			var conflicts []error

@@ -27,8 +27,8 @@ func (args workspaceCommitsFromArgs) opts(ws *core.Workspace) core.WorkspacePull
 	return core.WorkspacePullOpts{Commits: args.Commits, MaxCommits: args.MaxCommits, CommitterName: ws.GitAuthorName, CommitterEmail: ws.GitAuthorEmail}
 }
 
-// Both public entrypoints pin value refs before selecting cached helpers. They
-// never capture a live checkout; callers explicitly checkpoint it first.
+// Capture local receivers at the explicit integration boundary, then select
+// pure helpers over pinned values. Source capture is always explicit.
 func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspaceCommitsFromArgs, error) {
 	if err := args.opts(receiver.Self()).Validate(); err != nil {
 		return receiver, args, err
@@ -41,8 +41,8 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	if err != nil {
 		return receiver, args, err
 	}
-	if !receiver.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
-		return receiver, args, fmt.Errorf("pulling requires frozen workspaces; call checkpoint on both inputs first")
+	if !source.Self().IsValueWorkspace() {
+		return receiver, args, fmt.Errorf("pulling requires a frozen source workspace; call checkpoint on the source first")
 	}
 	receiver, err = s.checkpoint(ctx, receiver, workspaceCheckpointArgs{})
 	if err != nil {
@@ -86,6 +86,24 @@ func (s *workspaceSchema) commitsFrom(ctx context.Context, parent dagql.ObjectRe
 }
 
 func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
+	local := parent.Self().ClientLocalBase()
+	exportBase, exportPath, exportState := parent.Self().ExportBase, parent.Self().ExportPath, parent.Self().ExportStateDigest
+	hostPath := parent.Self().HostPath()
+	var state string
+	if local {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return inst, err
+		}
+		state, err = bk.GitCheckoutState(ctx, hostPath)
+		if err != nil {
+			return inst, err
+		}
+	}
 	parent, args, err = s.pullInputs(ctx, parent, args)
 	if err != nil {
 		return inst, err
@@ -94,15 +112,15 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	var changes dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
-		return inst, err
-	}
 	var repo dagql.ObjectResult[*core.GitRepository]
 	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: args.selectors()}); err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(parent.Self().Cwd)}}}); err != nil {
+		return inst, err
+	}
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, repo, &changes, dagql.Selector{Field: "uncommitted"}); err != nil {
 		return inst, err
 	}
 	changesID, err := changes.ID()
@@ -113,7 +131,27 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	if err := srv.Select(ctx, inst, &overlaid, dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}}}); err != nil {
 		return inst, err
 	}
-	return checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, parent.Self(), parent.Self().SelectedEnv())
+	inst, err = checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, parent.Self(), parent.Self().SelectedEnv())
+	if err != nil {
+		return inst, err
+	}
+	if local || exportBase.Self() != nil {
+		if local {
+			exportBase, exportPath, exportState = parent, hostPath, state
+		}
+		baseID, err := exportBase.ID()
+		if err != nil {
+			return inst, err
+		}
+		var bound dagql.ObjectResult[*core.Workspace]
+		err = srv.Select(ctx, inst, &bound, dagql.Selector{Field: "__withExportBase", Args: []dagql.NamedInput{
+			{Name: "base", Value: dagql.NewID[*core.Workspace](baseID)},
+			{Name: "path", Value: dagql.NewString(exportPath)},
+			{Name: "stateDigest", Value: dagql.NewString(exportState)},
+		}})
+		return bound, err
+	}
+	return inst, nil
 }
 
 func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs, apply bool) (*core.Directory, []core.WorkspacePullPick, dagql.ObjectResult[*core.GitRef], error) {

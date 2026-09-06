@@ -15571,12 +15571,6 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceExportOpts {
-    /// Destination checkout on the current client's host. Required for a frozen workspace; defaults to this workspace when host-backed.
-    #[builder(setter(into, strip_option), default)]
-    pub to: Option<Id>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindRootsOpts<'a> {
     /// Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
     #[builder(setter(into, strip_option), default)]
@@ -15956,7 +15950,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
     /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
     ///
     /// # Arguments
@@ -15989,7 +15983,7 @@ impl Workspace {
             })
             .collect())
     }
-    /// Classify source commits oldest first, as if earlier pickable commits had been applied. Both workspaces must be frozen; call checkpoint first.
+    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
     /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
     ///
     /// # Arguments
@@ -16132,28 +16126,10 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Write this workspace's commits and uncommitted changes to a local Git checkout.
-    /// The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
+    /// Integrate frozen commits with currentWorkspace.withCommitsFrom first. Export validates the prepared integration against the live checkout, preserving unrelated local edits and refusing stale or conflicting writes. History is never rewritten.
     /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Write this workspace's commits and uncommitted changes to a local Git checkout.
-    /// The checkout is fast-forwarded when its HEAD is an ancestor of this workspace's HEAD. Divergence or conflicting local edits leave the commits on refs/dagger/checkpoints/<short-sha> and fail naming that ref. History is never rewritten. Remaining uncommitted changes are then written as files.
-    /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export_opts(&self, opts: WorkspaceExportOpts) -> Result<Void, DaggerError> {
-        let mut query = self.selection.select("export");
-        if let Some(to) = opts.to {
-            query = query.arg("to", to);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a File from the workspace.
@@ -16672,7 +16648,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
     /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///
@@ -16695,7 +16671,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. Both inputs must be frozen; call checkpoint first.
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
     /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///

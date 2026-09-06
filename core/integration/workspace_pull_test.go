@@ -258,7 +258,7 @@ func (WorkspaceSuite) TestWorkspacePullSelectionAndLimits(ctx context.Context, t
 	_, err = planWorkspacePull(ctx, c, base, source, []string{strings.Repeat("a", 40)}, 100)
 	require.ErrorContains(t, err, "not within the source")
 	_, err = planWorkspacePull(ctx, c, c.CurrentWorkspace(), source, nil, 100)
-	require.ErrorContains(t, err, "call checkpoint")
+	require.NoError(t, err)
 	_, err = applyWorkspacePull(ctx, c, base, c.CurrentWorkspace(), nil, 100)
 	require.ErrorContains(t, err, "call checkpoint")
 	// Public GitRef.log still rejects zero: pulling doesn't require unlimited history.

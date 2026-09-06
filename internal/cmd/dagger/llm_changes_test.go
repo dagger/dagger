@@ -139,7 +139,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Empty(t, changes.Body(80), "saved pending edits become the new baseline")
 
 	// Host-only commits don't change the preview baseline. Saving still checks
-	// the live checkout and preserves both sides on divergence.
+	// the live checkout and cherry-picks nonconflicting divergent agent work.
 	git("add", "saved.txt")
 	git("commit", "-m", "checkout commit")
 	hostSHA := git("rev-parse", "HEAD")
@@ -152,14 +152,34 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Contains(t, changes.Body(80), "divergent agent")
 	before, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.ErrorContains(t, s.ExportChanges(ctx), "refs/dagger/checkpoints/")
-	require.Equal(t, hostSHA, git("rev-parse", "HEAD"))
+	require.NoError(t, s.ExportChanges(ctx))
+	require.NotEqual(t, hostSHA, git("rev-parse", "HEAD"))
+	require.Contains(t, git("log", "--format=%H"), hostSHA)
 	after, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.Equal(t, before, after)
+	require.NotEqual(t, before, after, "divergent agent commit is cherry-picked")
 	require.NoError(t, s.ResetWorkspace(ctx))
 	resetSHA, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.Equal(t, hostSHA, resetSHA)
+	require.Equal(t, after, resetSHA)
 	require.Empty(t, changes.Body(80))
+
+	// A real content conflict preserves the checkout, agent workspace, and
+	// checkpoint baseline, even though nonconflicting divergence is accepted.
+	baselineID, err := s.workspaceBaseline.ID(ctx)
+	require.NoError(t, err)
+	conflictingID, err := s.llm.Workspace().WithNewFile("agent.txt", "another agent edit\n").WithCommit("conflicting agent", date).ID(ctx)
+	require.NoError(t, err)
+	s.llm = s.llm.WithWorkspace(dagger.Ref[*dagger.Workspace](dag, conflictingID))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "agent.txt"), []byte("user edit\n"), 0o644))
+	git("commit", "-am", "conflicting user")
+	hostSHA = git("rev-parse", "HEAD")
+	require.Error(t, s.ExportChanges(ctx))
+	require.Equal(t, hostSHA, git("rev-parse", "HEAD"))
+	remainingID, err := s.llm.Workspace().ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, conflictingID, remainingID)
+	remainingBaselineID, err := s.workspaceBaseline.ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baselineID, remainingBaselineID)
 }

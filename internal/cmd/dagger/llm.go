@@ -496,7 +496,24 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	if err := s.llm.Workspace().Export(ctx, dagger.WorkspaceExportOpts{To: s.dag.CurrentWorkspace()}); err != nil {
+	source := s.llm.Workspace()
+	integratedID, err := s.dag.CurrentWorkspace().WithCommitsFrom(source).ID(ctx)
+	if err != nil {
+		return err
+	}
+	integrated := dagger.Ref[*dagger.Workspace](s.dag, integratedID)
+	// Pull transfers commits only. Explicitly merge pending edits against their
+	// original HEAD so local edits cannot be silently overwritten by withChanges.
+	pending := source.Git().Uncommitted()
+	empty, err := pending.IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		merged := integrated.Directory("/").Changes(source.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).WithChangeset(pending)
+		integrated = integrated.WithChanges(merged)
+	}
+	if err := integrated.Export(ctx); err != nil {
 		return err
 	}
 	// Capture once, then bind by ID so future reads do not repeat host capture.
