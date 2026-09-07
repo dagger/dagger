@@ -246,6 +246,33 @@ func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResp
 	return &data.CreateQuickstartOrg, nil
 }
 
+// GitHubConnection is a user's linked GitHub identity in Dagger Cloud.
+type GitHubConnection struct {
+	GitHubLogin string `json:"githubLogin"`
+	ConnectedAt string `json:"connectedAt"`
+}
+
+const getGithubConnectionOperation = `
+query GetGithubConnection {
+	githubConnection {
+		githubLogin
+		connectedAt
+	}
+}
+`
+
+// GitHubConnection returns the authenticated user's GitHub connection, or nil
+// when no GitHub account is connected yet.
+func (c *Client) GitHubConnection(ctx context.Context) (*GitHubConnection, error) {
+	var data struct {
+		GitHubConnection *GitHubConnection `json:"githubConnection"`
+	}
+	if err := c.doGraphQL(ctx, "GetGithubConnection", getGithubConnectionOperation, nil, &data); err != nil {
+		return nil, err
+	}
+	return data.GitHubConnection, nil
+}
+
 const getGithubOAuthURLOperation = `
 query GetGithubOAuthURL($redirectURI: String!) {
 	githubOAuthURL(redirectURI: $redirectURI)

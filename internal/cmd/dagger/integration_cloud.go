@@ -14,7 +14,7 @@ import (
 
 var githubOpen bool
 
-const githubOAuthRedirect = "https://dagger.cloud/github/callback"
+const githubOAuthRedirect = "http://localhost:3000/github/callback"
 
 // cloudIntegrationCmd is the `dagger cloud integration` group. The original
 // top-level `dagger integration` was singleton-shaped (one provider per type,
@@ -119,6 +119,23 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	client, _, err := cli.cloudClient(cmd.Context())
 	if err != nil {
 		return err
+	}
+	// If GitHub is already connected there's nothing to set up: skip the OAuth
+	// URL entirely rather than sending the user through the flow again.
+	conn, err := client.GitHubConnection(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if conn != nil {
+		if cloudJSON {
+			return writeCloudJSON(cmd, map[string]string{
+				"status":      "connected",
+				"githubLogin": conn.GitHubLogin,
+				"connectedAt": conn.ConnectedAt,
+			})
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "GitHub is already connected as %s.\n", conn.GitHubLogin)
+		return nil
 	}
 	setup, err := cli.githubConnectHandoff(cmd.Context(), client)
 	if err != nil {
