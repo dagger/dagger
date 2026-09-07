@@ -24,6 +24,21 @@ var (
 	vaultCache  = make(map[string]dataWithTTL)
 )
 
+func splitVaultPath(path string) (mount, secretPath, secretField string, err error) {
+	mount, rest, found := strings.Cut(path, "/")
+	if !found {
+		return "", "", "", fmt.Errorf("missing \"/\" separator")
+	}
+	if mount == "" {
+		return "", "", "", fmt.Errorf("missing mount")
+	}
+	n := strings.LastIndex(rest, ".")
+	if n < 0 {
+		return "", "", "", fmt.Errorf("missing field name after \".\"")
+	}
+	return mount, rest[:n], rest[n+1:], nil
+}
+
 // HashiCorp Vault provider for SecretProvider
 func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 	mutex.Lock()
@@ -34,33 +49,36 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 		return nil, err
 	}
 
-	// this is just path part without the query params such as ttl
-	key := parsed.Path
+	// Vault path, excluding query params such as ttl
+	path := parsed.Path
 
+	// Deprecated: Legacy VAULT_PATH_PREFIX variable. It will be removed in a future release. Use the full path in the secret path instead.
+	pathPrefix := os.Getenv("VAULT_PATH_PREFIX")
+	if pathPrefix != "" {
+		path = strings.TrimRight(pathPrefix, "/") + "/" + path
+	}
+
+	// Get the mount, secret path and secret field from the path
+	mount, secretPath, secretField, err := splitVaultPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path %q: %w", path, err)
+	}
+
+	// Get the TTL from the query parameters, if provided
 	var ttl time.Duration
 	ttlStr := strings.TrimSpace(parsed.Query().Get("ttl"))
 	if ttlStr != "" {
 		ttl, err = time.ParseDuration(ttlStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, key, err)
+			return nil, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, path, err)
 		}
 	}
 
-	// KVv2 mount path. Default "secret"
-	mount := os.Getenv("VAULT_PATH_PREFIX")
-	if mount == "" {
-		mount = "secret"
-	}
+	// Cache for the whole secret path, not just the field, since Vault returns all fields in a secret at once
+	cacheKey := mount + "/" + secretPath
 
-	// split key into path and field, e.g. "path/to/secret.field"
-	keyParts := strings.Split(key, ".")
-	if len(keyParts) != 2 {
-		return nil, fmt.Errorf("invalid key format: %s", key)
-	}
-	secretPath := keyParts[0]
-	secretField := keyParts[1]
-
-	if existing, ok := vaultCache[key]; !ok || hasExpired(existing) {
+	// If the secret is not in the cache or has expired, fetch it from Vault
+	if existing, ok := vaultCache[cacheKey]; !ok || hasExpired(existing) {
 		// check if client is initialized
 		if vaultClient == nil {
 			err := vaultConfigureClient(ctx)
@@ -69,10 +87,10 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 			}
 		}
 
-		// read the secret
+		// Read the secret
 		s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
 		if err != nil {
-			return nil, fmt.Errorf("path %q: %w", secretPath, err)
+			return nil, fmt.Errorf("mount path %q: %w", secretPath, err)
 		}
 		data := dataWithTTL{
 			data: s.Data,
@@ -82,17 +100,16 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 			data.expiresAt = time.Now().Add(ttl)
 		}
 
-		// cache response
-		vaultCache[key] = data
+		vaultCache[cacheKey] = data
 	}
 
-	secretDataAny := vaultCache[key].data[secretField]
+	secretDataAny := vaultCache[cacheKey].data[secretField]
 	if secretDataAny == nil {
-		return nil, fmt.Errorf("secret %q not found in path %q", secretField, secretPath)
+		return nil, fmt.Errorf("secret %q not found in path \"%s/%s\"", secretField, mount, secretPath)
 	}
 	secretData, ok := secretDataAny.(string)
 	if !ok {
-		return nil, fmt.Errorf("secret %q in path %q is not a string", secretField, secretPath)
+		return nil, fmt.Errorf("secret %q in path \"%s/%s\" is not a string", secretField, mount, secretPath)
 	}
 	return []byte(secretData), nil
 }
