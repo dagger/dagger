@@ -2622,7 +2622,95 @@ func (s *workspaceSchema) sparseHostBase(
 	); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("sparse host base: %w", err)
 	}
-	return out, nil
+
+	return mergeParentDirs(ctx, srv, out, touched, func(filter core.CopyFilter) (dagql.ObjectResult[*core.Directory], error) {
+		var parents dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, srv.Root(), &parents,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{Field: "directory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(absPath)},
+				{Name: "include", Value: sparseStringInput(filter.Include)},
+				{Name: "exclude", Value: sparseStringInput(filter.Exclude)},
+			}},
+		)
+		return parents, err
+	})
+}
+
+// sparseStringInput adapts a path list to a dagql string array argument.
+func sparseStringInput(paths []string) dagql.ArrayInput[dagql.String] {
+	out := make(dagql.ArrayInput[dagql.String], 0, len(paths))
+	for _, p := range paths {
+		out = append(out, dagql.String(p))
+	}
+	return out
+}
+
+// touchedParentDirPatterns returns host.directory include/exclude patterns that
+// bring in the directories leading to the touched paths and nothing under them.
+// Only the deepest directory of each chain is included: host.directory emits the
+// parents of whatever it matches, so the shallower ones come with it. Excluding
+// a shallower directory's children would prune the deeper ones, which is why
+// they are left out.
+func touchedParentDirPatterns(touched []string) (includes, excludes []string) {
+	parents := touchedParentDirs(touched)
+	for _, dir := range parents {
+		if slices.ContainsFunc(parents, func(other string) bool {
+			return other != dir && strings.HasPrefix(other, dir+"/")
+		}) {
+			continue
+		}
+		includes = append(includes, dir)
+		excludes = append(excludes, dir+"/*")
+	}
+	return includes, excludes
+}
+
+// mergeParentDirs layers dir onto a second read covering only the directories
+// leading to paths, resolved by read. A path the tree does not hold yet matches
+// nothing, so those directories are missing from a base scoped to the paths
+// themselves and the changeset reports directories the workspace already has as
+// added, with metadata the workspace never chose (dagger/dagger#13947). They
+// have to come from a read of their own because excluding a directory's
+// children in the main read would drop the paths it exists to carry.
+func mergeParentDirs(
+	ctx context.Context,
+	srv *dagql.Server,
+	dir dagql.ObjectResult[*core.Directory],
+	paths []string,
+	read func(core.CopyFilter) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Directory], error) {
+	includes, excludes := touchedParentDirPatterns(paths)
+	if len(includes) == 0 {
+		return dir, nil
+	}
+	parents, err := read(core.CopyFilter{Include: includes, Exclude: excludes})
+	if err != nil {
+		return dir, err
+	}
+	parentsID, err := parents.ID()
+	if err != nil {
+		return dir, err
+	}
+	dirID, err := dir.ID()
+	if err != nil {
+		return dir, err
+	}
+	var merged dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &merged,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](parentsID)},
+		}},
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](dirID)},
+		}},
+	); err != nil {
+		return dir, fmt.Errorf("merge parent dirs: %w", err)
+	}
+	return merged, nil
 }
 
 // sparseIncludePatterns turns workspace-relative paths into include patterns

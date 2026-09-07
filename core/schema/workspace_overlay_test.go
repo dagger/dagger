@@ -28,3 +28,26 @@ func TestTouchedParentDirs(t *testing.T) {
 		})
 	}
 }
+
+func TestTouchedParentDirPatterns(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		touched  []string
+		includes []string
+		excludes []string
+	}{
+		{name: "root-level files need no directory read", touched: []string{"dagger.lock"}},
+		{name: "deepest directory of a chain only", touched: []string{"a/b/c.txt"},
+			includes: []string{"a/b"}, excludes: []string{"a/b/*"}},
+		{name: "separate chains each contribute", touched: []string{"a/b/c.txt", "x/y.txt"},
+			includes: []string{"a/b", "x"}, excludes: []string{"a/b/*", "x/*"}},
+		{name: "a shallower ancestor of another chain is dropped", touched: []string{"a/f.txt", "a/b/c/g.txt"},
+			includes: []string{"a/b/c"}, excludes: []string{"a/b/c/*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			includes, excludes := touchedParentDirPatterns(tc.touched)
+			require.Equal(t, tc.includes, includes)
+			require.Equal(t, tc.excludes, excludes)
+		})
+	}
+}
