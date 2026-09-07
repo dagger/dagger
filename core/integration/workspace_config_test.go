@@ -90,7 +90,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 `)
 
 	t.Run("full config", func(ctx context.Context, t *testctx.T) {
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config")
 		require.NoError(t, err)
 		require.Contains(t, string(out), `source = "modules/greeter"`)
 		require.Contains(t, string(out), "entrypoint = true")
@@ -98,20 +98,20 @@ source = "github.com/dagger/dagger/modules/wolfi"
 	})
 
 	t.Run("scalar value", func(ctx context.Context, t *testctx.T) {
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.source")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
 		require.NoError(t, err)
 		require.Equal(t, "modules/greeter", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("table value", func(ctx context.Context, t *testctx.T) {
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter")
 		require.NoError(t, err)
 		require.Contains(t, string(out), `source = "modules/greeter"`)
 		require.Contains(t, string(out), "entrypoint = true")
 	})
 
 	t.Run("missing key", func(ctx context.Context, t *testctx.T) {
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.missing.source")
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.missing.source")
 		require.Error(t, err)
 		requireErrOut(t, err, `key "modules.missing.source" is not set`)
 	})
@@ -124,16 +124,16 @@ source = "modules/greeter"
 entrypoint = true
 `)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.source", "github.com/acme/greeter")
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.source", "github.com/acme/greeter")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.entrypoint", "false")
+		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.entrypoint", "false")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.source")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
 		require.NoError(t, err)
 		require.Equal(t, "github.com/acme/greeter", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.entrypoint")
+		out, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.entrypoint")
 		require.NoError(t, err)
 		require.Equal(t, "false", strings.TrimSpace(string(out)))
 	})
@@ -144,7 +144,7 @@ source = "modules/greeter"
 entrypoint = true
 `)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.settings.tags", "main, develop")
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.settings.tags", "main, develop")
 		require.NoError(t, err)
 
 		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
@@ -160,7 +160,7 @@ source = "modules/greeter"
 entrypoint = true
 `)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.badfield", "value")
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.badfield", "value")
 		require.Error(t, err)
 		requireErrOut(t, err, "unknown config key")
 	})
@@ -274,7 +274,7 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config")
 		require.NoError(t, err)
 		require.Empty(t, string(out))
 	})
@@ -285,7 +285,7 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.ModuleConfigFileName), []byte(`name = "app"
 `), 0o644))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
+		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config")
 		require.NoError(t, err)
 		require.Empty(t, string(out))
 	})
@@ -294,7 +294,7 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.missing.source")
+		_, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.missing.source")
 		require.Error(t, err)
 		requireErrOut(t, err, `key "modules.missing.source" is not set`)
 	})
@@ -595,11 +595,11 @@ source = "modules/inner"
 `)
 		require.NoError(t, os.MkdirAll(nestedDir, 0o755))
 
-		out, err := hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "config", "modules.inner.source")
+		out, err := hostDaggerExec(ctx, t, nestedDir, "workspace", "config", "modules.inner.source")
 		require.NoError(t, err)
 		require.Equal(t, "modules/inner", strings.TrimSpace(string(out)))
 
-		_, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "config", "modules.outer.source")
+		_, err = hostDaggerExec(ctx, t, nestedDir, "workspace", "config", "modules.outer.source")
 		require.Error(t, err)
 		requireErrOut(t, err, `key "modules.outer.source" is not set`)
 	})

@@ -33,7 +33,7 @@ func TestWorkspaceSelection(t *testing.T) {
 
 func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

@@ -119,7 +119,7 @@ func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -133,7 +133,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingEntry(ctx context.Context, t *te
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeOCISHALock(t, workdir, "sha256:"+strings.Repeat("0", 64))
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -148,7 +148,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "update")
 	require.NoError(t, err)
 	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
 
@@ -601,7 +601,7 @@ func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Contex
 	gitConfigPath := filepath.Join(workdir, ".gitconfig")
 	require.NoError(t, os.WriteFile(gitConfigPath, []byte(makeGitCredentials("github.com", "x-token-auth", token)), 0o600))
 
-	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--silent", "update")
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "update")
 	cmd.Env = append(cmd.Env,
 		"GIT_CONFIG_GLOBAL="+gitConfigPath,
 		"GIT_CONFIG_SYSTEM=/dev/null",
@@ -628,8 +628,12 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 		"refs/tags/"+lockTestGitTagName+"@"+staleCommit,
 	)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "update")
-	require.NoError(t, err)
+	// `dagger update` renders no pipeline, so the engine warning it emits is only
+	// visible through the plain frontend, selected via DAGGER_PROGRESS.
+	updateCmd := hostDaggerCommand(ctx, t, workdir, "update")
+	updateCmd.Env = append(updateCmd.Env, "DAGGER_PROGRESS=plain")
+	out, err := updateCmd.CombinedOutput()
+	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "git tag points to a different commit")
 	require.Contains(t, string(out), "Updated dagger.lock")
 
@@ -755,7 +759,7 @@ func (LockfileSuite) TestOCILatestLockLifecycle(ctx context.Context, t *testctx.
 	staleLatestDigest := "sha256:" + strings.Repeat("1", 64)
 	writeOCILatestLock(t, workdir, stalePin, staleLatestDigest)
 
-	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err = hostDaggerExec(ctx, t, workdir, "update")
 	require.NoError(t, err)
 
 	updatedLockBytes, err := os.ReadFile(lockPath)
