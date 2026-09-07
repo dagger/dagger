@@ -2398,6 +2398,11 @@ func (s *workspaceSchema) overlayEdit(
 // outermost touched paths that the sparse base already holds, so a file
 // removal diffs as that file rather than as its parent directory (which the
 // export would RemoveAll — dagger/dagger#14057).
+//
+// Each seed carries the permissions the base holds, because the changeset diff
+// compares directory mode as well as existence: a marker left at
+// withNewDirectory's default would read as a modification and the export would
+// chmod the host directory to it.
 func (s *workspaceSchema) seedDeltaRootParents(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -2423,11 +2428,21 @@ func (s *workspaceSchema) seedDeltaRootParents(
 		if !exists {
 			continue
 		}
+		var info *core.Stat
+		if err := srv.Select(ctx, base, &info, dagql.Selector{
+			Field: "stat",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("seed overlay delta root parents: %w", err)
+		}
 		var seeded dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, delta, &seeded, dagql.Selector{
 			Field: "withNewDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
 			},
 		}); err != nil {
 			return delta, fmt.Errorf("seed overlay delta root parents: %w", err)
@@ -2437,8 +2452,11 @@ func (s *workspaceSchema) seedDeltaRootParents(
 	return delta, nil
 }
 
-// touchedParentDirs returns the de-duplicated parent directories of the touched
-// paths that are not nested under another touched path.
+// touchedParentDirs returns the de-duplicated ancestor directories of the
+// touched paths that are not nested under another touched path, outermost
+// first. Every ancestor is listed rather than just the immediate parent:
+// withNewDirectory creates the whole chain at once, so a level that is not
+// seeded in its own right would be created with its child's permissions.
 func touchedParentDirs(touched []string) []string {
 	cleaned := make([]string, 0, len(touched))
 	for _, p := range touched {
@@ -2458,16 +2476,16 @@ outer:
 				continue outer
 			}
 		}
-		parent := path.Dir(p)
-		if parent == "." {
-			continue
+		for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
+			if _, ok := seen[dir]; ok {
+				// every walk runs to the root, so its ancestors are recorded too
+				break
+			}
+			seen[dir] = struct{}{}
+			out = append(out, dir)
 		}
-		if _, ok := seen[parent]; ok {
-			continue
-		}
-		seen[parent] = struct{}{}
-		out = append(out, parent)
 	}
+	slices.Sort(out)
 	return out
 }
 
