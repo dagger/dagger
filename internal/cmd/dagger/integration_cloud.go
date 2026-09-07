@@ -120,21 +120,17 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	// If GitHub is already connected there's nothing to set up: skip the OAuth
-	// URL entirely rather than sending the user through the flow again.
-	conn, err := client.GitHubConnection(cmd.Context())
-	if err != nil {
-		return err
-	}
-	if conn != nil {
+	// If GitHub is already usable there's nothing to set up: skip the OAuth URL
+	// rather than sending the user through the flow again.
+	if connected, login := cli.githubConnected(cmd.Context(), client); connected {
 		if cloudJSON {
-			return writeCloudJSON(cmd, map[string]string{
-				"status":      "connected",
-				"githubLogin": conn.GitHubLogin,
-				"connectedAt": conn.ConnectedAt,
-			})
+			return writeCloudJSON(cmd, map[string]string{"status": "connected", "githubLogin": login})
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "GitHub is already connected as %s.\n", conn.GitHubLogin)
+		if login != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "GitHub is already connected as %s.\n", login)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "GitHub is already connected.")
+		}
 		return nil
 	}
 	setup, err := cli.githubConnectHandoff(cmd.Context(), client)
@@ -149,6 +145,30 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	fmt.Fprintln(out, "Open this URL to set up the GitHub integration:")
 	fmt.Fprintln(out, setup.URL)
 	return nil
+}
+
+// githubConnected reports whether the user already has a usable GitHub identity,
+// along with the connected login when known.
+//
+// A GitHub identity can come from two places (see the Cloud API's Sources
+// resolver): an explicit connection stored in user_github_connections, or the
+// Auth0 GitHub identity of a user who logged into Cloud with GitHub. The latter
+// has no stored row, so a githubConnection lookup alone misses it. Since
+// Sources() needs a working GitHub token from either path, a successful
+// Sources() call is the definitive "GitHub is usable" signal.
+//
+// Best-effort: any lookup error is treated as "not connected", so the caller
+// falls back to offering the OAuth flow.
+func (cli *CloudCLI) githubConnected(ctx context.Context, client *cloudapi.Client) (bool, string) {
+	// Explicit connection: cheap, and carries the login for a nicer message.
+	if conn, err := client.GitHubConnection(ctx); err == nil && conn != nil {
+		return true, conn.GitHubLogin
+	}
+	// No stored connection, but a GitHub identity may be available via Auth0.
+	if _, err := client.Sources(ctx); err == nil {
+		return true, ""
+	}
+	return false, ""
 }
 
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
