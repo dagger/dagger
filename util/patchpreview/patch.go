@@ -43,7 +43,13 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		return strings.Compare(a.Path, b.Path)
 	})
 
-	maxFilenameLen := max(maxWidth-20, 10)
+	maxDiffstatLen := 0
+	for _, e := range entries {
+		if l := diffstatLen(e); l > maxDiffstatLen {
+			maxDiffstatLen = l
+		}
+	}
+	maxFilenameLen := max(maxWidth-maxDiffstatLen, 10)
 	longestFilenameLen := 0
 	for _, e := range entries {
 		if l := len(entryLabel(e)); l > longestFilenameLen {
@@ -99,6 +105,19 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		}
 		out.WriteString(" lines")
 	}
+}
+
+// diffstatLen measures the width of the " +N -M" suffix rendered after an
+// entry's filename, so filenames are only truncated as much as necessary.
+func diffstatLen(e Entry) int {
+	length := 0
+	if e.Added > 0 {
+		length += len(fmt.Sprintf(" +%d", e.Added))
+	}
+	if e.Removed > 0 {
+		length += len(fmt.Sprintf(" -%d", e.Removed))
+	}
+	return length
 }
 
 func entryLabel(e Entry) string {
