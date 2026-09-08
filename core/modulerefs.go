@@ -183,7 +183,7 @@ func (p *ParsedGitRefString) GitRef(
 
 	refSelector := moduleGitDefaultRefSelector(ctx, p)
 	switch {
-	case versionQuery != "" && !pinIsSHA:
+	case versionQuery != "":
 		args := []dagql.NamedInput{
 			{Name: "version", Value: dagql.String(versionQuery)},
 		}
@@ -194,17 +194,6 @@ func (p *ParsedGitRefString) GitRef(
 			})
 		}
 		refSelector = dagql.Selector{Field: "latest", Args: args}
-	case pinIsSHA:
-		// A module config pin is authoritative over both the declared version
-		// query and the consuming workspace's git-sha lock entries. Use HEAD as
-		// a neutral ref name so a partial query such as v1.2 is not looked up as
-		// a literal tag or branch before the pinned commit is applied.
-		refSelector = withCommitArg(dagql.Selector{
-			Field: "ref",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String("HEAD")},
-			},
-		})
 	case p.HasVersion:
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
@@ -219,12 +208,32 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(pinCommitRef)},
 			},
 		}
+	case pinIsSHA:
+		refSelector = withCommitArg(dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String("HEAD")},
+			},
+		})
 	}
 
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef, repoSelector, refSelector)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
+	}
+	if versionQuery != "" && pinIsSHA && gitRef.Self().Ref.SHA != pinCommitRef {
+		// A normal load must satisfy both the version resolution and the module
+		// pin. It cannot rewrite either value. In contrast, dagger update is an
+		// explicit request to refresh the lock, so it accepts a moved tag after
+		// it warns the user.
+		return inst, fmt.Errorf(
+			"version query %q resolved to Git ref %q at commit %q, but the requested pin is %q",
+			versionQuery,
+			gitRef.Self().Ref.Name,
+			gitRef.Self().Ref.SHA,
+			pinCommitRef,
+		)
 	}
 
 	return gitRef, nil
