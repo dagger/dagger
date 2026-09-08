@@ -15928,56 +15928,6 @@ class Workspace(Type):
         _ctx = self._select("git", _args)
         return WorkspaceGit(_ctx)
 
-    async def git_author_email(self) -> str:
-        """Default Git author email carried by this workspace.
-
-        Captured from git config user.email at workspace load, or set with
-        withGitAuthor. Empty when no identity was captured; withCommit then
-        falls back to dagger@localhost.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("gitAuthorEmail", _args)
-        return await _ctx.execute(str)
-
-    async def git_author_name(self) -> str:
-        """Default Git author name carried by this workspace.
-
-        Captured from git config user.name at workspace load, or set with
-        withGitAuthor. Empty when no identity was captured; withCommit then
-        falls back to Dagger.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("gitAuthorName", _args)
-        return await _ctx.execute(str)
-
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that match the given pattern.
 
@@ -16283,6 +16233,11 @@ class Workspace(Type):
         The host checkout is not modified. Changes outside the selected paths
         remain uncommitted.
 
+        Missing author fields are resolved from Git config in the calling
+        client's working directory at commit time, then recorded explicitly
+        for reproducible commits. Unconfigured fields default to Dagger and
+        dagger@localhost.
+
         Parameters
         ----------
         message:
@@ -16294,11 +16249,12 @@ class Workspace(Type):
             Literal paths relative to the workspace cwd. Empty commits
             everything. Renames must include both paths.
         author_name:
-            Author and committer name. Defaults to the identity captured at
-            workspace load, otherwise Dagger.
+            Author and committer name. Defaults to git config user.name in the
+            calling client's working directory, otherwise Dagger.
         author_email:
-            Author and committer email. Defaults to the identity captured at
-            workspace load, otherwise dagger@localhost.
+            Author and committer email. Defaults to git config user.email in
+            the calling client's working directory, otherwise
+            dagger@localhost.
         """
         _args = [
             Arg("message", message),
@@ -16327,10 +16283,10 @@ class Workspace(Type):
         skipping already-picked or redundant commits. Any conflict fails the
         whole pull. Source uncommitted changes are not pulled.
 
-        Cherry-picks preserve the source author and author date, use this
-        workspace's default committer identity, and reuse the source committer
-        date for reproducible hashes. Divergent merge commits require manual
-        integration.
+        Cherry-picks preserve the source author and author date, use the
+        calling client's Git config for committer identity, and reuse the
+        source committer date for reproducible hashes. Divergent merge commits
+        require manual integration.
 
         Parameters
         ----------
@@ -16461,24 +16417,6 @@ class Workspace(Type):
             Arg("source", source),
         ]
         _ctx = self._select("withDirectory", _args)
-        return Workspace(_ctx)
-
-    def with_git_author(self, name: str, email: str) -> Self:
-        """Set the default author and committer identity carried by this
-        workspace.
-
-        Parameters
-        ----------
-        name:
-            Git author name.
-        email:
-            Git author email.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("email", email),
-        ]
-        _ctx = self._select("withGitAuthor", _args)
         return Workspace(_ctx)
 
     def with_file(

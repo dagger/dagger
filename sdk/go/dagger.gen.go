@@ -16464,16 +16464,14 @@ func (r *Volume) AsNode() Node {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address        *string
-	configFile     *string
-	configRead     *string
-	cwd            *string
-	detectScope    *string
-	export         *Void
-	findUp         *string
-	gitAuthorEmail *string
-	gitAuthorName  *string
-	id             *ID
+	address     *string
+	configFile  *string
+	configRead  *string
+	cwd         *string
+	detectScope *string
+	export      *Void
+	findUp      *string
+	id          *ID
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16936,36 +16934,6 @@ func (r *Workspace) Git() *WorkspaceGit {
 	}
 }
 
-// Default Git author email carried by this workspace.
-//
-// Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
-func (r *Workspace) GitAuthorEmail(ctx context.Context) (string, error) {
-	if r.gitAuthorEmail != nil {
-		return *r.gitAuthorEmail, nil
-	}
-	q := r.query.Select("gitAuthorEmail")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Default Git author name carried by this workspace.
-//
-// Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
-func (r *Workspace) GitAuthorName(ctx context.Context) (string, error) {
-	if r.gitAuthorName != nil {
-		return *r.gitAuthorName, nil
-	}
-	q := r.query.Select("gitAuthorName")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // Returns a list of files and directories that match the given pattern.
 //
 // Patterns match paths relative to the workspace root.
@@ -17304,15 +17272,17 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 type WorkspaceWithCommitOpts struct {
 	// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
 	Paths []string
-	// Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
 	AuthorName string
-	// Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
 	AuthorEmail string
 }
 
 // Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
 //
 // The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+//
+// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
 func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
 	q := r.query.Select("withCommit")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -17351,7 +17321,7 @@ type WorkspaceWithCommitsFromOpts struct {
 //
 // Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
 //
-// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
 func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withCommitsFrom")
@@ -17484,17 +17454,6 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	q := r.query.Select("withDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// Set the default author and committer identity carried by this workspace.
-func (r *Workspace) WithGitAuthor(name string, email string) *Workspace {
-	q := r.query.Select("withGitAuthor")
-	q = q.Arg("name", name)
-	q = q.Arg("email", email)
 
 	return &Workspace{
 		query: q,

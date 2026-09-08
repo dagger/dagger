@@ -292,28 +292,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Default Git author email carried by this workspace.
-     *
-     * Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
-     */
-    public function gitAuthorEmail(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('gitAuthorEmail');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'gitAuthorEmail');
-    }
-
-    /**
-     * Default Git author name carried by this workspace.
-     *
-     * Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
-     */
-    public function gitAuthorName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('gitAuthorName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'gitAuthorName');
-    }
-
-    /**
      * Returns a list of files and directories that match the given pattern.
      *
      * Patterns match paths relative to the workspace root.
@@ -503,6 +481,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
      *
      * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+     *
+     * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
      */
     public function withCommit(
         string $message,
@@ -531,7 +511,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
      *
-     * Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+     * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
      */
     public function withCommitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): Workspace
     {
@@ -627,17 +607,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set the default author and committer identity carried by this workspace.
-     */
-    public function withGitAuthor(string $name, string $email): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGitAuthor');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('email', $email);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

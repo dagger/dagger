@@ -346,32 +346,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Default Git author email carried by this workspace.
-
-  Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
-  """
-  @spec git_author_email(t()) :: {:ok, String.t()} | {:error, term()}
-  def git_author_email(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("gitAuthorEmail")
-
-    Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
-  Default Git author name carried by this workspace.
-
-  Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
-  """
-  @spec git_author_name(t()) :: {:ok, String.t()} | {:error, term()}
-  def git_author_name(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("gitAuthorName")
-
-    Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
   Returns a list of files and directories that match the given pattern.
 
   Patterns match paths relative to the workspace root.
@@ -624,6 +598,8 @@ defmodule Dagger.Workspace do
   Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
 
   The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+
+  Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
   """
   @spec with_commit(t(), String.t(), String.t(), [
           {:paths, [String.t()]},
@@ -674,7 +650,7 @@ defmodule Dagger.Workspace do
 
   Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
 
-  Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+  Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
   """
   @spec with_commits_from(t(), Dagger.Workspace.t(), [
           {:commits, [String.t()]},
@@ -778,23 +754,6 @@ defmodule Dagger.Workspace do
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
-
-    %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
-  Set the default author and committer identity carried by this workspace.
-  """
-  @spec with_git_author(t(), String.t(), String.t()) :: Dagger.Workspace.t()
-  def with_git_author(%__MODULE__{} = workspace, name, email) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("withGitAuthor")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("email", email)
 
     %Dagger.Workspace{
       query_builder: query_builder,

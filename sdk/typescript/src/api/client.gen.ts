@@ -3444,12 +3444,12 @@ export type WorkspaceWithCommitOpts = {
   date: string
 
   /**
-   * Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+   * Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
    */
   authorName?: string
 
   /**
-   * Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+   * Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
    */
   authorEmail?: string
 }
@@ -15683,8 +15683,6 @@ export class Workspace extends BaseClient {
   private readonly _detectScope?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
-  private readonly _gitAuthorEmail?: string = undefined
-  private readonly _gitAuthorName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -15699,8 +15697,6 @@ export class Workspace extends BaseClient {
     _detectScope?: string,
     _export?: Void,
     _findUp?: string,
-    _gitAuthorEmail?: string,
-    _gitAuthorName?: string,
   ) {
     super(ctx)
 
@@ -15712,8 +15708,6 @@ export class Workspace extends BaseClient {
     this._detectScope = _detectScope
     this._export = _export
     this._findUp = _findUp
-    this._gitAuthorEmail = _gitAuthorEmail
-    this._gitAuthorName = _gitAuthorName
   }
 
   /**
@@ -16010,40 +16004,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Default Git author email carried by this workspace.
-   *
-   * Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
-   */
-  gitAuthorEmail = async (): Promise<string> => {
-    if (this._gitAuthorEmail) {
-      return this._gitAuthorEmail
-    }
-
-    const ctx = this._ctx.select("gitAuthorEmail")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Default Git author name carried by this workspace.
-   *
-   * Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
-   */
-  gitAuthorName = async (): Promise<string> => {
-    if (this._gitAuthorName) {
-      return this._gitAuthorName
-    }
-
-    const ctx = this._ctx.select("gitAuthorName")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * Returns a list of files and directories that match the given pattern.
    *
    * Patterns match paths relative to the workspace root.
@@ -16208,11 +16168,13 @@ export class Workspace extends BaseClient {
    * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
    *
    * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+   *
+   * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
    * @param message Commit message.
    * @param opts.paths Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
    * @param opts.date RFC3339 author and committer date. Required for reproducible commits.
-   * @param opts.authorName Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
-   * @param opts.authorEmail Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+   * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+   * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
    */
   withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
     const ctx = this._ctx.select("withCommit", { message, ...opts })
@@ -16224,7 +16186,7 @@ export class Workspace extends BaseClient {
    *
    * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
    *
-   * Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
    * @param source Frozen source workspace.
    * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
@@ -16312,16 +16274,6 @@ export class Workspace extends BaseClient {
    */
   withDirectory = (path: string, source: Directory): Workspace => {
     const ctx = this._ctx.select("withDirectory", { path, source })
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Set the default author and committer identity carried by this workspace.
-   * @param name Git author name.
-   * @param email Git author email.
-   */
-  withGitAuthor = (name: string, email: string): Workspace => {
-    const ctx = this._ctx.select("withGitAuthor", { name, email })
     return new Workspace(ctx)
   }
 

@@ -15638,10 +15638,10 @@ pub struct WorkspaceTerminalsOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithCommitOpts<'a> {
-    /// Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost.
+    /// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
     #[builder(setter(into, strip_option), default)]
     pub author_email: Option<&'a str>,
-    /// Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger.
+    /// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
     #[builder(setter(into, strip_option), default)]
     pub author_name: Option<&'a str>,
     /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
@@ -16277,18 +16277,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Default Git author email carried by this workspace.
-    /// Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
-    pub async fn git_author_email(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("gitAuthorEmail");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Default Git author name carried by this workspace.
-    /// Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
-    pub async fn git_author_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("gitAuthorName");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Returns a list of files and directories that match the given pattern.
     /// Patterns match paths relative to the workspace root.
     ///
@@ -16613,6 +16601,7 @@ impl Workspace {
     }
     /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
     /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
     ///
@@ -16631,6 +16620,7 @@ impl Workspace {
     }
     /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
     /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
     ///
@@ -16663,7 +16653,7 @@ impl Workspace {
     }
     /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
-    /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
@@ -16686,7 +16676,7 @@ impl Workspace {
     }
     /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
-    /// Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
@@ -16852,22 +16842,6 @@ impl Workspace {
                 Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set the default author and committer identity carried by this workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Git author name.
-    /// * `email` - Git author email.
-    pub fn with_git_author(&self, name: impl Into<String>, email: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withGitAuthor");
-        query = query.arg("name", name.into());
-        query = query.arg("email", email.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

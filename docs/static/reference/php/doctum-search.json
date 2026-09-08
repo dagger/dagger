@@ -7626,18 +7626,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::gitAuthorEmail",
-			"p": "Dagger/Workspace.html#method_gitAuthorEmail",
-			"d": "<p>Default Git author email carried by this workspace.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::gitAuthorName",
-			"p": "Dagger/Workspace.html#method_gitAuthorName",
-			"d": "<p>Default Git author name carried by this workspace.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::glob",
 			"p": "Dagger/Workspace.html#method_glob",
 			"d": "<p>Returns a list of files and directories that match the given pattern.</p>"
@@ -7761,12 +7749,6 @@
 			"n": "Dagger\\Workspace::withDirectory",
 			"p": "Dagger/Workspace.html#method_withDirectory",
 			"d": "<p>Return this workspace with a directory merged into the given path, without mutating the source.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::withGitAuthor",
-			"p": "Dagger/Workspace.html#method_withGitAuthor",
-			"d": "<p>Set the default author and committer identity carried by this workspace.</p>"
 		},
 		{
 			"t": "M",
