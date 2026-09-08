@@ -101,7 +101,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.Equal(t, first.Git.Head.Commit, repeated.Git.Head.Commit)
 	// Force a different recipe with the same resolved identity and tree, so
 	// this checks Git determinism rather than just a cache hit.
-	equivalent, err := commitWorkspace(ctx, c, ws.WithGitAuthor("Dagger", "dagger@localhost"), "same message", []string{"a.txt"})
+	equivalent, err := commitWorkspace(ctx, c, ws.WithConfigEnvironment(""), "same message", []string{"a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, first.Git.Head.Commit, equivalent.Git.Head.Commit)
 	laterSHA, err := ws.WithCommit("same message", "2026-09-05T12:00:01Z", dagger.WorkspaceWithCommitOpts{Paths: []string{"a.txt"}}).Git().Head().CommitSHA(ctx)
@@ -161,14 +161,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	ws := c.CurrentWorkspace()
 	_, err := ws.ID(ctx)
 	require.NoError(t, err)
-	// The captured identity is readable back: git config user.name/user.email.
-	name, err := ws.GitAuthorName(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "Original Author", name)
-	email, err := ws.GitAuthorEmail(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "original@example.com", email)
-	// Identity is captured at load, not sampled again during checkpoint/commit.
+	// Commit authorship is sampled at commit time, even if the workspace
+	// was loaded before the client changed its Git config.
 	git("config", "user.name", "Later Author")
 	git("config", "user.email", "later@example.com")
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
@@ -176,8 +170,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	require.NoError(t, err)
 	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(committed.ID)), "__gitDir")
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
-	require.Equal(t, "Original Author", committed.Git.Head.TargetCommit.AuthorName)
-	require.Equal(t, "original@example.com", committed.Git.Head.TargetCommit.AuthorEmail)
+	require.Equal(t, "Later Author", committed.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, "later@example.com", committed.Git.Head.TargetCommit.AuthorEmail)
 	require.Empty(t, committed.Git.Uncommitted.ModifiedPaths)
 	require.Equal(t, headBefore, git("rev-parse", "HEAD"))
 	require.Equal(t, statusBefore, git("status", "--porcelain"))
@@ -199,19 +193,6 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 
-	// No identity is captured for a remote workspace; withGitAuthor sets the
-	// one the getters read back.
-	name, err := ws.GitAuthorName(ctx)
-	require.NoError(t, err)
-	require.Empty(t, name)
-	ws = ws.WithGitAuthor("Resetter", "resetter@example.com")
-	name, err = ws.GitAuthorName(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "Resetter", name)
-	email, err := ws.GitAuthorEmail(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "resetter@example.com", email)
-
 	committed := ws.
 		WithNewFile("feature.txt", "feature").
 		WithNewFile("pending.txt", "pending").
@@ -232,17 +213,12 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 	contents, err := reset.File("feature.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "feature", contents)
-	// Workspace metadata — the carried identity included — survives the reset.
-	name, err = reset.GitAuthorName(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "Resetter", name)
-
 	// Reapplying the same paths with a corrected message is the amend flow.
 	amended, err := commitWorkspace(ctx, c, reset, "draft message, amended", []string{"feature.txt"})
 	require.NoError(t, err)
 	require.NotEqual(t, draftSHA, amended.Git.Head.Commit)
 	require.Equal(t, "draft message, amended", strings.TrimSpace(amended.Git.Head.TargetCommit.Message))
-	require.Equal(t, "Resetter", amended.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, "Dagger", amended.Git.Head.TargetCommit.AuthorName)
 	require.Equal(t, []string{"pending.txt"}, amended.Git.Uncommitted.AddedPaths)
 	require.NotNil(t, amended.Git.Repository.URL)
 	require.Equal(t, url, *amended.Git.Repository.URL)
@@ -309,7 +285,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.C
 	recipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | with-commit --message "frozen commit" --date "2026-09-05T12:00:00Z") | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
 	// The CLI's owning client and checkout are gone. Restore the recipe from
-	// the outer client, then create another commit using its carried identity.
+	// the outer client, then create another commit using a new client identity.
 	restored := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
 	message, err := restored.Git().Head().TargetCommit().Message(ctx)
 	require.NoError(t, err)
@@ -320,10 +296,15 @@ func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.C
 	log, err := restored.Git().Head().Log(ctx)
 	require.NoError(t, err)
 	require.Len(t, log, 3)
-	next, err := commitWorkspace(ctx, c, restored.WithNewFile("next.txt", "next"), "next commit", nil)
+	checkout, git := workspaceExportCheckout(ctx, t)
+	git("config", "user.name", "Restoring Author")
+	git("config", "user.email", "restoring@example.com")
+	restoring := connect(ctx, t, dagger.WithWorkdir(checkout))
+	restored = dagger.Ref[*dagger.LLM](restoring, dagger.ID(strings.TrimSpace(recipe))).Workspace()
+	next, err := commitWorkspace(ctx, restoring, restored.WithNewFile("next.txt", "next"), "next commit", nil)
 	require.NoError(t, err)
-	require.Equal(t, "Checkpoint", next.Git.Head.TargetCommit.AuthorName)
-	require.Equal(t, "checkpoint@example.com", next.Git.Head.TargetCommit.AuthorEmail)
+	require.Equal(t, "Restoring Author", next.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, "restoring@example.com", next.Git.Head.TargetCommit.AuthorEmail)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Context, t *testctx.T) {
@@ -337,14 +318,13 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Co
 		WithNewFile("run", "#!/bin/sh\n", dagger.WorkspaceWithNewFileOpts{Permissions: 0o755}).
 		WithDirectory("/", c.Directory().WithSymlink("binary", "link")).
 		WithNewFile(":literal", "pathspecs are literal").
-		WithGitAuthor("Carried", "carried@example.com").
 		WithConfigEnvironment("testing").
 		WithMountedDirectory("/mounted", c.Directory().WithNewFile("readme", "read-only"))
 	partial, err := commitWorkspace(ctx, c, ws, "literal path", []string{":literal"})
 	require.NoError(t, err)
 	committed, err := commitWorkspace(ctx, c, dagger.Ref[*dagger.Workspace](c, partial.ID), "file kinds", nil)
 	require.NoError(t, err)
-	require.Equal(t, "Carried", committed.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, "Dagger", committed.Git.Head.TargetCommit.AuthorName)
 	require.Empty(t, committed.Git.Uncommitted.AddedPaths)
 	require.Empty(t, committed.Git.Uncommitted.ModifiedPaths)
 	require.Empty(t, committed.Git.Uncommitted.RemovedPaths)
@@ -360,14 +340,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Co
 	mounted, err := frozen.File("/mounted/readme").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "read-only", mounted)
-	override := frozen.WithNewFile("override", "override").WithCommit("override", workspaceCommitDate,
-		dagger.WorkspaceWithCommitOpts{AuthorName: "Explicit", AuthorEmail: "explicit@example.com"})
-	name, err := override.Git().Head().TargetCommit().AuthorName(ctx)
+	next, err := commitWorkspace(ctx, c, frozen.WithNewFile("next", "next"), "next commit", nil)
 	require.NoError(t, err)
-	require.Equal(t, "Explicit", name)
-	next, err := commitWorkspace(ctx, c, override.WithNewFile("next", "next"), "carried again", nil)
-	require.NoError(t, err)
-	require.Equal(t, "Carried", next.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, committed.Git.Head.TargetCommit.AuthorName, next.Git.Head.TargetCommit.AuthorName)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitDirectoryRepository(ctx context.Context, t *testctx.T) {

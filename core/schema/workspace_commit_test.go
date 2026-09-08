@@ -9,19 +9,19 @@ import (
 )
 
 func TestWorkspaceCommitOptions(t *testing.T) {
-	ws := &core.Workspace{Cwd: "src", GitAuthorName: "Loaded Author", GitAuthorEmail: "loaded@example.com"}
-	args := workspaceWithCommitArgs{Message: "commit", Date: "2026-09-05T12:00:00Z", Paths: []string{"file", "/root-file"}}
+	ws := &core.Workspace{Cwd: "src"}
+	args := workspaceWithCommitArgs{Message: "commit", Date: "2026-09-05T12:00:00Z", Paths: []string{"file", "/root-file"}, AuthorName: dagql.Opt(dagql.NewString("Explicit Author")), AuthorEmail: dagql.Opt(dagql.NewString("explicit@example.com"))}
 	opts, err := args.opts(ws)
 	require.NoError(t, err)
 	require.Equal(t, []string{"src/file", "root-file"}, opts.Paths)
-	require.Equal(t, ws.GitAuthorName, opts.AuthorName)
-	require.Equal(t, ws.GitAuthorEmail, opts.AuthorEmail)
-	args.AuthorName = dagql.Opt(dagql.NewString("Explicit Author"))
-	args.AuthorEmail = dagql.Opt(dagql.NewString("explicit@example.com"))
-	opts, err = args.opts(ws)
-	require.NoError(t, err)
 	require.Equal(t, "Explicit Author", opts.AuthorName)
 	require.Equal(t, "explicit@example.com", opts.AuthorEmail)
+	args.AuthorName = dagql.Optional[dagql.String]{}
+	args.AuthorEmail = dagql.Optional[dagql.String]{}
+	fallback, err := args.opts(ws)
+	require.NoError(t, err)
+	require.Equal(t, "Dagger", fallback.AuthorName)
+	require.Equal(t, "dagger@localhost", fallback.AuthorEmail)
 	for _, date := range []string{"", "now", "2026-09-05"} {
 		args.Date = date
 		_, err := args.opts(ws)

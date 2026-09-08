@@ -15,57 +15,81 @@ type workspaceCommitsFromArgs struct {
 	MaxCommits int      `default:"100"`
 }
 
-func (args workspaceCommitsFromArgs) selectors() []dagql.NamedInput {
+// workspacePullArgs records the resolved committer only on the internal,
+// cacheable pull helpers; public calls sample the caller's Git config.
+type workspacePullArgs struct {
+	Source         dagql.ID[*core.Workspace]
+	Commits        []string `default:"[]"`
+	MaxCommits     int      `default:"100"`
+	CommitterName  string
+	CommitterEmail string
+}
+
+func (args workspacePullArgs) selectors() []dagql.NamedInput {
 	commits := make(dagql.ArrayInput[dagql.String], len(args.Commits))
 	for i, sha := range args.Commits {
 		commits[i] = dagql.NewString(sha)
 	}
-	return []dagql.NamedInput{{Name: "source", Value: args.Source}, {Name: "commits", Value: commits}, {Name: "maxCommits", Value: dagql.NewInt(args.MaxCommits)}}
+	return []dagql.NamedInput{
+		{Name: "source", Value: args.Source},
+		{Name: "commits", Value: commits},
+		{Name: "maxCommits", Value: dagql.NewInt(args.MaxCommits)},
+		{Name: "committerName", Value: dagql.NewString(args.CommitterName)},
+		{Name: "committerEmail", Value: dagql.NewString(args.CommitterEmail)},
+	}
 }
 
-func (args workspaceCommitsFromArgs) opts(ws *core.Workspace) core.WorkspacePullOpts {
-	return core.WorkspacePullOpts{Commits: args.Commits, MaxCommits: args.MaxCommits, CommitterName: ws.GitAuthorName, CommitterEmail: ws.GitAuthorEmail}
+func (args workspacePullArgs) opts() core.WorkspacePullOpts {
+	return core.WorkspacePullOpts{Commits: args.Commits, MaxCommits: args.MaxCommits, CommitterName: args.CommitterName, CommitterEmail: args.CommitterEmail}
 }
 
 // Capture local receivers at the explicit integration boundary, then select
 // pure helpers over pinned values. Source capture is always explicit.
-func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspaceCommitsFromArgs, error) {
-	if err := args.opts(receiver.Self()).Validate(); err != nil {
-		return receiver, args, err
+func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspacePullArgs, error) {
+	resolved := workspacePullArgs{Source: args.Source, Commits: args.Commits, MaxCommits: args.MaxCommits}
+	if err := resolved.opts().Validate(); err != nil {
+		return receiver, resolved, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return receiver, args, err
+		return receiver, resolved, err
 	}
 	source, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		return receiver, args, err
+		return receiver, resolved, err
 	}
 	if !source.Self().IsValueWorkspace() {
-		return receiver, args, fmt.Errorf("pulling requires a frozen source workspace; call checkpoint on the source first")
+		return receiver, resolved, fmt.Errorf("pulling requires a frozen source workspace; call checkpoint on the source first")
 	}
 	receiver, err = s.checkpoint(ctx, receiver, workspaceCheckpointArgs{})
 	if err != nil {
-		return receiver, args, err
+		return receiver, resolved, err
+	}
+	resolved.CommitterName, resolved.CommitterEmail, err = workspaceGitAuthor(ctx)
+	if err != nil {
+		return receiver, resolved, err
+	}
+	if err := validateWorkspaceGitAuthor(resolved.CommitterName, resolved.CommitterEmail); err != nil {
+		return receiver, resolved, err
 	}
 	source, err = s.checkpoint(ctx, source, workspaceCheckpointArgs{})
 	if err != nil {
-		return receiver, args, err
+		return receiver, resolved, err
 	}
 	id, err := source.ID()
 	if err != nil {
-		return receiver, args, err
+		return receiver, resolved, err
 	}
-	args.Source = dagql.NewID[*core.Workspace](id)
-	return receiver, args, nil
+	resolved.Source = dagql.NewID[*core.Workspace](id)
+	return receiver, resolved, nil
 }
 
 func (s *workspaceSchema) commitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.Array[*core.WorkspaceCommitPick], error) {
-	parent, args, err := s.pullInputs(ctx, parent, args)
+	parent, resolved, err := s.pullInputs(ctx, parent, args)
 	if err != nil {
 		return nil, err
 	}
-	dir, picks, source, err := s.computeWorkspacePull(ctx, parent, args, false)
+	dir, picks, source, err := s.computeWorkspacePull(ctx, parent, resolved, false)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +128,7 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 			return inst, err
 		}
 	}
-	parent, args, err = s.pullInputs(ctx, parent, args)
+	parent, resolved, err := s.pullInputs(ctx, parent, args)
 	if err != nil {
 		return inst, err
 	}
@@ -113,7 +137,7 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 		return inst, err
 	}
 	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: args.selectors()}); err != nil {
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: resolved.selectors()}); err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(parent.Self().Cwd)}}}); err != nil {
@@ -154,7 +178,7 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	return inst, nil
 }
 
-func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs, apply bool) (*core.Directory, []core.WorkspacePullPick, dagql.ObjectResult[*core.GitRef], error) {
+func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs, apply bool) (*core.Directory, []core.WorkspacePullPick, dagql.ObjectResult[*core.GitRef], error) {
 	ctx, cancel := context.WithTimeout(ctx, core.WorkspacePullTimeout)
 	defer cancel()
 	var head dagql.ObjectResult[*core.GitRef]
@@ -180,11 +204,11 @@ func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql
 	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
 		return nil, nil, head, err
 	}
-	dir, picks, err := core.WorkspacePullCommits(ctx, base, head.Self(), changes.Self(), args.opts(parent.Self()), apply)
+	dir, picks, err := core.WorkspacePullCommits(ctx, base, head.Self(), changes.Self(), args.opts(), apply)
 	return dir, picks, head, err
 }
 
-func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Directory], error) {
+func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (dagql.ObjectResult[*core.Directory], error) {
 	dir, _, _, err := s.computeWorkspacePull(ctx, parent, args, true)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -196,7 +220,7 @@ func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.Object
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-func (s *workspaceSchema) pullRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.GitRepository], error) {
+func (s *workspaceSchema) pullRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (dagql.ObjectResult[*core.GitRepository], error) {
 	var inst dagql.ObjectResult[*core.GitRepository]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

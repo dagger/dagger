@@ -61,7 +61,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DoNotCache("Captures local receivers before integrating commits").
 			Doc("Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.",
 				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.",
-				"Cherry-picks preserve the source author and author date, use this workspace's default committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.").
+				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Frozen source workspace."),
 				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
@@ -73,13 +73,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Checkpoints host-backed receivers before committing").
 			Doc("Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.",
-				"The host checkout is not modified. Changes outside the selected paths remain uncommitted.").
+				"The host checkout is not modified. Changes outside the selected paths remain uncommitted.",
+				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
 			Args(
 				dagql.Arg("message").Doc("Commit message."),
 				dagql.Arg("paths").Doc("Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths."),
 				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
-				dagql.Arg("authorName").Doc("Author and committer name. Defaults to the identity captured at workspace load, otherwise Dagger."),
-				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to the identity captured at workspace load, otherwise dagger@localhost."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
 			),
 		dagql.NodeFunc("__commitBase", s.commitBase).
 			View(AfterVersion("v1.0.0-0")).
@@ -112,18 +113,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc("(Internal-only) Open the reset repository, preserving its logical origin."),
-		dagql.Func("gitAuthorName", s.gitAuthorName).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Default Git author name carried by this workspace.",
-				"Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger."),
-		dagql.Func("gitAuthorEmail", s.gitAuthorEmail).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Default Git author email carried by this workspace.",
-				"Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost."),
-		dagql.NodeFunc("withGitAuthor", s.withGitAuthor).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Set the default author and committer identity carried by this workspace.").
-			Args(dagql.Arg("name").Doc("Git author name."), dagql.Arg("email").Doc("Git author email.")),
 		dagql.NodeFunc("checkpoint", s.checkpoint).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").

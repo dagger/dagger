@@ -813,7 +813,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if workspaceAddress != nil {
 		address = workspaceAddress(ws)
 	}
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
+	coreWS, err := srv.buildCoreWorkspace(ctx, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -928,7 +928,6 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 // (directories are resolved lazily). For remote, it stores the prebuiltRootfs.
 func (srv *Server) buildCoreWorkspace(
 	ctx context.Context,
-	client *daggerClient,
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
@@ -952,17 +951,6 @@ func (srv *Server) buildCoreWorkspace(
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Cwd)
 	}
 	if isLocal {
-		if client != nil && client.engineUtilClient != nil {
-			entries, _ := client.engineUtilClient.GetGitConfig(ctx, detected.Root)
-			for _, entry := range entries {
-				switch strings.ToLower(entry.GetKey()) {
-				case "user.name":
-					coreWS.GitAuthorName = entry.GetValue()
-				case "user.email":
-					coreWS.GitAuthorEmail = entry.GetValue()
-				}
-			}
-		}
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
 		coreWS.SetHostPath(detected.Root)

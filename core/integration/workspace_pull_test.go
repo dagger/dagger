@@ -68,7 +68,7 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
 	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace().Checkpoint()
 	source := base.WithNewFile("source.txt", "source").WithCommit("source commit", workspaceCommitDate).WithNewFile("ignored.txt", "source WIP")
-	receiver := base.WithGitAuthor("Receiver", "receiver@example.com").WithNewFile("pending.txt", "receiver WIP").
+	receiver := base.WithNewFile("pending.txt", "receiver WIP").
 		WithMountedDirectory("mount", c.Directory().WithNewFile("mounted.txt", "mount"))
 	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -113,19 +113,27 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	sha, err = restored.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sourceSHA, sha)
-	// Receiver identity survives the pull and becomes the next commit author.
+	// New commits after a pull resolve the calling client's Git identity.
 	next := pulled.WithCommit("save WIP", workspaceCommitDate)
 	name, err := next.Git().Head().TargetCommit().AuthorName(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "Receiver", name)
+	require.Equal(t, "Dagger", name)
 }
 
 func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
+	git("config", "user.name", "Source")
+	git("config", "user.email", "source@example.com")
+	sourceClient := connect(ctx, t, dagger.WithWorkdir(checkout))
+	sourceID, err := sourceClient.CurrentWorkspace().Checkpoint().WithNewFile("from-source.txt", "source").WithCommit("source", workspaceCommitDate).ID(ctx)
+	require.NoError(t, err)
+
+	git("config", "user.name", "Receiver")
+	git("config", "user.email", "receiver@example.com")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
 	base := c.CurrentWorkspace().Checkpoint()
-	source := base.WithGitAuthor("Source", "source@example.com").WithNewFile("from-source.txt", "source").WithCommit("source", workspaceCommitDate)
-	receiver := base.WithNewFile("local.txt", "local").WithCommit("local", workspaceCommitDate).WithGitAuthor("Receiver", "receiver@example.com")
+	source := dagger.Ref[*dagger.Workspace](c, sourceID)
+	receiver := base.WithNewFile("local.txt", "local").WithCommit("local", workspaceCommitDate)
 	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	oldSHA, err := receiver.Git().Head().CommitSHA(ctx)
@@ -160,7 +168,7 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	require.NoError(t, err)
 	require.Equal(t, sha, againSHA)
 	// A different recipe with equivalent inputs still produces the same SHA.
-	equivalent, err := applyWorkspacePull(ctx, c, receiver.WithGitAuthor("Receiver", "receiver@example.com"), source, nil, 100)
+	equivalent, err := applyWorkspacePull(ctx, c, receiver.WithConfigEnvironment(""), source, nil, 100)
 	require.NoError(t, err)
 	equivalentSHA, err := equivalent.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)

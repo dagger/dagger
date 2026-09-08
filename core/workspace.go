@@ -138,10 +138,6 @@ type Workspace struct {
 	// workspace selection.
 	selectedEnv string
 
-	// Git identity captured at workspace load, not at commit or recipe replay.
-	GitAuthorName  string
-	GitAuthorEmail string
-
 	// ExportBase binds a prepared integration to a snapshot of the destination.
 	// It is not a host-read route or permission: export always uses the caller.
 	ExportBase        dagql.ObjectResult[*Workspace]
@@ -636,8 +632,6 @@ type persistedWorkspacePayload struct {
 	ClientID           string                        `json:"clientID,omitempty"`
 	HostPath           string                        `json:"hostPath,omitempty"`
 	SelectedEnv        string                        `json:"selectedEnv,omitempty"`
-	GitAuthorName      string                        `json:"gitAuthorName,omitempty"`
-	GitAuthorEmail     string                        `json:"gitAuthorEmail,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -790,8 +784,6 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		ClientID:          ws.ClientID,
 		HostPath:          ws.hostPath,
 		SelectedEnv:       ws.selectedEnv,
-		GitAuthorName:     ws.GitAuthorName,
-		GitAuthorEmail:    ws.GitAuthorEmail,
 	}
 	if ws.ExportBase.Self() != nil {
 		id, err := encodePersistedObjectRef(cache, ws.ExportBase, "workspace export base")
@@ -888,8 +880,6 @@ func (*Workspace) DecodePersistedObject(
 		ClientID:          persisted.ClientID,
 		hostPath:          persisted.HostPath,
 		selectedEnv:       persisted.SelectedEnv,
-		GitAuthorName:     persisted.GitAuthorName,
-		GitAuthorEmail:    persisted.GitAuthorEmail,
 	}
 	if persisted.ExportBaseResultID != 0 {
 		var err error

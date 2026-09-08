@@ -22,19 +22,13 @@ type workspaceWithCommitArgs struct {
 func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (core.WorkspaceCommitOpts, error) {
 	opts := core.WorkspaceCommitOpts{
 		Message: args.Message, Date: args.Date,
-		AuthorName: ws.GitAuthorName, AuthorEmail: ws.GitAuthorEmail,
+		AuthorName: args.AuthorName.Value.String(), AuthorEmail: args.AuthorEmail.Value.String(),
 	}
 	if _, err := time.Parse(time.RFC3339, args.Date); err != nil {
 		return opts, fmt.Errorf("withCommit date must be RFC3339: %w", err)
 	}
 	if strings.TrimSpace(args.Message) == "" || strings.ContainsRune(args.Message, 0) {
 		return opts, fmt.Errorf("withCommit message must be nonempty and contain no NUL")
-	}
-	if args.AuthorName.Valid {
-		opts.AuthorName = args.AuthorName.Value.String()
-	}
-	if args.AuthorEmail.Valid {
-		opts.AuthorEmail = args.AuthorEmail.Value.String()
 	}
 	if opts.AuthorName == "" {
 		opts.AuthorName = "Dagger"
@@ -83,6 +77,23 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
+	if !args.AuthorName.Valid || !args.AuthorEmail.Valid {
+		name, email, err := workspaceGitAuthor(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if !args.AuthorName.Valid {
+			args.AuthorName = dagql.Opt(dagql.NewString(name))
+		}
+		if !args.AuthorEmail.Valid {
+			args.AuthorEmail = dagql.Opt(dagql.NewString(email))
+		}
+		// Reselect with explicit identity so neither cached commit helpers nor
+		// recipe replay depend on the caller's ambient Git configuration.
+		err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "withCommit", Args: args.selectors()})
+		return inst, err
+	}
+
 	frozen, err := s.checkpoint(ctx, parent, workspaceCheckpointArgs{})
 	if err != nil {
 		return inst, err
@@ -228,25 +239,35 @@ func validateWorkspaceGitAuthor(name, email string) error {
 	return nil
 }
 
-func (s *workspaceSchema) gitAuthorName(ctx context.Context, parent *core.Workspace, _ struct{}) (dagql.String, error) {
-	_ = ctx
-	return dagql.NewString(parent.GitAuthorName), nil
-}
-
-func (s *workspaceSchema) gitAuthorEmail(ctx context.Context, parent *core.Workspace, _ struct{}) (dagql.String, error) {
-	_ = ctx
-	return dagql.NewString(parent.GitAuthorEmail), nil
-}
-
-func (s *workspaceSchema) withGitAuthor(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct{ Name, Email string }) (dagql.ObjectResult[*core.Workspace], error) {
-	if err := validateWorkspaceGitAuthor(args.Name, args.Email); err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	ws := parent.Self().Clone()
-	ws.GitAuthorName, ws.GitAuthorEmail = args.Name, args.Email
-	srv, err := core.CurrentDagqlServer(ctx)
+// workspaceGitAuthor reads the calling client's effective Git configuration at
+// its working directory. Outside a checkout, Git uses system/global config.
+func workspaceGitAuthor(ctx context.Context) (string, string, error) {
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
+		return "", "", err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	entries, err := bk.GetGitConfig(ctx, ".")
+	if err != nil {
+		return "", "", fmt.Errorf("read Git author config: %w", err)
+	}
+	var name, email string
+	for _, entry := range entries {
+		switch strings.ToLower(entry.GetKey()) {
+		case "user.name":
+			name = entry.GetValue()
+		case "user.email":
+			email = entry.GetValue()
+		}
+	}
+	if name == "" {
+		name = "Dagger"
+	}
+	if email == "" {
+		email = "dagger@localhost"
+	}
+	return name, email, nil
 }
