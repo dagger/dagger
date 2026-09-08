@@ -66,6 +66,34 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			urlStr: "https://git.example.com/team/repo#main:src",
+			want: Parsed{
+				ModPath:        "git.example.com/team/repo",
+				ModVersion:     "main",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "git.example.com/team/repo", Repo: "https://git.example.com/team/repo"},
+				RepoRootSubdir: "src",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr: "git://git.example.com/team/repo#main:src",
+			want: Parsed{
+				ModPath:        "git.example.com/team/repo",
+				ModVersion:     "main",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "git.example.com/team/repo", Repo: "https://git.example.com/team/repo"},
+				RepoRootSubdir: "src",
+				Scheme:         SchemeGit,
+			},
+		},
+		{
+			urlStr:          "https://github.com/dagger/python/ruff#main:docs",
+			wantErrContains: "repository root is \"github.com/dagger/python\"",
+		},
+		{
 			urlStr: "http://github.com/shykes/daggerverse.git/ci",
 			want: Parsed{
 				ModPath:        "github.com/shykes/daggerverse.git/ci",

@@ -40,6 +40,7 @@ const (
 	NoScheme SchemeType = iota
 	SchemeHTTP
 	SchemeHTTPS
+	SchemeGit
 	SchemeSSH
 	SchemeSCPLike
 )
@@ -63,6 +64,8 @@ func (s SchemeType) Prefix() string {
 		return "http://"
 	case SchemeHTTPS:
 		return "https://"
+	case SchemeGit:
+		return "git://"
 	case SchemeSSH:
 		return "ssh://"
 	default:
@@ -109,6 +112,8 @@ func FastKindCheck(refString, refPin string) Kind {
 	case strings.HasPrefix(refString, SchemeHTTP.Prefix()):
 		return KindGit
 	case strings.HasPrefix(refString, SchemeHTTPS.Prefix()):
+		return KindGit
+	case strings.HasPrefix(refString, SchemeGit.Prefix()):
 		return KindGit
 	case strings.HasPrefix(refString, SchemeSSH.Prefix()):
 		return KindGit
@@ -197,12 +202,27 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		gitParsed.Selector = GitRefSelector
 	}
 
-	// Try to isolate the root of the git repo
-	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
-	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.ModPath, false)
-	if err != nil {
-		return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
+	// Go-like module refs use import-path discovery to split the repository from
+	// its module subpath. The explicit #ref:subpath form already provides that
+	// boundary, so it can accept any Git URL without go-import metadata.
+	var repoRoot *vcs.RepoRoot
+	if hasFragment {
+		repoRoot = explicitGitRepoRoot(gitParsed.ModPath, scheme, endpoint)
+		if knownRoot, staticErr := vcs.RepoRootForImportPathStatic(gitParsed.ModPath, ""); staticErr == nil {
+			if knownRoot.Root != gitParsed.ModPath {
+				return Parsed{}, fmt.Errorf(
+					"git URL selector requires a repository URL before #: got %q, repository root is %q",
+					gitParsed.ModPath,
+					knownRoot.Root,
+				)
+			}
+			repoRoot = knownRoot
+		}
+	} else {
+		repoRoot, err = vcs.RepoRootForImportPath(gitParsed.ModPath, false)
+		if err != nil {
+			return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
+		}
 	}
 	if repoRoot == nil || repoRoot.VCS == nil {
 		return Parsed{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.ModPath)
@@ -212,13 +232,6 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	}
 
 	gitParsed.RepoRoot = repoRoot
-	if hasFragment && gitParsed.ModPath != repoRoot.Root {
-		return Parsed{}, fmt.Errorf(
-			"git URL selector requires a repository URL before #: got %q, repository root is %q",
-			gitParsed.ModPath,
-			repoRoot.Root,
-		)
-	}
 
 	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
 	if hasFragment {
@@ -293,6 +306,22 @@ func parseGitFragmentSelector(scheme SchemeType, ref string) (gitRef, subdir str
 	return gitRef, subdir, true, nil
 }
 
+func explicitGitRepoRoot(modPath string, scheme SchemeType, endpoint *transport.Endpoint) *vcs.RepoRoot {
+	webScheme := scheme
+	if webScheme != SchemeHTTP && webScheme != SchemeHTTPS {
+		webScheme = SchemeHTTPS
+	}
+	host := endpoint.Host
+	if endpoint.Port > 0 && (scheme == SchemeHTTP || scheme == SchemeHTTPS) {
+		host = fmt.Sprintf("%s:%d", host, endpoint.Port)
+	}
+	return &vcs.RepoRoot{
+		VCS:  vcs.ByCmd("git"),
+		Root: modPath,
+		Repo: webScheme.Prefix() + host + strings.TrimSuffix(endpoint.Path, ".git"),
+	}
+}
+
 // Scheme classifies the transport scheme of a ref string, including SCP-like
 // ("git@host:path") refs. It is a pure, network-free helper so callers can
 // decide eligibility (e.g. for the https-only dagger-get redirect probe)
@@ -309,6 +338,7 @@ func parseScheme(refString string) (SchemeType, string) {
 	schemes := []SchemeType{
 		SchemeHTTP,
 		SchemeHTTPS,
+		SchemeGit,
 		SchemeSSH,
 	}
 
