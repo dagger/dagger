@@ -53,7 +53,7 @@ func workspaceIncludeConsumer(t *testctx.T, c *dagger.Client, configTOML string)
 func workspaceIncludeConfig(args ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithExec(
-			append([]string{"dagger", "--progress=report", "--silent", "workspace", "config"}, args...),
+			append([]string{"dagger", "workspace", "config"}, args...),
 			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 		)
 	}
@@ -62,7 +62,7 @@ func workspaceIncludeConfig(args ...string) dagger.WithContainerFunc {
 func workspaceIncludeConfigFail(args ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithExec(
-			append([]string{"dagger", "--progress=report", "workspace", "config"}, args...),
+			append([]string{"dagger", "workspace", "config"}, args...),
 			dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 				Expect:                        dagger.ReturnTypeFailure,
@@ -158,10 +158,13 @@ source = "`+baseRef+`"
 // workspaceIncludeMonorepoIn runs a command from dir inside the consuming
 // repository, which is what a monorepo's per-project workspace looks like: the
 // git root is the workspace, and each project's dagger.toml sits below it.
+//
+// No --progress: the commands exercised here include `workspace config`, which
+// renders no pipeline and so does not accept the flag.
 func workspaceIncludeMonorepoIn(dir string, args ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithWorkdir(dir).WithExec(
-			append([]string{"dagger", "--progress=report"}, args...),
+			append([]string{"dagger"}, args...),
 			dagger.ContainerWithExecOpts{
 				UseEntrypoint:                 true,
 				ExperimentalPrivilegedNesting: true,
@@ -236,7 +239,7 @@ platform = "arm64"
 
 	t.Run("the effective config addresses them from the including project", func(ctx context.Context, t *testctx.T) {
 		out, err := monorepo.
-			With(workspaceIncludeMonorepoIn("/work/project-a", "--silent", "workspace", "config")).
+			With(workspaceIncludeMonorepoIn("/work/project-a", "workspace", "config")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		// Relative to project-a, not to common, and dot-prefixed so it can
@@ -247,7 +250,7 @@ platform = "arm64"
 
 	t.Run("a project overrides a shared module's settings without repeating its source", func(ctx context.Context, t *testctx.T) {
 		out, err := monorepo.
-			With(workspaceIncludeMonorepoIn("/work/project-b", "--silent", "workspace", "config")).
+			With(workspaceIncludeMonorepoIn("/work/project-b", "workspace", "config")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `platform = "arm64"`)
@@ -280,10 +283,10 @@ greeting = "hello"
 		name string
 		args []string
 	}{
-		{name: "functions", args: []string{"--silent", "functions"}},
-		{name: "call --help", args: []string{"--silent", "call", "--help"}},
-		{name: "api functions", args: []string{"--silent", "api", "functions"}},
-		{name: "api call --help", args: []string{"--silent", "api", "call", "--help"}},
+		{name: "functions", args: []string{"functions"}},
+		{name: "call --help", args: []string{"call", "--help"}},
+		{name: "api functions", args: []string{"api", "functions"}},
+		{name: "api call --help", args: []string{"api", "call", "--help"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := monorepo.
@@ -417,11 +420,13 @@ source = "`+baseRef+`"
 	})
 
 	t.Run("and the run says so", func(ctx context.Context, t *testctx.T) {
-		// Reported without --silent, which suppresses progress output. The
+		// Reported without --silent, which suppresses progress output.
+		// --progress cannot be set on this command: it does not render a
+		// pipeline, so the flag is not among its capabilities. The
 		// warning has to reach a command that skips workspace modules
 		// entirely, which is exactly what `workspace config` does.
 		out, err := ctr.WithExec(
-			[]string{"dagger", "--progress=plain", "workspace", "config"},
+			[]string{"dagger", "workspace", "config"},
 			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 		).CombinedOutput(ctx)
 		require.NoError(t, err)
@@ -590,7 +595,7 @@ source = "`+baseRef+`"
 	// disabled across commands upstream. What matters here is that the env the
 	// included config defines crossed the boundary at all.
 	out, err := ctr.WithExec(
-		[]string{"dagger", "--progress=report", "--silent", "workspace", "config", "env.ci.modules.greeter.settings.greeting"},
+		[]string{"dagger", "workspace", "config", "env.ci.modules.greeter.settings.greeting"},
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	).Stdout(ctx)
 	require.NoError(t, err)
@@ -657,7 +662,7 @@ source = "`+baseRef+`"
 
 	t.Run("uninstalling an included module names the include", func(ctx context.Context, t *testctx.T) {
 		stderr, err := ctr.WithExec(
-			[]string{"dagger", "--progress=report", "uninstall", "greeter"},
+			[]string{"dagger", "uninstall", "greeter"},
 			dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 				Expect:                        dagger.ReturnTypeFailure,
@@ -704,7 +709,7 @@ source = "`+baseRef+`"
 	// A later run reuses the recorded pin rather than re-resolving: the lock is
 	// left exactly as it was, and the merged config still resolves.
 	replayed := resolved.WithExec(
-		[]string{"dagger", "--progress=report", "--silent", "workspace", "config"},
+		[]string{"dagger", "workspace", "config"},
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	out, err := replayed.Stdout(ctx)
