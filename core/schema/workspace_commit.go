@@ -222,6 +222,16 @@ func validateWorkspaceGitAuthor(name, email string) error {
 	return nil
 }
 
+func (s *workspaceSchema) gitAuthorName(ctx context.Context, parent *core.Workspace, _ struct{}) (dagql.String, error) {
+	_ = ctx
+	return dagql.NewString(parent.GitAuthorName), nil
+}
+
+func (s *workspaceSchema) gitAuthorEmail(ctx context.Context, parent *core.Workspace, _ struct{}) (dagql.String, error) {
+	_ = ctx
+	return dagql.NewString(parent.GitAuthorEmail), nil
+}
+
 func (s *workspaceSchema) withGitAuthor(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct{ Name, Email string }) (dagql.ObjectResult[*core.Workspace], error) {
 	if err := validateWorkspaceGitAuthor(args.Name, args.Email); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err

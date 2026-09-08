@@ -36,7 +36,7 @@ func (opts WorkspacePullOpts) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, sha := range opts.Commits {
-		if !workspacePullSHA(sha) {
+		if !IsFullGitSHA(sha) {
 			return fmt.Errorf("commits must contain full lowercase commit hashes, got %q", sha)
 		}
 		if seen[sha] {
@@ -47,7 +47,10 @@ func (opts WorkspacePullOpts) Validate() error {
 	return nil
 }
 
-func workspacePullSHA(sha string) bool {
+// IsFullGitSHA reports whether sha is a full lowercase hex commit hash
+// (SHA-1 or SHA-256). Workspace Git APIs demand full hashes: abbreviations
+// and symbolic refs would make recorded recipes ambiguous.
+func IsFullGitSHA(sha string) bool {
 	if len(sha) != 40 && len(sha) != 64 {
 		return false
 	}
@@ -419,7 +422,7 @@ func pullCommitOrigins(message string) []string {
 			continue
 		}
 		sha, ok = strings.CutSuffix(sha, ")")
-		if ok && workspacePullSHA(sha) {
+		if ok && IsFullGitSHA(sha) {
 			origins = append(origins, sha)
 		}
 	}
