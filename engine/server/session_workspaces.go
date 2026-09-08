@@ -1109,7 +1109,8 @@ func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
 
 // cloneGitTree clones a git repository and returns its selected ref and tree.
 func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, remote workspaceRemoteRef) (dagql.ObjectResult[*core.Directory], dagql.ObjectResult[*core.GitRef], error) {
-	refSelector := workspaceGitRefSelector(ctx, remote)
+	supportsVersionQueries := core.AfterVersion(workspace.VersionQueriesVersion).Contains(dag.View)
+	refSelector := workspaceGitRefSelector(remote, supportsVersionQueries)
 
 	var gitRef dagql.ObjectResult[*core.GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
@@ -1140,7 +1141,7 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, remote w
 	return tree, gitRef, nil
 }
 
-func workspaceGitRefSelector(ctx context.Context, remote workspaceRemoteRef) dagql.Selector {
+func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries bool) dagql.Selector {
 	// Use HEAD without a selector and literal ref resolution unless an @
 	// selector contains a SemVer query supported by this API version.
 	refSelector := dagql.Selector{Field: "head"}
@@ -1150,7 +1151,7 @@ func workspaceGitRefSelector(ctx context.Context, remote workspaceRemoteRef) dag
 			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(remote.version)}},
 		}
 		if remote.selector == gitref.ModuleVersionSelector &&
-			core.Supports(ctx, workspace.VersionQueriesVersion) &&
+			supportsVersionQueries &&
 			core.IsReleaseVersionQuery(remote.version) {
 			refSelector = dagql.Selector{
 				Field: "latest",

@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -2158,24 +2157,23 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 func TestWorkspaceGitRefSelectorSemverSemantics(t *testing.T) {
 	t.Parallel()
 
-	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{
-		View: call.View(workspace.VersionQueriesVersion),
-	})
 	for _, tc := range []struct {
-		name      string
-		selector  gitref.SelectorType
-		wantField string
+		name                   string
+		selector               gitref.SelectorType
+		supportsVersionQueries bool
+		wantField              string
 	}{
-		{name: "at selector uses semver query", selector: gitref.ModuleVersionSelector, wantField: "latest"},
-		{name: "fragment selector uses literal git ref", selector: gitref.GitRefSelector, wantField: "ref"},
+		{name: "at selector uses semver query", selector: gitref.ModuleVersionSelector, supportsVersionQueries: true, wantField: "latest"},
+		{name: "old client uses literal git ref", selector: gitref.ModuleVersionSelector, supportsVersionQueries: false, wantField: "ref"},
+		{name: "fragment selector uses literal git ref", selector: gitref.GitRefSelector, supportsVersionQueries: true, wantField: "ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			selector := workspaceGitRefSelector(ctx, workspaceRemoteRef{
+			selector := workspaceGitRefSelector(workspaceRemoteRef{
 				version:         "v1.2",
 				workspaceSubdir: "ruff",
 				selector:        tc.selector,
-			})
+			}, tc.supportsVersionQueries)
 			require.Equal(t, tc.wantField, selector.Field)
 			if tc.wantField == "latest" {
 				require.Equal(t, "version", selector.Args[0].Name)
