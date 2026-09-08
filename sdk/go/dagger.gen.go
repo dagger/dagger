@@ -16464,15 +16464,17 @@ func (r *Volume) AsNode() Node {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address     *string
-	configFile  *string
-	configRead  *string
-	cwd         *string
-	detectScope *string
-	export      *Void
-	findUp      *string
-	id          *ID
-	portable    *bool
+	address        *string
+	configFile     *string
+	configRead     *string
+	cwd            *string
+	export         *Void
+	findUp         *string
+	gitAuthorEmail *string
+	gitAuthorName  *string
+	id             *ID
+	portable       *bool
+	detectScope    *string
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16933,6 +16935,36 @@ func (r *Workspace) Git() *WorkspaceGit {
 	return &WorkspaceGit{
 		query: q,
 	}
+}
+
+// Default Git author email carried by this workspace.
+//
+// Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
+func (r *Workspace) GitAuthorEmail(ctx context.Context) (string, error) {
+	if r.gitAuthorEmail != nil {
+		return *r.gitAuthorEmail, nil
+	}
+	q := r.query.Select("gitAuthorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Default Git author name carried by this workspace.
+//
+// Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
+func (r *Workspace) GitAuthorName(ctx context.Context) (string, error) {
+	if r.gitAuthorName != nil {
+		return *r.gitAuthorName, nil
+	}
+	q := r.query.Select("gitAuthorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Returns a list of files and directories that match the given pattern.
@@ -17634,6 +17666,34 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithResetOpts contains options for Workspace.WithReset
+type WorkspaceWithResetOpts struct {
+	// Discard uncommitted changes, resetting the working tree to the commit.
+	Hard bool
+}
+
+// Reset Git HEAD to a commit and return a frozen workspace.
+//
+// The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+//
+// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+//
+// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+func (r *Workspace) WithReset(commit string, opts ...WorkspaceWithResetOpts) *Workspace {
+	q := r.query.Select("withReset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `hard` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Hard) {
+			q = q.Arg("hard", opts[i].Hard)
+		}
+	}
+	q = q.Arg("commit", commit)
 
 	return &Workspace{
 		query: q,

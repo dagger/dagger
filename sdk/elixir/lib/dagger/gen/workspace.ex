@@ -346,6 +346,32 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Default Git author email carried by this workspace.
+
+  Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
+  """
+  @spec git_author_email(t()) :: {:ok, String.t()} | {:error, term()}
+  def git_author_email(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("gitAuthorEmail")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Default Git author name carried by this workspace.
+
+  Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
+  """
+  @spec git_author_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def git_author_name(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("gitAuthorName")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Returns a list of files and directories that match the given pattern.
 
   Patterns match paths relative to the workspace root.
@@ -921,6 +947,29 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Reset Git HEAD to a commit and return a frozen workspace.
+
+  The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+
+  With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+
+  Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+  """
+  @spec with_reset(t(), String.t(), [{:hard, boolean() | nil}]) :: Dagger.Workspace.t()
+  def with_reset(%__MODULE__{} = workspace, commit, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReset")
+      |> QB.put_arg("commit", commit)
+      |> QB.maybe_put_arg("hard", optional_args[:hard])
 
     %Dagger.Workspace{
       query_builder: query_builder,

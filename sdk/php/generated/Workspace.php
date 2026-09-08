@@ -292,6 +292,28 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Default Git author email carried by this workspace.
+     *
+     * Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
+     */
+    public function gitAuthorEmail(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('gitAuthorEmail');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'gitAuthorEmail');
+    }
+
+    /**
+     * Default Git author name carried by this workspace.
+     *
+     * Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
+     */
+    public function gitAuthorName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('gitAuthorName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'gitAuthorName');
+    }
+
+    /**
      * Returns a list of files and directories that match the given pattern.
      *
      * Patterns match paths relative to the workspace root.
@@ -734,6 +756,25 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('contents', $contents);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Reset Git HEAD to a commit and return a frozen workspace.
+     *
+     * The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+     *
+     * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+     *
+     * Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+     */
+    public function withReset(string $commit, ?bool $hard = false): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReset');
+        $innerQueryBuilder->setArgument('commit', $commit);
+        if (null !== $hard) {
+        $innerQueryBuilder->setArgument('hard', $hard);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

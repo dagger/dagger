@@ -5955,6 +5955,24 @@ type Workspace implements Node {
   git: WorkspaceGit!
 
   """
+  Default Git author email carried by this workspace.
+
+  Captured from git config user.email at workspace load, or set with
+  withGitAuthor. Empty when no identity was captured; withCommit then falls back
+  to dagger@localhost.
+  """
+  gitAuthorEmail: String!
+
+  """
+  Default Git author name carried by this workspace.
+
+  Captured from git config user.name at workspace load, or set with
+  withGitAuthor. Empty when no identity was captured; withCommit then falls back
+  to Dagger.
+  """
+  gitAuthorName: String!
+
+  """
   Returns a list of files and directories that match the given pattern.
 
   Patterns match paths relative to the workspace root.
@@ -6360,6 +6378,28 @@ type Workspace implements Node {
 
     """Permissions of the new file."""
     permissions: Int = 420
+  ): Workspace!
+
+  """
+  Reset Git HEAD to a commit and return a frozen workspace.
+
+  The host checkout is not modified. By default the difference between the
+  previous working tree and the target commit stays uncommitted, as with git
+  reset --mixed, so history can be reworked and reapplied with withCommit —
+  e.g. to amend the latest commit message, reset to its parent and commit again.
+
+  With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+
+  Commits orphaned by the reset are not preserved: the frozen repository keeps
+  reachable history only, so a reset cannot be undone by resetting forward
+  again.
+  """
+  withReset(
+    """Full commit hash to reset HEAD to."""
+    commit: String!
+
+    """Discard uncommitted changes, resetting the working tree to the commit."""
+    hard: Boolean = false
   ): Workspace!
 
   """Return this workspace with an SDK installed in its config."""

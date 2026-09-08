@@ -15928,6 +15928,56 @@ class Workspace(Type):
         _ctx = self._select("git", _args)
         return WorkspaceGit(_ctx)
 
+    async def git_author_email(self) -> str:
+        """Default Git author email carried by this workspace.
+
+        Captured from git config user.email at workspace load, or set with
+        withGitAuthor. Empty when no identity was captured; withCommit then
+        falls back to dagger@localhost.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("gitAuthorEmail", _args)
+        return await _ctx.execute(str)
+
+    async def git_author_name(self) -> str:
+        """Default Git author name carried by this workspace.
+
+        Captured from git config user.name at workspace load, or set with
+        withGitAuthor. Empty when no identity was captured; withCommit then
+        falls back to Dagger.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("gitAuthorName", _args)
+        return await _ctx.execute(str)
+
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that match the given pattern.
 
@@ -16640,6 +16690,42 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_reset(
+        self,
+        commit: str,
+        *,
+        hard: bool | None = False,
+    ) -> Self:
+        """Reset Git HEAD to a commit and return a frozen workspace.
+
+        The host checkout is not modified. By default the difference between
+        the previous working tree and the target commit stays uncommitted, as
+        with git reset --mixed, so history can be reworked and reapplied with
+        withCommit — e.g. to amend the latest commit message, reset to its
+        parent and commit again.
+
+        With hard, the working tree is reset to the commit and every
+        uncommitted change is discarded.
+
+        Commits orphaned by the reset are not preserved: the frozen repository
+        keeps reachable history only, so a reset cannot be undone by resetting
+        forward again.
+
+        Parameters
+        ----------
+        commit:
+            Full commit hash to reset HEAD to.
+        hard:
+            Discard uncommitted changes, resetting the working tree to the
+            commit.
+        """
+        _args = [
+            Arg("commit", commit),
+            Arg("hard", hard, False),
+        ]
+        _ctx = self._select("withReset", _args)
         return Workspace(_ctx)
 
     def with_sdk(

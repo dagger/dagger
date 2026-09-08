@@ -15715,6 +15715,12 @@ pub struct WorkspaceWithNewFileOpts {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithResetOpts {
+    /// Discard uncommitted changes, resetting the working tree to the commit.
+    #[builder(setter(into, strip_option), default)]
+    pub hard: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithSdkOpts<'a> {
     /// Optional override for the SDK name conventionally derived from the installed module name.
     #[builder(setter(into, strip_option), default)]
@@ -16270,6 +16276,18 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Default Git author email carried by this workspace.
+    /// Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
+    pub async fn git_author_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("gitAuthorEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Default Git author name carried by this workspace.
+    /// Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
+    pub async fn git_author_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("gitAuthorName");
+        query.execute(self.graphql_client.clone()).await
     }
     /// Returns a list of files and directories that match the given pattern.
     /// Patterns match paths relative to the workspace root.
@@ -17114,6 +17132,49 @@ impl Workspace {
         query = query.arg("contents", contents.into());
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Reset Git HEAD to a commit and return a frozen workspace.
+    /// The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+    /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+    ///
+    /// # Arguments
+    ///
+    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_reset(&self, commit: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withReset");
+        query = query.arg("commit", commit.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Reset Git HEAD to a commit and return a frozen workspace.
+    /// The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+    /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+    ///
+    /// # Arguments
+    ///
+    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_reset_opts(
+        &self,
+        commit: impl Into<String>,
+        opts: WorkspaceWithResetOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReset");
+        query = query.arg("commit", commit.into());
+        if let Some(hard) = opts.hard {
+            query = query.arg("hard", hard);
         }
         Workspace {
             proc: self.proc.clone(),

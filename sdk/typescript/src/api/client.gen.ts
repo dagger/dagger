@@ -3540,6 +3540,13 @@ export type WorkspaceWithNewFileOpts = {
   permissions?: number
 }
 
+export type WorkspaceWithResetOpts = {
+  /**
+   * Discard uncommitted changes, resetting the working tree to the commit.
+   */
+  hard?: boolean
+}
+
 export type WorkspaceWithSdkOpts = {
   /**
    * Override name for the installed SDK entry.
@@ -15676,6 +15683,8 @@ export class Workspace extends BaseClient {
   private readonly _detectScope?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
+  private readonly _gitAuthorEmail?: string = undefined
+  private readonly _gitAuthorName?: string = undefined
   private readonly _portable?: boolean = undefined
 
   /**
@@ -15691,6 +15700,8 @@ export class Workspace extends BaseClient {
     _detectScope?: string,
     _export?: Void,
     _findUp?: string,
+    _gitAuthorEmail?: string,
+    _gitAuthorName?: string,
     _portable?: boolean,
   ) {
     super(ctx)
@@ -15703,6 +15714,8 @@ export class Workspace extends BaseClient {
     this._detectScope = _detectScope
     this._export = _export
     this._findUp = _findUp
+    this._gitAuthorEmail = _gitAuthorEmail
+    this._gitAuthorName = _gitAuthorName
     this._portable = _portable
   }
 
@@ -15997,6 +16010,40 @@ export class Workspace extends BaseClient {
   git = (): WorkspaceGit => {
     const ctx = this._ctx.select("git")
     return new WorkspaceGit(ctx)
+  }
+
+  /**
+   * Default Git author email carried by this workspace.
+   *
+   * Captured from git config user.email at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to dagger@localhost.
+   */
+  gitAuthorEmail = async (): Promise<string> => {
+    if (this._gitAuthorEmail) {
+      return this._gitAuthorEmail
+    }
+
+    const ctx = this._ctx.select("gitAuthorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Default Git author name carried by this workspace.
+   *
+   * Captured from git config user.name at workspace load, or set with withGitAuthor. Empty when no identity was captured; withCommit then falls back to Dagger.
+   */
+  gitAuthorName = async (): Promise<string> => {
+    if (this._gitAuthorName) {
+      return this._gitAuthorName
+    }
+
+    const ctx = this._ctx.select("gitAuthorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -16389,6 +16436,22 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Reset Git HEAD to a commit and return a frozen workspace.
+   *
+   * The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+   *
+   * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+   *
+   * Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+   * @param commit Full commit hash to reset HEAD to.
+   * @param opts.hard Discard uncommitted changes, resetting the working tree to the commit.
+   */
+  withReset = (commit: string, opts?: WorkspaceWithResetOpts): Workspace => {
+    const ctx = this._ctx.select("withReset", { commit, ...opts })
     return new Workspace(ctx)
   }
 
