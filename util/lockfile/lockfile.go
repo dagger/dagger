@@ -3,11 +3,17 @@ package lockfile
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 )
+
+// ErrMergeConflict indicates that a lockfile contains unresolved Git conflict
+// markers and must be resolved by the user rather than recovered automatically.
+var ErrMergeConflict = errors.New("lockfile contains merge conflict markers")
 
 const (
 	versionKey     = "version"
@@ -52,6 +58,25 @@ type Entry struct {
 	Value     string
 }
 
+// UnsupportedVersionError reports a syntactically valid lockfile version that
+// this package cannot parse.
+type UnsupportedVersionError struct {
+	Version   string
+	Supported string
+}
+
+func (err *UnsupportedVersionError) Error() string {
+	return fmt.Sprintf("unsupported lockfile version %q", err.Version)
+}
+
+// IsNewer reports whether the unsupported version is newer than the supported
+// version. Non-integer versions are not considered newer.
+func (err *UnsupportedVersionError) IsNewer() bool {
+	version, versionErr := strconv.Atoi(err.Version)
+	supported, supportedErr := strconv.Atoi(err.Supported)
+	return versionErr == nil && supportedErr == nil && version > supported
+}
+
 // New returns an empty lockfile.
 func New() *Lockfile {
 	return &Lockfile{entries: map[tupleKey]lockEntry{}}
@@ -62,6 +87,10 @@ func New() *Lockfile {
 // Lines starting with "#" are comments and are ignored. Non-empty files must
 // otherwise start with a supported version header line.
 func Parse(data []byte) (*Lockfile, error) {
+	if hasMergeConflictMarkers(data) {
+		return nil, ErrMergeConflict
+	}
+
 	lock := New()
 	lines := bytes.Split(data, []byte("\n"))
 
@@ -91,6 +120,17 @@ func Parse(data []byte) (*Lockfile, error) {
 	}
 
 	return lock, nil
+}
+
+func hasMergeConflictMarkers(data []byte) bool {
+	var start, separator, end bool
+	for _, rawLine := range bytes.Split(data, []byte("\n")) {
+		line := strings.TrimSpace(string(rawLine))
+		start = start || strings.HasPrefix(line, "<<<<<<< ")
+		separator = separator || line == "======="
+		end = end || strings.HasPrefix(line, ">>>>>>> ")
+	}
+	return start && separator && end
 }
 
 // Marshal encodes lockfile entries to deterministic JSON lines, preceded by
@@ -213,7 +253,10 @@ func parseVersionHeader(line []byte) (string, error) {
 	}
 	version := versionPair[1]
 	if version != versionValueV2 {
-		return "", fmt.Errorf("unsupported lockfile version %q", version)
+		return "", &UnsupportedVersionError{
+			Version:   version,
+			Supported: versionValueV2,
+		}
 	}
 	return version, nil
 }

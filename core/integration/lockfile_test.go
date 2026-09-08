@@ -83,20 +83,106 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestDefaultRejectsV1Lockfile(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *testctx.T) {
+	tests := map[string]string{
+		"v1": strings.Join([]string{
+			`[["version","1"]]`,
+			`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+		}, "\n"),
+		"malformed v2": strings.Join([]string{
+			`[["version","2"]]`,
+			`["","oci-sha"]`,
+		}, "\n"),
+	}
+
+	for name, lockContents := range tests {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			hostGitInit(t, workdir)
+			writeEmptyWorkspaceConfig(t, workdir)
+			queryPath := writeContainerFromQuery(t, workdir)
+			lockPath := filepath.Join(workdir, workspace.LockFileName)
+			require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+			require.NoError(t, err, string(out))
+			require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+			lockBytes, err := os.ReadFile(lockPath)
+			require.NoError(t, err)
+			require.NotEqual(t, lockContents, string(lockBytes))
+			assertOCISHALockEntry(t, lockBytes)
+		})
+	}
+}
+
+func (LockfileSuite) TestDefaultMigratesInvalidLegacyLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	legacyLockPath := filepath.Join(workdir, workspace.LegacyLockFilePath)
+	legacyLockContents := []byte(`[["version","1"]]`)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyLockPath), 0o755))
+	require.NoError(t, os.WriteFile(legacyLockPath, legacyLockContents, 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	assertOCISHALockEntry(t, lockBytes)
+
+	legacyLockBytes, err := os.ReadFile(legacyLockPath)
+	require.NoError(t, err)
+	require.Equal(t, legacyLockContents, legacyLockBytes)
+}
+
+func (LockfileSuite) TestDefaultRejectsFutureLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := `[["version","3"]]`
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err,
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
+}
+
+func (LockfileSuite) TestDefaultRejectsConflictedLockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	lockContents := strings.Join([]string{
-		`[["version","1"]]`,
-		`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+		`<<<<<<< HEAD`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"old"]`,
+		`=======`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"new"]`,
+		`>>>>>>> branch`,
 	}, "\n")
 	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
+	require.ErrorContains(t, err,
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
 }
 
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {

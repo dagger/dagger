@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +21,31 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
+	require.ErrorIs(t, err, errUnsupportedLockEntry)
+}
+
+func TestUpdateWorkspaceLockIgnoresUnsupportedEntries(t *testing.T) {
+	t.Parallel()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"acme",
+		"resolve",
+		[]any{"input"},
+		"result",
+	))
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitSHA,
+		workspace.LookupInputs(
+			[]any{"https://example.com/repo.git", "refs/heads/main"},
+			workspace.LookupOption{Name: "futureOption", Value: true},
+		),
+		"0123456789012345678901234567890123456789",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(context.Background(), nil, lock))
+	require.Len(t, lock.Entries(), 2)
 }
 
 func TestUpdateVanityURLLockEntry(t *testing.T) {
@@ -231,6 +257,7 @@ func TestParseGitLookupInputsRejectsUnknownOption(t *testing.T) {
 		`cannot update git-sha: unsupported option "depth"; `+
 			`upgrade Dagger or remove the option`,
 	)
+	require.True(t, errors.Is(err, errUnsupportedLockEntry))
 }
 
 func TestParseOCILockInputs(t *testing.T) {

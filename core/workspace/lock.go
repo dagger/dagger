@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -123,6 +124,31 @@ func ParseLock(data []byte) (*Lock, error) {
 		return nil, err
 	}
 	return &Lock{file: file}, nil
+}
+
+// FutureLockfileVersionError turns an unsupported future lockfile version into
+// actionable engine upgrade guidance. It returns nil for all other parse errors.
+func FutureLockfileVersionError(err error) error {
+	var versionErr *lockfile.UnsupportedVersionError
+	if !errors.As(err, &versionErr) || !versionErr.IsNewer() {
+		return nil
+	}
+	return fmt.Errorf(
+		"lockfile version %q is newer than supported version %q; upgrade Dagger to continue",
+		versionErr.Version,
+		versionErr.Supported,
+	)
+}
+
+// LockfileMergeConflictError turns lockfile conflict markers into actionable
+// guidance. It returns nil for all other parse errors.
+func LockfileMergeConflictError(err error) error {
+	if !errors.Is(err, lockfile.ErrMergeConflict) {
+		return nil
+	}
+	return fmt.Errorf(
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
 }
 
 // NewLock returns an empty workspace lock.

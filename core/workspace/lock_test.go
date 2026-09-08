@@ -67,6 +67,26 @@ func TestParseLockRejectsV1(t *testing.T) {
 	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
 }
 
+func TestFutureLockfileVersionError(t *testing.T) {
+	_, err := ParseLock([]byte(`[["version","3"]]`))
+	require.EqualError(t, FutureLockfileVersionError(err),
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	_, err = ParseLock([]byte(`[["version","1"]]`))
+	require.NoError(t, FutureLockfileVersionError(err))
+}
+
+func TestLockfileMergeConflictError(t *testing.T) {
+	_, err := ParseLock([]byte("<<<<<<< HEAD\n=======\n>>>>>>> branch\n"))
+	require.EqualError(t, LockfileMergeConflictError(err),
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	_, err = ParseLock([]byte(`[["version","2"]]`))
+	require.NoError(t, LockfileMergeConflictError(err))
+}
+
 func TestEntries(t *testing.T) {
 	lock := NewLock()
 	inputs := []any{"alpine:latest", "linux/amd64"}
