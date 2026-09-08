@@ -19,11 +19,10 @@ import (
 
 // Generator represents a generator function
 type Generator struct {
-	Node                 *ModTreeNode `json:"node"`
-	Synthetic            *SyntheticGeneratorSpec
-	OriginalModuleResult dagql.ObjectResult[*Module]
-	Completed            bool `field:"true" doc:"Whether the generator complete"`
-	Changes              dagql.ObjectResult[*Changeset]
+	Node      *ModTreeNode `json:"node"`
+	Synthetic *SyntheticGeneratorSpec
+	Completed bool `field:"true" doc:"Whether the generator complete"`
+	Changes   dagql.ObjectResult[*Changeset]
 	// SDK generators keep their Workspace result until a Changeset is needed
 	// for a legacy query or a merge with regular generators.
 	WorkspaceBase   dagql.ObjectResult[*Workspace]
@@ -72,9 +71,6 @@ func (g *Generator) Name() string {
 }
 
 func (g *Generator) OriginalModule() *Module {
-	if g.OriginalModuleResult.Self() != nil {
-		return g.OriginalModuleResult.Self()
-	}
 	if g.Node == nil {
 		return nil
 	}
@@ -195,13 +191,12 @@ var _ dagql.PersistedObjectDecoder = (*GeneratorGroup)(nil)
 var _ dagql.HasDependencyResults = (*GeneratorGroup)(nil)
 
 type persistedGeneratorPayload struct {
-	NodeID                 int                     `json:"nodeID,omitempty"`
-	Synthetic              *SyntheticGeneratorSpec `json:"synthetic,omitempty"`
-	OriginalModuleResultID uint64                  `json:"originalModuleResultID,omitempty"`
-	Completed              bool                    `json:"completed,omitempty"`
-	ChangesResultID        uint64                  `json:"changesResultID,omitempty"`
-	WorkspaceBaseResultID  uint64                  `json:"workspaceBaseResultID,omitempty"`
-	WorkspaceResultID      uint64                  `json:"workspaceResultID,omitempty"`
+	NodeID                int                     `json:"nodeID,omitempty"`
+	Synthetic             *SyntheticGeneratorSpec `json:"synthetic,omitempty"`
+	Completed             bool                    `json:"completed,omitempty"`
+	ChangesResultID       uint64                  `json:"changesResultID,omitempty"`
+	WorkspaceBaseResultID uint64                  `json:"workspaceBaseResultID,omitempty"`
+	WorkspaceResultID     uint64                  `json:"workspaceResultID,omitempty"`
 }
 
 type persistedGeneratorObjectPayload struct {
@@ -486,13 +481,6 @@ func encodePersistedGeneratorPayload(
 		Synthetic: g.Synthetic,
 		Completed: g.Completed,
 	}
-	if g.OriginalModuleResult.Self() != nil {
-		moduleID, err := encodePersistedObjectRef(cache, g.OriginalModuleResult, "synthetic generator original module")
-		if err != nil {
-			return persistedGeneratorPayload{}, err
-		}
-		payload.OriginalModuleResultID = moduleID
-	}
 	for _, ref := range []struct {
 		value dagql.ObjectResult[*Workspace]
 		id    *uint64
@@ -538,13 +526,6 @@ func decodePersistedGeneratorPayload(
 		Node:      node,
 		Synthetic: payload.Synthetic,
 		Completed: payload.Completed,
-	}
-	if payload.OriginalModuleResultID != 0 {
-		module, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, payload.OriginalModuleResultID, "synthetic generator original module")
-		if err != nil {
-			return nil, err
-		}
-		g.OriginalModuleResult = module
 	}
 	if payload.ChangesResultID != 0 {
 		changes, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dag, payload.ChangesResultID, "generator changes")
@@ -622,18 +603,6 @@ func (g *Generator) AttachDependencyResults(
 		if err != nil {
 			return nil, err
 		}
-	}
-	if g.OriginalModuleResult.Self() != nil {
-		attached, err := attach(g.OriginalModuleResult)
-		if err != nil {
-			return nil, fmt.Errorf("attach synthetic generator original module: %w", err)
-		}
-		typed, ok := attached.(dagql.ObjectResult[*Module])
-		if !ok {
-			return nil, fmt.Errorf("attach synthetic generator original module: unexpected result %T", attached)
-		}
-		g.OriginalModuleResult = typed
-		owned = append(owned, typed)
 	}
 	if g.Changes.Self() != nil {
 		attached, err := attach(g.Changes)
