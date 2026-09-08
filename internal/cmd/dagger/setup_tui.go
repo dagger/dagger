@@ -115,6 +115,16 @@ func (ui *setupUI) appendLoginDetail(detail string) {
 	ui.update(func(view *setupView) { view.loginDetail += detail })
 }
 
+// setOrgStatus records the outcome of the post-login org-ensure step so it is
+// rendered in both the live and final setup views. ok distinguishes a created/
+// selected org (green check) from a failure (warning).
+func (ui *setupUI) setOrgStatus(message string, ok bool) {
+	ui.update(func(view *setupView) {
+		view.orgMessage = message
+		view.orgOK = ok
+	})
+}
+
 func (ui *setupUI) setMigration(id dagui.SpanID) {
 	ui.update(func(view *setupView) { view.migrationID = id })
 }
@@ -163,6 +173,8 @@ type setupView struct {
 	loginMessage string
 	loginDetail  string
 	loginSpinner *tuist.Spinner
+	orgMessage   string
+	orgOK        bool
 
 	rootID           dagui.SpanID
 	migrationID      dagui.SpanID
@@ -246,6 +258,24 @@ func (view *setupView) renderLogin(ctx tuist.Context) {
 	if detail := strings.TrimSpace(view.loginDetail); detail != "" {
 		ctx.Lines(strings.Split(detail, "\n")...)
 	}
+	if view.loginState == setupLoginComplete {
+		view.renderOrg(ctx)
+	}
+}
+
+// renderOrg renders the org-ensure outcome as a sub-line under the Cloud
+// account status: a green check on success, a yellow warning on failure. It is
+// a no-op until the step has reported a message.
+func (view *setupView) renderOrg(ctx tuist.Context) {
+	if strings.TrimSpace(view.orgMessage) == "" {
+		return
+	}
+	if view.orgOK {
+		view.renderSuccess(ctx, view.orgMessage)
+		return
+	}
+	warn := lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("!")
+	ctx.Line("  " + warn + " " + view.orgMessage)
 }
 
 func (view *setupView) renderSuccess(ctx tuist.Context, message string) {
@@ -295,6 +325,7 @@ func (view *setupView) renderFinal(ctx tuist.Context) {
 	switch view.loginState {
 	case setupLoginComplete:
 		ctx.Line("Cloud account: " + view.loginMessage)
+		view.renderOrg(ctx)
 	case setupLoginSkipped:
 		ctx.Line("Cloud account: " + view.loginMessage)
 	case setupLoginFailed:

@@ -174,7 +174,8 @@ func init() {
 	upCmd.GroupID = "daily"
 	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
-	activityCmd.GroupID = "daily"
+	// activityCmd now lives under `dagger cloud workspaces activity`; its
+	// GroupID is cleared there so it isn't tied to a root command group.
 
 	moduleDepInstallCmd.GroupID = "workspace"
 	moduleDepUninstallCmd.GroupID = "workspace"
@@ -200,7 +201,6 @@ func init() {
 		versionRoot,
 		queryCmd,
 		apiCmd,
-		traceCmd,
 		settingsCmd,
 		checksCmd,
 		upCmd,
@@ -214,7 +214,6 @@ func init() {
 		setupCmd,
 		searchCmd,
 		installedCmd,
-		activityCmd,
 		moduleCmd,
 		sdkCmd,
 		callCoreCmd.Command(),

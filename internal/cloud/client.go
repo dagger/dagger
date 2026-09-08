@@ -85,8 +85,10 @@ func NewClient(
 }
 
 type UserResponse struct {
-	ID   string     `json:"id"`
-	Orgs []auth.Org `json:"orgs"`
+	ID       string     `json:"id"`
+	Nickname string     `json:"nickname"`
+	Email    string     `json:"email"`
+	Orgs     []auth.Org `json:"orgs"`
 }
 
 func (c *Client) User(ctx context.Context) (*UserResponse, error) {
