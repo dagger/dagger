@@ -3,7 +3,8 @@
 created: 2026-09-08
 status: implemented; final test command stopped at user request
 
-Fixes 1–8 are approved. Keep one commit per fix. Defer topic 9 until after merge.
+Fixes 1–8 are approved. Keep one commit per fix. Topic 9 is resolved: keep the
+core scope name and the current SDK interface.
 
 | Issue | Change |
 | --- | --- |
@@ -15,7 +16,7 @@ Fixes 1–8 are approved. Keep one commit per fix. Defer topic 9 until after mer
 | 6 | Remove unused generator state. |
 | 7 | Remove obsolete ModuleManifest API definitions. |
 | 8 | Accept source references only as client targets. |
-| 9 | Deferred: decide whether scope names remain a core concept. |
+| 9 | Resolved: keep the core scope name and the current SDK interface. |
 
 ## 1. Workspace generation and export
 
@@ -96,8 +97,11 @@ removal, skip generation, and report those targets with repair instructions.
 Generate normally once the remaining references are valid. Do not suppress
 unrelated SDK, runtime, or network errors.
 
-## 9. Deferred: scope names
+## 9. Scope names
 
-A non-module scope does not use its name for generation. A module scope uses
-it as the module name. Decide later whether module naming remains in core or
-becomes an SDK setting. Keep the current name field for this change.
+Keep the core scope name and the current `generateScope()` interface. A module
+scope requires a name and uses it as the module name. A scope that contains
+only clients can retain an unused name.
+
+Changing the SDK interface would require another update in each SDK
+repository. The benefit does not justify that cost. This topic is closed.
