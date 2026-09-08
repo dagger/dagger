@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/core/gitref"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -242,6 +243,18 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)
 	require.Equal(t, "0cabe03cc0a9079e738c92b2c589d81fd560011f", calleeRef.version)
 	require.Equal(t, "VersionedGitSSH.hello", calleeRef.functionName)
+
+	// Literal Git URL selectors serialize with #ref:subpath rather than @ref.
+	// Telemetry reads the structured source fields so both forms are safe.
+	mockSrv.moduleSource.SourceRootSubpath = "ruff"
+	mockSrv.moduleSource.Git.CloneRef = "https://github.com/dagger/python"
+	mockSrv.moduleSource.Git.Selector = gitref.GitRefSelector
+	mockSrv.moduleSource.Git.Version = "v1.2"
+
+	callerRef, _ = parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, call)
+	require.NotNil(t, callerRef)
+	require.Equal(t, "https://github.com/dagger/python/ruff", callerRef.ref)
+	require.Equal(t, "v1.2", callerRef.version)
 }
 
 func TestAroundFuncMarksIntrospectionRootAsSkipped(t *testing.T) {

@@ -302,8 +302,11 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 		callerRef.functionName = fc.Name
 		callerRef.typeName = fc.ParentName
 		if ms.Git != nil {
-			idx := strings.LastIndex(ms.AsString(), "@")
-			callerRef.ref, callerRef.version = ms.AsString()[:idx], ms.AsString()[idx+1:]
+			callerRef.ref = GitRefString(ms.Git.CloneRef, ms.SourceRootSubpath, "")
+			callerRef.version = ms.Git.VersionQuery
+			if callerRef.version == "" {
+				callerRef.version = ms.Git.Version
+			}
 		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
 			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
 			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
