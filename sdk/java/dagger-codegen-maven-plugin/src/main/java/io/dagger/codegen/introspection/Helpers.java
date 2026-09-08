@@ -11,6 +11,12 @@ import javax.lang.model.element.Modifier;
 
 public class Helpers {
 
+  // Object's no-argument methods are inherited by every generated client. Even non-final
+  // methods can conflict with a field's return type or checked exceptions.
+  private static final List<String> JAVA_OBJECT_METHODS =
+      List.of(
+          "getClass", "hashCode", "toString", "clone", "finalize", "notify", "notifyAll", "wait");
+
   private static final List<String> JAVA_KEYWORDS =
       List.of(
           "abstract",
@@ -148,7 +154,8 @@ public class Helpers {
   static String formatName(Field field) {
     if ("Container".equals(field.getParentObject().getName()) && "import".equals(field.getName())) {
       return "importTarball";
-    } else if (JAVA_KEYWORDS.contains(field.getName())) {
+    } else if (JAVA_KEYWORDS.contains(field.getName())
+        || (JAVA_OBJECT_METHODS.contains(field.getName()) && field.getRequiredArgs().isEmpty())) {
       return field.getName() + "_";
     } else {
       return field.getName();
