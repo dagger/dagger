@@ -12,6 +12,7 @@ import (
 	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
@@ -21,14 +22,25 @@ import (
 // module-reference strings, used to detect reference cycles.
 type moduleRefCycleKey struct{}
 
-// resolveModuleRef detects and resolves a module function reference of the
-// bare form "<module>:<function>" (e.g. "docusaurus:serve"), wiring one
-// module's function output into another object-typed value.
+// resolveModuleRef detects and resolves a module function reference, wiring
+// one module's function output into another object-typed value. Two spellings
+// are accepted:
+//   - the long form "<module>:<function>" (e.g. "docusaurus:serve");
+//   - the short form "<function>" (e.g. "serve"), which names a function of
+//     the workspace entrypoint module. The entrypoint's functions are hoisted
+//     onto the Query root, so the short form is the same call a user makes on
+//     the command line. It is only considered when the workspace installs an
+//     entrypoint.
 //
 // Detection & precedence (commit-on-match, no silent fallback):
-//   - The candidate must be a string containing EXACTLY one ":" with non-empty
-//     parts on both sides. Strings containing "://" (URL-ish, e.g. "tcp://...")
-//     are never module refs.
+//   - A long-form candidate contains EXACTLY one ":" with non-empty parts on
+//     both sides. Strings containing "://" (URL-ish, e.g. "tcp://...") are
+//     never module refs.
+//   - A short-form candidate is a bare name (no ":" or "/", not a relative
+//     path). It is committed as a ref only if the entrypoint module has a
+//     function of that name; otherwise it keeps its ordinary address meaning
+//     (an image name, a file name), so "alpine" is only shadowed by an
+//     entrypoint that defines an "alpine" function.
 //   - The first segment is normalized to a gql field name and looked up on the
 //     CANONICAL Query root's object type. Only if a field of that name EXISTS
 //     — AND carries module provenance (FieldSpec.Module != nil), which
@@ -56,9 +68,23 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	if strings.Contains(addr, "://") {
 		return false, nil
 	}
-	// A module ref candidate has exactly one ":" with non-empty parts.
 	module, rest, ok := strings.Cut(addr, ":")
-	if !ok || module == "" || rest == "" {
+	shortForm := false
+	switch {
+	case !ok:
+		// Short form: resolve a bare "<function>" against the workspace
+		// entrypoint as "<entrypoint>:<function>". Commit only once the
+		// entrypoint is known to have the function (checked below).
+		if !workspace.IsBareModuleFunctionRef(addr) {
+			return false, nil
+		}
+		entrypoint, found := workspaceEntrypointModuleName(ctx)
+		if !found {
+			return false, nil
+		}
+		module, rest, shortForm = entrypoint, addr, true
+	case module == "" || rest == "":
+		// A long-form candidate has non-empty parts on both sides.
 		return false, nil
 	}
 
@@ -123,6 +149,18 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	}
 	functionField := strcase.ToLowerCamel(rest)
 
+	// Look the function up on the module's object type. For the long form an
+	// unknown function is a hard error, reported by the typed Select below.
+	// For the short form it means the bare string is not a module ref at all.
+	var fnSpec dagql.FieldSpec
+	fnExists := false
+	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
+		fnSpec, fnExists = objType.FieldSpec(functionField, srv.View)
+	}
+	if shortForm && !fnExists {
+		return false, nil
+	}
+
 	// Cycle guard: track the chain of in-flight module refs on the context
 	// and refuse to descend into one already present. Context values propagate
 	// through dagql Select into nested module construction, so re-entry of an
@@ -160,10 +198,8 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// the context, else the session's current one.
 	ctorArgs := core.WithBoundWorkspaceArgs(ctx, srv, spec.Args.Inputs(srv.View), nil)
 	var fnArgs []dagql.NamedInput
-	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
-		if fnSpec, ok := objType.FieldSpec(functionField, srv.View); ok {
-			fnArgs = core.WithBoundWorkspaceArgs(ctx, srv, fnSpec.Args.Inputs(srv.View), nil)
-		}
+	if fnExists {
+		fnArgs = core.WithBoundWorkspaceArgs(ctx, srv, fnSpec.Args.Inputs(srv.View), nil)
 	}
 	selectors := []dagql.Selector{
 		{Field: moduleField, Args: ctorArgs},
@@ -184,15 +220,8 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 // err reports the load outcome and srv is the refreshed schema served to the
 // current client (which now carries the module as a root field).
 func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Server, installed bool, err error) {
-	// The lookups below deliberately discard their errors: any failure to see
-	// the workspace from here means the string cannot be a demand-loadable
-	// module ref, and the caller's normal address decoding should run.
-	q, _ := core.CurrentQuery(ctx)
-	if q == nil {
-		return nil, false, nil
-	}
-	ws, _ := q.Server.CurrentWorkspace(ctx)
-	if ws == nil {
+	cfg, ws, ok := currentWorkspaceConfig(ctx)
+	if !ok {
 		return nil, false, nil
 	}
 	// Only the workspace-owning client may trigger module loads from address
@@ -201,10 +230,6 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	// and this gate keeps a bare string from becoming a capability grant.
 	md, _ := engine.ClientMetadataFromContext(ctx)
 	if md == nil || md.ClientID != ws.ClientID {
-		return nil, false, nil
-	}
-	cfg, _ := workspaceConfigWithCompatFallback(ctx, ws)
-	if cfg == nil {
 		return nil, false, nil
 	}
 	want := strcase.ToKebab(name)
@@ -224,6 +249,10 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	// the recorded error here without reloading, and ModTree runs nodes
 	// without fail-fast — so only the node that genuinely needs the broken
 	// module fails, and repair generators keep running.
+	q, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, true, err
+	}
 	if _, err := q.Server.EnsureWorkspaceModules(ctx, []string{name}, false); err != nil {
 		return nil, true, err
 	}
@@ -236,6 +265,42 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 		return nil, true, err
 	}
 	return srv, true, nil
+}
+
+// currentWorkspaceConfig returns the workspace config visible to the current
+// query, or ok=false when there is none. The lookups deliberately discard
+// their errors: any failure to see the workspace from address resolution means
+// the string cannot be a module ref, and the caller's normal address decoding
+// should run.
+func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *core.Workspace, ok bool) {
+	q, _ := core.CurrentQuery(ctx)
+	if q == nil {
+		return nil, nil, false
+	}
+	ws, _ = q.Server.CurrentWorkspace(ctx)
+	if ws == nil {
+		return nil, nil, false
+	}
+	cfg, _ = workspaceConfigWithCompatFallback(ctx, ws)
+	if cfg == nil {
+		return nil, nil, false
+	}
+	return cfg, ws, true
+}
+
+// workspaceEntrypointModuleName returns the install name of the workspace
+// entrypoint module, the target of short-form "<function>" references.
+func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
+	cfg, _, ok := currentWorkspaceConfig(ctx)
+	if !ok {
+		return "", false
+	}
+	for name, entry := range cfg.Modules {
+		if entry.Entrypoint {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // isBareRefShaped reports whether addr looks like it was intended as a bare

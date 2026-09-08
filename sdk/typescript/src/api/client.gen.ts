@@ -16262,6 +16262,17 @@ export class WorkspaceModule extends BaseClient {
   }
 
   /**
+   * List the functions of this module's main object, in GraphQL field form.
+   */
+  functions = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("functions")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The module name.
    */
   name = async (): Promise<string> => {
@@ -16319,6 +16330,7 @@ export class WorkspaceModuleSetting extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _isList?: boolean = undefined
+  private readonly _isObject?: boolean = undefined
   private readonly _key?: string = undefined
   private readonly _value?: string = undefined
 
@@ -16330,6 +16342,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     _id?: ID,
     _description?: string,
     _isList?: boolean,
+    _isObject?: boolean,
     _key?: string,
     _value?: string,
   ) {
@@ -16338,6 +16351,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     this._id = _id
     this._description = _description
     this._isList = _isList
+    this._isObject = _isObject
     this._key = _key
     this._value = _value
   }
@@ -16381,6 +16395,21 @@ export class WorkspaceModuleSetting extends BaseClient {
     }
 
     const ctx = this._ctx.select("isList")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+   */
+  isObject = async (): Promise<boolean> => {
+    if (this._isObject) {
+      return this._isObject
+    }
+
+    const ctx = this._ctx.select("isObject")
 
     const response: Awaited<boolean> = await ctx.execute()
 

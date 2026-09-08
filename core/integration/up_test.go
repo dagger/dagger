@@ -312,6 +312,75 @@ settings.app = "hello-with-services:web"
 		require.Contains(t, out, "check-service")
 	})
 
+	t.Run("short-form entrypoint ref via settings", func(ctx context.Context, t *testctx.T) {
+		// The entrypoint's functions are hoisted onto the root, so a bare
+		// "<function>" is the same call as "<entrypoint>:<function>" and is
+		// accepted as a short form (a hand-edited dagger.toml may carry it).
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "image"
+settings.file = "marker.txt"
+`)
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		// A bare value that names no entrypoint function keeps its ordinary
+		// address meaning: "marker.txt" is the local file, not a module ref,
+		// even though the entrypoint defines a "file" function.
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ambient", strings.TrimSpace(out))
+	})
+
+	t.Run("settings stores entrypoint refs in long form", func(ctx context.Context, t *testctx.T) {
+		// `dagger settings` accepts the short form for an address-typed
+		// setting but always writes the long form, so dagger.toml stays
+		// explicit about which module a value comes from. A plain string
+		// setting is never rewritten, even when its value matches an
+		// entrypoint function name.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+`).
+			With(daggerExec("settings", "service-ref-consumer", "base", "image")).
+			With(daggerExec("settings", "service-ref-consumer", "label", "image"))
+
+		cfg, err := ctr.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, `base = "container-provider:image"`)
+		require.Contains(t, cfg, `label = "image"`)
+		require.NotContains(t, cfg, `label = "container-provider:image"`)
+
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		// The long form is accepted on the command line too and stored as is.
+		cfg, err = ctr.
+			With(daggerExec("settings", "service-ref-consumer", "base", "container-provider:image")).
+			File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, `base = "container-provider:image"`)
+	})
+
 	t.Run("artifact refs via settings", func(ctx context.Context, t *testctx.T) {
 		ctr := modGen.
 			WithWorkdir("app").

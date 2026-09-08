@@ -17847,6 +17847,16 @@ func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// List the functions of this module's main object, in GraphQL field form.
+func (r *WorkspaceModule) Functions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("functions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this WorkspaceModule.
 func (r *WorkspaceModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -17961,6 +17971,7 @@ type WorkspaceModuleSetting struct {
 	description *string
 	id          *ID
 	isList      *bool
+	isObject    *bool
 	key         *string
 	value       *string
 }
@@ -18030,6 +18041,19 @@ func (r *WorkspaceModuleSetting) IsList(ctx context.Context) (bool, error) {
 		return *r.isList, nil
 	}
 	q := r.query.Select("isList")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
+	if r.isObject != nil {
+		return *r.isObject, nil
+	}
+	q := r.query.Select("isObject")
 
 	var response bool
 

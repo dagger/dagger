@@ -45,10 +45,11 @@ query WorkspaceModuleSettings($module: String!) {
 }
 `
 
-// workspaceModuleSettingsQueryWithIsList additionally requests isList, which
-// older engines don't expose. Only multi-value writes need it, so other flows
-// use the queries above and keep working against those engines.
-const workspaceModuleSettingsQueryWithIsList = `
+// workspaceModuleSettingsQueryForWrite additionally requests the setting
+// shape a write needs: isList (multi-value writes) and isObject (module
+// reference normalization). Older engines don't expose these fields, so writes
+// fall back to the query above against them and skip what the fields enable.
+const workspaceModuleSettingsQueryForWrite = `
 query WorkspaceModuleSettings($module: String!) {
   currentWorkspace {
     module(name: $module) {
@@ -58,7 +59,29 @@ query WorkspaceModuleSettings($module: String!) {
         value
         description
         isList
+        isObject
       }
+    }
+  }
+}
+`
+
+const workspaceEntrypointQuery = `
+query WorkspaceEntrypoint {
+  currentWorkspace {
+    modules {
+      name
+      entrypoint
+    }
+  }
+}
+`
+
+const workspaceModuleFunctionsQuery = `
+query WorkspaceModuleFunctions($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
+      functions
     }
   }
 }
@@ -139,7 +162,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			moduleName = args[0]
 		}
 
-		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 3)
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 2)
 		if err != nil {
 			return err
 		}
@@ -175,6 +198,12 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			value, values, err := workspaceSettingWriteValue(setting, args[2:])
 			if err != nil {
 				return err
+			}
+			if values == nil {
+				value, err = normalizeEntrypointFunctionRef(ctx, engineClient.Dagger(), setting, value)
+				if err != nil {
+					return err
+				}
 			}
 			if workspaceSettingsGlobal {
 				// User-level writes happen client-side; --env composes there
@@ -216,6 +245,73 @@ type workspaceSetting struct {
 	Value       string
 	Description string
 	IsList      bool
+	IsObject    bool
+}
+
+// normalizeEntrypointFunctionRef rewrites a short-form reference to a function
+// of the workspace entrypoint module ("image") into the long form the config
+// always stores ("container-provider:image"). Both forms resolve identically at
+// runtime; storing the long form keeps dagger.toml explicit about which module
+// a value comes from. Only address-typed (object) settings are candidates, so a
+// string setting whose value happens to match a function name is left alone.
+// Anything else, including values on engines that predate the fields this
+// relies on, passes through unchanged.
+func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
+	if !setting.IsObject || !workspacepkg.IsBareModuleFunctionRef(value) {
+		return value, nil
+	}
+
+	var modules struct {
+		CurrentWorkspace struct {
+			Modules []struct {
+				Name       string
+				Entrypoint bool
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{Query: workspaceEntrypointQuery}, &dagger.Response{Data: &modules}); err != nil {
+		return "", err
+	}
+	entrypoint := ""
+	for _, module := range modules.CurrentWorkspace.Modules {
+		if module.Entrypoint {
+			entrypoint = module.Name
+			break
+		}
+	}
+	if entrypoint == "" {
+		return value, nil
+	}
+
+	var functions struct {
+		CurrentWorkspace struct {
+			Module struct {
+				Functions []string
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     workspaceModuleFunctionsQuery,
+		Variables: map[string]any{"module": entrypoint},
+	}, &dagger.Response{Data: &functions}); err != nil {
+		if isUnknownGraphQLFieldError(err) {
+			return value, nil
+		}
+		return "", err
+	}
+	want := gqlFieldName(value)
+	for _, fn := range functions.CurrentWorkspace.Module.Functions {
+		if fn == want {
+			return entrypoint + ":" + value, nil
+		}
+	}
+	return value, nil
+}
+
+// isUnknownGraphQLFieldError reports whether err is the engine rejecting a
+// field the CLI asked for, i.e. the engine predates that field.
+func isUnknownGraphQLFieldError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Cannot query field")
 }
 
 // workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
@@ -239,7 +335,7 @@ type workspaceSettingsState struct {
 	Settings  []workspaceSetting
 }
 
-func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, withIsList bool) (*workspaceSettingsState, error) {
+func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, forWrite bool) (*workspaceSettingsState, error) {
 	type settingsModule struct {
 		Name     string
 		Settings []workspaceSetting
@@ -257,18 +353,26 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleN
 		modules = res.CurrentWorkspace.Modules
 	} else {
 		query := workspaceModuleSettingsQuery
-		if withIsList {
-			query = workspaceModuleSettingsQueryWithIsList
+		if forWrite {
+			query = workspaceModuleSettingsQueryForWrite
 		}
 		var res struct {
 			CurrentWorkspace struct {
 				Module settingsModule
 			}
 		}
-		if err := dag.Do(ctx, &dagger.Request{
+		err := dag.Do(ctx, &dagger.Request{
 			Query:     query,
 			Variables: map[string]any{"module": moduleName},
-		}, &dagger.Response{Data: &res}); err != nil {
+		}, &dagger.Response{Data: &res})
+		if err != nil && forWrite && isUnknownGraphQLFieldError(err) {
+			// Older engine: retry without the write-only fields.
+			err = dag.Do(ctx, &dagger.Request{
+				Query:     workspaceModuleSettingsQuery,
+				Variables: map[string]any{"module": moduleName},
+			}, &dagger.Response{Data: &res})
+		}
+		if err != nil {
 			return nil, err
 		}
 		modules = []settingsModule{res.CurrentWorkspace.Module}

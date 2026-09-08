@@ -464,6 +464,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("settings", s.moduleSettings).
 			DoNotCache("Reads live config and module metadata from the workspace").
 			Doc("List constructor-backed settings for this module."),
+		dagql.NodeFunc("functions", s.moduleFunctions).
+			DoNotCache("Reads live config and module metadata from the workspace").
+			Doc("List the functions of this module's main object, in GraphQL field form."),
 	}.Install(srv)
 	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)

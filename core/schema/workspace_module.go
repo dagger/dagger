@@ -170,45 +170,61 @@ func (s *workspaceSchema) workspaceModule(
 	}, nil
 }
 
-func (s *workspaceSchema) moduleSettings(
+// workspaceModuleEntry resolves the config entry behind a WorkspaceModule
+// result, along with the owning workspace, the effective (overlay-merged)
+// config it came from, and the config directory. The entry lookup is
+// effective so modules an overlay itself adds resolve too.
+func (s *workspaceSchema) workspaceModuleEntry(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.WorkspaceModule],
-	_ struct{},
-) ([]*core.WorkspaceModuleSetting, error) {
+) (ws *core.Workspace, effectiveCfg *workspace.Config, entry workspace.ModuleEntry, configDir string, err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, entry, "", err
 	}
 
 	// modules creates WorkspaceModule results from Workspace.__workspaceModule,
 	// so the DagQL receiver is the workspace that owns this module entry.
 	receiver, err := parent.Receiver(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, nil, entry, "", err
 	}
-	ws, ok := receiver.(dagql.ObjectResult[*core.Workspace])
+	wsResult, ok := receiver.(dagql.ObjectResult[*core.Workspace])
 	if !ok {
-		return nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
+		return nil, nil, entry, "", fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
 	}
-	cfg, err := readWorkspaceConfig(ctx, ws.Self())
+	ws = wsResult.Self()
+	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, entry, "", err
 	}
 
 	// Values come from the user-level overlay and the selected env overlay,
 	// merged in the same order as module loading. The entry lookup is also
 	// effective so modules an overlay itself adds resolve their settings.
-	effectiveCfg, err := effectiveWorkspaceConfig(ctx, ws.Self(), cfg)
+	effectiveCfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, entry, "", err
 	}
 
-	entry, ok := effectiveCfg.Modules[parent.Self().Name]
+	entry, ok = effectiveCfg.Modules[parent.Self().Name]
 	if !ok {
-		return nil, fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
+		return nil, nil, entry, "", fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
 	}
 
-	configDir, err := workspaceConfigDirectory(ws.Self())
+	configDir, err = workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, nil, entry, "", err
+	}
+	return ws, effectiveCfg, entry, configDir, nil
+}
+
+func (s *workspaceSchema) moduleSettings(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceModule],
+	_ struct{},
+) ([]*core.WorkspaceModuleSetting, error) {
+	ws, effectiveCfg, entry, configDir, err := s.workspaceModuleEntry(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -216,15 +232,16 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, nil
 	}
 
-	ctx, srv, err = workspaceSettingsHintIntrospectionContext(ctx, ws.Self())
+	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
 
-	hints, err := introspectWorkspaceModuleSettings(ctx, srv, ws.Self(), configDir, entry.Source)
+	mod, err := introspectWorkspaceModule(ctx, srv, ws, configDir, entry.Source)
 	if err != nil {
 		return nil, fmt.Errorf("discover settings for module %q: %w", parent.Self().Name, err)
 	}
+	hints := constructorHintsFromModule(mod)
 
 	settings := make([]*core.WorkspaceModuleSetting, 0, len(hints))
 	effectiveConfigBytes := workspace.SerializeConfig(effectiveCfg)
@@ -241,32 +258,68 @@ func (s *workspaceSchema) moduleSettings(
 			Value:       value,
 			Description: hint.Description,
 			IsList:      hint.IsList,
+			IsObject:    hint.IsObject,
 		})
 	}
 
 	return settings, nil
 }
 
-func introspectWorkspaceModuleSettings(
+// moduleFunctions lists the functions of the module's main object, in GraphQL
+// field form. `dagger settings` uses it to recognize a short-form reference to
+// an entrypoint function and store the long form.
+func (s *workspaceSchema) moduleFunctions(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceModule],
+	_ struct{},
+) (dagql.Array[dagql.String], error) {
+	ws, _, entry, configDir, err := s.workspaceModuleEntry(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Source == "" {
+		return dagql.Array[dagql.String]{}, nil
+	}
+
+	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	mod, err := introspectWorkspaceModule(ctx, srv, ws, configDir, entry.Source)
+	if err != nil {
+		return nil, fmt.Errorf("discover functions for module %q: %w", parent.Self().Name, err)
+	}
+	names := mainObjectFunctionNames(mod)
+	result := make(dagql.Array[dagql.String], 0, len(names))
+	for _, name := range names {
+		result = append(result, dagql.String(name))
+	}
+	return result, nil
+}
+
+// introspectWorkspaceModule loads the module behind a workspace config entry's
+// source, resolving local sources against the workspace.
+func introspectWorkspaceModule(
 	ctx context.Context,
 	srv *dagql.Server,
 	ws *core.Workspace,
 	configDir string,
 	source string,
-) ([]constructorArgHint, error) {
+) (*core.Module, error) {
 	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
-		return introspectConstructorArgs(ctx, srv, source)
+		return introspectModule(ctx, srv, source)
 	}
 
 	resolvedSource := workspace.ResolveModuleEntrySource(configDir, source)
 	if filepath.IsAbs(resolvedSource) {
-		return introspectConstructorArgs(ctx, srv, resolvedSource)
+		return introspectModule(ctx, srv, resolvedSource)
 	}
 	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
-		return introspectConstructorArgsFromDirectory(ctx, srv, rootfs, resolvedSource)
+		return introspectModuleFromDirectory(ctx, srv, rootfs, resolvedSource)
 	}
 	if ws.HostPath() != "" {
-		return introspectConstructorArgs(ctx, srv, filepath.Join(ws.HostPath(), resolvedSource))
+		return introspectModule(ctx, srv, filepath.Join(ws.HostPath(), resolvedSource))
 	}
 	return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
 }

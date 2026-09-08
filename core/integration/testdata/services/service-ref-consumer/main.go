@@ -16,6 +16,9 @@ type ServiceRefConsumer struct {
 	Directory       *dagger.Directory
 	File            *dagger.File
 	WorkspaceMarker *dagger.File
+	// A plain string setting, used to check that settings normalization only
+	// rewrites object-typed values.
+	Label string
 }
 
 func New(
@@ -29,6 +32,8 @@ func New(
 	file *dagger.File,
 	// +optional
 	sourceWorkspace *dagger.Workspace,
+	// +optional
+	label string,
 ) *ServiceRefConsumer {
 	var workspaceMarker *dagger.File
 	if sourceWorkspace != nil {
@@ -37,6 +42,7 @@ func New(
 	return &ServiceRefConsumer{
 		App: app, Base: base, Directory: directory, File: file,
 		WorkspaceMarker: workspaceMarker,
+		Label:           label,
 	}
 }
 
