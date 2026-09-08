@@ -1,0 +1,5 @@
+kind: Fixed
+body: Workspace searches scoped to mounted files, directories, or their parent directories now include mounted content without failing on paths absent from the source tree.
+time: 2026-09-07T20:19:21.411421Z
+custom:
+    Author: vito
