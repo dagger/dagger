@@ -39,10 +39,9 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 }
 
 type checkpointState struct {
-	ID       string
-	Portable bool
-	File     struct{ Contents string }
-	Git      struct {
+	ID   string
+	File struct{ Contents string }
+	Git  struct {
 		Head        struct{ Commit string }
 		Uncommitted struct{ ModifiedPaths []string }
 	}
@@ -53,6 +52,24 @@ func readCheckpoint(ctx context.Context, t *testctx.T, c *dagger.Client, query s
 	var got struct{ State checkpointState }
 	require.NoError(t, c.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &got}))
 	return got.State
+}
+
+// workspaceRecipeFields inspects the persisted composition for client-bound
+// inputs that cannot be restored without the originating checkout.
+func workspaceRecipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, workspaceID string) []string {
+	t.Helper()
+	ws := dagger.Ref[*dagger.Workspace](c, dagger.ID(workspaceID))
+	recipe, err := c.LLM().WithWorkspace(ws).PortableID(ctx)
+	require.NoError(t, err)
+	var id call.ID
+	require.NoError(t, id.Decode(string(recipe)))
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+	var fields []string
+	for _, vertex := range dag.GetRecipe().CallsByDigest {
+		fields = append(fields, vertex.Field)
+	}
+	return fields
 }
 
 func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Context, t *testctx.T) {
@@ -77,13 +94,13 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `{
 		currentWorkspace { checkpoint {
-			id portable file(path: "tracked.txt") { contents }
+			id file(path: "tracked.txt") { contents }
 			git { head { commit } uncommitted { modifiedPaths } }
 		} }
 	}`}, &dagger.Response{Data: &captured}))
 	frozen := captured.CurrentWorkspace.Checkpoint
 	require.NotEmpty(t, frozen.ID)
-	require.False(t, frozen.Portable)
+	require.Contains(t, workspaceRecipeFields(ctx, t, c, frozen.ID), "__gitDir")
 	require.Equal(t, "dirty", frozen.File.Contents)
 	require.Equal(t, []string{"tracked.txt"}, frozen.Git.Uncommitted.ModifiedPaths)
 
@@ -92,12 +109,11 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 	git("commit", "-m", "later")
 	again := readCheckpoint(ctx, t, c, `query($id: ID!) {
 		state: node(id: $id) { ... on Workspace {
-			id portable file(path: "tracked.txt") { contents } git { head { commit } }
+			id file(path: "tracked.txt") { contents } git { head { commit } }
 		} }
 	}`, map[string]any{"id": frozen.ID})
 	require.Equal(t, frozen.File.Contents, again.File.Contents)
 	require.Equal(t, frozen.Git.Head.Commit, again.Git.Head.Commit)
-	require.False(t, again.Portable)
 
 	// Every capture reads fresh host state, including its approval candidates.
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "loose.txt"), []byte("untracked bytes"), 0o644))
@@ -116,7 +132,6 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 		CurrentWorkspace struct {
 			WithMountedDirectory struct {
 				Checkpoint struct {
-					Portable  bool
 					File      struct{ Contents string }
 					Untracked struct{ Contents string }
 				}
@@ -127,7 +142,6 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 		Query: `query($mount: ID!) {
 			currentWorkspace { withMountedDirectory(path: "/deps", source: $mount) {
 				checkpoint(include: ["loose.txt"]) {
-					portable
 					file(path: "/deps/readme.txt") { contents }
 					untracked: file(path: "/loose.txt") { contents }
 				}
@@ -135,7 +149,6 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 		}`,
 		Variables: map[string]any{"mount": mountID},
 	}, &dagger.Response{Data: &mounted}))
-	require.False(t, mounted.CurrentWorkspace.WithMountedDirectory.Checkpoint.Portable)
 	require.Equal(t, "mounted", mounted.CurrentWorkspace.WithMountedDirectory.Checkpoint.File.Contents)
 	require.Equal(t, "untracked bytes", mounted.CurrentWorkspace.WithMountedDirectory.Checkpoint.Untracked.Contents)
 
@@ -149,11 +162,11 @@ func (WorkspaceSuite) TestWorkspaceCheckpointFreezesLocalCheckout(ctx context.Co
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `{
 		currentWorkspace { checkpoint(include: ["loose.txt"]) {
-			id portable file(path: "tracked.txt") { contents }
+			id file(path: "tracked.txt") { contents }
 		} }
 	}`}, &dagger.Response{Data: &localRemote}))
-	require.False(t, localRemote.CurrentWorkspace.Checkpoint.Portable)
 	require.Equal(t, "later", localRemote.CurrentWorkspace.Checkpoint.File.Contents)
+	require.Contains(t, workspaceRecipeFields(ctx, t, c, localRemote.CurrentWorkspace.Checkpoint.ID), "__gitDir")
 }
 
 func (WorkspaceSuite) TestWorkspaceCheckpointPortableCapture(ctx context.Context, t *testctx.T) {
@@ -161,7 +174,7 @@ func (WorkspaceSuite) TestWorkspaceCheckpointPortableCapture(ctx context.Context
 	base := checkpointCheckoutBase(ctx, t, c)
 	out, err := base.With(daggerQuery(`{
 		currentWorkspace { checkpoint {
-			id portable file(path: "tracked.txt") { contents }
+			id file(path: "tracked.txt") { contents }
 			git { head { commit } uncommitted { modifiedPaths } }
 		} }
 	}`)).Stdout(ctx)
@@ -172,7 +185,6 @@ func (WorkspaceSuite) TestWorkspaceCheckpointPortableCapture(ctx context.Context
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
 	frozen := got.CurrentWorkspace.Checkpoint
 	require.NotEmpty(t, frozen.ID)
-	require.True(t, frozen.Portable)
 	require.Equal(t, "base\ndirty\n", frozen.File.Contents)
 	require.Equal(t, []string{"tracked.txt"}, frozen.Git.Uncommitted.ModifiedPaths)
 
@@ -233,18 +245,16 @@ func (*Probe) Frozen() error { return nil }
 	var got struct {
 		Node struct {
 			Checkpoint struct {
-				Portable bool
-				Checks   struct{ List []struct{ Name string } }
+				Checks struct{ List []struct{ Name string } }
 			}
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!) { node(id: $id) { ... on Workspace {
-			checkpoint { portable checks(noGenerate: true) { list { name } } }
+			checkpoint { checks(noGenerate: true) { list { name } } }
 		} } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &got}))
-	require.True(t, got.Node.Checkpoint.Portable)
 	require.Len(t, got.Node.Checkpoint.Checks.List, 1)
 	require.Equal(t, "probe:frozen", got.Node.Checkpoint.Checks.List[0].Name)
 }
@@ -343,12 +353,12 @@ func (WorkspaceSuite) TestWorkspaceCheckpointHostDirectoryIsSessionOnly(ctx cont
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($path: String!) { host { directory(path: $path) {
-			asWorkspace { checkpoint { id portable } }
+			asWorkspace { checkpoint { id } }
 		} } }`,
 		Variables: map[string]any{"path": t.TempDir()},
 	}, &dagger.Response{Data: &got}))
 	require.NotEmpty(t, got.Host.Directory.AsWorkspace.Checkpoint.ID)
-	require.False(t, got.Host.Directory.AsWorkspace.Checkpoint.Portable)
+	require.Contains(t, workspaceRecipeFields(ctx, t, c, got.Host.Directory.AsWorkspace.Checkpoint.ID), "host")
 }
 
 func (WorkspaceSuite) TestWorkspaceCheckpointReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {

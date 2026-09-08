@@ -784,15 +784,3 @@ func checkpointPromptClient(ctx context.Context, client prompt.PromptClient, sup
 	}
 	return checkpointCancel, nil
 }
-
-func (s *workspaceSchema) portable(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ struct{}) (dagql.Boolean, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return false, err
-	}
-	recipe, err := parent.RecipeID(ctx)
-	if err != nil {
-		return false, err
-	}
-	return dagql.Boolean(srv.ClassifyRecipe(recipe).NotReplayable == nil), nil
-}

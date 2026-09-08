@@ -103,9 +103,6 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	plan, err = planWorkspacePull(ctx, c, pulled, source, nil, 100)
 	require.NoError(t, err)
 	require.Empty(t, plan)
-	portable, err := pulled.Portable(ctx)
-	require.NoError(t, err)
-	require.True(t, portable)
 	// The returned composition has pinned refs, not a mutable branch lookup.
 	recipe, err := c.LLM().WithWorkspace(pulled).PortableID(ctx)
 	require.NoError(t, err)

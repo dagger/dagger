@@ -16,9 +16,8 @@ import (
 const workspaceCommitDate = "2026-09-05T12:00:00Z"
 
 type workspaceCommitState struct {
-	ID       dagger.ID
-	Portable bool
-	Git      struct {
+	ID  dagger.ID
+	Git struct {
 		Repository struct{ URL *string }
 		Head       struct {
 			Commit       string
@@ -42,7 +41,7 @@ func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace
 	err = c.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!, $message: String!, $paths: [String!]!, $date: String!) {
 			node(id: $id) { ... on Workspace { withCommit(message: $message, paths: $paths, date: $date) {
-				id portable git {
+				id git {
 					repository: __repository { url }
 					head { commit targetCommit { message authorName authorEmail authoredDate committedDate } }
 					uncommitted { addedPaths modifiedPaths removedPaths }
@@ -89,7 +88,6 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.Equal(t, "dagger@localhost", first.Git.Head.TargetCommit.AuthorEmail)
 	require.Equal(t, workspaceCommitDate, first.Git.Head.TargetCommit.AuthoredDate)
 	require.Equal(t, workspaceCommitDate, first.Git.Head.TargetCommit.CommittedDate)
-	require.True(t, first.Portable)
 	require.NotNil(t, first.Git.Repository.URL)
 	require.Equal(t, url, *first.Git.Repository.URL)
 	frozen := dagger.Ref[*dagger.Workspace](c, first.ID)
@@ -176,7 +174,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", nil)
 	require.NoError(t, err)
-	require.False(t, committed.Portable)
+	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(committed.ID)), "__gitDir")
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
 	require.Equal(t, "Original Author", committed.Git.Head.TargetCommit.AuthorName)
 	require.Equal(t, "original@example.com", committed.Git.Head.TargetCommit.AuthorEmail)
@@ -322,9 +320,6 @@ func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.C
 	log, err := restored.Git().Head().Log(ctx)
 	require.NoError(t, err)
 	require.Len(t, log, 3)
-	portable, err := restored.Portable(ctx)
-	require.NoError(t, err)
-	require.True(t, portable)
 	next, err := commitWorkspace(ctx, c, restored.WithNewFile("next.txt", "next"), "next commit", nil)
 	require.NoError(t, err)
 	require.Equal(t, "Checkpoint", next.Git.Head.TargetCommit.AuthorName)
@@ -382,7 +377,6 @@ func (WorkspaceSuite) TestWorkspaceWithCommitDirectoryRepository(ctx context.Con
 		Branch("main").Tree().WithNewFile("base.txt", "changed")
 	committed, err := commitWorkspace(ctx, c, directory.AsWorkspace(), "directory repo", nil)
 	require.NoError(t, err)
-	require.True(t, committed.Portable)
 	require.Empty(t, committed.Git.Uncommitted.ModifiedPaths)
 	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
 	contents, err := frozen.File("base.txt").Contents(ctx)

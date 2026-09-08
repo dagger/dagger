@@ -136,9 +136,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxUntrackedTotalBytes").Doc("Maximum total size of untracked files, in bytes."),
 				dagql.Arg("maxUntrackedFiles").Doc("Maximum number of untracked files."),
 			),
-		dagql.NodeFunc("portable", s.portable).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Whether this workspace's recipe can be replayed without its originating client."),
 		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.").
