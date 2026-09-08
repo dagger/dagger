@@ -15,7 +15,7 @@
 ["","git-sha",["https://github.com/gogo/protobuf.git","refs/tags/v1.3.2"],"b03c65ea87cdc3521ede29f62fe3ce239267c1bc"]
 ["","git-sha",["https://github.com/libfuse/sshfs.git","refs/tags/sshfs-3.7.6"],"7a2d988775446ebe7af9b01c99b3b8e86bddb05a"]
 ["","git-sha",["https://github.com/opencontainers/runc","refs/tags/v1.4.2"],"c241c0bb5e60a8e8c1b2e53d4eca8d0068d8d57e"]
-["","git-sha",["https://github.com/vito/agents","refs/heads/main"],"26f4108f7c162a5e3998cc748a011b4f90da007f"]
+["","git-sha",["https://github.com/vito/agents","refs/heads/main"],"b66ffae4e8434fbd9c5ba91cc32a722be7bac6d1"]
 ["","git-sha",["https://github.com/vito/editor","refs/heads/main"],"f27ffcef3dd65bfe3f764af6c29e98f821dc8a81"]
 ["","oci-latest",["cgr.dev/chainguard/wolfi-base"],"latest"]
 ["","oci-latest",["docker.io/library/busybox"],"1.38.0"]
