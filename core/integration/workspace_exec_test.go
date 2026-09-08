@@ -134,8 +134,7 @@ type Tool {
 			"dagger", "-W", workspace, "ws", "exec", "--auto-apply",
 			"sh", "-c", `printf 'partial\n' > partial.txt; exit 23`,
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		status, err := result.ExitCode(ctx)
 		require.NoError(t, err)
@@ -181,8 +180,7 @@ type Tool {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "exec", "--auto-apply", "--no-apply", "true",
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -208,8 +206,7 @@ type Tool {
 		apply := base.WithExec([]string{
 			"dagger", "-W", remote, "ws", "exec", "--auto-apply", "sh", "-c", `printf 'remote\n' > remote.txt`,
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		stderr, err = apply.Stderr(ctx)
 		require.NoError(t, err)

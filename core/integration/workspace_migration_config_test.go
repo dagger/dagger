@@ -93,8 +93,7 @@ package = 'bindings'
 	require.NoError(t, err)
 	require.Equal(t, updated, repeated)
 	empty, err := again.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
-		Stdin:                         `{currentWorkspace { migrate { changes { isEmpty } } }}`,
-		ExperimentalPrivilegedNesting: true,
+		Stdin: `{currentWorkspace { migrate { changes { isEmpty } } }}`,
 	}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, empty, `"isEmpty": true`)

@@ -78,7 +78,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
 		WithEnvVariable("DAGGER_SILENT", "true").
-		WithExec([]string{"go", "run", "./core/integration/testdata/basic-container/"}).
+		WithExec([]string{"go", "run", "./core/integration/testdata/basic-container/"}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 		Sync(ctx)
 	require.NoError(t, err, "silent SDK session handshake, query, and close must succeed")
 
@@ -200,7 +200,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 		WithUser("auser").
 		WithWorkdir("/work").
 		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 		File("/home/auser/.local/state/dagger/stable_client_id").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 	clientCtr := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
 	_, err := clientCtr.
 		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableNesting: true}).Sync(ctx)
 
 	require.NoError(t, err)
 }
@@ -300,7 +300,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		WithExec([]string{"git", "init"}). // init a git repo to test git labels
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init test repo"}).
-		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
+		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 		Stderr(ctx)
 	require.NoError(t, err)
 

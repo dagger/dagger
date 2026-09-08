@@ -195,7 +195,7 @@ password = "env://PASSWORD"
 service = "tcp://www:80"
 `)
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}, nestedExec).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "README.md")
 	})
@@ -214,34 +214,34 @@ password = "env://PASSWORD"
 service = "tcp://www:80"
 `)
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "--help"}, nestedExec).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "--help"}).Stdout(ctx)
 		out = trimDaggerFunctionUsageText(out)
 		require.NoError(t, err)
 		require.Regexp(t, `(?m)--count int *\(default 7\)\s*$`, out)
 		require.Regexp(t, `(?m)--greeting string *\(default "yay"\)\s*$`, out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yay", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, nestedExec).CombinedOutput(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "user default:")
 		require.Contains(t, out, "yay")
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "7", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "--greeting=bonjour", "greeting"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "--greeting=bonjour", "greeting"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "bonjour", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "file", "contents"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "file", "contents"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello there!", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "dir", "entries"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello.txt\n", out)
 	})
@@ -260,8 +260,7 @@ service = "tcp://www:80"
 `).WithNewFile(".env", "SUPERCONSTRUCTOR_greeting=from-env")
 
 		stderr, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, dagger.ContainerWithExecOpts{
-			Expect:                        dagger.ReturnTypeFailure,
-			ExperimentalPrivilegedNesting: true,
+			Expect: dagger.ReturnTypeFailure,
 		}).Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stderr, "required")
@@ -347,7 +346,7 @@ service = "tcp://www:80"
 unknown = "ignored"
 `)
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, nestedExec).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "configured", out)
 	})
@@ -370,11 +369,11 @@ PASSWORD = "env://PASSWORD"
 SERVICE = "tcp://www:80"
 `)
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}, nestedExec).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "greeting"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "case-insensitive", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "9", out)
 	})
@@ -417,8 +416,7 @@ service = "tcp://www:80"
 `)
 
 		errOut, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "count"}, dagger.ContainerWithExecOpts{
-			Expect:                        dagger.ReturnTypeFailure,
-			ExperimentalPrivilegedNesting: true,
+			Expect: dagger.ReturnTypeFailure,
 		}).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, errOut, "count")
@@ -441,11 +439,11 @@ password = "env://PASSWORD"
 service = "tcp://www:80"
 `)
 
-		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "--greeting=override", "count"}, nestedExec).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "call", "--greeting=override", "count"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "7", out)
 
-		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "--count=11", "greeting"}, nestedExec).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "--progress=report", "call", "--count=11", "greeting"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "configured", out)
 	})
@@ -547,8 +545,7 @@ service = %s
 
 				args := append([]string{"dagger", "--progress=report", "call"}, tc.call...)
 				errOut, err := ctr.WithExec(args, dagger.ContainerWithExecOpts{
-					Expect:                        dagger.ReturnTypeFailure,
-					ExperimentalPrivilegedNesting: true,
+					Expect: dagger.ReturnTypeFailure,
 				}).CombinedOutput(ctx)
 				require.NoError(t, err)
 				for _, want := range tc.assert {

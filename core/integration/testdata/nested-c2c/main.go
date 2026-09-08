@@ -94,9 +94,7 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 		WithEnvVariable("NOW", rand.Text()).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		WithServiceBinding("mirror", mirrorSvc).
-		WithExec(args, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec(args).
 		Stdout(ctx)
 	if err != nil {
 		fatal(err)

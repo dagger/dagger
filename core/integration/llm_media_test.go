@@ -240,8 +240,7 @@ type Browser {
 }
 `, caption, mediaPNG)).
 		WithExec([]string{"dagger", "--progress=plain", "-vv", "script"}, dagger.ContainerWithExecOpts{
-			Stdin:                         fmt.Sprintf(`llm --model=%q | with-tools $(browser) | with-prompt %q | loop | last-reply`, model, prompt),
-			ExperimentalPrivilegedNesting: true,
+			Stdin: fmt.Sprintf(`llm --model=%q | with-tools $(browser) | with-prompt %q | loop | last-reply`, model, prompt),
 		})
 	out, err := ctr.Stdout(ctx)
 	require.NoError(t, err)

@@ -57,6 +57,32 @@ func TestServices(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ServiceSuite{})
 }
 
+func (ServiceSuite) TestNesting(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name           string
+		disableNesting bool
+		want           string
+	}{
+		{name: "default enabled", want: "enabled\n"},
+		{name: "nesting disabled", disableNesting: true, want: "disabled\n"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			svc := c.Container().From(busyboxImage).
+				WithExposedPort(8080).
+				AsService(dagger.ContainerAsServiceOpts{
+					Args:           []string{"sh", "-c", `mkdir -p /www; if [ -n "$DAGGER_SESSION_PORT" ]; then echo enabled; else echo disabled; fi > /www/index.html; exec httpd -f -p 8080 -h /www`},
+					DisableNesting: tc.disableNesting,
+				})
+			out, err := c.Container().From(alpineImage).
+				WithServiceBinding("nested", svc).
+				WithExec([]string{"wget", "-qO-", "http://nested:8080"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+}
+
 func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	hostname := func(ctx context.Context, c *dagger.Client) string {
 		www := c.Directory().WithNewFile("index.html", "Hello, world!")
@@ -901,8 +927,6 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"exec", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -936,8 +960,6 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"http", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -971,8 +993,6 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"git", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)

@@ -134,7 +134,6 @@ type Myapp {
     }
   }
 }`,
-			ExperimentalPrivilegedNesting: true,
 		})
 		out, err := preview.Stdout(ctx)
 		require.NoError(t, err)

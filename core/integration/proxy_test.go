@@ -260,7 +260,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 				"-test.timeout", "20m",
 				"-test.count", "1",
 				"-test.run", exactName,
-			}).Sync(ctx)
+			}, dagger.ContainerWithExecOpts{DisableNesting: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		require.NoError(t, err)
@@ -570,7 +570,7 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 				"-test.timeout", "20m",
 				"-test.count", "1",
 				"-test.run", fmt.Sprintf("^%s$", t.Name()),
-			}).
+			}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 

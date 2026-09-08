@@ -41,7 +41,6 @@ func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"wtf://foobar",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `unsupported secret provider: "wtf"`)
 
@@ -49,7 +48,6 @@ func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"wtf",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `malformed id`)
 }
@@ -65,7 +63,6 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr.WithEnvVariable("TOPSECRET", secretValue),
 		"env://TOPSECRET",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -74,7 +71,6 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"env://TOPSECRET",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret env var not found: "TOP..."`)
 }
@@ -90,7 +86,6 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr.WithNewFile("/tmp/topsecret", secretValue),
 		"file:///tmp/topsecret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -99,7 +94,6 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"file:///tmp/topsecret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "no such file or directory")
 }
@@ -116,7 +110,6 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		`cmd://echo `+secretValueEncoded+` | base64 -d`,
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -125,7 +118,6 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"cmd://exit 1",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "failed to run secret command")
 }
@@ -291,7 +283,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -300,7 +291,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://secret/testsecret.bar",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret "bar" not found in path "secret/testsecret"`)
 
@@ -308,7 +298,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://secret/nosecret.baz",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret not found`)
 }
@@ -326,7 +315,6 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
 	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
@@ -343,7 +331,6 @@ func (SecretProvider) TestVaultOIDCMissingVaultAddr(ctx context.Context, t *test
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "VAULT_ADDR must be set when using Vault OIDC fallback auth")
 }
@@ -364,7 +351,6 @@ func (SecretProvider) TestVaultOIDCTokenPriority(ctx context.Context, t *testctx
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -385,7 +371,6 @@ func (SecretProvider) TestVaultOIDCCachedToken(ctx context.Context, t *testctx.T
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -405,7 +390,6 @@ func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *te
 		ctx,
 		ctr,
 		"vault://secret/testsecret.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
 	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
@@ -439,7 +423,6 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 		queryCtx,
 		ctr,
 		"vault://secret/oidctest.foo",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -497,9 +480,8 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 				}).
 				WithExposedPort(8200).
 				AsService(dagger.ContainerAsServiceOpts{
-					UseEntrypoint:                 true,
-					ExperimentalPrivilegedNesting: true,
-					InsecureRootCapabilities:      true,
+					UseEntrypoint:            true,
+					InsecureRootCapabilities: true,
 				}).Start(ctx)
 			require.NoError(t, err)
 
@@ -529,6 +511,7 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 	opts := dagger.ContainerWithExecOpts{
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
+		DisableNesting:           true,
 	}
 
 	ctr := c.Container().
@@ -671,7 +654,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+sm://test/string-secret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -681,7 +663,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+sm://test/json-secret?field=password",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -691,7 +672,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+ps://test/parameter",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, paramValue, out)
@@ -701,7 +681,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+sm://nonexistent/secret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "secret not found")
 
@@ -710,7 +689,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+ps://nonexistent/parameter",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "parameter not found")
 
@@ -719,7 +697,6 @@ floci:
 		ctx,
 		ctr,
 		"aws+sm://test/json-secret?field=nonexistent",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "not found in JSON secret")
 
@@ -728,24 +705,22 @@ floci:
 		ctx,
 		ctr,
 		"aws+sm://test/string-secret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	out2, err := fetchSecret(
 		ctx,
 		ctr,
 		"aws+sm://test/string-secret",
-		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, out1, out2)
 }
 
-func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts dagger.ContainerWithExecOpts) (string, error) {
+func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts ...dagger.ContainerWithExecOpts) (string, error) {
 	query := fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url)
-	opts.Stdin = query
+	opts = append([]dagger.ContainerWithExecOpts{{Stdin: query}}, opts...)
 
-	out, err := ctr.WithExec([]string{"dagger", "query"}, opts).Stdout(ctx)
+	out, err := ctr.WithExec([]string{"dagger", "query"}, opts...).Stdout(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -884,7 +859,7 @@ vault policy write oidc-read /tmp/oidc-read.hcl`}).
 	require.NoError(t, err)
 }
 
-func querySecretWithOIDCBrowserSimulation(ctx context.Context, ctr *dagger.Container, url string, opts dagger.ContainerWithExecOpts) (string, error) {
+func querySecretWithOIDCBrowserSimulation(ctx context.Context, ctr *dagger.Container, url string) (string, error) {
 	script := fmt.Sprintf(`set -eu
 
 query=%q
@@ -1017,7 +992,7 @@ cat "$secret_out"
 
 	out, err := ctr.
 		WithNewFile("/tmp/run-vault-oidc-flow.sh", script, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
-		WithExec([]string{"sh", "/tmp/run-vault-oidc-flow.sh"}, opts).
+		WithExec([]string{"sh", "/tmp/run-vault-oidc-flow.sh"}).
 		Stdout(ctx)
 	if err != nil {
 		var execErr *dagger.ExecError
