@@ -273,6 +273,7 @@ func init() {
 		callCoreCmd.Command(),
 		apiQueryCmd,
 		queryCmd,
+		apiSchemaCmd,
 		apiWithSessionCmd,
 		runCmd,
 		apiListenCmd,

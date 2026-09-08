@@ -13,6 +13,28 @@ Each type page combines hand-curated guidance, when available, with a complete s
 
 To call the API from your own program, see [Client libraries](../client-libraries/index.mdx).
 
+## Printing the served schema
+
+The pages here document the core API. To see the schema your engine is actually
+serving right now — core types plus the extensions contributed by every module
+loaded in your workspace — print it as GraphQL SDL:
+
+```shell
+dagger api schema
+```
+
+Narrow the output to what a single module contributes, drop module extensions
+entirely, or emit the raw introspection JSON instead:
+
+```shell
+dagger api schema golang
+dagger api schema --core
+dagger api schema --json
+```
+
+Types and `Query` fields contributed by a module carry a `@sourceMap` directive
+naming the module they came from.
+
 The following table highlights commonly used types:
 
 | Type | Description |
