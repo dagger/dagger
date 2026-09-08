@@ -68,14 +68,26 @@ func (s *workspaceSchema) workspaceLockChangeset(
 	// The diff only ever covers the lockfile write, so a base scoped to the
 	// lock path yields the same changeset without materializing the whole
 	// tree for host workspaces.
+	lockPath := filepath.ToSlash(ws.LockFile)
 	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{
-		Include: []string{filepath.ToSlash(ws.LockFile)},
+		Include: []string{lockPath},
 	}, false)
 	if err != nil {
 		return changes, err
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return changes, err
+	}
+
+	// The first lock write in a subdirectory matches nothing, so without this
+	// the changeset carries that subdirectory as added and the overlay applies
+	// it over the directory the workspace already has.
+	baseDir, err = mergeParentDirs(ctx, srv, baseDir, []string{lockPath},
+		func(filter core.CopyFilter) (dagql.ObjectResult[*core.Directory], error) {
+			return s.resolveRootfs(ctx, ws, ".", filter, false)
+		})
 	if err != nil {
 		return changes, err
 	}
