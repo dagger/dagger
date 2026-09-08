@@ -410,14 +410,7 @@ func (s *workspaceSchema) withoutSDKModuleClient(
 	entry := staged.Config.SDKs[winner.sdk.name]
 	scope := entry.Scopes[winner.configScopePath]
 	scope.Clients = slices.DeleteFunc(scope.Clients, func(target string) bool { return target == args.Module })
-	if !scope.IsModule && len(scope.Clients) == 0 && len(scope.Settings) == 0 {
-		delete(entry.Scopes, winner.configScopePath)
-	} else {
-		entry.Scopes[winner.configScopePath] = scope
-	}
-	if len(entry.Scopes) == 0 {
-		entry.Scopes = nil
-	}
+	entry.Scopes[winner.configScopePath] = scope
 	staged.Config.SDKs[winner.sdk.name] = entry
 	updated, err := s.stageSDKModuleConfig(ctx, parent, staged, nil)
 	if err != nil {

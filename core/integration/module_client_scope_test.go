@@ -199,7 +199,9 @@ func (GeneratorsSuite) TestModuleClientListRemoval(ctx context.Context, t *testc
 [sdks.go.scopes."."]
 clients = ["target"]
 [sdks.go.scopes.app]
+name = "checkout"
 clients = ["target"]
+settings.clientOutputDir = "go-clients"
 [sdks.python.scopes.app]
 clients = ["target"]
 [sdks.python.scopes.other]
@@ -233,7 +235,9 @@ clients = ["github.com/example/module/subdir@v1.2.3"]
 			require.NoError(t, err, out)
 			expected := readModuleClientConfig(ctx, t, base)
 			entry := expected.SDKs[sdk]
-			delete(entry.Scopes, scopePath)
+			scope := entry.Scopes[scopePath]
+			scope.Clients = nil
+			entry.Scopes[scopePath] = scope
 			expected.SDKs[sdk] = entry
 			require.Equal(t, expected, readModuleClientConfig(ctx, t, removed))
 		})
@@ -262,7 +266,7 @@ clients = ["github.com/example/module/subdir@v1.2.3"]
 		With(daggerNonNestedExec("module", "client", "rm", "target", "-y"))
 	out, err := unique.CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Empty(t, readModuleClientConfig(ctx, t, unique).SDKs["go"].Scopes)
+	require.Equal(t, map[string]workspacecfg.SDKScope{"app": {}}, readModuleClientConfig(ctx, t, unique).SDKs["go"].Scopes)
 
 	deepest := base.WithNewFile("/work/dagger.toml", moduleClientScopeConfig+`
 [sdks.go.scopes."."]
@@ -273,7 +277,7 @@ clients = ["target"]
 	out, err = deepest.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	cfg := readModuleClientConfig(ctx, t, deepest)
-	require.Empty(t, cfg.SDKs["python"].Scopes)
+	require.Equal(t, map[string]workspacecfg.SDKScope{"app": {}}, cfg.SDKs["python"].Scopes)
 	require.Equal(t, []string{"target"}, cfg.SDKs["go"].Scopes["."].Clients)
 }
 
