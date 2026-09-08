@@ -188,15 +188,21 @@ func (s *workspaceSchema) commitDirectory(ctx context.Context, parent dagql.Obje
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-func (s *workspaceSchema) commitRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+func (s *workspaceSchema) commitRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (dagql.ObjectResult[*core.GitRepository], error) {
+	return workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{
+		Field: "__commitDirectory", Args: args.selectors(),
+	})
+}
+
+// workspaceRepositoryFromDirectory opens an engine-side directory while
+// preserving the workspace's logical origin and push routing.
+func workspaceRepositoryFromDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], directory dagql.Selector) (inst dagql.ObjectResult[*core.GitRepository], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &dir, dagql.Selector{
-		Field: "__commitDirectory", Args: args.selectors(),
-	}); err != nil {
+	if err := srv.Select(ctx, parent, &dir, directory); err != nil {
 		return inst, err
 	}
 	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{Directory: dir})

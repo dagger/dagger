@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -133,29 +132,8 @@ func (s *workspaceSchema) resetDirectory(ctx context.Context, parent dagql.Objec
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-func (s *workspaceSchema) resetRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceResetArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &dir, dagql.Selector{
+func (s *workspaceSchema) resetRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceResetArgs) (dagql.ObjectResult[*core.GitRepository], error) {
+	return workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{
 		Field: "__resetDirectory", Args: args.selectors(),
-	}); err != nil {
-		return inst, err
-	}
-	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{Directory: dir})
-	if err != nil {
-		return inst, err
-	}
-	// Keep the logical origin even though the objects now live engine-side,
-	// just as __commitRepository does.
-	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return inst, err
-	}
-	repo.URL = head.Self().Repo.Self().URL
-	repo.PushURLs = slices.Clone(head.Self().Repo.Self().PushURLs)
-	repo.DiscardGitDir = head.Self().Repo.Self().DiscardGitDir
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+	})
 }
