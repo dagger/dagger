@@ -23,29 +23,21 @@ import (
 type moduleRefCycleKey struct{}
 
 // resolveModuleRef detects and resolves a module function reference, wiring
-// one module's function output into another object-typed value. Two spellings
-// are accepted: the long form "<module>:<function>" (e.g. "docusaurus:serve")
-// and the short form "<function>", which names a function of the workspace
-// entrypoint module (whose functions are hoisted onto the Query root).
+// one module's function output into another object-typed value: the long form
+// "<module>:<function>" or the short form "<function>" (a workspace entrypoint function).
 //
 // Detection & precedence (commit-on-match, no silent fallback):
 //   - A long-form candidate contains EXACTLY one ":" with non-empty parts on
 //     both sides. Strings containing "://" (URL-ish, e.g. "tcp://...") are
 //     never module refs.
-//   - A short-form candidate is a bare name (no ":" or "/", not a relative
-//     path). It is committed only if the entrypoint has that function;
-//     otherwise it keeps its ordinary address meaning (image name, file name).
+//   - A short-form candidate is a bare name, committed only if the entrypoint
+//     has that function; otherwise it keeps its ordinary address meaning.
 //   - The first segment is normalized to a gql field name and looked up on the
-//     CANONICAL Query root's object type. Only if a field of that name EXISTS
-//     — AND carries module provenance (FieldSpec.Module != nil), which
-//     distinguishes a module constructor from a reserved core field like
-//     "git" or "secret" that shares the root namespace — is the string
-//     committed as a module ref. The canonical server is used because the
-//     workspace entrypoint's constructor is only installed there: the sugared
-//     (client-facing) server hoists its functions onto the root as proxies
-//     and never installs the module field itself, so resolving against the
-//     sugared root would make an entrypoint module unreferenceable (see
-//     hack/designs/entrypoint-proxy.md).
+//     canonical Query root's object type (the sugared root omits the
+//     entrypoint's constructor). Only if a field of that name EXISTS — AND
+//     carries module provenance (FieldSpec.Module != nil), which distinguishes
+//     a module constructor from a reserved core field like "git" or "secret"
+//     that shares the root namespace — is the string committed as a module ref.
 //   - Once committed, any subsequent failure (unknown function, type mismatch,
 //     cycle) is a HARD error and does NOT fall through to image/URL handling.
 //
@@ -79,10 +71,7 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 		return false, nil
 	}
 
-	// Resolve against the canonical server: every module's constructor
-	// lives there, including the workspace entrypoint's, whose field is
-	// skipped on the sugared server in favor of hoisted function proxies.
-	// For servers without an entrypoint Canonical() returns the receiver.
+	// The entrypoint's constructor only exists on the canonical server.
 	srv := dagql.CurrentDagqlServer(ctx)
 	if srv == nil {
 		return false, nil
@@ -258,8 +247,7 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 }
 
 // currentWorkspaceConfig returns the workspace config visible to the current
-// query, or ok=false when there is none. Errors are deliberately discarded: no
-// visible workspace means the string cannot be a module ref.
+// query, or ok=false when there is none (errors are deliberately discarded).
 func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *core.Workspace, ok bool) {
 	q, _ := core.CurrentQuery(ctx)
 	if q == nil {
@@ -276,8 +264,7 @@ func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *cor
 	return cfg, ws, true
 }
 
-// workspaceEntrypointModuleName returns the install name of the workspace
-// entrypoint module, the target of short-form references.
+// workspaceEntrypointModuleName returns the install name of the entrypoint module.
 func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
 	cfg, _, ok := currentWorkspaceConfig(ctx)
 	if !ok {
