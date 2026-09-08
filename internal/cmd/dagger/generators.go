@@ -206,17 +206,14 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	cs, err := generatorGroup.
+	generated := generatorGroup.
 		Run().
-		Changes(
-			dagger.GeneratorGroupChangesOpts{
+		Workspace(
+			dagger.GeneratorGroupWorkspaceOpts{
 				OnConflict: dagger.ChangesetsMergeConflictFailEarly,
 			},
-		).Sync(ctx)
-	if err != nil {
-		return err
-	}
-	err = handleChangesetResponseWithDisposition(ctx, dag, cs, disposition, previewOut)
+		)
+	_, err := handleWorkspaceResponseWithDisposition(ctx, dag, dag.CurrentWorkspace(), generated, disposition, previewOut)
 	if errors.Is(err, idtui.ErrNonInteractive) {
 		return fmt.Errorf("%w; pass -y/--auto-apply to apply changes, or --no-apply to show them without applying", idtui.ErrNonInteractive)
 	}

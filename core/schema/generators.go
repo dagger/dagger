@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -32,6 +33,12 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("onConflict").Doc(`Strategy to apply on conflicts between generators`),
 			),
+
+		dagql.NodeFunc("workspace", s.workspace).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("The workspace with the combined output from the last generator run").
+			Args(dagql.Arg("onConflict").Doc("Strategy to apply on conflicts between generators")),
 
 		dagql.Func("loadFailures", s.loadFailures).
 			View(AfterVersion("v1.0.0-0")).
@@ -94,15 +101,10 @@ func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, 
 	if err != nil {
 		return nil, err
 	}
-	aggregateRunner := func(context.Context, *core.SyntheticGeneratorSpec) (dagql.ObjectResult[*core.Changeset], error) {
-		return aggregate, nil
+	aggregateRunner := func(context.Context, *core.SyntheticGeneratorSpec) (dagql.ObjectResult[*core.Workspace], dagql.ObjectResult[*core.Workspace], error) {
+		return base, aggregate, nil
 	}
-	completed, err := parent.Run(ctx, aggregateRunner)
-	if err != nil {
-		return nil, err
-	}
-	completed.SyntheticChanges = aggregate
-	return completed, nil
+	return parent.Run(ctx, aggregateRunner)
 }
 
 type generatorsGroupIsEmptyArgs struct {
@@ -117,9 +119,94 @@ type generatorsGroupChangesArgs struct {
 	OnConflict ChangesetsMergeConflict `default:"FAIL_EARLY"`
 }
 
-func (s generatorsSchema) groupChanges(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (*core.Changeset, error) {
-	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
-	return parent.Self().Changes(ctx, onConflictStrategy)
+func (s generatorsSchema) groupChanges(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (dagql.ObjectResult[*core.Changeset], error) {
+	changes, err := s.groupChangesAtRoot(ctx, parent.Self(), args.OnConflict)
+	if err != nil {
+		return changes, err
+	}
+	if ws := parent.Self().BoundWorkspace.Self(); ws != nil {
+		return reRootChangesetToCwd(ctx, changes, ws.Cwd)
+	}
+	return changes, nil
+}
+
+// groupChangesAtRoot converts Workspace output only for the Changeset merge.
+// All merge inputs use workspace-root paths, including regular generators.
+func (s generatorsSchema) groupChangesAtRoot(ctx context.Context, group *core.GeneratorGroup, onConflict ChangesetsMergeConflict) (dagql.ObjectResult[*core.Changeset], error) {
+	var merged dagql.ObjectResult[*core.Changeset]
+	results, err := group.ChangeResults(ctx)
+	if err != nil {
+		return merged, err
+	}
+	ids := make(dagql.ArrayInput[dagql.ID[*core.Changeset]], 0, len(results))
+	for _, result := range results {
+		id, err := result.ID()
+		if err != nil {
+			return merged, err
+		}
+		ids = append(ids, dagql.NewID[*core.Changeset](id))
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return merged, err
+	}
+	if err := dag.Select(ctx, dag.Root(), &merged,
+		dagql.Selector{Field: "changeset"},
+		dagql.Selector{Field: "withChangesets", Args: []dagql.NamedInput{
+			{Name: "changes", Value: ids},
+			{Name: "onConflict", Value: onConflict},
+		}},
+	); err != nil {
+		return merged, err
+	}
+	if err := group.VerifySkippedModules(ctx, results); err != nil {
+		return merged, err
+	}
+	return merged, nil
+}
+
+func (s generatorsSchema) workspace(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (dagql.ObjectResult[*core.Workspace], error) {
+	group := parent.Self()
+	base, err := syntheticGeneratorWorkspace(ctx, group.BoundWorkspace)
+	if err != nil {
+		return base, err
+	}
+	if group.BoundWorkspace.Self() == nil {
+		group = group.Clone()
+		group.BoundWorkspace = base
+	}
+	generated := base
+	regular := false
+	for _, generator := range group.Generators {
+		if !generator.Completed {
+			return base, fmt.Errorf("generator %q must be run before querying workspace", generator.Name())
+		}
+		if generator.Synthetic == nil {
+			regular = true
+		} else {
+			generated = generator.WorkspaceResult
+			if generated.Self() == nil {
+				return base, fmt.Errorf("generator %q did not produce a workspace result", generator.Name())
+			}
+		}
+	}
+	if !regular {
+		if len(group.LoadFailures) > 0 {
+			changes, err := (&workspaceSchema{}).workspaceChangesBetween(ctx, base, generated)
+			if err != nil {
+				return base, err
+			}
+			if err := group.VerifySkippedModules(ctx, []dagql.ObjectResult[*core.Changeset]{changes}); err != nil {
+				return base, err
+			}
+		}
+		return generated, nil
+	}
+	changes, err := s.groupChangesAtRoot(ctx, group, args.OnConflict)
+	if err != nil {
+		return base, err
+	}
+	return (&workspaceSchema{}).workspaceWithChangeset(ctx, base, changes)
 }
 
 func (s generatorsSchema) name(_ context.Context, parent *core.Generator, args struct{}) (string, error) {
@@ -143,8 +230,14 @@ func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generat
 }
 
 func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.ObjectResult[*core.Changeset], error) {
-	_ = ctx
-	return parent.Self().RequireChangesResult("changes")
+	changes, err := parent.Self().RequireChangesResult(ctx, "changes")
+	if err != nil {
+		return changes, err
+	}
+	if ws := parent.Self().WorkspaceBase.Self(); ws != nil {
+		return reRootChangesetToCwd(ctx, changes, ws.Cwd)
+	}
+	return changes, nil
 }
 
 func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.Generator, args struct{}) (*core.Generator, error) {
@@ -152,26 +245,10 @@ func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.G
 }
 
 func (s generatorsSchema) isEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.Boolean, error) {
-	if _, err := parent.Self().RequireChanges("isEmpty"); err != nil {
-		return false, err
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
+	changes, err := parent.Self().RequireChanges(ctx, "isEmpty")
 	if err != nil {
 		return false, err
 	}
-
-	var empty dagql.Boolean
-	if err := srv.Select(ctx, parent, &empty,
-		dagql.Selector{
-			Field: "changes",
-		},
-		dagql.Selector{
-			Field: "isEmpty",
-		},
-	); err != nil {
-		return false, err
-	}
-
-	return empty, nil
+	empty, err := changes.IsEmpty(ctx)
+	return dagql.NewBoolean(empty), err
 }

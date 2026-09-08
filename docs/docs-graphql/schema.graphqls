@@ -3111,6 +3111,12 @@ type GeneratorGroup implements Node {
 
   """Execute all selected generators"""
   run: GeneratorGroup!
+
+  """The workspace with the combined output from the last generator run"""
+  workspace(
+    """Strategy to apply on conflicts between generators"""
+    onConflict: ChangesetsMergeConflict = FAIL_EARLY
+  ): Workspace!
 }
 
 """

@@ -1767,6 +1767,13 @@ export type GeneratorGroupChangesOpts = {
   onConflict?: ChangesetsMergeConflict
 }
 
+export type GeneratorGroupWorkspaceOpts = {
+  /**
+   * Strategy to apply on conflicts between generators
+   */
+  onConflict?: ChangesetsMergeConflict
+}
+
 export type GitCommitAncestorReleaseTagOpts = {
   /**
    * Include pre-release tags when choosing the latest tag.
@@ -9074,6 +9081,22 @@ export class GeneratorGroup extends BaseClient {
   run = (): GeneratorGroup => {
     const ctx = this._ctx.select("run")
     return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * The workspace with the combined output from the last generator run
+   * @param opts.onConflict Strategy to apply on conflicts between generators
+   */
+  workspace = (opts?: GeneratorGroupWorkspaceOpts): Workspace => {
+    const metadata = {
+      onConflict: {
+        is_enum: true,
+        value_to_name: ChangesetsMergeConflictValueToName,
+      },
+    }
+
+    const ctx = this._ctx.select("workspace", { ...opts, __metadata: metadata })
+    return new Workspace(ctx)
   }
 
   /**

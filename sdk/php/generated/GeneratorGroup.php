@@ -72,4 +72,16 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Nod
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
         return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * The workspace with the combined output from the last generator run
+     */
+    public function workspace(?ChangesetsMergeConflict $onConflict = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

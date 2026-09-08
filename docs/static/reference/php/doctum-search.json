@@ -5368,6 +5368,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GeneratorGroup::workspace",
+			"p": "Dagger/GeneratorGroup.html#method_workspace",
+			"d": "<p>The workspace with the combined output from the last generator run</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitBundle::asFile",
 			"p": "Dagger/GitBundle.html#method_asFile",
 			"d": "<p>Return the bundle bytes as a File.</p>"

@@ -8246,6 +8246,12 @@ pub struct GeneratorGroupChangesOpts {
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GeneratorGroupWorkspaceOpts {
+    /// Strategy to apply on conflicts between generators
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<ChangesetsMergeConflict>,
+}
 impl IntoID<Id> for GeneratorGroup {
     fn into_id(
         self,
@@ -8340,6 +8346,35 @@ impl GeneratorGroup {
     pub fn run(&self) -> GeneratorGroup {
         let query = self.selection.select("run");
         GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The workspace with the combined output from the last generator run
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn workspace(&self) -> Workspace {
+        let query = self.selection.select("workspace");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The workspace with the combined output from the last generator run
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn workspace_opts(&self, opts: GeneratorGroupWorkspaceOpts) -> Workspace {
+        let mut query = self.selection.select("workspace");
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
+        Workspace {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

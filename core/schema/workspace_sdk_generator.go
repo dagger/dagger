@@ -64,12 +64,13 @@ func (s *workspaceSchema) syntheticSDKGenerators(
 func runSyntheticSDKGenerator(
 	ctx context.Context,
 	spec *core.SyntheticGeneratorSpec,
-) (dagql.ObjectResult[*core.Changeset], error) {
-	base, err := syntheticGeneratorWorkspace(ctx, dagql.ObjectResult[*core.Workspace]{})
+) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
+	base, err = syntheticGeneratorWorkspace(ctx, dagql.ObjectResult[*core.Workspace]{})
 	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
+		return base, generated, err
 	}
-	return runSDKModuleGeneratorGraph(ctx, base, []*core.SyntheticGeneratorSpec{spec})
+	generated, err = runSDKModuleGeneratorGraph(ctx, base, []*core.SyntheticGeneratorSpec{spec})
+	return base, generated, err
 }
 
 func syntheticGeneratorWorkspace(
@@ -351,34 +352,30 @@ func runSDKModuleGeneratorGraph(
 	ctx context.Context,
 	base dagql.ObjectResult[*core.Workspace],
 	specs []*core.SyntheticGeneratorSpec,
-) (dagql.ObjectResult[*core.Changeset], error) {
+) (dagql.ObjectResult[*core.Workspace], error) {
 	s := &workspaceSchema{}
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, base.Self(), workspaceConfigMustExist, false)
 	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
+		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
 	plan, err := planSDKModuleGeneratorGraph(base, staged, specs)
 	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
+		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	current := base
 	for _, node := range plan.ordered {
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, err
+			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope)
 		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}
 	}
 
-	changes, err := s.workspaceChangesBetween(ctx, base, current)
-	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
-	return reRootChangesetToCwd(ctx, changes, plan.invocationCWD)
+	return current, nil
 }
 
 func (s *workspaceSchema) resolveSDKModuleScopeClients(

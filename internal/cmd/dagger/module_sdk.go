@@ -237,8 +237,8 @@ func mutateSDKModuleWorkspace(
 			return fmt.Errorf("SDK-module workspace operation returned no workspace")
 		}
 
-		current := dag.CurrentWorkspace().WithWorkdir(".")
-		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID).WithWorkdir(".")
+		current := dag.CurrentWorkspace()
+		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID)
 		applied, err := handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		if err != nil || !applied || afterApply == nil {
 			return err

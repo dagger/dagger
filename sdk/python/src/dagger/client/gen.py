@@ -7859,6 +7859,25 @@ class GeneratorGroup(Type):
         _ctx = self._select("run", _args)
         return GeneratorGroup(_ctx)
 
+    def workspace(
+        self,
+        *,
+        on_conflict: ChangesetsMergeConflict
+        | None = ChangesetsMergeConflict.FAIL_EARLY,
+    ) -> "Workspace":
+        """The workspace with the combined output from the last generator run
+
+        Parameters
+        ----------
+        on_conflict:
+            Strategy to apply on conflicts between generators
+        """
+        _args = [
+            Arg("onConflict", on_conflict, ChangesetsMergeConflict.FAIL_EARLY),
+        ]
+        _ctx = self._select("workspace", _args)
+        return Workspace(_ctx)
+
     def with_(
         self, cb: Callable[["GeneratorGroup"], "GeneratorGroup"]
     ) -> "GeneratorGroup":

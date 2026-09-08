@@ -8121,6 +8121,29 @@ func (r *GeneratorGroup) Run() *GeneratorGroup {
 	}
 }
 
+// GeneratorGroupWorkspaceOpts contains options for GeneratorGroup.Workspace
+type GeneratorGroupWorkspaceOpts struct {
+	// Strategy to apply on conflicts between generators
+	//
+	// Default: FAIL_EARLY
+	OnConflict ChangesetsMergeConflict
+}
+
+// The workspace with the combined output from the last generator run
+func (r *GeneratorGroup) Workspace(opts ...GeneratorGroupWorkspaceOpts) *Workspace {
+	q := r.query.Select("workspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // AsNode returns this GeneratorGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GeneratorGroup) AsNode() Node {

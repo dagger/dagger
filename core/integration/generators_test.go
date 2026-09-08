@@ -847,15 +847,71 @@ name = "demo"
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c))
 
-	generated := workspace.With(daggerNonNestedExec("generate", "-y"))
-	out, err := generated.CombinedOutput(ctx)
-	require.NoError(t, err, out)
+	workspace = workspace.WithNewFile("/work/app/generated/demo/sub/.keep", "")
+	for _, cwd := range []string{"/work/app", "/work/app/generated/demo", "/work/app/generated/demo/sub"} {
+		t.Run(cwd, func(ctx context.Context, t *testctx.T) {
+			base := workspace.WithWorkdir(cwd)
+			preview := base.With(daggerNonNestedExec("generate", "--no-apply"))
+			out, err := preview.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.Contains(t, out, "go.mod")
+			exists, err := preview.Exists(ctx, "/work/app/go.mod")
+			require.NoError(t, err)
+			require.False(t, exists)
 
-	goMod, err := generated.File("/work/app/go.mod").Contents(ctx)
+			generated := base.With(daggerNonNestedExec("generate", "-y"))
+			out, err = generated.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			goMod, err := generated.File("/work/app/go.mod").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, goMod, "module example.com/demo")
+			_, err = generated.File("/work/app/generated/demo/dagger-module.toml").Contents(ctx)
+			require.NoError(t, err)
+		})
+	}
+
+	config, err := workspace.File("/work/app/dagger.toml").Contents(ctx)
 	require.NoError(t, err)
-	require.Contains(t, goMod, "module example.com/demo")
-	_, err = generated.File("/work/app/generated/demo/dagger-module.toml").Contents(ctx)
-	require.NoError(t, err)
+	mixed := workspace.
+		WithNewFile("/work/app/dagger.toml", config+`
+[modules.regular]
+source = "../regular"
+`).WithNewFile("/work/regular/dagger-module.toml", `name = "regular"
+engineVersion = "latest"
+[runtime]
+source = "dang"
+`).WithNewFile("/work/regular/main.dang", `type Regular {
+  output: String! = "regular.txt"
+  pub generate(ws: Workspace!): Changeset! @generate {
+    let cwd = ws.directory(".")
+    cwd.withNewFile(output, "regular output").changes(cwd)
+  }
+}`)
+	for _, cwd := range []string{"/work/app", "/work/app/generated/demo/sub"} {
+		t.Run("mixed generators at "+cwd, func(ctx context.Context, t *testctx.T) {
+			generated := mixed.WithWorkdir(cwd).With(daggerNonNestedExec("generate", "-y"))
+			out, err := generated.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			contents, err := generated.File(filepath.Join(cwd, "regular.txt")).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "regular output", contents)
+			_, err = generated.File("/work/app/go.mod").Contents(ctx)
+			require.NoError(t, err)
+		})
+	}
+	t.Run("mixed generator conflict", func(ctx context.Context, t *testctx.T) {
+		failed := mixed.WithNewFile("/work/app/dagger.toml", config+`
+[modules.regular]
+source = "../regular"
+settings.output = "go.mod"
+`).With(daggerNonNestedExecFail("generate", "-y"))
+		out, err := failed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "conflict")
+		exists, err := failed.Exists(ctx, "/work/app/go.mod")
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
 }
 
 func (GeneratorsSuite) TestSDKModuleDefaultModulePath(ctx context.Context, t *testctx.T) {
@@ -1464,6 +1520,13 @@ func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, 
 		requireErrOut(t, err, "must be run before querying changes")
 	})
 
+	t.Run("group workspace requires run", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){workspace{id}}}}`)).
+			Stdout(ctx)
+		requireErrOut(t, err, "must be run before querying workspace")
+	})
+
 	t.Run("single generator isEmpty requires run", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.
 			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){list{isEmpty}}}}`)).
@@ -1480,10 +1543,10 @@ func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, 
 
 	t.Run("group result fields work after run", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){run{isEmpty changes{isEmpty}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{generators(include:["generate-files"]){run{isEmpty changes{isEmpty} workspace{changes{isEmpty}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"generators":{"run":{"isEmpty":false,"changes":{"isEmpty":false}}}}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"generators":{"run":{"isEmpty":false,"changes":{"isEmpty":false},"workspace":{"changes":{"isEmpty":false}}}}}}`, out)
 	})
 
 	t.Run("single generator result fields work after run", func(ctx context.Context, t *testctx.T) {
@@ -1642,5 +1705,13 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")
+	})
+
+	t.Run("generated workspace preserves the input overlay", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro"]){run{workspace{input:file(path:"input.txt"){contents} output:file(path:"output.txt"){contents}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"withNewFile":{"generators":{"run":{"workspace":{"input":{"contents":"B-OVERLAY"},"output":{"contents":"generated from: B-OVERLAY"}}}}}}}`, out)
 	})
 }
