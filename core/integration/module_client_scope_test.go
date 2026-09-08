@@ -297,3 +297,115 @@ func (GeneratorsSuite) TestModuleClientAPISettings(ctx context.Context, t *testc
 	require.Contains(t, out, "custom-clients")
 	require.Contains(t, out, "clientOutputDir")
 }
+
+func (GeneratorsSuite) TestModuleClientEquivalentScopePaths(ctx context.Context, t *testctx.T) {
+	base := moduleClientScopeTestBase(ctx, t).
+		WithNewFile("/work/existing/dagger-module.toml", `name = "existing"
+engineVersion = "latest"
+[runtime]
+source = "dang"
+`).WithNewFile("/work/existing/main.dang", `type Existing { hello: String! { "hello" } }`)
+	const existingModule = `
+[modules.existing]
+source = "existing"
+`
+	for _, key := range []string{"./app", "/app"} {
+		t.Run(key, func(ctx context.Context, t *testctx.T) {
+			config := moduleClientScopeConfig + existingModule + fmt.Sprintf(`
+[sdks.go.scopes.%q]
+name = "checkout"
+clients = ["existing"]
+settings.clientOutputDir = "custom-clients"
+`, key)
+			ctr := base.WithNewFile("/work/dagger.toml", config)
+			added := ctr.With(daggerNonNestedExec("module", "client", "add", "target", "--sdk=go", "-y"))
+			out, err := added.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			cfg := readModuleClientConfig(ctx, t, added)
+			require.Len(t, cfg.SDKs["go"].Scopes, 1)
+			require.Equal(t, workspacecfg.SDKScope{Name: "checkout", Clients: []string{"existing", "target"}, Settings: map[string]any{"clientOutputDir": "custom-clients"}}, cfg.SDKs["go"].Scopes[key])
+			for _, target := range []string{"existing", "target"} {
+				_, err := added.File("/work/app/custom-clients/" + target + ".gen.go").Contents(ctx)
+				require.NoError(t, err)
+			}
+			removed := added.With(daggerNonNestedExec("module", "client", "rm", "target", "--sdk=go", "-y"))
+			out, err = removed.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			require.Equal(t, readModuleClientConfig(ctx, t, ctr), readModuleClientConfig(ctx, t, removed))
+			exists, err := removed.Exists(ctx, "/work/app/custom-clients/target.gen.go")
+			require.NoError(t, err)
+			require.False(t, exists)
+
+			initialized := ctr.With(daggerNonNestedExec("module", "init", "--path=/app", "go", "--name=checkout", "-y"))
+			out, err = initialized.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			cfg = readModuleClientConfig(ctx, t, initialized)
+			require.Len(t, cfg.SDKs["go"].Scopes, 1)
+			require.True(t, cfg.SDKs["go"].Scopes[key].IsModule)
+			require.Equal(t, []string{"existing"}, cfg.SDKs["go"].Scopes[key].Clients)
+			require.Equal(t, "custom-clients", cfg.SDKs["go"].Scopes[key].Settings["clientOutputDir"])
+
+			configured := ctr.With(daggerNonNestedExec("sdk", "scope", "name", "renamed"))
+			out, err = configured.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			cfg = readModuleClientConfig(ctx, t, configured)
+			require.Len(t, cfg.SDKs["go"].Scopes, 1)
+			require.Equal(t, "renamed", cfg.SDKs["go"].Scopes[key].Name)
+			require.Equal(t, []string{"existing"}, cfg.SDKs["go"].Scopes[key].Clients)
+		})
+	}
+
+	t.Run("reconcile before a write", func(ctx context.Context, t *testctx.T) {
+		config := moduleClientScopeConfig + existingModule + `
+[sdks.go.scopes."./app"]
+clients = ["existing"]
+[sdks.go.scopes.app]
+name = "checkout"
+settings.clientOutputDir = "custom-clients"
+`
+		ctr := base.WithNewFile("/work/dagger.toml", config)
+		listed := ctr.With(daggerNonNestedExec("module", "client", "list"))
+		out, err := listed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "reconciled scope keys")
+		unchanged, err := listed.File("/work/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, config, unchanged)
+		configured := listed.With(daggerNonNestedExec("workspace", "config", "check-generated", "false"))
+		out, err = configured.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "reconciled scope keys")
+		reconciled := readModuleClientConfig(ctx, t, configured)
+		require.Len(t, reconciled.SDKs["go"].Scopes, 1)
+		require.Equal(t, "checkout", reconciled.SDKs["go"].Scopes["./app"].Name)
+		require.Equal(t, []string{"existing"}, reconciled.SDKs["go"].Scopes["./app"].Clients)
+		added := listed.With(daggerNonNestedExec("module", "client", "add", "target", "--sdk=go", "-y"))
+		out, err = added.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "reconciled scope keys")
+		cfg := readModuleClientConfig(ctx, t, added)
+		require.Len(t, cfg.SDKs["go"].Scopes, 1)
+		require.Equal(t, []string{"existing", "target"}, cfg.SDKs["go"].Scopes["./app"].Clients)
+		require.Equal(t, "checkout", cfg.SDKs["go"].Scopes["./app"].Name)
+		_, err = added.File("/work/app/custom-clients/existing.gen.go").Contents(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("conflict before SDK load", func(ctx context.Context, t *testctx.T) {
+		config := moduleClientScopeConfig + `
+[sdks.go.scopes."./app"]
+name = "first"
+[sdks.go.scopes.app]
+name = "second"
+`
+		ctr := base.WithNewFile("/work/dagger.toml", config).
+			WithoutDirectory("/work/.dagger/modules/go-sdk").
+			With(daggerNonNestedExecFail("module", "client", "add", "target", "--sdk=go", "-y"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "conflict in name")
+		unchanged, err := ctr.File("/work/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, config, unchanged)
+	})
+}

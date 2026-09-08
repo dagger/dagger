@@ -91,11 +91,15 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 		}
 	}
 
-	configScopePath, err := workspace.SDKManagedPathFor(staged.ConfigDir, scopePath)
+	configScopePath, _, err := workspace.SDKScopeKey(selected.entry, staged.ConfigDir, scopePath)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := planSDKModuleInitInstall(staged.Config, moduleName, configScopePath, explicitPath, args.Name != ""); err != nil {
+	modulePath, err := workspace.SDKManagedPathFor(staged.ConfigDir, scopePath)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := planSDKModuleInitInstall(staged.Config, moduleName, modulePath, explicitPath, args.Name != ""); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if owner, found, err := moduleScopeOwner(staged.Config, staged.ConfigDir, scopePath); err != nil {
@@ -771,7 +775,7 @@ func (s *workspaceSchema) resolveCurrentSDKModuleScope(
 	scope = deeperSDKModuleScope(recordedScope, scope)
 	configScopePath := ""
 	if scope != "" {
-		configScopePath, err = workspace.SDKManagedPathFor(staged.ConfigDir, scope)
+		configScopePath, _, err = workspace.SDKScopeKey(selected.entry, staged.ConfigDir, scope)
 		if err != nil {
 			return resolvedSDKModuleScope{}, err
 		}
@@ -959,7 +963,7 @@ func (s *workspaceSchema) stageSDKModuleConfig(
 	staged *stagedWorkspaceConfig,
 	lock *workspaceOverlayLock,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace config: %w", err)
 	}

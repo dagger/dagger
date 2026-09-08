@@ -434,7 +434,7 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to read workspace config file: %w", err)
 	}
-	cfg, err := workspace.ParseConfig(contents)
+	cfg, err := workspace.ParseConfigAt(ctx, contents, filepath.Dir(ws.ConfigFile))
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
 	}

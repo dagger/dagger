@@ -126,7 +126,7 @@ func loadSDKWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, required 
 	if err != nil {
 		return nil, fmt.Errorf("read workspace config file: %w", err)
 	}
-	cfg, err := workspace.ParseConfig([]byte(data))
+	cfg, err := workspace.ParseConfigAt(ctx, []byte(data), filepath.Dir(rootConfigFile))
 	if err != nil {
 		return nil, err
 	}
@@ -327,10 +327,10 @@ func runSDKScopeField(cmd *cobra.Command, field string, args []string) error {
 		if !unset && len(args) == 0 {
 			return printSDKScopeField(cmd.OutOrStdout(), record, field)
 		}
-		if err := updateSDKScopeField(state.config, record, field, args, unset); err != nil {
+		if err := updateSDKScopeField(state.config, state.configDir, record, field, args, unset); err != nil {
 			return err
 		}
-		updated, err := workspace.UpdateConfigBytes(state.data, state.config)
+		updated, err := workspace.UpdateConfigBytesAt(ctx, state.data, state.config, state.configDir)
 		if err != nil {
 			return err
 		}
@@ -396,7 +396,7 @@ func printSDKScopeField(out io.Writer, record sdkScopeRecord, field string) erro
 	return err
 }
 
-func updateSDKScopeField(cfg *workspace.Config, record sdkScopeRecord, field string, args []string, unset bool) error {
+func updateSDKScopeField(cfg *workspace.Config, configDir string, record sdkScopeRecord, field string, args []string, unset bool) error {
 	entry := cfg.SDKs[record.sdk]
 	scope := entry.Scopes[record.configPath]
 
@@ -434,7 +434,9 @@ func updateSDKScopeField(cfg *workspace.Config, record sdkScopeRecord, field str
 		if targetName == record.sdk {
 			return nil
 		}
-		if _, exists := target.Scopes[record.configPath]; exists {
+		if _, exists, err := workspace.SDKScopeKey(target, configDir, record.path); err != nil {
+			return err
+		} else if exists {
 			return fmt.Errorf("SDK %q already owns a scope at path %q", targetName, record.path)
 		}
 		delete(entry.Scopes, record.configPath)

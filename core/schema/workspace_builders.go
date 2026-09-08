@@ -49,7 +49,7 @@ func (s *workspaceSchema) loadWorkspaceConfigForOverlay(
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := workspace.ParseConfig(data)
+		cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(configFile))
 		if err != nil {
 			return nil, err
 		}
@@ -120,6 +120,16 @@ func (s *workspaceSchema) stageWorkspaceConfigAndLock(
 	data []byte,
 	lock *workspaceOverlayLock,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	// Generic config writes can introduce equivalent scope keys. Reconcile
+	// them at the shared write boundary before staging any filesystem change.
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	data, err = workspace.UpdateConfigBytesAt(ctx, data, cfg, staged.ConfigDir)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -227,7 +237,7 @@ func (s *workspaceSchema) withConfigEnv(
 	if !workspace.EnsureEnv(staged.Config, args.Name) {
 		return parent, nil
 	}
-	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -249,7 +259,7 @@ func (s *workspaceSchema) withoutConfigEnv(
 	if err := workspace.RemoveEnv(staged.Config, args.Name); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -327,7 +337,7 @@ func (s *workspaceSchema) withModuleInstall(
 		}
 		return s.stageWorkspaceConfigAndLock(ctx, parent, staged, staged.Data, overlayLock)
 	}
-	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -394,7 +404,7 @@ func (s *workspaceSchema) withoutModule(
 		delete(staged.Config.SDKs, sdkName)
 	}
 	delete(staged.Config.Modules, args.Name)
-	updatedConfig, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updatedConfig, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -463,7 +473,7 @@ func (s *workspaceSchema) withoutEnvModule(
 		}
 	}
 	staged.Config.Env[envName] = env
-	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
+	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

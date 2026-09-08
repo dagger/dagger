@@ -544,7 +544,7 @@ func loadWorkspaceConfig(
 		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
 	}
 
-	cfg, err := workspace.ParseConfig(data)
+	cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
 	if err != nil {
 		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
 	}

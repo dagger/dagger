@@ -118,19 +118,19 @@ func TestUpdateSDKScopeField(t *testing.T) {
 
 	t.Run("name", func(t *testing.T) {
 		cfg, record := newConfig()
-		require.NoError(t, updateSDKScopeField(cfg, record, "name", []string{"service"}, false))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "name", []string{"service"}, false))
 		require.Equal(t, "service", cfg.SDKs["go"].Scopes["apps/api"].Name)
-		require.EqualError(t, updateSDKScopeField(cfg, record, "name", nil, true), "scope name is required when is-module is true")
-		require.NoError(t, updateSDKScopeField(cfg, record, "is-module", []string{"false"}, false))
-		require.NoError(t, updateSDKScopeField(cfg, record, "name", nil, true))
+		require.EqualError(t, updateSDKScopeField(cfg, ".", record, "name", nil, true), "scope name is required when is-module is true")
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "is-module", []string{"false"}, false))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "name", nil, true))
 		require.Empty(t, cfg.SDKs["go"].Scopes["apps/api"].Name)
 	})
 
 	t.Run("is-module", func(t *testing.T) {
 		cfg, record := newConfig()
-		require.NoError(t, updateSDKScopeField(cfg, record, "is-module", []string{"false"}, false))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "is-module", []string{"false"}, false))
 		require.False(t, cfg.SDKs["go"].Scopes["apps/api"].IsModule)
-		err := updateSDKScopeField(cfg, record, "is-module", []string{"invalid"}, false)
+		err := updateSDKScopeField(cfg, ".", record, "is-module", []string{"invalid"}, false)
 		require.ErrorContains(t, err, `invalid BOOL "invalid"`)
 	})
 
@@ -141,35 +141,46 @@ func TestUpdateSDKScopeField(t *testing.T) {
 		scope.Name = ""
 		cfg.SDKs["go"].Scopes["apps/api"] = scope
 		record.scope = scope
-		err := updateSDKScopeField(cfg, record, "is-module", []string{"true"}, false)
+		err := updateSDKScopeField(cfg, ".", record, "is-module", []string{"true"}, false)
 		require.EqualError(t, err, "scope name is required when is-module is true")
 	})
 
 	t.Run("sdk", func(t *testing.T) {
 		cfg, record := newConfig()
-		require.NoError(t, updateSDKScopeField(cfg, record, "sdk", []string{"python"}, false))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "sdk", []string{"python"}, false))
 		require.NotContains(t, cfg.SDKs["go"].Scopes, "apps/api")
 		moved := cfg.SDKs["python"].Scopes["apps/api"]
 		require.Equal(t, []string{"database"}, moved.Clients)
 		require.Equal(t, map[string]any{"mode": "fast"}, moved.Settings)
 	})
 
+	t.Run("equivalent target scope", func(t *testing.T) {
+		cfg, record := newConfig()
+		target := cfg.SDKs["python"]
+		target.Scopes = map[string]workspace.SDKScope{"/apps/api": {Name: "python-app"}}
+		cfg.SDKs["python"] = target
+		err := updateSDKScopeField(cfg, ".", record, "sdk", []string{"python"}, false)
+		require.ErrorContains(t, err, `SDK "python" already owns a scope at path "apps/api"`)
+		require.Contains(t, cfg.SDKs["go"].Scopes, "apps/api")
+		require.Len(t, cfg.SDKs["python"].Scopes, 1)
+	})
+
 	t.Run("same sdk", func(t *testing.T) {
 		cfg, record := newConfig()
-		require.NoError(t, updateSDKScopeField(cfg, record, "sdk", []string{"go"}, false))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "sdk", []string{"go"}, false))
 		require.Contains(t, cfg.SDKs["go"].Scopes, "apps/api")
 	})
 
 	t.Run("unknown sdk", func(t *testing.T) {
 		cfg, record := newConfig()
-		err := updateSDKScopeField(cfg, record, "sdk", []string{"rust"}, false)
+		err := updateSDKScopeField(cfg, ".", record, "sdk", []string{"rust"}, false)
 		require.EqualError(t, err, "SDK \"rust\" is not known; use `dagger sdk list`")
 		require.Contains(t, cfg.SDKs["go"].Scopes, "apps/api")
 	})
 
 	t.Run("unset sdk", func(t *testing.T) {
 		cfg, record := newConfig()
-		require.NoError(t, updateSDKScopeField(cfg, record, "sdk", nil, true))
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "sdk", nil, true))
 		require.Empty(t, cfg.SDKs["go"].Scopes)
 	})
 }

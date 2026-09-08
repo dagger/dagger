@@ -158,7 +158,7 @@ func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Co
 		return nil, err
 	}
 
-	cfg, err := workspace.ParseConfig(data)
+	cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
 	if err != nil {
 		return nil, err
 	}
