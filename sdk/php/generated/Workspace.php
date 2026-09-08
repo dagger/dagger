@@ -383,15 +383,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Whether this workspace's recipe can be replayed without its originating client.
-     */
-    public function portable(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portable');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'portable');
-    }
-
-    /**
      * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
      */
     public function reloaded(): Workspace

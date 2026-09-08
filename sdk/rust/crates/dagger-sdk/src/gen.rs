@@ -16364,11 +16364,6 @@ impl Workspace {
             })
             .collect())
     }
-    /// Whether this workspace's recipe can be replayed without its originating client.
-    pub async fn portable(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("portable");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
     pub fn reloaded(&self) -> Workspace {
         let query = self.selection.select("reloaded");

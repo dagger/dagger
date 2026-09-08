@@ -16468,13 +16468,12 @@ type Workspace struct {
 	configFile     *string
 	configRead     *string
 	cwd            *string
+	detectScope    *string
 	export         *Void
 	findUp         *string
 	gitAuthorEmail *string
 	gitAuthorName  *string
 	id             *ID
-	portable       *bool
-	detectScope    *string
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -17090,19 +17089,6 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	}
 
 	return convert(response), nil
-}
-
-// Whether this workspace's recipe can be replayed without its originating client.
-func (r *Workspace) Portable(ctx context.Context) (bool, error) {
-	if r.portable != nil {
-		return *r.portable, nil
-	}
-	q := r.query.Select("portable")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.

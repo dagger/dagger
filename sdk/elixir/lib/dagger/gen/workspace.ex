@@ -471,17 +471,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Whether this workspace's recipe can be replayed without its originating client.
-  """
-  @spec portable(t()) :: {:ok, boolean()} | {:error, term()}
-  def portable(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("portable")
-
-    Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
   Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
   """
   @spec reloaded(t()) :: Dagger.Workspace.t()

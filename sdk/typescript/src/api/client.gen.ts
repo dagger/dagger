@@ -15685,7 +15685,6 @@ export class Workspace extends BaseClient {
   private readonly _findUp?: string = undefined
   private readonly _gitAuthorEmail?: string = undefined
   private readonly _gitAuthorName?: string = undefined
-  private readonly _portable?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -15702,7 +15701,6 @@ export class Workspace extends BaseClient {
     _findUp?: string,
     _gitAuthorEmail?: string,
     _gitAuthorName?: string,
-    _portable?: boolean,
   ) {
     super(ctx)
 
@@ -15716,7 +15714,6 @@ export class Workspace extends BaseClient {
     this._findUp = _findUp
     this._gitAuthorEmail = _gitAuthorEmail
     this._gitAuthorName = _gitAuthorName
-    this._portable = _portable
   }
 
   /**
@@ -16112,21 +16109,6 @@ export class Workspace extends BaseClient {
       (r) =>
         new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
     )
-  }
-
-  /**
-   * Whether this workspace's recipe can be replayed without its originating client.
-   */
-  portable = async (): Promise<boolean> => {
-    if (this._portable) {
-      return this._portable
-    }
-
-    const ctx = this._ctx.select("portable")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
   }
 
   /**

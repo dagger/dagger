@@ -16091,26 +16091,6 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
-    async def portable(self) -> bool:
-        """Whether this workspace's recipe can be replayed without its
-        originating client.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("portable", _args)
-        return await _ctx.execute(bool)
-
     def reloaded(self) -> Self:
         """Return this workspace with its cached host reads invalidated, so
         subsequent file and directory reads re-read the live host instead of a
