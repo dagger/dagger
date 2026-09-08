@@ -364,35 +364,11 @@ func runSDKModuleGeneratorGraph(
 	}
 	current := base
 	for _, node := range plan.ordered {
-		parent := current
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Changeset]{}, err
 		}
-		settings, err := effectiveSDKModuleSettings(ctx, current.Self(), staged.Config, node.sdkName, node.configScope)
-		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, err
-		}
-		provider, err := s.loadWorkspaceSDKModule(ctx, current.Self(), staged.ConfigDir, selected.ref, settings)
-		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, err
-		}
-		scoped, err := workspaceAtSDKModuleScope(ctx, current, node.path)
-		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, err
-		}
-
-		operationCtx, clients, err := s.resolveSDKModuleScopeClients(ctx, current, staged, node.scope.Clients)
-		if err != nil {
-			return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("resolve clients in scope %q: %w", node.path, err)
-		}
-		generated, err := provider.GenerateScope(operationCtx, scoped, node.scope.IsModule, node.scope.Name, clients)
-		if err == nil {
-			current, err = s.validateSDKModuleWorkspace(operationCtx, parent, scoped, generated, node.path, staged.ConfigFile)
-		}
-		if err == nil && node.scope.IsModule {
-			err = s.validateGeneratedModuleConfig(operationCtx, current, node.path)
-		}
+		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope)
 		if err != nil {
 			return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}
