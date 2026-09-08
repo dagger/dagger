@@ -1535,7 +1535,7 @@ func (GeneratorsSuite) TestWorkspaceCallNarrowsToRequestedModule(ctx context.Con
 
 	t.Run("listing the healthy module's functions skips the broken module", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("api", "functions", "good", "--progress=plain")).
+			With(daggerExec("api", "functions", "good")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "intentionally invalid")
@@ -1588,7 +1588,7 @@ func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndEntrypoint(ctx contex
 
 	t.Run("kebab-case functions listing skips the broken module", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("api", "functions", "good-mod", "--progress=plain")).
+			With(daggerExec("api", "functions", "good-mod")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "intentionally invalid")
