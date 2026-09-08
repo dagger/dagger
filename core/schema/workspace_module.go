@@ -33,7 +33,7 @@ func (s *workspaceSchema) workspaceModules(
 	// loading (base, user-level overlay, selected env overlay), so modules an
 	// overlay adds are discoverable. A missing or broken selected env fails the
 	// read instead of falling back to the base config.
-	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+	cfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (s *workspaceSchema) moduleSettings(
 	// Values come from the user-level overlay and the selected env overlay,
 	// merged in the same order as module loading. The entry lookup is also
 	// effective so modules an overlay itself adds resolve their settings.
-	effectiveCfg, _, err := effectiveWorkspaceConfig(ctx, ws.Self(), cfg)
+	effectiveCfg, err := effectiveWorkspaceConfig(ctx, ws.Self(), cfg)
 	if err != nil {
 		return nil, err
 	}

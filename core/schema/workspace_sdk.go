@@ -27,7 +27,7 @@ func (s *workspaceSchema) sdks(
 		return nil, err
 	}
 	scopeConfig := cfg
-	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+	cfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *workspaceSchema) sdk(
 			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 		}
 		scopeConfig = cfg
-		cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
+		cfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 		if err != nil {
 			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 		}

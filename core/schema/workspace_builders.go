@@ -88,20 +88,16 @@ func effectiveWorkspaceConfig(
 	ctx context.Context,
 	ws *core.Workspace,
 	cfg *workspace.Config,
-) (*workspace.Config, string, error) {
+) (*workspace.Config, error) {
 	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	envName, ok := selectedWorkspaceEnv(ctx, ws)
 	if !ok {
-		return applied, "", nil
+		return applied, nil
 	}
-	applied, err = workspace.ApplyEnvOverlay(applied, envName)
-	if err != nil {
-		return nil, "", err
-	}
-	return applied, envName, nil
+	return workspace.ApplyEnvOverlay(applied, envName)
 }
 
 func (s *workspaceSchema) stageWorkspaceConfigBytes(
