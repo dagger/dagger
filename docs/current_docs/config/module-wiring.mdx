@@ -62,9 +62,14 @@ source = "source-prep:workspace"
 
 ## Reference the workspace entrypoint
 
-The entrypoint module's functions are hoisted onto the root of the workspace,
-so `dagger call serve` and `dagger call myapp:serve` are the same call. A
-reference to an entrypoint function accepts the same two spellings:
+The entrypoint module's functions are hoisted onto the workspace root, so a
+reference to one can drop the module name:
+
+```shell
+dagger settings playwright service serve
+```
+
+The config always stores the long form:
 
 ```toml
 [modules.myapp]
@@ -72,16 +77,11 @@ source = "./ci/myapp"
 entrypoint = true
 
 [modules.playwright.settings]
-service = "myapp:serve"   # long form, always written by `dagger settings`
-service = "serve"         # short form, accepted when hand-editing
+service = "myapp:serve"
 ```
 
-`dagger settings playwright service serve` accepts the short form and stores
-the long form, so `dagger.toml` stays explicit about which module the value
-comes from. A bare name is only treated as a reference when the entrypoint
-actually has a function of that name; otherwise it keeps its ordinary address
-meaning, so an image name like `alpine` is unaffected unless your entrypoint
-defines an `alpine` function.
+A bare name is only treated as a reference when the entrypoint has a function
+of that name; otherwise it keeps its ordinary address meaning.
 
 ## Use a reference on the command line
 

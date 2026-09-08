@@ -272,13 +272,7 @@ settings.base = "container-provider:image"
 	})
 
 	t.Run("entrypoint module ref via settings", func(ctx context.Context, t *testctx.T) {
-		// The referenced module is the workspace entrypoint. Its functions are
-		// hoisted onto the sugared Query root and its constructor field is only
-		// installed on the canonical server, so the resolver must look the
-		// module up there (see resolveModuleRef in core/schema/address.go).
-		// Regression: this used to fail with "module is the workspace
-		// entrypoint; its functions are hoisted to the root and cannot be
-		// referenced" (github.com/dagger/dagger/issues/14058).
+		// The referenced module is the workspace entrypoint.
 		out, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
