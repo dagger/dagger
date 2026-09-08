@@ -15,9 +15,11 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -2065,14 +2067,11 @@ func TestRemoteWorkspaceAddress(t *testing.T) {
 func TestParseWorkspaceRemoteRef(t *testing.T) {
 	t.Parallel()
 
-	t.Run("supports address fragment ref", func(t *testing.T) {
+	t.Run("rejects fragment without subpath", func(t *testing.T) {
 		t.Parallel()
 
-		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main")
-		require.NoError(t, err)
-		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, ".", ref.workspaceSubdir)
+		_, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main")
+		require.ErrorContains(t, err, "must have the form #ref:subpath")
 	})
 
 	t.Run("supports address fragment ref and subdir", func(t *testing.T) {
@@ -2083,6 +2082,7 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
+		require.Equal(t, gitref.GitRefSelector, ref.selector)
 	})
 
 	t.Run("supports legacy at-ref syntax", func(t *testing.T) {
@@ -2092,6 +2092,7 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
+		require.Equal(t, gitref.ModuleVersionSelector, ref.selector)
 	})
 
 	t.Run("preserves legacy https at-ref syntax", func(t *testing.T) {
@@ -2101,6 +2102,7 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, ".", ref.workspaceSubdir)
+		require.Equal(t, gitref.ModuleVersionSelector, ref.selector)
 	})
 
 	t.Run("resolves legacy vanity ref", func(t *testing.T) {
@@ -2120,14 +2122,14 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.Equal(t, "sdk/go", ref.workspaceSubdir)
 	})
 
-	t.Run("resolves fragment vanity ref and preserves subdir", func(t *testing.T) {
+	t.Run("resolves fragment clone ref and preserves subdir", func(t *testing.T) {
 		t.Parallel()
 
 		ref, err := parseWorkspaceRemoteRefWithResolver(
 			context.Background(),
-			"https://dagger.io/go#main:docs",
+			"https://github.com/dagger/python#main:docs",
 			func(_ context.Context, got string) (string, error) {
-				require.Equal(t, "https://dagger.io/go", got)
+				require.Equal(t, "https://github.com/dagger/python", got)
 				return "https://github.com/dagger/dagger/sdk/go", nil
 			},
 		)
@@ -2135,7 +2137,52 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, "sdk/go/docs", ref.workspaceSubdir)
+		require.Equal(t, gitref.GitRefSelector, ref.selector)
 	})
+
+	for _, invalid := range []string{
+		"github.com/dagger/python/ruff#main",
+		"https://github.com/dagger/python/ruff#main",
+		"github.com/dagger/python@main:ruff",
+		"https://github.com/dagger/python@main:ruff",
+		"github.com/dagger/python#main:ruff",
+	} {
+		t.Run("rejects "+invalid, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseWorkspaceRemoteRef(context.Background(), invalid)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestWorkspaceGitRefSelectorSemverSemantics(t *testing.T) {
+	t.Parallel()
+
+	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{
+		View: call.View(workspace.VersionQueriesVersion),
+	})
+	for _, tc := range []struct {
+		name      string
+		selector  gitref.SelectorType
+		wantField string
+	}{
+		{name: "at selector uses semver query", selector: gitref.ModuleVersionSelector, wantField: "latest"},
+		{name: "fragment selector uses literal git ref", selector: gitref.GitRefSelector, wantField: "ref"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			selector := workspaceGitRefSelector(ctx, workspaceRemoteRef{
+				version:         "v1.2",
+				workspaceSubdir: "ruff",
+				selector:        tc.selector,
+			})
+			require.Equal(t, tc.wantField, selector.Field)
+			if tc.wantField == "latest" {
+				require.Equal(t, "version", selector.Args[0].Name)
+				require.Equal(t, "tagPrefix", selector.Args[1].Name)
+			}
+		})
+	}
 }
 
 func TestGatherModuleLoadRequests(t *testing.T) {

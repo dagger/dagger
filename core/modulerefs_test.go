@@ -51,6 +51,7 @@ func TestParsedGitRefStringSetVersion(t *testing.T) {
 	require.NoError(t, parsed.SetVersion("v1.2-beta"))
 	require.True(t, parsed.HasVersion)
 	require.Equal(t, "v1.2-beta", parsed.ModVersion)
+	require.Equal(t, gitref.ModuleVersionSelector, parsed.Selector)
 
 	require.EqualError(t,
 		parsed.SetVersion("v2"),
@@ -59,6 +60,32 @@ func TestParsedGitRefStringSetVersion(t *testing.T) {
 
 	invalid := &ParsedGitRefString{}
 	require.ErrorContains(t, invalid.SetVersion("main"), `invalid version query "main"`)
+}
+
+func TestParsedGitRefStringVersionQuerySemantics(t *testing.T) {
+	t.Parallel()
+
+	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{
+		View: call.View(workspace.VersionQueriesVersion),
+	})
+	for _, tc := range []struct {
+		name     string
+		selector gitref.SelectorType
+		want     string
+	}{
+		{name: "at selector uses semver query", selector: gitref.ModuleVersionSelector, want: "v1.2"},
+		{name: "fragment selector stays literal", selector: gitref.GitRefSelector, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsed := &ParsedGitRefString{Parsed: gitref.Parsed{
+				ModVersion: "v1.2",
+				HasVersion: true,
+				Selector:   tc.selector,
+			}}
+			require.Equal(t, tc.want, parsed.versionQuery(ctx))
+		})
+	}
 }
 
 func TestMatchVersion(t *testing.T) {
@@ -95,6 +122,7 @@ func TestParseRefString(t *testing.T) {
 		wantCloneRef    string
 		wantSubdir      string
 		wantVersion     string
+		wantSelector    gitref.SelectorType
 		wantErrContains string
 	}{
 		{
@@ -109,13 +137,59 @@ func TestParseRefString(t *testing.T) {
 			wantCloneRef: "ssh://github.com/shykes/daggerverse",
 			wantSubdir:   "ci",
 			wantVersion:  "version",
+			wantSelector: gitref.ModuleVersionSelector,
 		},
 		{
-			urlStr:       "https://github.com/shykes/daggerverse/ci#version",
+			urlStr:       "https://github.com/shykes/daggerverse#version:ci",
 			wantKind:     ModuleSourceKindGit,
 			wantCloneRef: "https://github.com/shykes/daggerverse",
 			wantSubdir:   "ci",
 			wantVersion:  "version",
+			wantSelector: gitref.GitRefSelector,
+		},
+		{
+			urlStr:       "github.com/dagger/python/ruff@main",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "github.com/dagger/python",
+			wantSubdir:   "ruff",
+			wantVersion:  "main",
+			wantSelector: gitref.ModuleVersionSelector,
+		},
+		{
+			urlStr:       "https://github.com/dagger/python/ruff@main",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "https://github.com/dagger/python",
+			wantSubdir:   "ruff",
+			wantVersion:  "main",
+			wantSelector: gitref.ModuleVersionSelector,
+		},
+		{
+			urlStr:       "https://github.com/dagger/python#main:ruff",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "https://github.com/dagger/python",
+			wantSubdir:   "ruff",
+			wantVersion:  "main",
+			wantSelector: gitref.GitRefSelector,
+		},
+		{
+			urlStr:          "github.com/dagger/python/ruff#main",
+			wantErrContains: "requires an explicit protocol",
+		},
+		{
+			urlStr:          "https://github.com/dagger/python/ruff#main",
+			wantErrContains: "must have the form #ref:subpath",
+		},
+		{
+			urlStr:          "github.com/dagger/python@main:ruff",
+			wantErrContains: "invalid module version selector",
+		},
+		{
+			urlStr:          "https://github.com/dagger/python@main:ruff",
+			wantErrContains: "invalid module version selector",
+		},
+		{
+			urlStr:          "github.com/dagger/python#main:ruff",
+			wantErrContains: "requires an explicit protocol",
 		},
 		{
 			// no dot in the ref string: treated as a local path
@@ -145,6 +219,7 @@ func TestParseRefString(t *testing.T) {
 				require.Equal(t, tc.wantCloneRef, parsed.Git.SourceCloneRef)
 				require.Equal(t, tc.wantSubdir, parsed.Git.RepoRootSubdir)
 				require.Equal(t, tc.wantVersion, parsed.Git.ModVersion)
+				require.Equal(t, tc.wantSelector, parsed.Git.Selector)
 			case ModuleSourceKindLocal:
 				require.NotNil(t, parsed.Local)
 				require.Equal(t, tc.urlStr, parsed.Local.ModPath)

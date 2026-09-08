@@ -10,6 +10,7 @@ package gitref
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,19 @@ const (
 	SchemeSCPLike
 )
 
+// SelectorType describes how a ref selects a revision and source subpath.
+type SelectorType int
+
+const (
+	NoSelector SelectorType = iota
+	// ModuleVersionSelector is the Go-like import path form: path/to/module@ref.
+	// SemVer-shaped refs in this form may be resolved as version queries.
+	ModuleVersionSelector
+	// GitRefSelector is the Git URL form: protocol://repo#ref:subpath. Its ref
+	// is always resolved literally, even when it looks like a SemVer query.
+	GitRefSelector
+)
+
 func (s SchemeType) Prefix() string {
 	switch s {
 	case SchemeHTTP:
@@ -72,6 +86,13 @@ func RefString(cloneRef, sourceRootSubpath, version string) string {
 		refPath += "@" + version
 	}
 	return refPath
+}
+
+// GitURLRefString builds the explicit Git URL form protocol://repo#ref:subpath.
+func GitURLRefString(cloneRef, sourceRootSubpath, version string) string {
+	subpath := filepath.ToSlash(filepath.Clean(sourceRootSubpath))
+	subpath = strings.TrimPrefix(subpath, "/")
+	return cloneRef + "#" + version + ":" + subpath
 }
 
 // FastKindCheck performs a quick heuristic check to determine whether a module
@@ -107,6 +128,7 @@ type Parsed struct {
 
 	ModVersion string
 	HasVersion bool
+	Selector   SelectorType
 
 	RepoRoot       *vcs.RepoRoot
 	RepoRootSubdir string
@@ -129,10 +151,14 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	_, span := tracer.Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	// Module refs historically use "@" for versions, while other Git-backed
-	// resource addresses use "#". Accept both spellings at this boundary.
-	refString = strings.Replace(refString, "#", "@", 1)
 	scheme, schemelessRef := parseScheme(refString)
+	fragmentRef, fragmentSubdir, hasFragment, err := parseGitFragmentSelector(scheme, schemelessRef)
+	if err != nil {
+		return Parsed{}, err
+	}
+	if hasFragment {
+		schemelessRef, _, _ = strings.Cut(schemelessRef, "#")
+	}
 
 	if scheme == NoScheme && isSCPLike(schemelessRef) {
 		scheme = SchemeSCPLike
@@ -157,11 +183,18 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		Scheme:  scheme,
 	}
 
-	parts := strings.SplitN(endpoint.Path, "@", 2)
-	if len(parts) == 2 {
-		gitParsed.ModPath = endpoint.Host + parts[0]
-		gitParsed.ModVersion = parts[1]
+	if modulePath, version, ok := strings.Cut(endpoint.Path, "@"); ok {
+		if version == "" || strings.Contains(version, ":") {
+			return Parsed{}, fmt.Errorf("invalid module version selector %q", version)
+		}
+		gitParsed.ModPath = endpoint.Host + modulePath
+		gitParsed.ModVersion = version
 		gitParsed.HasVersion = true
+		gitParsed.Selector = ModuleVersionSelector
+	} else if hasFragment {
+		gitParsed.ModVersion = fragmentRef
+		gitParsed.HasVersion = true
+		gitParsed.Selector = GitRefSelector
 	}
 
 	// Try to isolate the root of the git repo
@@ -179,9 +212,20 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	}
 
 	gitParsed.RepoRoot = repoRoot
+	if hasFragment && gitParsed.ModPath != repoRoot.Root {
+		return Parsed{}, fmt.Errorf(
+			"git URL selector requires a repository URL before #: got %q, repository root is %q",
+			gitParsed.ModPath,
+			repoRoot.Root,
+		)
+	}
 
 	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-	gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.ModPath, repoRoot.Root), "/")
+	if hasFragment {
+		gitParsed.RepoRootSubdir = fragmentSubdir
+	} else {
+		gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.ModPath, repoRoot.Root), "/")
+	}
 	if gitParsed.RepoRootSubdir == "" {
 		gitParsed.RepoRootSubdir = "/"
 	}
@@ -223,7 +267,30 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 }
 
 func isSCPLike(ref string) bool {
-	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
+	colon := strings.IndexByte(ref, ':')
+	if colon < 0 || strings.Contains(ref, "//") {
+		return false
+	}
+	slash := strings.IndexByte(ref, '/')
+	return slash < 0 || colon < slash
+}
+
+func parseGitFragmentSelector(scheme SchemeType, ref string) (gitRef, subdir string, ok bool, err error) {
+	_, fragment, ok := strings.Cut(ref, "#")
+	if !ok {
+		return "", "", false, nil
+	}
+	if scheme == NoScheme {
+		return "", "", false, errors.New("git URL selector requires an explicit protocol")
+	}
+	if strings.Contains(fragment, "#") {
+		return "", "", false, errors.New("git URL selector contains multiple # delimiters")
+	}
+	gitRef, subdir, ok = strings.Cut(fragment, ":")
+	if !ok || gitRef == "" || subdir == "" {
+		return "", "", false, errors.New("git URL selector must have the form #ref:subpath")
+	}
+	return gitRef, subdir, true, nil
 }
 
 // Scheme classifies the transport scheme of a ref string, including SCP-like
@@ -231,7 +298,6 @@ func isSCPLike(ref string) bool {
 // decide eligibility (e.g. for the https-only dagger-get redirect probe)
 // without importing the engine.
 func Scheme(refString string) SchemeType {
-	refString = strings.Replace(refString, "#", "@", 1)
 	scheme, schemeless := parseScheme(refString)
 	if scheme == NoScheme && isSCPLike(schemeless) {
 		return SchemeSCPLike

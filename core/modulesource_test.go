@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/core/gitref"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
@@ -128,6 +130,8 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 		cloneRef     string
 		rootSubpath  string
 		versionQuery string
+		version      string
+		selector     gitref.SelectorType
 		expected     string
 	}{
 		{
@@ -155,6 +159,14 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			versionQuery: "v1.2",
 			expected:     "https://github.com/user/repo.git/subdir@v1.2",
 		},
+		{
+			name:        "literal Git ref",
+			cloneRef:    "https://github.com/user/repo.git",
+			rootSubpath: "subdir",
+			version:     "v1.2",
+			selector:    gitref.GitRefSelector,
+			expected:    "https://github.com/user/repo.git#v1.2:subdir",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -164,6 +176,8 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 				Git: &GitModuleSource{
 					CloneRef:     tc.cloneRef,
 					VersionQuery: tc.versionQuery,
+					Version:      tc.version,
+					Selector:     tc.selector,
 				},
 				SourceRootSubpath: tc.rootSubpath,
 			}
