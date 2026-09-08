@@ -69,9 +69,10 @@ func TestSetupViewRendersConciseCompletedStates(t *testing.T) {
 	rendered = ansi.Strip(strings.Join(tui.RenderLines(), "\n"))
 	for _, want := range []string{
 		"nothing to migrate",
-		"dagger install <module>",
-		"dagger sdk search",
-		"dagger module init <sdk> <name>",
+		"dagger module install <module>",
+		"dagger module search <sdk>",
+		"dagger module install <sdk-module>",
+		"dagger module init <sdk>",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("final setup view missing %q:\n%s", want, rendered)

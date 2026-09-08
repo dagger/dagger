@@ -1,0 +1,5 @@
+type Root {
+  pub broken: String! {
+    this is intentionally invalid before SDK generation
+  }
+}

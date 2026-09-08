@@ -174,18 +174,14 @@ func init() {
 	upCmd.GroupID = "daily"
 	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
-	activityCmd.GroupID = "daily"
 
-	moduleDepInstallCmd.GroupID = "workspace"
-	moduleDepUninstallCmd.GroupID = "workspace"
-	installedCmd.GroupID = "workspace"
-	moduleUpdateCmd.GroupID = "workspace"
-	searchCmd.GroupID = "workspace"
-	settingsCmd.GroupID = "workspace"
+	moduleCmd.GroupID = "workspace"
+	sdkCmd.GroupID = "workspace"
+	installAliasCmd.GroupID = "workspace"
+	uninstallAliasCmd.GroupID = "workspace"
+	settingsAliasCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
-	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
@@ -201,22 +197,18 @@ func init() {
 		queryCmd,
 		apiCmd,
 		traceCmd,
-		settingsCmd,
 		checksCmd,
 		upCmd,
 		terminalCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
-		moduleDepInstallCmd,
-		moduleDepUninstallCmd,
-		moduleUpdateCmd,
-		setupCmd,
-		searchCmd,
-		installedCmd,
-		activityCmd,
 		moduleCmd,
 		sdkCmd,
+		installAliasCmd,
+		uninstallAliasCmd,
+		settingsAliasCmd,
+		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		functionsAliasCmd,
@@ -237,6 +229,8 @@ func init() {
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
 	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
+	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
+	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -666,10 +660,10 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(root *cobra.Command, args []string) {
+func parseGlobalFlags(root *cobra.Command, args []string) []string {
 	cmd, commandArgs := resolveCommand(root, args)
 	if cmd == nil {
-		return
+		return args
 	}
 
 	flags := copyCommandFlags(cmd, "global")
@@ -699,6 +693,9 @@ func parseGlobalFlags(root *cobra.Command, args []string) {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	// Dynamic SDK command registration needs the command path as well as its
+	// positional arguments. resolveCommand removed that path before parsing.
+	return append(strings.Fields(commandName(cmd)), flags.Args()...)
 }
 
 func xReleaseLogLine(msg string) string {
@@ -709,15 +706,11 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
-// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
-//
-//nolint:unparam
-func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+func setWorkspaceFlagPolicy(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = workspaceFlagPolicyLocalOnly
 }
 
 func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
@@ -769,7 +762,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
-	case "settings", "workspace settings":
+	case "settings", "workspace settings", "module settings":
 		return len(args) >= 3
 	default:
 		return false
@@ -899,7 +892,7 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(rootCmd, os.Args[1:])
+	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -1000,8 +993,8 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+	if selectedSDK, ok := moduleSDKCommandSelection(commandArgs); ok {
+		if err := registerModuleSDKCommands(ctx, selectedSDK); err != nil {
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			exitWithCode(1)
 		}
@@ -1126,6 +1119,23 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 
 const visibleAliasesAnnotation = "help:visibleAliases"
 const hiddenAliasesAnnotation = "help:hiddenAliases"
+const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
+const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+
+func availableSubcommandsTitle(cmd *cobra.Command) string {
+	title := "AVAILABLE COMMANDS"
+	if cmd.Annotations != nil && cmd.Annotations[availableSubcommandsTitleAnnotation] != "" {
+		title = cmd.Annotations[availableSubcommandsTitleAnnotation]
+	}
+	return termenv.String(title).Bold().String()
+}
+
+func noAvailableSubcommands(cmd *cobra.Command) string {
+	if cmd.HasAvailableSubCommands() || cmd.Annotations == nil {
+		return ""
+	}
+	return cmd.Annotations[noAvailableSubcommandsAnnotation]
+}
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -1467,9 +1477,14 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableSubCommands}}
 
-{{ "Available Commands" | toUpperBold }}
+{{ availableSubcommandsTitle . }}
 {{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if noAvailableSubcommands .}}
+
+{{ noAvailableSubcommands . }}
+{{- end}}
 
 {{- $localFlags := availableFlags . .LocalFlags}}
 {{- if $localFlags.HasAvailableFlags}}

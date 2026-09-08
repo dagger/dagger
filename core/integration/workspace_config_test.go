@@ -7,7 +7,7 @@ package core
 // The CLI 1.0 redesign moved raw config to `dagger workspace config` (the
 // top-level `dagger config` alias was dropped) and removed the explicit
 // `dagger workspace init` command — workspace creation is now implicit on the
-// first `dagger install` (covered in workspace_modules_test.go's "install
+// first `dagger module install` (covered in workspace_modules_test.go's "install
 // initializes empty workspace"). The old TestConfigAlias and
 // TestWorkspaceInitCommand tests were dropped accordingly.
 //
