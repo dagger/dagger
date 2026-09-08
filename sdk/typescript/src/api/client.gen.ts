@@ -15682,7 +15682,7 @@ export class Workspace extends BaseClient {
    * Return this workspace with a generated module client added to one SDK scope.
    *
    * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-   * @param module Installed module name, local path, or module address to generate a client for.
+   * @param module Explicit local path or module address to generate a client for. Installed module names are not supported.
    * @param opts.sdk Optional SDK name. Inspect all installed SDKs when omitted.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
    */
@@ -15895,6 +15895,8 @@ export class Workspace extends BaseClient {
    * Return this workspace with a module client removed from the deepest matching recorded scope.
    *
    * Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+   *
+   * If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
    * @param module The recorded target to remove.
    * @param opts.sdk Optional SDK name. Search all installed SDKs when omitted.
    */

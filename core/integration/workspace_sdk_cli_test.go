@@ -22,7 +22,7 @@ module = "go-sdk"
 [sdks.go.scopes."apps/api"]
 is-module = true
 name = "api"
-clients = ["database"]
+clients = ["./database"]
 
 [sdks.go.scopes."apps/api".settings]
 mode = "fast"
@@ -32,7 +32,7 @@ module = "python-sdk"
 
 [sdks.python.scopes."apps/web"]
 name = "web"
-clients = ["frontend"]
+clients = ["./frontend"]
 `
 
 func newSDKCLIWorkdir(ctx context.Context, t *testctx.T) string {
@@ -90,8 +90,8 @@ func (WorkspaceSuite) TestSDKScopeListCLI(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"SCOPE", "SDK", "TARGET",
-			"apps/api", "go", "database",
-			"apps/web", "python", "frontend",
+			"apps/api", "go", "./database",
+			"apps/web", "python", "./frontend",
 		}, strings.Fields(string(out)))
 	})
 }
@@ -156,7 +156,7 @@ func (WorkspaceSuite) TestSDKScopeFieldsCLI(ctx context.Context, t *testctx.T) {
 		moved := cfg.SDKs["python"].Scopes["apps/api"]
 		require.Equal(t, "api", moved.Name)
 		require.True(t, moved.IsModule)
-		require.Equal(t, []string{"database"}, moved.Clients)
+		require.Equal(t, []string{"./database"}, moved.Clients)
 		require.Equal(t, "fast", moved.Settings["mode"])
 
 		out, err := hostDaggerOutput(ctx, t, workdir, "sdk", "scope", "--path=apps/api", "sdk")

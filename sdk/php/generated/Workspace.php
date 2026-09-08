@@ -682,6 +682,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      * Return this workspace with a module client removed from the deepest matching recorded scope.
      *
      * Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+     *
+     * If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
      */
     public function withoutClient(string $module, ?string $sdk = ''): Workspace
     {

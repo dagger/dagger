@@ -328,7 +328,22 @@ func (s *moduleSourceSchema) moduleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
-	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), args.RefString, args.RefPin)
+	var parsedRef *core.ParsedRefString
+	if args.RequireKind.Valid && args.RequireKind.Value == core.ModuleSourceKindGit {
+		// An explicitly requested Git source must not become a local source
+		// because a directory exists or its remote endpoint cannot be reached.
+		ref, err := core.ResolveDaggerGetRedirect(ctx, args.RefString)
+		if err != nil {
+			return inst, err
+		}
+		gitRef, err := core.ParseGitRefString(ctx, ref)
+		if err != nil {
+			return inst, err
+		}
+		parsedRef = &core.ParsedRefString{Kind: core.ModuleSourceKindGit, Git: &gitRef}
+	} else {
+		parsedRef, err = core.ParseRefString(ctx, core.NewCallerStatFS(bk), args.RefString, args.RefPin)
+	}
 	if err != nil {
 		return inst, err
 	}

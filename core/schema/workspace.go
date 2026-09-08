@@ -265,14 +265,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a generated module client added to one SDK scope.",
 				"Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.").
 			Args(
-				dagql.Arg("module").Doc("Installed module name, local path, or module address to generate a client for."),
+				dagql.Arg("module").Doc("Explicit local path or module address to generate a client for. Installed module names are not supported."),
 				dagql.Arg("sdk").Doc("Optional SDK name. Inspect all installed SDKs when omitted."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name."),
 			),
 		dagql.NodeFunc("withoutClient", s.withoutSDKModuleClient).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module client removed from the deepest matching recorded scope.",
-				"Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.").
+				"Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.",
+				"If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.").
 			Args(
 				dagql.Arg("module").Doc("The recorded target to remove."),
 				dagql.Arg("sdk").Doc("Optional SDK name. Search all installed SDKs when omitted."),

@@ -198,7 +198,7 @@ func loadSDKModuleGraphScopes(
 		return scopes[i].sdkName < scopes[j].sdkName
 	})
 	for _, scope := range scopes {
-		dependencies, err := sdkModuleGraphDependencies(scope, moduleByPath, cfg, configDir)
+		dependencies, err := sdkModuleGraphDependencies(scope, moduleByPath, configDir)
 		if err != nil {
 			return nil, err
 		}
@@ -210,13 +210,12 @@ func loadSDKModuleGraphScopes(
 func sdkModuleGraphDependencies(
 	node *sdkModuleGraphScope,
 	moduleByPath map[string]*sdkModuleGraphScope,
-	cfg *workspace.Config,
 	configDir string,
 ) ([]*sdkModuleGraphScope, error) {
 	seen := map[string]bool{}
 	var dependencies []*sdkModuleGraphScope
 	for _, target := range node.scope.Clients {
-		resolved, err := resolveSDKManagedClientModule(nil, cfg, configDir, target)
+		resolved, err := resolveSDKManagedClientModule(configDir, target)
 		if err != nil {
 			return nil, fmt.Errorf("resolve client target %q in scope %q: %w", target, node.path, err)
 		}
@@ -392,7 +391,7 @@ func (s *workspaceSchema) resolveSDKModuleScopeClients(
 			return ctx, nil, err
 		}
 	}
-	selectedWorkspace, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current.Self(), staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current.Self(), staged.ConfigDir)
 	if err != nil {
 		return operationCtx, nil, err
 	}
@@ -400,7 +399,7 @@ func (s *workspaceSchema) resolveSDKModuleScopeClients(
 
 	clients := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(targets))
 	for _, recordedTarget := range targets {
-		moduleLoadRef, err := resolveSDKManagedClientModule(selectedWorkspace, staged.Config, staged.ConfigDir, recordedTarget)
+		moduleLoadRef, err := resolveSDKManagedClientModule(staged.ConfigDir, recordedTarget)
 		if err != nil {
 			return operationCtx, nil, err
 		}

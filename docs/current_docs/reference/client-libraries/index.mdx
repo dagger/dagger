@@ -18,10 +18,12 @@ Install the SDK for the required language. Run the client command from a project
 
 ```shell
 dagger module install typescript
-dagger module client add .dagger/modules/api --sdk=typescript
+dagger module client add ./.dagger/modules/api --sdk=typescript
 ```
 
-The module argument can be a local module path, a module address, or an installed module name.
+The module argument must be an explicit local path, such as `./api` or `../api`, or a module address.
+Installed module names and unmarked local paths are not supported. A bare `api` never means `./api`.
+Saved local targets are relative to the directory containing `dagger.toml`. They keep an explicit path marker.
 For each SDK, the engine compares the deepest registered scope that contains the current directory with the detected client root.
 It uses the deeper path.
 Without `--sdk`, the engine selects the unique deepest scope across installed SDKs.
@@ -46,6 +48,9 @@ dagger module client rm <TARGET> --sdk=<SDK>
 
 Removal uses recorded client targets and selects the deepest matching scope.
 It fails if several SDKs match at that scope. Use `--sdk` to select one.
+List also shows invalid old targets. Remove them with their exact listed target.
+If invalid targets remain, removal succeeds and generation is skipped with a warning.
+Correct or remove those targets to resume generation.
 
 Only SDKs that implement the client contract can generate clients. Today that is [Go](../sdks/go.mdx), [TypeScript](../sdks/typescript.mdx), and [PHP](../sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
 

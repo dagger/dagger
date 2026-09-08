@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type sdkModuleInitArgs struct {
@@ -287,6 +288,9 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if args.Module == "" {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module target is required")
 	}
+	if _, err := clientModuleRefKind(args.Module); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	if len(args.Settings) > 0 && args.SDK == "" {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDK name is required when client settings are supplied")
 	}
@@ -311,14 +315,12 @@ func (s *workspaceSchema) withSDKModuleClient(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	selectedWorkspace, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	operationCtx = withWorkspaceLookupLockOverride(operationCtx, overlayLock.Lock)
 	moduleLoadRef, configTarget, err := resolveWorkspaceClientModuleInput(
-		selectedWorkspace,
-		staged.Config,
 		staged.ConfigDir,
 		ws.Cwd,
 		args.Module,
@@ -340,8 +342,14 @@ func (s *workspaceSchema) withSDKModuleClient(
 		entry.Scopes = map[string]workspace.SDKScope{}
 	}
 	scope := entry.Scopes[configScopePath]
-	if slices.Contains(scope.Clients, configTarget) {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client target %q already exists in SDK %q scope %q", configTarget, currentScope.sdk.name, currentScope.scope)
+	for _, recorded := range scope.Clients {
+		loadRef, err := resolveSDKManagedClientModule(staged.ConfigDir, recorded)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if loadRef == moduleLoadRef {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client target %q already exists in SDK %q scope %q", recorded, currentScope.sdk.name, currentScope.scope)
+		}
 	}
 	scope.Clients = append(scope.Clients, configTarget)
 	mergeSDKModuleSettings(&scope, explicitSettings)
@@ -419,6 +427,19 @@ func (s *workspaceSchema) withoutSDKModuleClient(
 	updated, err := s.stageSDKModuleConfig(ctx, parent, staged, nil)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	var invalid []string
+	for _, target := range scope.Clients {
+		if _, err := resolveSDKManagedClientModule(staged.ConfigDir, target); err != nil {
+			invalid = append(invalid, fmt.Sprintf("%q", target))
+		}
+	}
+	if len(invalid) > 0 {
+		slog.GlobalLogger(ctx, core.InstrumentationLibrary).Warn(fmt.Sprintf(
+			"SDK %q scope %q: client removed; generation skipped because these targets are invalid: %s. Use explicit local paths within the workspace or module addresses, or remove the targets with 'dagger module client rm'.",
+			winner.sdk.name, winner.scope, strings.Join(invalid, ", "),
+		))
+		return updated, nil
 	}
 	selected, err := selectSDKModule(staged.Config, winner.sdk.name)
 	if err != nil {
@@ -557,7 +578,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
-	selectedWorkspace, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, ws, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -565,7 +586,7 @@ func (s *workspaceSchema) withUpdatedSDKModuleClients(
 	refreshCtx := withWorkspaceLookupLockOverride(operationCtx, refreshed)
 	for _, selection := range selections {
 		for _, target := range selection.targets {
-			loadRef, err := resolveSDKManagedClientModule(selectedWorkspace, staged.Config, staged.ConfigDir, target)
+			loadRef, err := resolveSDKManagedClientModule(staged.ConfigDir, target)
 			if err != nil {
 				return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("client target %q: %w", target, err)
 			}
@@ -665,7 +686,7 @@ func selectSDKModuleClientsForModuleSources(
 	}
 
 	return selectSDKModuleClientsWhere(staged, ".", sdkModuleClientUpdateArgs{All: true}, func(target string) (bool, error) {
-		loadRef, err := resolveSDKManagedClientModule(nil, staged.Config, staged.ConfigDir, target)
+		loadRef, err := resolveSDKManagedClientModule(staged.ConfigDir, target)
 		if err != nil {
 			return false, fmt.Errorf("client target %q: %w", target, err)
 		}

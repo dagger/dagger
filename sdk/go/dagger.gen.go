@@ -17365,6 +17365,8 @@ type WorkspaceWithoutClientOpts struct {
 // Return this workspace with a module client removed from the deepest matching recorded scope.
 //
 // Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+//
+// If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
 func (r *Workspace) WithoutClient(module string, opts ...WorkspaceWithoutClientOpts) *Workspace {
 	q := r.query.Select("withoutClient")
 	for i := len(opts) - 1; i >= 0; i-- {

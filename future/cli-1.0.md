@@ -294,9 +294,10 @@ This command records and generates one module client.
 
 The module argument accepts these values:
 
-- A local module path.
+- An explicit local module path, such as `./api`, `../api`, `.` or `..`.
 - A module address.
-- An installed module name.
+
+Installed module names and unmarked local paths are not accepted. A bare `api` never means `./api`.
 
 The engine resolves the argument to a pinned `ModuleSource`.
 
@@ -307,7 +308,7 @@ The command reports an error if no scope exists or an inspected SDK fails. It ch
 For example:
 
 ```console
-dagger module client add database
+dagger module client add ./database
 dagger module client add github.com/acme/payments --sdk=go
 ```
 
@@ -315,7 +316,7 @@ dagger module client add github.com/acme/payments --sdk=go
 
 This command removes one client with the exact recorded target. It searches recorded scopes that contain the current directory. The optional `--sdk` flag restricts the search to one installed SDK.
 
-The engine calls the scope generator with the remaining scope state. The SDK module removes obsolete generated files that it owns.
+The engine preserves the scope and calls its generator with the remaining state. The SDK module removes obsolete generated files that it owns. If invalid old targets remain, the engine saves the removal, reports those targets, and skips generation until they are corrected or removed. Other SDK or runtime errors still fail the operation.
 
 The engine selects the deepest matching scope. It reports an error if several SDKs match at that scope, with their names, paths, and `--sdk` guidance. It does not call `findClientRoot`.
 
@@ -417,7 +418,7 @@ module = "go-sdk"
 is-module = true
 name = "payments"
 clients = [
-  "database",
+  "./database",
   "github.com/acme/cache",
 ]
 
@@ -458,11 +459,13 @@ An omitted `is-module` value is false.
 
 One scope can contain a module, clients, or both.
 
-The engine removes an empty scope entry.
+`module client rm` keeps the scope entry and all other scope information, even when the scope becomes empty.
 
 ### Client entry
 
-Each string stores one user-facing target reference. The reference can be a local path, a module address, or an installed name.
+Each string stores one target reference: an explicit local path or a module address. Local paths are relative to the directory containing `dagger.toml` and keep an explicit path marker. Remote addresses keep their declared versions. Installed names and unmarked local paths are not accepted.
+
+Old invalid entries are not rewritten. Generation and update report an error. List shows these entries so the user can remove them by their exact target.
 
 One scope cannot contain the same target twice.
 
@@ -804,7 +807,7 @@ The engine does not call `findClientRoot` or `defaultModulePath` during this flo
 
 ### Client removal flow
 
-`dagger module client rm` removes the client from workspace state. The engine then calls `generateScope` with the remaining state.
+`dagger module client rm` removes only the selected client from workspace state. The engine then calls `generateScope` with the remaining state. If invalid old targets remain, the engine saves the removal, reports every invalid target, and skips generation for that scope. The user can remove these targets one at a time. Other SDK or runtime errors still fail the operation.
 
 The SDK module owns its generated files. It must remove obsolete files that it can identify.
 
@@ -919,7 +922,7 @@ The scope settings must contain `runtime = "bun"`. The generated module config m
 
 ```console
 cd services/payments/cmd/server
-dagger module client add database --sdk=go
+dagger module client add ../../../../database --sdk=go
 cd ../../..
 dagger generate
 ```

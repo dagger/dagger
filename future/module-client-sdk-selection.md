@@ -46,7 +46,9 @@ dagger module client rm <module> [--sdk=SDK]
 
 4. **Add operation**
 
-   Use the existing operation for one scope. Resolve the module target. Reject
+   Use the existing operation for one scope. Accept explicit local paths or
+   module addresses. Reject installed names and unmarked local paths. Keep
+   explicit path markers in saved local targets. Reject
    a duplicate only in the selected SDK's selected scope. Add the record,
    validate the configuration, and generate that scope. Apply the resulting
    workspace change through the existing CLI process.
@@ -57,7 +59,10 @@ dagger module client rm <module> [--sdk=SDK]
    contain the current directory. If supplied, `--sdk` restricts this search.
    Select the deepest matching scope. Abort clearly on no match, an SDK that is
    not installed, or a tie. For a tie, show the SDK names and paths, with
-   `--sdk` guidance. Remove the record and regenerate that scope.
+   `--sdk` guidance. Remove only the client record and preserve the scope.
+   Regenerate that scope. If invalid old targets remain, save the removal,
+   report those targets, and skip generation until they are corrected or
+   removed. Other SDK or runtime errors still fail the operation.
 
    Removal does not call `findClientRoot()`. Clients have no separate
    installation name. No alternative removal key is added.

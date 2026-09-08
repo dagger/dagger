@@ -15889,8 +15889,8 @@ class Workspace(Type):
         Parameters
         ----------
         module:
-            Installed module name, local path, or module address to generate a
-            client for.
+            Explicit local path or module address to generate a client for.
+            Installed module names are not supported.
         sdk:
             Optional SDK name. Inspect all installed SDKs when omitted.
         settings:
@@ -16305,6 +16305,9 @@ class Workspace(Type):
 
         Fail if several SDKs have that deepest scope. The selected SDK module
         regenerates the complete scope.
+
+        If invalid client targets remain, save the removal and skip generation
+        until those targets are corrected or removed.
 
         Parameters
         ----------

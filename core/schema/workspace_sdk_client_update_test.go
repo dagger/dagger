@@ -22,7 +22,7 @@ func stagedConfigWithClientScopes(t *testing.T) *stagedWorkspaceConfig {
 						".": {
 							IsModule: true,
 							Name:     "app-dev",
-							Clients:  []string{"target", "github.com/acme/api@main"},
+							Clients:  []string{"./target", "github.com/acme/api@main"},
 						},
 						"nested": {
 							IsModule: true,
@@ -34,7 +34,7 @@ func stagedConfigWithClientScopes(t *testing.T) *stagedWorkspaceConfig {
 				"dang": {
 					Module: "dang-sdk",
 					Scopes: map[string]workspace.SDKScope{
-						".": {IsModule: true, Name: "dang-dev", Clients: []string{"target"}},
+						".": {IsModule: true, Name: "dang-dev", Clients: []string{"./target"}},
 					},
 				},
 			},
@@ -57,8 +57,8 @@ func TestSelectSDKModuleClients(t *testing.T) {
 			cwd:  "app",
 			args: sdkModuleClientUpdateArgs{},
 			want: map[string][]string{
-				"dang@app": {"target"},
-				"go@app":   {"target", "github.com/acme/api@main"},
+				"dang@app": {"./target"},
+				"go@app":   {"./target", "github.com/acme/api@main"},
 			},
 		},
 		{
@@ -66,8 +66,8 @@ func TestSelectSDKModuleClients(t *testing.T) {
 			cwd:  "app",
 			args: sdkModuleClientUpdateArgs{All: true},
 			want: map[string][]string{
-				"dang@app":      {"target"},
-				"go@app":        {"target", "github.com/acme/api@main"},
+				"dang@app":      {"./target"},
+				"go@app":        {"./target", "github.com/acme/api@main"},
 				"go@app/nested": {"github.com/acme/other@main"},
 			},
 		},
@@ -75,15 +75,15 @@ func TestSelectSDKModuleClients(t *testing.T) {
 			name: "sdk filters by provider",
 			cwd:  "app",
 			args: sdkModuleClientUpdateArgs{SDK: "go"},
-			want: map[string][]string{"go@app": {"target", "github.com/acme/api@main"}},
+			want: map[string][]string{"go@app": {"./target", "github.com/acme/api@main"}},
 		},
 		{
-			name: "modules filter selects named targets across sdks",
+			name: "modules filter selects recorded targets across sdks",
 			cwd:  "app",
-			args: sdkModuleClientUpdateArgs{Modules: []string{"target"}},
+			args: sdkModuleClientUpdateArgs{Modules: []string{"./target"}},
 			want: map[string][]string{
-				"dang@app": {"target"},
-				"go@app":   {"target"},
+				"dang@app": {"./target"},
+				"go@app":   {"./target"},
 			},
 		},
 		{
@@ -91,8 +91,8 @@ func TestSelectSDKModuleClients(t *testing.T) {
 			cwd:  "app/nested",
 			args: sdkModuleClientUpdateArgs{},
 			want: map[string][]string{
-				"dang@app":      {"target"},
-				"go@app":        {"target", "github.com/acme/api@main"},
+				"dang@app":      {"./target"},
+				"go@app":        {"./target", "github.com/acme/api@main"},
 				"go@app/nested": {"github.com/acme/other@main"},
 			},
 		},
@@ -163,8 +163,8 @@ func TestSelectSDKModuleClientsForModuleSources(t *testing.T) {
 			name:    "local module",
 			sources: []string{"app/target"},
 			want: map[string][]string{
-				"dang@app": {"target"},
-				"go@app":   {"target"},
+				"dang@app": {"./target"},
+				"go@app":   {"./target"},
 			},
 		},
 		{
@@ -200,7 +200,7 @@ func TestOrderSDKModuleClientSelections(t *testing.T) {
 					".": {
 						IsModule: true,
 						Name:     "root",
-						Clients:  []string{"nested"},
+						Clients:  []string{"./nested"},
 					},
 					"nested": {
 						IsModule: true,

@@ -30,7 +30,11 @@ func (s *workspaceSchema) resolveClientTargetModule(
 	if err != nil {
 		return src, fmt.Errorf("dagql server: %w", err)
 	}
-	if workspace.IsLocalRef(ref, "") {
+	kind, err := clientModuleRefKind(ref)
+	if err != nil {
+		return src, err
+	}
+	if kind == core.ModuleSourceKindLocal {
 		// Local client refs have already been normalized to workspace-root
 		// coordinates. Root the workspace as well, so neither this lookup nor
 		// the target's own dependency paths resolve against a scope cwd a
@@ -64,96 +68,66 @@ func (s *workspaceSchema) resolveClientTargetModule(
 	return src, nil
 }
 
-// resolveWorkspaceClientModuleRef normalizes a client target into the two
-// forms it needs. loadRef is workspace-root-relative for module loading.
-// configRef is the spelling persisted relative to dagger.toml.
-func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, configDir string) (loadRef string, configRef string, _ error) {
-	if !workspace.IsLocalRef(ref, "") {
-		return ref, ref, nil
+// clientModuleRefKind accepts explicit paths and module addresses. Installed
+// names and unmarked paths are not client references. This check does not use
+// the filesystem or contact a remote endpoint.
+func clientModuleRefKind(ref string) (core.ModuleSourceKind, error) {
+	path := strings.ReplaceAll(ref, `\`, "/")
+	if path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") || filepath.IsAbs(path) {
+		return core.ModuleSourceKindLocal, nil
 	}
-	cleaned := filepath.Clean(strings.ReplaceAll(ref, `\`, "/"))
-	if filepath.IsAbs(cleaned) {
-		hostRoot, ok := ws.LocalSourceHostPath()
-		if !ok {
-			return "", "", fmt.Errorf("absolute module ref %q requires a local workspace source", ref)
-		}
-		rel, err := filepath.Rel(hostRoot, cleaned)
-		if err != nil {
-			return "", "", fmt.Errorf("compute workspace-relative module path: %w", err)
-		}
-		cleaned = rel
+	if ref != "" && !workspace.IsLocalRef(ref, "") {
+		return core.ModuleSourceKindGit, nil
 	}
-	if cleaned == "." || cleaned == "" {
-		cleaned = "."
-	}
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("module ref %q must not escape the workspace root", ref)
-	}
-	loadRef = filepath.ToSlash(cleaned)
-	configRef, err := workspace.SDKManagedPathFor(configDir, loadRef)
-	if err != nil {
-		return "", "", err
-	}
-	// Keep an explicit local marker if the persisted spelling would otherwise
-	// classify as a Git reference.
-	if !workspace.IsLocalRef(configRef, "") {
-		configRef = "./" + configRef
-	}
-	return loadRef, configRef, nil
+	return "", fmt.Errorf("invalid client target %q: use an explicit local path such as %q or a module address; installed module names are not supported", ref, "./"+ref)
 }
 
-// resolveSDKManagedClientModule resolves a persisted client target for module
-// loading. Installed names resolve through [modules]. Local paths are relative
-// to dagger.toml. Canonical references stay unchanged.
-func resolveSDKManagedClientModule(ws *core.Workspace, cfg *workspace.Config, configDir, ref string) (string, error) {
-	if cfg != nil {
-		if entry, ok := cfg.Modules[ref]; ok {
-			resolved := resolvedModuleEntrySourceWithPin(configDir, entry)
-			if filepath.IsAbs(resolved) && ws == nil {
-				return resolved, nil
-			}
-			loadRef, _, err := resolveWorkspaceClientModuleRef(ws, resolved, ".")
-			return loadRef, err
-		}
+// explicitClientPath keeps normalized local references distinct from module
+// addresses, including paths whose first component contains a dot.
+func explicitClientPath(path string) string {
+	path = filepath.ToSlash(path)
+	if path == "." || path == ".." || strings.HasPrefix(path, "../") || strings.HasPrefix(path, "/") {
+		return path
 	}
-	if !workspace.IsLocalRef(ref, "") {
+	return "./" + path
+}
+
+// resolveSDKManagedClientModule resolves a saved target from the directory
+// containing dagger.toml. Local load references keep an explicit path marker.
+func resolveSDKManagedClientModule(configDir, ref string) (string, error) {
+	kind, err := clientModuleRefKind(ref)
+	if err != nil {
+		return "", err
+	}
+	if kind == core.ModuleSourceKindGit {
 		return ref, nil
 	}
-	return workspace.ResolveSDKManagedPath(configDir, ref)
+	resolved, err := workspace.ResolveSDKManagedPath(configDir, ref)
+	if err != nil {
+		return "", err
+	}
+	return explicitClientPath(resolved), nil
 }
 
-// resolveWorkspaceClientModuleInput returns the target used for module loading
-// and the target stored in dagger.toml. An installed name is stored unchanged.
-func resolveWorkspaceClientModuleInput(
-	ws *core.Workspace,
-	cfg *workspace.Config,
-	configDir,
-	cwd,
-	ref string,
-) (loadRef string, configRef string, _ error) {
-	if cfg != nil {
-		if _, ok := cfg.Modules[ref]; ok {
-			loadRef, err := resolveSDKManagedClientModule(ws, cfg, configDir, ref)
-			return loadRef, ref, err
-		}
-	}
-	if workspace.IsLocalRef(ref, "") {
-		resolved, err := resolveWorkspacePath(ref, cwd)
-		if err != nil {
-			return "", "", fmt.Errorf("module target %q must not escape the workspace root", ref)
-		}
-		ref = resolved
-	}
-	loadRef, configRef, err := resolveWorkspaceClientModuleRef(ws, ref, configDir)
+// resolveWorkspaceClientModuleInput returns a workspace-root-relative load
+// reference and a target stored relative to dagger.toml.
+func resolveWorkspaceClientModuleInput(configDir, cwd, ref string) (loadRef string, configRef string, _ error) {
+	kind, err := clientModuleRefKind(ref)
 	if err != nil {
 		return "", "", err
 	}
-	if cfg != nil {
-		if _, collides := cfg.Modules[configRef]; collides {
-			configRef = "./" + configRef
-		}
+	if kind == core.ModuleSourceKindGit {
+		return ref, ref, nil
 	}
-	return loadRef, configRef, nil
+	resolved, err := resolveWorkspacePath(ref, cwd)
+	if err != nil {
+		return "", "", fmt.Errorf("module target %q must not escape the workspace root", ref)
+	}
+	configRef, err = workspace.SDKManagedPathFor(configDir, resolved)
+	if err != nil {
+		return "", "", err
+	}
+	return explicitClientPath(resolved), explicitClientPath(configRef), nil
 }
 
 func workspaceClientModuleSourceSelector(ref string) dagql.Selector {
@@ -162,6 +136,7 @@ func workspaceClientModuleSourceSelector(ref string) dagql.Selector {
 		Args: []dagql.NamedInput{
 			{Name: "refString", Value: dagql.String(ref)},
 			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+			{Name: "requireKind", Value: dagql.Opt(core.ModuleSourceKindGit)},
 		},
 	}
 }

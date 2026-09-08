@@ -58,6 +58,9 @@ var moduleClientAddCmd = &cobra.Command{
 	Short: "Add and generate a module client",
 	Long: `Add a module client to one SDK scope and generate that scope.
 
+Use an explicit local path such as ./api or ../api, or a module address.
+Installed module names are not supported.
+
 With no --sdk, select the deepest scope found across installed SDKs.
 If several SDKs have that scope, use --sdk to select one.`,
 	Args:                  cobra.ExactArgs(1),
@@ -73,7 +76,9 @@ var moduleClientRemoveCmd = &cobra.Command{
 	Long: `Remove a recorded module client and regenerate its SDK scope.
 
 Use the exact TARGET from 'dagger module client list'. Select the deepest
-matching scope. If several SDKs have that scope, use --sdk to select one.`,
+matching scope. If several SDKs have that scope, use --sdk to select one.
+If invalid targets remain, save the removal and skip generation until they
+are corrected or removed.`,
 	Args:                  cobra.ExactArgs(1),
 	DisableFlagsInUseLine: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

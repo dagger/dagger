@@ -16231,7 +16231,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `module` - Explicit local path or module address to generate a client for. Installed module names are not supported.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_client(&self, module: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withClient");
@@ -16247,7 +16247,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `module` - Installed module name, local path, or module address to generate a client for.
+    /// * `module` - Explicit local path or module address to generate a client for. Installed module names are not supported.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_client_opts<'a>(
         &self,
@@ -16801,6 +16801,7 @@ impl Workspace {
     }
     /// Return this workspace with a module client removed from the deepest matching recorded scope.
     /// Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+    /// If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
     ///
     /// # Arguments
     ///
@@ -16817,6 +16818,7 @@ impl Workspace {
     }
     /// Return this workspace with a module client removed from the deepest matching recorded scope.
     /// Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+    /// If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
     ///
     /// # Arguments
     ///

@@ -858,6 +858,8 @@ defmodule Dagger.Workspace do
   Return this workspace with a module client removed from the deepest matching recorded scope.
 
   Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+
+  If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
   """
   @spec without_client(t(), String.t(), [{:sdk, String.t() | nil}]) :: Dagger.Workspace.t()
   def without_client(%__MODULE__{} = workspace, module, optional_args \\ []) do

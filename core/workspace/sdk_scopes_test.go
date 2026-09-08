@@ -21,7 +21,7 @@ func TestReconcileSDKScopes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := &Config{SDKs: map[string]SDKEntry{"go": {Scopes: map[string]SDKScope{}}}}
 			for _, key := range test.keys {
-				cfg.SDKs["go"].Scopes[key] = SDKScope{Clients: []string{"target", "target"}}
+				cfg.SDKs["go"].Scopes[key] = SDKScope{Clients: []string{"./target", "./target"}}
 			}
 			messages, err := ReconcileSDKScopes(cfg, test.configDir)
 			require.NoError(t, err)
@@ -31,21 +31,21 @@ func TestReconcileSDKScopes(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, found)
 			require.Equal(t, test.keys[0], key)
-			require.Equal(t, []string{"target"}, cfg.SDKs["go"].Scopes[key].Clients)
+			require.Equal(t, []string{"./target"}, cfg.SDKs["go"].Scopes[key].Clients)
 		})
 	}
 
 	t.Run("preserve clients and metadata", func(t *testing.T) {
 		cfg := &Config{SDKs: map[string]SDKEntry{
 			"go": {Scopes: map[string]SDKScope{
-				"./app": {IsModule: true, Clients: []string{"target"}, Settings: map[string]any{"shared": "same", "first": true}},
-				"app":   {IsModule: true, Name: "checkout", Clients: []string{"target", "./target"}, Settings: map[string]any{"shared": "same", "second": "value"}},
+				"./app": {IsModule: true, Clients: []string{"./target"}, Settings: map[string]any{"shared": "same", "first": true}},
+				"app":   {IsModule: true, Name: "checkout", Clients: []string{"./target", "././target"}, Settings: map[string]any{"shared": "same", "second": "value"}},
 			}},
 			"python": {Scopes: map[string]SDKScope{"app": {Name: "other"}}},
 		}}
 		_, err := ReconcileSDKScopes(cfg, ".")
 		require.NoError(t, err)
-		require.Equal(t, SDKScope{IsModule: true, Name: "checkout", Clients: []string{"target", "./target"}, Settings: map[string]any{"shared": "same", "first": true, "second": "value"}}, cfg.SDKs["go"].Scopes["./app"])
+		require.Equal(t, SDKScope{IsModule: true, Name: "checkout", Clients: []string{"./target", "././target"}, Settings: map[string]any{"shared": "same", "first": true, "second": "value"}}, cfg.SDKs["go"].Scopes["./app"])
 		require.Equal(t, "other", cfg.SDKs["python"].Scopes["app"].Name)
 	})
 
@@ -75,7 +75,7 @@ source = "sdk"
 [sdks.go]
 module = "go-sdk"
 [sdks.go.scopes."../app"]
-clients = ["target"]
+clients = ["./target"]
 [sdks.go.scopes."/app"]
 name = "checkout"
 `)

@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -340,7 +339,7 @@ func TestWorkspaceSDKEntryPaths(t *testing.T) {
 
 	// The SDK scope path is recorded against the config directory, like the
 	// entry's own source, and surfaces workspace-root-relative.
-	sdk, err := workspaceSDKFromEntry(nil, "apps/demo", "custom", sdkEntry, moduleEntry)
+	sdk, err := workspaceSDKFromEntry("apps/demo", "custom", sdkEntry, moduleEntry)
 	require.NoError(t, err)
 	require.Equal(t, "custom", sdk.Name)
 	require.Equal(t, "apps/sdk@sha256:abc", sdk.Ref)
@@ -370,7 +369,7 @@ func TestValidateSDKModuleGenerationGraph(t *testing.T) {
 					".": {
 						IsModule: true,
 						Name:     "root",
-						Clients:  []string{"target", "github.com/acme/remote"},
+						Clients:  []string{"./target", "github.com/acme/remote"},
 					},
 					"target": {IsModule: true, Name: "target"},
 				},
@@ -408,9 +407,9 @@ func TestPlanSDKModuleScopes(t *testing.T) {
 		{
 			name: "diamond visits the shared dependency once",
 			scopes: map[string]workspace.SDKScope{
-				".":      {IsModule: true, Name: "root", Clients: []string{"left", "right"}},
-				"left":   {IsModule: true, Name: "left", Clients: []string{"shared"}},
-				"right":  {IsModule: true, Name: "right", Clients: []string{"shared"}},
+				".":      {IsModule: true, Name: "root", Clients: []string{"./left", "./right"}},
+				"left":   {IsModule: true, Name: "left", Clients: []string{"./shared"}},
+				"right":  {IsModule: true, Name: "right", Clients: []string{"./shared"}},
 				"shared": {IsModule: true, Name: "shared"},
 			},
 			want: []string{"shared", "left", "right", "."},
@@ -443,86 +442,33 @@ func mustModuleEntrySourceWithPinRelativeTo(t *testing.T, configDir, targetDir s
 	return ref
 }
 
-// A client module ref is stored relative to the dagger.toml holding it, and has
-// to read back as a local path. Only a spelling the classifier would call a git
-// ref — a dot in its first segment, "sdk.v1/api" — needs the explicit marker.
-func TestResolveWorkspaceClientModuleRefStoresClassifiableLocalRef(t *testing.T) {
+// Local client references must keep an explicit path marker after both the
+// command directory and configuration directory have been resolved.
+func TestResolveWorkspaceClientModuleInput(t *testing.T) {
 	t.Parallel()
-
 	for _, tc := range []struct {
-		name          string
-		ref           string
-		configDir     string
-		wantLoadRef   string
-		wantConfigRef string
+		ref, configDir, cwd, wantLoad, wantSaved string
 	}{
-		{name: "dotted path stays local", ref: "./sdk.v1/api", configDir: ".", wantLoadRef: "sdk.v1/api", wantConfigRef: "./sdk.v1/api"},
-		{name: "dotted path from nested config", ref: "./sdk.v1/api", configDir: "apps", wantLoadRef: "sdk.v1/api", wantConfigRef: "../sdk.v1/api"},
-		{name: "plain path keeps the bare spelling", ref: "./modules/api", configDir: ".", wantLoadRef: "modules/api", wantConfigRef: "modules/api"},
-		{name: "dot in a later segment needs no marker", ref: ".dagger/modules/api", configDir: ".", wantLoadRef: ".dagger/modules/api", wantConfigRef: ".dagger/modules/api"},
-		{name: "nested config", ref: "modules/api", configDir: "apps/demo", wantLoadRef: "modules/api", wantConfigRef: "../../modules/api"},
-		{name: "remote ref verbatim", ref: "github.com/acme/sdk", configDir: "apps/demo", wantLoadRef: "github.com/acme/sdk", wantConfigRef: "github.com/acme/sdk"},
+		{"./sdk.v1/api", ".", ".", "./sdk.v1/api", "./sdk.v1/api"},
+		{"./modules/api", ".", ".", "./modules/api", "./modules/api"},
+		{"./.dagger/modules/api", ".", ".", "./.dagger/modules/api", "./.dagger/modules/api"},
+		{"../../modules/api", "apps", "apps/client", "./modules/api", "../modules/api"},
+		{"../api", "apps", "apps/client", "./apps/api", "./api"},
+		{"/modules/api", "apps", "apps/client", "./modules/api", "../modules/api"},
+		{".", "apps", "apps", "./apps", "."},
+		{"..", "apps", "apps", ".", ".."},
+		{"github.com/acme/sdk@v1.2.3", "apps", "apps/client", "github.com/acme/sdk@v1.2.3", "github.com/acme/sdk@v1.2.3"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			loadRef, configRef, err := resolveWorkspaceClientModuleRef(&core.Workspace{}, tc.ref, tc.configDir)
+		t.Run(tc.ref+" from "+tc.cwd, func(t *testing.T) {
+			loadRef, saved, err := resolveWorkspaceClientModuleInput(tc.configDir, tc.cwd, tc.ref)
 			require.NoError(t, err)
-			require.Equal(t, tc.wantLoadRef, loadRef)
-			require.Equal(t, tc.wantConfigRef, configRef)
-			require.True(t, workspace.IsLocalRef(configRef, "") == workspace.IsLocalRef(tc.ref, ""),
-				"stored ref must classify the same way as the ref it came from")
+			require.Equal(t, tc.wantLoad, loadRef)
+			require.Equal(t, tc.wantSaved, saved)
+			reloaded, err := resolveSDKManagedClientModule(tc.configDir, saved)
+			require.NoError(t, err)
+			require.Equal(t, loadRef, reloaded)
 		})
 	}
-}
-
-func TestResolveWorkspaceClientModuleInputPreservesInstalledName(t *testing.T) {
-	t.Parallel()
-
-	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
-		"api":        {Source: "modules/api"},
-		"remote-api": {Source: "github.com/acme/api", Pin: "v1.2.3"},
-	}}
-	loadRef, configRef, err := resolveWorkspaceClientModuleInput(
-		&core.Workspace{},
-		cfg,
-		"apps",
-		"apps/client",
-		"api",
-	)
-	require.NoError(t, err)
-	require.Equal(t, "apps/modules/api", filepath.ToSlash(loadRef))
-	require.Equal(t, "api", configRef)
-
-	loadRef, err = resolveSDKManagedClientModule(&core.Workspace{}, cfg, "apps", configRef)
-	require.NoError(t, err)
-	require.Equal(t, "apps/modules/api", filepath.ToSlash(loadRef))
-
-	loadRef, configRef, err = resolveWorkspaceClientModuleInput(
-		&core.Workspace{},
-		cfg,
-		"apps",
-		"apps/client",
-		"remote-api",
-	)
-	require.NoError(t, err)
-	require.Equal(t, "github.com/acme/api@v1.2.3", loadRef)
-	require.Equal(t, "remote-api", configRef)
-
-	cfg.Modules["target"] = workspace.ModuleEntry{Source: "installed/target"}
-	loadRef, configRef, err = resolveWorkspaceClientModuleInput(
-		&core.Workspace{},
-		cfg,
-		".",
-		".",
-		"./target",
-	)
-	require.NoError(t, err)
-	require.Equal(t, "target", loadRef)
-	require.Equal(t, "./target", configRef)
-	loadRef, err = resolveSDKManagedClientModule(&core.Workspace{}, cfg, ".", configRef)
-	require.NoError(t, err)
-	require.Equal(t, "target", loadRef)
 }
 
 // A hand-written root-anchored SDK scope, matched by consumers that see the
@@ -563,12 +509,12 @@ func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
 
 	t.Run("sdk listing resolves it", func(t *testing.T) {
 		config := cfg()
-		sdk, err := workspaceSDKFromEntry(config, "common", "go", config.SDKs["go"], config.Modules["go-sdk"])
+		sdk, err := workspaceSDKFromEntry("common", "go", config.SDKs["go"], config.Modules["go-sdk"])
 		require.NoError(t, err)
 		require.Equal(t, "common/.dagger/modules/mymod", sdk.Modules[0].Source)
 		require.ElementsMatch(t, []*core.WorkspaceModule{
-			{Name: "common/.dagger/modules/mymod", Source: "common/sdk/shared"},
-			{Name: "common/clients/one", Source: "common/sdk/api"},
+			{Name: "common/.dagger/modules/mymod", Source: "./common/sdk/shared"},
+			{Name: "common/clients/one", Source: "./common/sdk/api"},
 		}, sdk.Clients)
 	})
 }

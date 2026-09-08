@@ -71,12 +71,13 @@ legacy-module-compat = false
 | `scopes` | table | Generation scopes, keyed by paths relative to `dagger.toml`. |
 
 Each scope can contain one module, module clients, or both.
+Client paths are relative to the directory containing `dagger.toml`. Use `./api`, `../api`, `.` or `..`; a bare `api` is not a local path.
 
 | Scope key | Type | Description |
 | --- | --- | --- |
 | `is-module` | bool | The scope contains a Dagger module. |
 | `name` | string | Name of the module in this scope. |
-| `clients` | array | Module targets for generated clients. |
+| `clients` | array | Explicit local paths or module addresses for generated clients. Installed module names are not supported. |
 | `settings` | table | SDK settings for this scope. |
 
 ## `[env.<name>]`
