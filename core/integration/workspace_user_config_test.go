@@ -57,7 +57,7 @@ func newUserConfigWorkdir(ctx context.Context, t *testctx.T, originURL, userConf
 func hostDaggerUserConfigExec(ctx context.Context, t *testctx.T, workdir, userConfigPath string, args ...string) ([]byte, error) {
 	t.Helper()
 
-	cmd := hostDaggerCommandRaw(ctx, t, workdir, append([]string{"--progress=report"}, args...)...)
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, args...)
 	cmd.Env = append(cmd.Env, "DAGGER_CONFIG="+userConfigPath)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -104,11 +104,11 @@ profile = "alice-dev"
 source = "github.com/acme/personal"
 `)
 
-		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "installed")
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "installed")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "personal")
 
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "--env=staging", "installed")
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=staging", "installed")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "personal")
 	})
@@ -392,7 +392,7 @@ region = "us-east-1"
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
 
 	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
-		return ctr.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})

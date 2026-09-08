@@ -34,7 +34,7 @@ func TestModuleLoading(t *testing.T) {
 
 func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 			Expect:                        dagger.ReturnTypeFailure,
 		})
@@ -62,7 +62,7 @@ func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
 
 func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
