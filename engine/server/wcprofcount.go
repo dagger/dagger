@@ -24,18 +24,19 @@ const wcprofSessionCompleteSpanName = "wcprof.session_complete"
 // DECLARES how many spans it emitted and the loader refuses a trace that received
 // fewer.
 //
-// It is an sdktrace.SpanProcessor registered on EVERY per-client tracer provider
-// (main and nested module-runtime clients), all sharing this one instance, so the
-// per-trace count accumulates across the whole nested-client tree of a session. At
-// span creation OnStart (a) marks the span WcprofEngineSpanAttr — the counted
-// population, which lets the loader exclude CLI-shell and otelhttp/buildkit spans
-// the engine never counts — and (b) increments the trace's count.
+// It is an sdktrace.SpanProcessor registered on the session-owned tracer
+// provider, so the per-trace count accumulates across the whole nested-client
+// tree. At span creation OnStart (a) marks the span WcprofEngineSpanAttr — the
+// counted population, which lets the loader exclude CLI-shell and
+// otelhttp/buildkit spans the engine never counts — and (b) increments the
+// trace's count.
 //
-// The total is declared ONCE, at session teardown: removeDaggerSession drains the
-// session's queries and stops its services (so no more engine spans will be
-// created), reads the EXACT Final count, and stamps it on a dedicated carrier span
-// (wcprofSessionCompleteSpanName). Because that declaration is the exact final —
-// not a per-query running floor — received <= declared ALWAYS holds, so ANY drop
+// The total is declared ONCE, at session teardown: removeDaggerSession drains
+// requests and background runtimes and completes cleanup (so no more engine
+// spans will be created), reads the EXACT Final count, and stamps it on a
+// dedicated carrier span (wcprofSessionCompleteSpanName). Because that
+// declaration is the exact final — not a per-query running floor —
+// received <= declared ALWAYS holds, so ANY drop
 // (an individual leaf, a whole trailing query whose own root is lost, or
 // post-query async padding) shows up as received < declared and is caught. Reap
 // then drops the per-trace entry, bounding the map to live traces.
@@ -47,11 +48,9 @@ const wcprofSessionCompleteSpanName = "wcprof.session_complete"
 // Scope (the engine-vs-CLI population decision, design point 4): the count covers
 // ENGINE spans only (the ranking-critical class: call/call_exec/exec/lazy/service +
 // user-work + module-load). CLI-shell spans are out of scope and unmarked, so they
-// never skew the reconciliation. The only residual is an engine span created AFTER
-// the teardown stamp (e.g. a container-release span on a non-per-client tracer);
-// such spans are not on a counted tracer and/or are past telemetry shutdown, so
-// they neither inflate received nor escape the count — verified empirically that a
-// complete capture reconciles received == declared exactly.
+// never skew the reconciliation. The final count is stamped only after all
+// cleanup producers stop and is then flushed through the session provider's
+// final shutdown barrier.
 type wcprofSpanCounter struct {
 	mu     sync.Mutex
 	counts map[trace.TraceID]int

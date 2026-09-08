@@ -497,7 +497,11 @@ func main() { //nolint:gocyclo
 				}
 			}
 			grpcServer.GracefulStop()
-			if err := srv.GracefulStop(context.WithoutCancel(stopCtx)); err != nil {
+			// stopCtx carries the graceful stop deadline and nothing else, so
+			// it must reach session teardown intact: a session whose producer
+			// ignores cancellation is bounded by that deadline rather than
+			// holding the engine up forever.
+			if err := srv.GracefulStop(stopCtx); err != nil {
 				slog.Error("server graceful stop", "error", err)
 			}
 			srv = nil

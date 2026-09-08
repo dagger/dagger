@@ -176,11 +176,6 @@ func (c *Client) Run(
 			Ident:    execIdent,
 			ClientID: callerClientID,
 		})
-		if nestedClientMetadata != nil && nestedClientMetadata.ClientID != "" {
-			// nested client calls back into the API under this client ID; the
-			// analyzer stitches its ops under this exec via this link
-			wcprof.Link(ctx, wcprof.LinkKindNestedClient, 0, 0, nestedClientMetadata.ClientID, 0)
-		}
 	}
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated

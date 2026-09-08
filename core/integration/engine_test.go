@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -848,6 +849,132 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 	clientCancel()
 	require.NoError(t, eg.Wait(), "error from client exec")
+}
+
+// TestSessionTeardownSurvivesNestedClientStartup kills the CLI while module
+// calls are starting their nested SDK clients, then requires every session to
+// finish teardown and the engine to keep serving. Teardown waits for every
+// client scope lease without a deadline, so a registration that blocks behind
+// teardown, or a lease stranded by a registration racing it, leaves a removed
+// session in the lifecycle snapshot forever.
+func (EngineSuite) TestSessionTeardownSurvivesNestedClientStartup(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.GRPC.DebugAddress = "0.0.0.0:6060"
+			return cfg
+		}),
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithExposedPort(6060, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+		},
+	))
+
+	// The function runs an uncached exec that outlives every kill delay below,
+	// so a kill lands while the nested SDK client is starting, registering, or
+	// running rather than after the call has already completed.
+	workloadDir := c.Directory().
+		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"}}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Main struct{}
+
+func (m *Main) Hello(ctx context.Context, seed string) (string, error) {
+	return dag.Container().
+		From("`+alpineImage+`").
+		WithEnvVariable("SEED", seed).
+		WithExec([]string{"sh", "-c", "sleep 3; echo hi"}).
+		Stdout(ctx)
+}
+`)
+
+	client := engineClientContainer(ctx, t, c, devEngine).
+		WithMountedDirectory("/tmp/main", workloadDir).
+		WithWorkdir("/tmp/main")
+
+	callHello := func(seed string) (string, error) {
+		return client.
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"dagger", "call", "hello", "--seed=" + seed}).
+			Stdout(ctx)
+	}
+
+	// Warm the module so the timed calls below are bounded by nested client
+	// startup rather than SDK builds.
+	out, err := callHello("warmup")
+	require.NoError(t, err)
+	require.Contains(t, out, "hi")
+
+	// Kill the CLI at staggered points during module calls. Each kill drops
+	// the main client's connections, which reaps the session while the
+	// module's SDK runtime may still be starting, registering its nested
+	// client, or running its exec. The exit codes are irrelevant; what
+	// matters is what the engine does with the disconnects.
+	_, err = client.
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"sh", "-c", `
+i=0
+for delay in 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.55 0.6 0.7 0.85 1 1.5 2.5; do
+  i=$((i+1))
+  dagger call hello --seed="kill-$i" >/dev/null 2>&1 &
+  pid=$!
+  sleep "$delay"
+  kill -9 "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+done
+`}).Sync(ctx)
+	require.NoError(t, err)
+
+	type lifecycleSnapshot struct {
+		Runtimes int `json:"runtimes"`
+		Sessions []struct {
+			SessionID string `json:"session_id"`
+			State     string `json:"state"`
+		} `json:"sessions"`
+	}
+	debugCtr := c.Container().From(alpineImage).WithServiceBinding("dev-engine", devEngine)
+	var lastSnapshot string
+	settled := false
+	for attempt := 0; attempt < 60; attempt++ {
+		raw, err := debugCtr.
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"wget", "-qO-", "http://dev-engine:6060/debug/client-lifecycle"}).
+			Stdout(ctx)
+		if err != nil {
+			lastSnapshot = err.Error()
+			time.Sleep(time.Second)
+			continue
+		}
+		lastSnapshot = raw
+		var snapshot lifecycleSnapshot
+		require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+		if len(snapshot.Sessions) == 0 && snapshot.Runtimes == 0 {
+			settled = true
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if !settled {
+		// A stuck teardown is waiting on something; the goroutine dump says what.
+		dump, err := debugCtr.
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"wget", "-qO-", "http://dev-engine:6060/debug/pprof/goroutine?debug=2"}).
+			Stdout(ctx)
+		if err != nil {
+			dump = err.Error()
+		}
+		t.Logf("engine goroutines while teardown is stuck:\n%s", dump)
+	}
+	require.True(t, settled, "sessions did not finish teardown after client disconnects: %s", lastSnapshot)
+
+	// The engine must still serve a fresh session afterwards.
+	out, err = callHello("final")
+	require.NoError(t, err)
+	require.Contains(t, out, "hi")
 }
 
 func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T) {

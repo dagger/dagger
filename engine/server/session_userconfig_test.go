@@ -57,16 +57,15 @@ func (h *userConfigTestHost) readFile(_ context.Context, path string) ([]byte, e
 	return nil, os.ErrNotExist
 }
 
-func loadUserConfigTestWorkspace(t *testing.T, h *userConfigTestHost, md *engine.ClientMetadata) (*daggerClient, error) {
+func loadUserConfigTestWorkspace(t *testing.T, h *userConfigTestHost, md *engine.ClientMetadata) (*clientRuntime, error) {
 	t.Helper()
 
 	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
 		ClientID: "test-client",
 	})
-	client := &daggerClient{
-		pendingWorkspaceLoad: true,
-		clientMetadata:       md,
-	}
+	client := &clientRuntime{clientRecord: &clientRecord{
+		clientMetadata: md},
+		pendingWorkspaceLoad: true}
 	err := (&Server{}).detectAndLoadWorkspace(ctx, client,
 		h.statFS(),
 		h.readFile,
@@ -98,7 +97,7 @@ const userConfigTestGitConfig = `[core]
 	fetch = +refs/heads/*:refs/remotes/origin/*
 `
 
-func pendingModuleByName(t *testing.T, client *daggerClient, name string) pendingModule {
+func pendingModuleByName(t *testing.T, client *clientRuntime, name string) pendingModule {
 	t.Helper()
 	for _, mod := range client.pendingModules {
 		if mod.Name == name {

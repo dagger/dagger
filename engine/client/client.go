@@ -530,7 +530,29 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	return nil
 }
 
+func (c *Client) telemetryContext(ctx context.Context) (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	go func() {
+		select {
+		case <-c.internalCtx.Done():
+			cancel(context.Cause(c.internalCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+	// Keep telemetry alive across the caller's cancellation and the server's
+	// shutdown drain, but tie it to the client-owned internal lifetime so a
+	// failed initialization or rejected /shutdown cannot strand SSE streams.
+	ctx, cancel := c.telemetryContext(ctx)
+	defer func() {
+		if rerr != nil {
+			cancel(rerr)
+		}
+	}()
+
 	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -817,8 +839,18 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 
 func (c *Client) Close() (rerr error) {
 	// shutdown happens outside of c.closeMu, since it requires a connection
-	if err := c.shutdownServer(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	shutdownErr := c.shutdownServer()
+	if shutdownErr != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
+	} else if c.telemetry != nil {
+		// A successful /shutdown has flushed the session's telemetry and
+		// marked this client's streams as terminating; the server ends them
+		// once it has sent everything. Drain them now, before internalCancel
+		// closes the connections from our side, or the final spans (including
+		// the error that ended the run) never reach the frontend.
+		if err := c.telemetry.Wait(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
+		}
 	}
 
 	c.closeMu.Lock()
@@ -913,13 +945,26 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		return fmt.Errorf("connect to SSE: %w", err)
 	}
 
+	var closeOnce sync.Once
+	closeSSE := func() {
+		closeOnce.Do(func() {
+			_ = sseConn.Close()
+		})
+	}
+	stopClose := context.AfterFunc(ctx, closeSSE)
+
 	c.eg.Go(func() error {
-		defer sseConn.Close()
+		defer func() {
+			stopClose()
+			closeSSE()
+		}()
 
 		for {
 			event, err := sseConn.Next()
 			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				if errors.Is(err, io.EOF) ||
+					errors.Is(err, context.Canceled) ||
+					errors.Is(err, sse.ErrSourceClosed) {
 					return nil
 				}
 				return fmt.Errorf("decode: %w", err)
@@ -952,10 +997,6 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 }
 
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -987,10 +1028,6 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -1012,10 +1049,6 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 }
 
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
