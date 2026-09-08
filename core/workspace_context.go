@@ -174,7 +174,12 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.CurrentServedDeps(wsCtx)
+	var deps *SchemaBuilder
+	if ws.Self().IsValueWorkspace() {
+		deps, err = query.DefaultDeps(wsCtx)
+	} else {
+		deps, err = query.CurrentServedDeps(wsCtx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace served deps: %w", err)
 	}
@@ -189,6 +194,9 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 // callers that resolve those root fields directly (e.g. the LLM's inspect tool
 // enumerating module entrypoints) resolve them against the same workspace.
 func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
+	if ws.Self().IsValueWorkspace() {
+		return ctx, nil
+	}
 	wsCtx, err := workspaceClientContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err

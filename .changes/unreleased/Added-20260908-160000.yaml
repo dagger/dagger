@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  Load checks, generators, services, terminals, and agents from modules in
+  `Directory.asWorkspace` and `GitRef.asWorkspace` values. Legacy toolchains
+  resolve default paths from the workspace tree, including pending edits.
+time: 2026-09-08T16:00:00Z
+custom:
+  Author: vito
+  PR: ""

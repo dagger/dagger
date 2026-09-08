@@ -865,6 +865,18 @@ type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
 
+type directoryAsModuleSourceArgs struct {
+	SourceRootPath string `default:"."`
+
+	// AllowNotExists tolerates a directory holding no dagger config file at
+	// the source root, returning a context-only source (ConfigExists=false)
+	// instead of erroring. Used when the directory is needed purely as a
+	// +defaultPath context, e.g. a value workspace root that is a Workspace
+	// (dagger.toml), not a Module (dagger.json). Mirrors the tolerance local
+	// and git module sources already have.
+	AllowNotExists bool `internal:"true" default:"false"`
+}
+
 func (s *moduleSourceSchema) directoryAsModule(
 	ctx context.Context,
 	contextDir dagql.ObjectResult[*core.Directory],
@@ -892,7 +904,7 @@ func (s *moduleSourceSchema) directoryAsModule(
 func (s *moduleSourceSchema) directoryAsModuleSource(
 	ctx context.Context,
 	contextDir dagql.ObjectResult[*core.Directory],
-	args directoryAsModuleArgs,
+	args directoryAsModuleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
 	sourceRootSubpath := args.SourceRootPath
 	if sourceRootSubpath == "" {
@@ -919,7 +931,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to find dir module config: %w", err)
 	}
 	if !found {
-		return inst, fmt.Errorf("dir module source does not contain a dagger config file")
+		if !args.AllowNotExists {
+			return inst, fmt.Errorf("dir module source does not contain a dagger config file")
+		}
+		dirSrc.ConfigExists = false
+		return dagql.NewResultForCurrentCall(ctx, dirSrc)
 	}
 	dirSrc.ConfigFilename = configFilename
 	if err := s.loadConfiguredModuleSource(ctx, dirSrc); err != nil {
@@ -3432,6 +3448,79 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	}
 	return inst.WithContentDigest(ctx, scopedDigest)
 }
+
+// resolveDefaultPathContextSource selects the context for legacy default paths
+// and its module cache variant. Value contexts take precedence over refs.
+func resolveDefaultPathContextSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+	contextSource dagql.Optional[core.ModuleSourceID],
+	contextRef, contextPin string,
+) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	var err error
+	defaultPathContextSrc := src
+	switch {
+	case contextSource.Valid:
+		defaultPathContextSrc, err = contextSource.Value.Load(ctx, dag)
+		if err != nil {
+			return defaultPathContextSrc, "", fmt.Errorf("failed to load defaultPath context source: %w", err)
+		}
+	case contextRef != "":
+		contextSourceArgs := []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(contextRef)},
+			// The context source is used only as a +defaultPath context
+			// directory, never served as a module, so tolerate a ref with no
+			// dagger config file. A migrated workspace root is a Workspace
+			// (dagger.toml), not a Module (dagger.json); without this, a remote
+			// (git) workspace fails to resolve legacy-default-path modules while
+			// a local one succeeds (local module sources already tolerate this).
+			{Name: "allowNotExists", Value: dagql.Boolean(true)},
+		}
+		if contextPin != "" {
+			contextSourceArgs = append(contextSourceArgs, dagql.NamedInput{
+				Name: "refPin", Value: dagql.String(contextPin),
+			})
+		}
+		err = dag.Select(ctx, dag.Root(), &defaultPathContextSrc, dagql.Selector{
+			Field: "moduleSource",
+			Args:  contextSourceArgs,
+		})
+		if err != nil {
+			return defaultPathContextSrc, "", fmt.Errorf("failed to load defaultPath context source: %w", err)
+		}
+	}
+	defaultPathContextSourceVariant := ""
+	switch {
+	case contextSource.Valid:
+		// A source passed by ID may not carry a recipe digest (handle-form
+		// IDs), and a Dir source has no ref string, so key the variant on the
+		// context tree's content instead.
+		if contextDir := defaultPathContextSrc.Self().ContextDirectory; contextDir.Self() != nil {
+			var contextDirDigest string
+			if err := dag.Select(ctx, contextDir, &contextDirDigest, dagql.Selector{Field: "digest"}); err != nil {
+				return defaultPathContextSrc, "", fmt.Errorf("defaultPath context source digest: %w", err)
+			}
+			defaultPathContextSourceVariant = hashutil.HashStrings(
+				"defaultPathContextSource",
+				contextDirDigest,
+			).String()
+		} else {
+			defaultPathContextSourceVariant = hashutil.HashStrings(
+				"defaultPathContextSource",
+				defaultPathContextSrc.Self().AsString(),
+				defaultPathContextSrc.Self().Pin(),
+			).String()
+		}
+	case contextRef != "":
+		defaultPathContextSourceVariant = hashutil.HashStrings(
+			contextRef,
+			contextPin,
+		).String()
+	}
+	return defaultPathContextSrc, defaultPathContextSourceVariant, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3470,6 +3559,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
 		DefaultPathContextSourcePin string `internal:"true" default:""`
+
+		// DefaultPathContextSource supplies an already-resolved source whose
+		// tree +defaultPath inputs resolve from, taking precedence over
+		// DefaultPathContextSourceRef. Value workspaces pass their own
+		// (possibly overlaid) root tree this way: no ref string names it, and
+		// a frozen workspace's commits may exist nowhere a ref could fetch
+		// from.
+		DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3494,30 +3591,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	originalSrc := src
 	execSrc := src
-	defaultPathContextSrc := src
-	if args.DefaultPathContextSourceRef != "" {
-		contextSourceArgs := []dagql.NamedInput{
-			{Name: "refString", Value: dagql.String(args.DefaultPathContextSourceRef)},
-			// The context source is used only as a +defaultPath context
-			// directory, never served as a module, so tolerate a ref with no
-			// dagger config file. A migrated workspace root is a Workspace
-			// (dagger.toml), not a Module (dagger.json); without this, a remote
-			// (git) workspace fails to resolve legacy-default-path modules while
-			// a local one succeeds (local module sources already tolerate this).
-			{Name: "allowNotExists", Value: dagql.Boolean(true)},
-		}
-		if args.DefaultPathContextSourcePin != "" {
-			contextSourceArgs = append(contextSourceArgs, dagql.NamedInput{
-				Name: "refPin", Value: dagql.String(args.DefaultPathContextSourcePin),
-			})
-		}
-		err = dag.Select(ctx, dag.Root(), &defaultPathContextSrc, dagql.Selector{
-			Field: "moduleSource",
-			Args:  contextSourceArgs,
-		})
-		if err != nil {
-			return inst, fmt.Errorf("failed to load defaultPath context source: %w", err)
-		}
+	defaultPathContextSrc, defaultPathContextSourceVariant, err := resolveDefaultPathContextSource(
+		ctx, dag, src, args.DefaultPathContextSource,
+		args.DefaultPathContextSourceRef, args.DefaultPathContextSourcePin,
+	)
+	if err != nil {
+		return inst, err
 	}
 	if src.Self().Blueprint.Self() != nil {
 		execSrc = src.Self().Blueprint
@@ -3564,13 +3643,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// apply ForceDefaultFunctionCaching if requested
 	if args.ForceDefaultFunctionCaching {
 		mod.DisableDefaultFunctionCaching = false
-	}
-	defaultPathContextSourceVariant := ""
-	if args.DefaultPathContextSourceRef != "" {
-		defaultPathContextSourceVariant = hashutil.HashStrings(
-			args.DefaultPathContextSourceRef,
-			args.DefaultPathContextSourcePin,
-		).String()
 	}
 	// Keep the per-session content cache distinct for module variants produced
 	// from the same source with different internal asModule options.
