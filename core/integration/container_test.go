@@ -5107,15 +5107,80 @@ func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
+	const nestingStatus = `if [ -n "$DAGGER_SESSION_PORT" ]; then echo enabled; else echo disabled; fi`
+
+	t.Run("legacy", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// Open a CLI session against the legacy API and assert the selected version.
+		cli := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v0.21.0")
+		const query = `query($image: String!, $command: String!, $enabled: Boolean) {
+			__schemaVersion
+			container {
+				from(address: $image) {
+					withExec(args: ["sh", "-c", $command], experimentalPrivilegedNesting: $enabled) {
+						stdout
+					}
+				}
+			}
+		}`
+		for _, tc := range []struct {
+			name    string
+			enabled bool
+			want    string
+		}{
+			{name: "default disabled", want: "disabled\n"},
+			{name: "explicitly enabled", enabled: true, want: "enabled\n"},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				variables, err := json.Marshal(struct {
+					Image   string `json:"image"`
+					Command string `json:"command"`
+					Enabled bool   `json:"enabled,omitempty"`
+				}{alpineImage, nestingStatus, tc.enabled})
+				require.NoError(t, err)
+				out, err := cli.WithExec([]string{"dagger", "query", "--var-json", string(variables)}, dagger.ContainerWithExecOpts{Stdin: query}).Stdout(ctx)
+				require.NoError(t, err)
+				var res struct {
+					Version   string `json:"__schemaVersion"`
+					Container struct {
+						From struct{ WithExec struct{ Stdout string } }
+					}
+				}
+				require.NoError(t, json.Unmarshal([]byte(out), &res))
+				require.Equal(t, "v0.21.0", res.Version)
+				require.Equal(t, tc.want, res.Container.From.WithExec.Stdout)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name           string
+		disableNesting bool
+		want           string
+	}{
+		{name: "default enabled", want: "enabled\n"},
+		{name: "nesting disabled", disableNesting: true, want: "disabled\n"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			out, err := c.Container().From(alpineImage).
+				WithExec([]string{"sh", "-c", nestingStatus}, dagger.ContainerWithExecOpts{
+					DisableNesting: tc.disableNesting,
+				}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, out)
+		})
+	}
+
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := c.Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
-			WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).
 			Sync(ctx)
 		require.NoError(t, err)
 	})
@@ -6038,11 +6103,11 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"})
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableNesting: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerc.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6058,7 +6123,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
 		imageName := "foobar:" + identity.NewID()
-		_, err := alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableNesting: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6076,7 +6141,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
+			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -6098,7 +6163,7 @@ func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) 
 	nerdctl = nerdctl.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "image+nerdctl://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true})
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true, InsecureRootCapabilities: true})
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
 		alt := nerdctl.
@@ -6107,7 +6172,7 @@ func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) 
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
+			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -6131,14 +6196,14 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"})
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
+		out, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableNesting: true}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6151,7 +6216,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := alt.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
+		out, err := alt.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableNesting: true}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6166,7 +6231,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).
+			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}, dagger.ContainerWithExecOpts{DisableNesting: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
@@ -6183,7 +6248,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true, InsecureRootCapabilities: true}).
 		WithoutFile("/usr/local/bin/docker")
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
@@ -6206,6 +6271,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
 			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
+				DisableNesting:           true,
 				InsecureRootCapabilities: true,
 			}).Stdout(ctx)
 		require.NoError(t, err)
@@ -6222,7 +6288,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"})
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true})
 
 	alt := dockerc.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
@@ -6231,7 +6297,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	out, err := alt.WithExec([]string{
 		"dagger", "shell", "-c",
 		`container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`,
-	}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+	}, dagger.ContainerWithExecOpts{DisableNesting: true, Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")
@@ -6243,7 +6309,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	out, err = alt.WithExec([]string{
 		"dagger", "shell", "-c",
 		`host | container-image ` + imageName + ` | with-exec echo,foo | stdout`,
-	}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+	}, dagger.ContainerWithExecOpts{DisableNesting: true, Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")
@@ -6263,7 +6329,7 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 	out, err := dockerc.
 		With(withModuleFixture(t, c, "/src/test", "go/container-save-nested")).
 		WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{DisableNesting: true, Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")

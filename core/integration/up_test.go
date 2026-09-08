@@ -66,9 +66,7 @@ func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs i
 			wait $DAGGER_PID 2>/dev/null
 			exit 0
 		`, upArgs, timeoutSecs, url, url, expectBodyContains, expectBodyContains, okMsg,
-		)}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		)})
 	}
 }
 

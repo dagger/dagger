@@ -11,8 +11,6 @@ import (
 	"github.com/dagger/testctx"
 )
 
-var nestedExec = dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}
-
 func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName string) *dagger.Container {
 	ctr := c.Container().
 		From(alpineImage).

@@ -44,17 +44,14 @@ func TestWorkspaceCompat(t *testing.T) {
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger"}, args...))
 	}
 }
 
 func compatDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 	}
 }
@@ -62,8 +59,7 @@ func compatDaggerExecFail(args ...string) dagger.WithContainerFunc {
 func compatDaggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 }
@@ -667,8 +663,7 @@ source = "`+remoteRef+`"
 		ctr := legacyCompatDangSource(t, c, "hello from explicit workspace")
 
 		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "-W", ".", "call", "greet"}, dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from explicit workspace", strings.TrimSpace(out))

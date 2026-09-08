@@ -35,8 +35,7 @@ func TestModuleLoading(t *testing.T) {
 func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 	}
 }
@@ -44,8 +43,7 @@ func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
 func moduleLoadingDaggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 }
@@ -53,26 +51,22 @@ func moduleLoadingDaggerCall(args ...string) dagger.WithContainerFunc {
 func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			UseEntrypoint: true,
+			Expect:        dagger.ReturnTypeFailure,
 		})
 	}
 }
 
 func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...))
 	}
 }
 
 func moduleLoadingDaggerQuery(query string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: query,
 		})
 	}
 }
@@ -80,9 +74,8 @@ func moduleLoadingDaggerQuery(query string, args ...string) dagger.WithContainer
 func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Stdin:  query,
+			Expect: dagger.ReturnTypeFailure,
 		})
 	}
 }

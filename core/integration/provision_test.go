@@ -122,7 +122,7 @@ func (ProvisionSuite) TestImageDriverConfig(ctx context.Context, t *testctx.T) {
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:dev")
 
 			// check that the config was used by the engine
-			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{engine{localCache{reservedSpace,maxUsedSpace,minFreeSpace}}}", InsecureRootCapabilities: true}).Stdout(ctx)
+			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{engine{localCache{reservedSpace,maxUsedSpace,minFreeSpace}}}", InsecureRootCapabilities: true, DisableNesting: true}).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"engine": {"localCache": {"reservedSpace": 1000, "maxUsedSpace": 2000, "minFreeSpace": 3000}}}`, out)
 
@@ -174,7 +174,7 @@ FAKE CERTIFICATE DATA
 						}
 					}
 				}
-			`, InsecureRootCapabilities: true}).Stdout(ctx)
+			`, InsecureRootCapabilities: true, DisableNesting: true}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, gjson.Get(out, "container.from.standalone.stdout").String(), fakeCACert)
 			require.Contains(t, gjson.Get(out, "container.from.bundle.stdout").String(), fakeCACert)
@@ -267,7 +267,7 @@ func detectEngineVersion(ctx context.Context, t *testctx.T, ctr *dagger.Containe
 	out, err := ctr.
 		// NOTE: we don't use any interesting functionality, so disable this check
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.0.0").
-		WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{version}", InsecureRootCapabilities: true}).
+		WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: "{version}", InsecureRootCapabilities: true, DisableNesting: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 

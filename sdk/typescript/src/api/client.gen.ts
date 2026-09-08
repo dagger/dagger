@@ -265,9 +265,9 @@ export type ContainerAsServiceOpts = {
   useEntrypoint?: boolean
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -509,9 +509,9 @@ export type ContainerTerminalOpts = {
   cmd?: string[]
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -545,9 +545,9 @@ export type ContainerUpOpts = {
   useEntrypoint?: boolean
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -569,9 +569,9 @@ export type ContainerUpOpts = {
 
 export type ContainerWithDefaultTerminalCmdOpts = {
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -694,9 +694,9 @@ export type ContainerWithExecOpts = {
   expect?: ReturnType
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. Like --privileged in Docker
@@ -1304,9 +1304,9 @@ export type DirectoryTerminalOpts = {
   cmd?: string[]
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
-  experimentalPrivilegedNesting?: boolean
+  disableNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -4435,7 +4435,7 @@ export class Container extends BaseClient {
    *
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -5035,7 +5035,7 @@ export class Container extends BaseClient {
   /**
    * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: ContainerTerminalOpts): Container => {
@@ -5055,7 +5055,7 @@ export class Container extends BaseClient {
    *
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -5109,7 +5109,7 @@ export class Container extends BaseClient {
   /**
    * Set the default command to invoke for the container's terminal API.
    * @param args The args of the command.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   withDefaultTerminalCmd = (
@@ -5221,7 +5221,7 @@ export class Container extends BaseClient {
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
    * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -6406,7 +6406,7 @@ export class Directory extends BaseClient {
    * Opens an interactive terminal in new container with this directory mounted inside.
    * @param opts.container If set, override the default container used for the terminal.
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableNesting Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: DirectoryTerminalOpts): Directory => {

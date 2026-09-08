@@ -117,8 +117,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 			t.Run("error", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
 					WithExec([]string{"dagger", "generate", "changeset-failure", "-y", "--progress=plain"}, dagger.ContainerWithExecOpts{
-						Expect:                        dagger.ReturnTypeAny,
-						ExperimentalPrivilegedNesting: true,
+						Expect: dagger.ReturnTypeAny,
 					}).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
@@ -240,8 +239,7 @@ func (GeneratorsSuite) TestGeneratorLazyExecFailureSurfacesStderr(ctx context.Co
 
 	out, err := modGen.
 		WithExec([]string{"dagger", "generate", "lazy-exec-failure", "-y", "--progress=plain"}, dagger.ContainerWithExecOpts{
-			Expect:                        dagger.ReturnTypeAny,
-			ExperimentalPrivilegedNesting: true,
+			Expect: dagger.ReturnTypeAny,
 		}).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
@@ -1487,7 +1485,7 @@ func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndEntrypoint(ctx contex
 		// introspection narrows; the second, bare listing must widen to every
 		// remaining module and surface the broken one.
 		out, err := base.
-			WithExec([]string{"sh", "-c", "set -e; dagger api call good-mod ping; if dagger api functions >/dev/null 2>&1; then echo BARE_LISTING_PASSED; else echo BARE_LISTING_FAILED; fi"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			WithExec([]string{"sh", "-c", "set -e; dagger api call good-mod ping; if dagger api functions >/dev/null 2>&1; then echo BARE_LISTING_PASSED; else echo BARE_LISTING_FAILED; fi"}).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "pong from goodMod")
