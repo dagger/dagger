@@ -173,9 +173,6 @@ func loadSDKModuleGraphScopes(
 				path:        workspaceScope,
 				scope:       entry.Scopes[configScope],
 			}
-			if node.scope.IsModule && strings.TrimSpace(node.scope.Name) == "" {
-				return nil, fmt.Errorf("SDK %q module scope %q has no name; run `dagger module init %s --name=NAME --path=%s`", sdkName, workspaceScope, sdkName, workspaceScope)
-			}
 			scopes = append(scopes, node)
 			if !node.scope.IsModule {
 				continue

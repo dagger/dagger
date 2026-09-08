@@ -114,7 +114,9 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	}
 	scope := entry.Scopes[configScopePath]
 	scope.IsModule = true
-	scope.Name = moduleName
+	if args.Name != "" {
+		scope.Name = args.Name
+	}
 	mergeSDKModuleSettings(&scope, explicitSettings)
 	entry.Scopes[configScopePath] = scope
 	staged.Config.SDKs[selected.name] = entry
@@ -179,30 +181,62 @@ func resolveSDKModuleInit(ws *core.Workspace, pathArg, nameArg string) (string, 
 		explicitPath = cleanWorkspaceRelPath(explicitPath)
 	}
 
-	moduleName := nameArg
-	if moduleName == "" && pathArg != "" {
-		moduleName = workspaceDirectoryName(explicitPath)
+	configDir := "."
+	if ws.ConfigFile != "" {
+		configDir = filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))
 	}
-	if moduleName == "" && ws.ConfigFile != "" {
-		moduleName = moduleDevName(workspaceDirectoryName(filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))))
-	}
-	if moduleName == "" {
-		moduleName = moduleDevName(workspaceRootDirectoryName(ws))
-	}
-	if strings.TrimSpace(moduleName) == "" {
-		return "", "", false, fmt.Errorf("cannot infer module name from the module path, active config file, or workspace root; pass --name")
+	moduleName, err := resolveSDKModuleName(ws, nil, configDir, explicitPath, nameArg)
+	if err != nil {
+		return "", "", false, err
 	}
 
 	scopePath := explicitPath
 	if pathArg == "" {
-		configDir := "."
-		if ws.ConfigFile != "" {
-			configDir = filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))
-		}
 		scopePath = filepath.Join(configDir, ".dagger", "modules", moduleName)
 	}
 	scopePath = cleanWorkspaceRelPath(scopePath)
 	return scopePath, moduleName, pathArg != "", nil
+}
+
+// resolveSDKModuleName computes the name without changing the saved scope.
+// Default init records an entrypoint installation, which preserves its name
+// even when the SDK chooses a different directory for the module.
+func resolveSDKModuleName(ws *core.Workspace, cfg *workspace.Config, configDir, scopePath, name string) (string, error) {
+	if name == "" && cfg != nil && scopePath != "" {
+		var entrypoints []string
+		for installedName, entry := range cfg.Modules {
+			if !entry.Entrypoint || !workspace.IsLocalRef(entry.Source, entry.Pin) {
+				continue
+			}
+			sourcePath, err := workspace.ResolveSDKManagedPath(configDir, entry.Source)
+			if err != nil {
+				return "", fmt.Errorf("entrypoint module %q: %w", installedName, err)
+			}
+			if sourcePath == cleanWorkspaceRelPath(scopePath) {
+				entrypoints = append(entrypoints, installedName)
+			}
+		}
+		if len(entrypoints) > 1 {
+			sort.Strings(entrypoints)
+			return "", fmt.Errorf("module scope %q has multiple entrypoint names %q; set an explicit scope name", scopePath, entrypoints)
+		}
+		if len(entrypoints) == 1 {
+			name = entrypoints[0]
+		}
+	}
+	if name == "" && scopePath != "" {
+		name = workspaceDirectoryName(scopePath)
+	}
+	if name == "" {
+		name = moduleDevName(workspaceDirectoryName(configDir))
+	}
+	if name == "" {
+		name = moduleDevName(workspaceRootDirectoryName(ws))
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("cannot infer module name from the scope path, active config file, or workspace root; pass --name to module init or set the scope name")
+	}
+	return name, nil
 }
 
 func moduleDevName(directoryName string) string {
@@ -1000,6 +1034,14 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	workspaceScope string,
 	scope workspace.SDKScope,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	name := scope.Name
+	if scope.IsModule {
+		var err error
+		name, err = resolveSDKModuleName(ws.Self(), staged.Config, staged.ConfigDir, workspaceScope, name)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDK %q scope %q: %w", selected.name, workspaceScope, err)
+		}
+	}
 	effectiveSettings, err := effectiveSDKModuleSettings(ctx, ws.Self(), staged.Config, selected.name, configScopePath)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1016,7 +1058,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	generated, err := provider.GenerateScope(operationCtx, scoped, scope.IsModule, scope.Name, clients)
+	generated, err := provider.GenerateScope(operationCtx, scoped, scope.IsModule, name, clients)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

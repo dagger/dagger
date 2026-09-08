@@ -76,9 +76,19 @@ Client paths are relative to the directory containing `dagger.toml`. Use `./api`
 | Scope key | Type | Description |
 | --- | --- | --- |
 | `is-module` | bool | The scope contains a Dagger module. |
-| `name` | string | Name of the module in this scope. |
+| `name` | string | Optional scope name. Overrides the inferred module name when `is-module` is true. |
 | `clients` | array | Explicit local paths or module addresses for generated clients. Installed module names are not supported. |
 | `settings` | table | SDK settings for this scope. |
+
+`module init` saves a scope name only when you set `--name`. It preserves an
+existing saved name. Before generation, an unnamed module scope uses the name
+of its local entrypoint installation, if one exists. Otherwise, it uses the
+scope directory name. A scope at the workspace root uses the config-parent or
+workspace name with `-dev`. Multiple matching entrypoint names require an
+explicit scope name. The inferred name is not written to this field.
+
+Use `dagger sdk scope name -u` to remove an override. An unnamed scope that
+contains only clients passes an empty name to the SDK.
 
 ## `[env.<name>]`
 

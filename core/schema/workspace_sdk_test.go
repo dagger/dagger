@@ -122,6 +122,73 @@ func TestResolveSDKModuleInit(t *testing.T) {
 	}
 }
 
+func TestResolveSDKModuleName(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		modules  map[string]workspace.ModuleEntry
+		override string
+		want     string
+		wantErr  string
+	}{
+		{
+			name: "SDK-selected path retains the entrypoint name",
+			modules: map[string]workspace.ModuleEntry{
+				"shop-dev": {Source: "../services/api", Entrypoint: true},
+			},
+			want: "shop-dev",
+		},
+		{
+			name: "explicit name wins over entrypoint and path",
+			modules: map[string]workspace.ModuleEntry{
+				"shop-dev": {Source: "../services/api", Entrypoint: true},
+			},
+			override: "billing", want: "billing",
+		},
+		{
+			name: "explicit path without installation supplies the name",
+			want: "api",
+		},
+		{
+			name: "aliases and unrelated entrypoints do not supply the name",
+			modules: map[string]workspace.ModuleEntry{
+				"alias":  {Source: "../services/api"},
+				"other":  {Source: "other", Entrypoint: true},
+				"remote": {Source: "github.com/acme/api", Entrypoint: true},
+			},
+			want: "api",
+		},
+		{
+			name: "root-relative installation matches",
+			modules: map[string]workspace.ModuleEntry{
+				"shop-dev": {Source: "/apps/services/./api", Entrypoint: true},
+			},
+			want: "shop-dev",
+		},
+		{
+			name: "ambiguous entrypoints require an override",
+			modules: map[string]workspace.ModuleEntry{
+				"second": {Source: "../services/api", Entrypoint: true},
+				"first":  {Source: "../services/api", Entrypoint: true},
+			},
+			wantErr: `multiple entrypoint names ["first" "second"]`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &workspace.Config{Modules: test.modules}
+			for _, cwd := range []string{".", "apps/shop/internal", "apps/services/api/nested"} {
+				ws := localWorkspaceForSDKInit("/work", cwd, "apps/shop/dagger.toml")
+				name, err := resolveSDKModuleName(ws, cfg, "apps/shop", "apps/services/api", test.override)
+				if test.wantErr != "" {
+					require.ErrorContains(t, err, test.wantErr)
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, test.want, name)
+				}
+			}
+		})
+	}
+}
+
 func TestPlanSDKModuleInitInstall(t *testing.T) {
 	t.Run("default name and path install an entrypoint", func(t *testing.T) {
 		cfg := &workspace.Config{}
@@ -339,13 +406,27 @@ func TestWorkspaceSDKEntryPaths(t *testing.T) {
 
 	// The SDK scope path is recorded against the config directory, like the
 	// entry's own source, and surfaces workspace-root-relative.
-	sdk, err := workspaceSDKFromEntry("apps/demo", "custom", sdkEntry, moduleEntry)
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{"custom-sdk": moduleEntry},
+		SDKs:    map[string]workspace.SDKEntry{"custom": sdkEntry},
+	}
+	sdk, err := workspaceSDKFromEntry(&core.Workspace{}, cfg, "apps/demo", "custom", moduleEntry)
 	require.NoError(t, err)
 	require.Equal(t, "custom", sdk.Name)
 	require.Equal(t, "apps/sdk@sha256:abc", sdk.Ref)
 	require.Len(t, sdk.Modules, 1)
 	require.Equal(t, "demo", sdk.Modules[0].Name)
 	require.Equal(t, "apps/demo/.dagger/modules/demo", sdk.Modules[0].Source)
+
+	// SDK readers expose the inferred name without storing it in the scope.
+	scope := sdkEntry.Scopes[".dagger/modules/demo"]
+	scope.Name = ""
+	sdkEntry.Scopes[".dagger/modules/demo"] = scope
+	cfg.Modules["demo-dev"] = workspace.ModuleEntry{Source: ".dagger/modules/demo", Entrypoint: true}
+	sdk, err = workspaceSDKFromEntry(&core.Workspace{}, cfg, "apps/demo", "custom", moduleEntry)
+	require.NoError(t, err)
+	require.Equal(t, "demo-dev", sdk.Modules[0].Name)
+	require.Empty(t, cfg.SDKs["custom"].Scopes[".dagger/modules/demo"].Name)
 }
 
 func TestModuleEntrySourceWithPinRelativeToLeavesGitRefsCanonical(t *testing.T) {
@@ -371,7 +452,7 @@ func TestValidateSDKModuleGenerationGraph(t *testing.T) {
 						Name:     "root",
 						Clients:  []string{"./target", "github.com/acme/remote"},
 					},
-					"target": {IsModule: true, Name: "target"},
+					"target": {IsModule: true},
 				},
 			},
 		},
@@ -509,7 +590,7 @@ func TestRootAnchoredSDKScopeIsMatched(t *testing.T) {
 
 	t.Run("sdk listing resolves it", func(t *testing.T) {
 		config := cfg()
-		sdk, err := workspaceSDKFromEntry("common", "go", config.SDKs["go"], config.Modules["go-sdk"])
+		sdk, err := workspaceSDKFromEntry(&core.Workspace{}, config, "common", "go", config.Modules["go-sdk"])
 		require.NoError(t, err)
 		require.Equal(t, "common/.dagger/modules/mymod", sdk.Modules[0].Source)
 		require.ElementsMatch(t, []*core.WorkspaceModule{

@@ -120,7 +120,9 @@ func TestUpdateSDKScopeField(t *testing.T) {
 		cfg, record := newConfig()
 		require.NoError(t, updateSDKScopeField(cfg, ".", record, "name", []string{"service"}, false))
 		require.Equal(t, "service", cfg.SDKs["go"].Scopes["apps/api"].Name)
-		require.EqualError(t, updateSDKScopeField(cfg, ".", record, "name", nil, true), "scope name is required when is-module is true")
+		require.NoError(t, updateSDKScopeField(cfg, ".", record, "name", nil, true))
+		require.Empty(t, cfg.SDKs["go"].Scopes["apps/api"].Name)
+		require.True(t, cfg.SDKs["go"].Scopes["apps/api"].IsModule)
 		require.NoError(t, updateSDKScopeField(cfg, ".", record, "is-module", []string{"false"}, false))
 		require.NoError(t, updateSDKScopeField(cfg, ".", record, "name", nil, true))
 		require.Empty(t, cfg.SDKs["go"].Scopes["apps/api"].Name)
@@ -134,7 +136,7 @@ func TestUpdateSDKScopeField(t *testing.T) {
 		require.ErrorContains(t, err, `invalid BOOL "invalid"`)
 	})
 
-	t.Run("module requires name", func(t *testing.T) {
+	t.Run("module can infer its name", func(t *testing.T) {
 		cfg, record := newConfig()
 		scope := cfg.SDKs["go"].Scopes["apps/api"]
 		scope.IsModule = false
@@ -142,7 +144,9 @@ func TestUpdateSDKScopeField(t *testing.T) {
 		cfg.SDKs["go"].Scopes["apps/api"] = scope
 		record.scope = scope
 		err := updateSDKScopeField(cfg, ".", record, "is-module", []string{"true"}, false)
-		require.EqualError(t, err, "scope name is required when is-module is true")
+		require.NoError(t, err)
+		require.True(t, cfg.SDKs["go"].Scopes["apps/api"].IsModule)
+		require.Empty(t, cfg.SDKs["go"].Scopes["apps/api"].Name)
 	})
 
 	t.Run("sdk", func(t *testing.T) {

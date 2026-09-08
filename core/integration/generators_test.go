@@ -793,7 +793,15 @@ name = "project"
 		require.NoError(t, err)
 		require.True(t, parsed.Modules["shop-dev"].Entrypoint)
 		require.Contains(t, config, `[sdks.go.scopes.".dagger/modules/shop-dev"]`)
-		require.Contains(t, config, `name = "shop-dev"`)
+		require.NotContains(t, config, `name = "shop-dev"`)
+		require.Empty(t, parsed.SDKs["go"].Scopes[".dagger/modules/shop-dev"].Name)
+
+		regenerated := initialized.
+			WithoutFile(moduleRoot + "/internal/dagger/sdk-module-max.gen.txt").
+			With(daggerNonNestedExec("generate", "-y"))
+		marker, err = regenerated.File(moduleRoot + "/internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, marker, "for shop-dev")
 	})
 
 	t.Run("rejects a second inferred entrypoint", func(ctx context.Context, t *testctx.T) {
@@ -943,6 +951,7 @@ module = "workspace-writer"
 	require.NoError(t, err)
 	require.True(t, parsed.Modules["app-dev"].Entrypoint)
 	require.Equal(t, "../generated/app-dev", parsed.Modules["app-dev"].Source)
+	require.Empty(t, parsed.SDKs["test"].Scopes["../generated/app-dev"].Name)
 
 	custom := workspace.With(daggerNonNestedExec(
 		"module", "init", "test", "--name", "custom", "--path", "custom", "-y",
@@ -954,6 +963,46 @@ module = "workspace-writer"
 	require.NoError(t, err)
 	require.NotContains(t, config, "[modules.custom]")
 	require.Contains(t, config, `[sdks.test.scopes.custom]`)
+
+	t.Run("inferred names survive generation with the same SDK-selected path", func(ctx context.Context, t *testctx.T) {
+		source, err := c.Host().File(filepath.Join(sdkModulePath, "main.dang")).Contents(ctx)
+		require.NoError(t, err)
+		fixedPath := workspace.WithNewFile("/work/sdk/main.dang", strings.Replace(source, `"generated/" + name`, `"generated/api"`, 1))
+		for _, test := range []struct {
+			name string
+			args []string
+		}{
+			{name: "app-dev"},
+			{name: "api", args: []string{"--path=/generated/api"}},
+		} {
+			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+				args := append([]string{"module", "init", "test", "-y"}, test.args...)
+				initialized := fixedPath.With(daggerNonNestedExec(args...))
+				config, err := initialized.File("/work/app/dagger.toml").Contents(ctx)
+				require.NoError(t, err)
+				parsed, err := workspacecfg.ParseConfig([]byte(config))
+				require.NoError(t, err)
+				require.True(t, parsed.SDKs["test"].Scopes["../generated/api"].IsModule)
+				require.Empty(t, parsed.SDKs["test"].Scopes["../generated/api"].Name)
+				moduleConfig, err := initialized.File("/work/generated/api/dagger-module.toml").Contents(ctx)
+				require.NoError(t, err)
+				require.Contains(t, moduleConfig, `name = "`+test.name+`"`)
+
+				regenerated := initialized.
+					WithNewFile("/work/app/internal/.keep", "").
+					WithWorkdir("/work/app/internal").
+					With(daggerNonNestedExec("generate", "-y"))
+				moduleConfig, err = regenerated.File("/work/generated/api/dagger-module.toml").Contents(ctx)
+				require.NoError(t, err)
+				require.Contains(t, moduleConfig, `name = "`+test.name+`"`)
+				config, err = regenerated.File("/work/app/dagger.toml").Contents(ctx)
+				require.NoError(t, err)
+				parsed, err = workspacecfg.ParseConfig([]byte(config))
+				require.NoError(t, err)
+				require.Empty(t, parsed.SDKs["test"].Scopes["../generated/api"].Name)
+			})
+		}
+	})
 }
 
 // TestSDKScopeGenerationRepairsLocalDependency starts with invalid source in

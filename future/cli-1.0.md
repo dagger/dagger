@@ -242,7 +242,10 @@ dagger module init <SDK> [--name=NAME] [--path=PATH] [SDK SETTINGS]
 
 `--name` and `--path` are optional. The engine first resolves an explicit `--path`, if present. A relative path starts at `Workspace.cwd`. An absolute path starts at the workspace root.
 
-The engine then resolves the name one time and stores it with the module scope. The engine uses these rules in order:
+The engine resolves the initial name for module installation and path selection.
+It saves the scope name only when `--name` is set. An existing saved scope name
+is preserved when `--name` is omitted. For a new scope, the engine uses these
+rules in order:
 
 1. Use `--name` when it is set.
 2. If `--path` is set, use the final directory name from the resolved path. For example, `--path=foo/bar/baz` uses `baz`.
@@ -271,6 +274,19 @@ entrypoint. If a different entrypoint exists, the command reports an error and
 tells the user to pass `--name` to initialize a namespaced module. With an
 explicit `--path`, the command records the SDK scope but does not install the
 module.
+
+Before each generation call, the engine uses the saved scope name when present.
+For a module scope without a saved name, it uses the name of the local
+entrypoint installation that targets that scope. If none exists, it uses the
+scope directory name. At the workspace root, where the relative path has no
+directory name, it uses the config-parent or workspace name with `-dev`, as
+above. Multiple matching entrypoint names require an explicit scope name.
+Ordinary installation aliases do not affect the default.
+
+This lookup uses the saved scope path and configuration, independent of the
+command directory. The inferred name is passed to `generateScope()` without
+being saved in the scope. A scope that contains only clients receives its saved
+name or an empty string.
 
 The command accepts SDK-setting flags. The CLI gets these flags from provider constructor settings. The named SDK is the only source of these flags, so they carry no SDK prefix.
 
@@ -455,7 +471,8 @@ The engine normalizes scope paths before comparison.
 
 An omitted `is-module` value is false.
 
-`name` stores the scope name. It is required when `is-module = true`. The engine passes this name to every generation call for the scope.
+`name` is an optional scope name. For module scopes, it overrides the inferred
+module name. The engine resolves the name before every generation call.
 
 One scope can contain a module, clients, or both.
 
@@ -523,7 +540,7 @@ interface Sdk {
     """Whether this scope contains a module."""
     isModule: Boolean!
 
-    """The persisted scope name."""
+    """The scope name, inferred by the engine for unnamed module scopes."""
     name: String!
 
     """The engine-resolved client target module sources."""
@@ -618,7 +635,9 @@ The SDK module can call `client.clientSchemaIntrospectionJSON` when code generat
 
 The persisted scope sets `Workspace.cwd`. It is not a write boundary. The method can update files anywhere in the Workspace. For example, a Go SDK can update a `go.mod` or `go.sum` above the persisted scope.
 
-The SDK module must use `name`. It must not infer the scope name from `Workspace.cwd`.
+The SDK module must use the name supplied by the engine. It must not infer the
+scope name from `Workspace.cwd`. The engine supplies an explicit or inferred
+name for module scopes. An unnamed client-only scope receives an empty string.
 
 When `isModule` is true, the result must contain a valid `dagger-module.toml` in `Workspace.cwd`. The engine does not create this file before the call.
 
@@ -767,7 +786,7 @@ The engine must use one atomic workspace change:
 4. Decode explicit SDK-setting overrides.
 5. If `--path` is absent, call optional `defaultModulePath` on the selected provider.
 6. Use a nonempty SDK result. Otherwise, use the engine default path.
-7. Validate and stage the scope path, resolved name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace entrypoint.
+7. Validate and stage the scope path, explicit name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace entrypoint. Preserve any existing saved scope name when no explicit name is supplied.
 8. Construct the provider with effective scope settings.
 9. Set a derived Workspace CWD to the module scope.
 10. Run the scope generator with the complete scope state.

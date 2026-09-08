@@ -99,9 +99,15 @@ unrelated SDK, runtime, or network errors.
 
 ## 9. Scope names
 
-Keep the core scope name and the current `generateScope()` interface. A module
-scope requires a name and uses it as the module name. A scope that contains
-only clients can retain an unused name.
+Keep the optional core scope name and the current `generateScope()` interface.
+Module init saves only an explicit name and preserves any existing saved name.
+Before generation, use the saved name or infer one for a module scope. A local
+entrypoint installation that targets the scope supplies its name. Otherwise,
+use the scope directory name, with the config-parent or workspace name plus
+`-dev` as the fallback at the workspace root. Multiple matching entrypoint names
+require an explicit scope name. Use the same lookup for SDK module listings.
+Do not write an inferred name into the scope. A scope that contains only clients
+can retain an unused name or leave it empty.
 
 Changing the SDK interface would require another update in each SDK
 repository. The benefit does not justify that cost. This topic is closed.

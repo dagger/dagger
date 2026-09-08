@@ -453,10 +453,6 @@ func updateSDKScopeField(cfg *workspace.Config, configDir string, record sdkScop
 	default:
 		return fmt.Errorf("unknown SDK scope field %q", field)
 	}
-	if scope.IsModule && scope.Name == "" {
-		return fmt.Errorf("scope name is required when is-module is true")
-	}
-
 	if sdkScopeIsEmpty(scope) {
 		delete(entry.Scopes, record.configPath)
 		if len(entry.Scopes) == 0 {

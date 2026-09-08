@@ -123,8 +123,10 @@ func (WorkspaceSuite) TestSDKScopeFieldsCLI(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "service", cfg.SDKs["go"].Scopes["apps/api"].Name)
 
 		_, err = hostDaggerExec(ctx, t, workdir, "sdk", "scope", "--path=apps/api", "name", "-u")
-		require.Error(t, err)
-		requireErrOut(t, err, "scope name is required when is-module is true")
+		require.NoError(t, err)
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.True(t, cfg.SDKs["go"].Scopes["apps/api"].IsModule)
+		require.Empty(t, cfg.SDKs["go"].Scopes["apps/api"].Name)
 
 		_, err = hostDaggerExec(ctx, t, workdir, "sdk", "scope", "--path=apps/api", "is-module", "false")
 		require.NoError(t, err)

@@ -26,6 +26,7 @@ func (s *workspaceSchema) sdks(
 	if err != nil {
 		return nil, err
 	}
+	scopeConfig := cfg
 	cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
 		return nil, err
@@ -37,7 +38,7 @@ func (s *workspaceSchema) sdks(
 
 	sdks := make(core.WorkspaceSDKs, 0, len(cfg.SDKs))
 	for name, entry := range cfg.SDKs {
-		sdk, err := workspaceSDKFromEntry(configDir, name, entry, cfg.Modules[entry.Module])
+		sdk, err := workspaceSDKFromEntry(ws, scopeConfig, configDir, name, cfg.Modules[entry.Module])
 		if err != nil {
 			return nil, err
 		}
@@ -61,6 +62,7 @@ func (s *workspaceSchema) sdk(
 
 	ws := parent.Self()
 	cfg := &workspace.Config{}
+	scopeConfig := cfg
 	configDir := "."
 	if ws.ConfigFile != "" {
 		var err error
@@ -68,6 +70,7 @@ func (s *workspaceSchema) sdk(
 		if err != nil {
 			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 		}
+		scopeConfig = cfg
 		cfg, _, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 		if err != nil {
 			return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
@@ -82,7 +85,7 @@ func (s *workspaceSchema) sdk(
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
-	sdk, err := workspaceSDKFromEntry(configDir, sdkName, cfg.SDKs[sdkName], entry)
+	sdk, err := workspaceSDKFromEntry(ws, scopeConfig, configDir, sdkName, entry)
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
@@ -174,7 +177,8 @@ func (s *workspaceSchema) workspaceSDK(
 	return sdk, nil
 }
 
-func workspaceSDKFromEntry(configDir, sdkName string, sdkEntry workspace.SDKEntry, moduleEntry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
+func workspaceSDKFromEntry(ws *core.Workspace, cfg *workspace.Config, configDir, sdkName string, moduleEntry workspace.ModuleEntry) (*core.WorkspaceSDK, error) {
+	sdkEntry := cfg.SDKs[sdkName]
 	sdk := &core.WorkspaceSDK{
 		Name: sdkName,
 		Ref:  resolvedModuleEntrySourceWithPin(configDir, moduleEntry),
@@ -191,8 +195,12 @@ func workspaceSDKFromEntry(configDir, sdkName string, sdkEntry workspace.SDKEntr
 			return nil, fmt.Errorf("module managed by %q: %w", sdkName, err)
 		}
 		if scope.IsModule {
+			name, err := resolveSDKModuleName(ws, cfg, configDir, scopeSource, scope.Name)
+			if err != nil {
+				return nil, fmt.Errorf("SDK %q scope %q: %w", sdkName, scopeSource, err)
+			}
 			sdk.Modules = append(sdk.Modules, &core.WorkspaceModule{
-				Name:   scope.Name,
+				Name:   name,
 				Source: scopeSource,
 			})
 		}
