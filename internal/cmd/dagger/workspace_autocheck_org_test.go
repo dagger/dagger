@@ -27,19 +27,46 @@ func TestUserOrgMembershipError(t *testing.T) {
 		require.NoError(t, userOrgMembershipError(user("Dagger"), "dagger", repo))
 	})
 
-	t.Run("non-member with other orgs", func(t *testing.T) {
+	t.Run("non-member", func(t *testing.T) {
 		err := userOrgMembershipError(user("acme", "widgets"), "dagger", repo)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), repo)
-		require.Contains(t, err.Error(), `owned by Dagger Cloud organization "dagger"`)
+		require.Contains(t, err.Error(), "owned by another Dagger Cloud organization")
 		require.Contains(t, err.Error(), "not a member")
-		require.Contains(t, err.Error(), "your organizations: acme, widgets")
 	})
 
 	t.Run("non-member with no orgs", func(t *testing.T) {
 		err := userOrgMembershipError(user(), "dagger", repo)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), `owned by Dagger Cloud organization "dagger"`)
-		require.Contains(t, err.Error(), "not a member of any Dagger Cloud organizations")
+		require.Contains(t, err.Error(), "owned by another Dagger Cloud organization")
 	})
+}
+
+func TestGitHubAppInstallURL(t *testing.T) {
+	const prod = "https://github.com/apps/dagger-cloud/installations/select_target"
+	const dev = "https://github.com/apps/dagger-cloud-dev/installations/select_target"
+
+	t.Run("production when DAGGER_CLOUD_URL unset", func(t *testing.T) {
+		t.Setenv("DAGGER_CLOUD_URL", "")
+		require.Equal(t, prod, gitHubAppInstallURL())
+	})
+
+	t.Run("production for api.dagger.cloud", func(t *testing.T) {
+		t.Setenv("DAGGER_CLOUD_URL", "https://api.dagger.cloud")
+		require.Equal(t, prod, gitHubAppInstallURL())
+	})
+
+	t.Run("dev for a local/non-prod API", func(t *testing.T) {
+		t.Setenv("DAGGER_CLOUD_URL", "http://localhost:8020")
+		require.Equal(t, dev, gitHubAppInstallURL())
+	})
+}
+
+func TestGitHubAppNotInstalledError(t *testing.T) {
+	t.Setenv("DAGGER_CLOUD_URL", "")
+	err := gitHubAppNotInstalledError("github.com/dagger/hello-dagger")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"dagger"`) // owner
+	require.Contains(t, err.Error(), "not installed")
+	require.Contains(t, err.Error(), "https://github.com/apps/dagger-cloud/installations/select_target")
 }

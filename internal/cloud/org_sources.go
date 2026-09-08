@@ -273,6 +273,35 @@ func (c *Client) GitHubConnection(ctx context.Context) (*GitHubConnection, error
 	return data.GitHubConnection, nil
 }
 
+const configureOrgSourceOperation = `
+mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
+	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
+		sourceName
+		installationId
+		mode
+	}
+}
+`
+
+// ConfigureOrgSource maps the given GitHub App installation to org (creating the
+// mapping if needed) and applies the repo selection. Unlike ConfigureSource, it
+// does not require the installation to already be mapped, so it is used to
+// onboard a freshly installed app into the user's org. Requires org admin.
+func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
+	var data struct {
+		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
+	}
+	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
+		"org":            orgID,
+		"installationId": installationID,
+		"mode":           mode,
+		"repositories":   repositories,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.ConfigureOrgSource, nil
+}
+
 const getGithubOAuthURLOperation = `
 query GetGithubOAuthURL($redirectURI: String!) {
 	githubOAuthURL(redirectURI: $redirectURI)
