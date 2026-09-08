@@ -170,10 +170,8 @@ func (s *workspaceSchema) workspaceModule(
 	}, nil
 }
 
-// workspaceModuleEntry resolves the config entry behind a WorkspaceModule
-// result, along with the owning workspace, the effective (overlay-merged)
-// config it came from, and the config directory. The entry lookup is
-// effective so modules an overlay itself adds resolve too.
+// workspaceModuleEntry resolves the effective (overlay-merged) config entry
+// behind a WorkspaceModule result, with its owning workspace and config directory.
 func (s *workspaceSchema) workspaceModuleEntry(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.WorkspaceModule],
@@ -199,9 +197,6 @@ func (s *workspaceSchema) workspaceModuleEntry(
 		return nil, nil, entry, "", err
 	}
 
-	// Values come from the user-level overlay and the selected env overlay,
-	// merged in the same order as module loading. The entry lookup is also
-	// effective so modules an overlay itself adds resolve their settings.
 	effectiveCfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
 		return nil, nil, entry, "", err
@@ -265,9 +260,7 @@ func (s *workspaceSchema) moduleSettings(
 	return settings, nil
 }
 
-// moduleFunctions lists the functions of the module's main object, in GraphQL
-// field form. `dagger settings` uses it to recognize a short-form reference to
-// an entrypoint function and store the long form.
+// moduleFunctions lists the main object's functions in GraphQL field form.
 func (s *workspaceSchema) moduleFunctions(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.WorkspaceModule],
@@ -298,8 +291,7 @@ func (s *workspaceSchema) moduleFunctions(
 	return result, nil
 }
 
-// introspectWorkspaceModule loads the module behind a workspace config entry's
-// source, resolving local sources against the workspace.
+// introspectWorkspaceModule loads the module behind a config entry's source.
 func introspectWorkspaceModule(
 	ctx context.Context,
 	srv *dagql.Server,

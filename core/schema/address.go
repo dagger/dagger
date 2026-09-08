@@ -24,23 +24,17 @@ type moduleRefCycleKey struct{}
 
 // resolveModuleRef detects and resolves a module function reference, wiring
 // one module's function output into another object-typed value. Two spellings
-// are accepted:
-//   - the long form "<module>:<function>" (e.g. "docusaurus:serve");
-//   - the short form "<function>" (e.g. "serve"), which names a function of
-//     the workspace entrypoint module. The entrypoint's functions are hoisted
-//     onto the Query root, so the short form is the same call a user makes on
-//     the command line. It is only considered when the workspace installs an
-//     entrypoint.
+// are accepted: the long form "<module>:<function>" (e.g. "docusaurus:serve")
+// and the short form "<function>", which names a function of the workspace
+// entrypoint module (whose functions are hoisted onto the Query root).
 //
 // Detection & precedence (commit-on-match, no silent fallback):
 //   - A long-form candidate contains EXACTLY one ":" with non-empty parts on
 //     both sides. Strings containing "://" (URL-ish, e.g. "tcp://...") are
 //     never module refs.
 //   - A short-form candidate is a bare name (no ":" or "/", not a relative
-//     path). It is committed as a ref only if the entrypoint module has a
-//     function of that name; otherwise it keeps its ordinary address meaning
-//     (an image name, a file name), so "alpine" is only shadowed by an
-//     entrypoint that defines an "alpine" function.
+//     path). It is committed only if the entrypoint has that function;
+//     otherwise it keeps its ordinary address meaning (image name, file name).
 //   - The first segment is normalized to a gql field name and looked up on the
 //     CANONICAL Query root's object type. Only if a field of that name EXISTS
 //     — AND carries module provenance (FieldSpec.Module != nil), which
@@ -72,9 +66,7 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	shortForm := false
 	switch {
 	case !ok:
-		// Short form: resolve a bare "<function>" against the workspace
-		// entrypoint as "<entrypoint>:<function>". Commit only once the
-		// entrypoint is known to have the function (checked below).
+		// Short form: resolve "<function>" as "<entrypoint>:<function>".
 		if !workspace.IsBareModuleFunctionRef(addr) {
 			return false, nil
 		}
@@ -84,7 +76,6 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 		}
 		module, rest, shortForm = entrypoint, addr, true
 	case module == "" || rest == "":
-		// A long-form candidate has non-empty parts on both sides.
 		return false, nil
 	}
 
@@ -149,9 +140,8 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	}
 	functionField := strcase.ToLowerCamel(rest)
 
-	// Look the function up on the module's object type. For the long form an
-	// unknown function is a hard error, reported by the typed Select below.
-	// For the short form it means the bare string is not a module ref at all.
+	// An unknown function is a hard error for the long form (reported by the
+	// typed Select below) but means "not a module ref" for the short form.
 	var fnSpec dagql.FieldSpec
 	fnExists := false
 	if objType, ok := srv.ObjectType(spec.Type.Type().Name()); ok {
@@ -268,10 +258,8 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 }
 
 // currentWorkspaceConfig returns the workspace config visible to the current
-// query, or ok=false when there is none. The lookups deliberately discard
-// their errors: any failure to see the workspace from address resolution means
-// the string cannot be a module ref, and the caller's normal address decoding
-// should run.
+// query, or ok=false when there is none. Errors are deliberately discarded: no
+// visible workspace means the string cannot be a module ref.
 func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *core.Workspace, ok bool) {
 	q, _ := core.CurrentQuery(ctx)
 	if q == nil {
@@ -289,7 +277,7 @@ func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *cor
 }
 
 // workspaceEntrypointModuleName returns the install name of the workspace
-// entrypoint module, the target of short-form "<function>" references.
+// entrypoint module, the target of short-form references.
 func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
 	cfg, _, ok := currentWorkspaceConfig(ctx)
 	if !ok {

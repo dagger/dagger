@@ -1,6 +1,0 @@
-kind: Fixed
-body: Workspace module settings can now reference functions of the workspace entrypoint module, as `<module>:<function>` or the short `<function>` form; `dagger settings` accepts both and stores the long form.
-time: 2026-09-08T16:00:00.000000Z
-custom:
-    Author: kpenfound
-    PR: "14059"

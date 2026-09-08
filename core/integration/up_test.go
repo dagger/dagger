@@ -313,9 +313,7 @@ settings.app = "hello-with-services:web"
 	})
 
 	t.Run("short-form entrypoint ref via settings", func(ctx context.Context, t *testctx.T) {
-		// The entrypoint's functions are hoisted onto the root, so a bare
-		// "<function>" is the same call as "<entrypoint>:<function>" and is
-		// accepted as a short form (a hand-edited dagger.toml may carry it).
+		// A bare "<function>" names a function of the entrypoint module.
 		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
@@ -333,9 +331,8 @@ settings.file = "marker.txt"
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
 
-		// A bare value that names no entrypoint function keeps its ordinary
-		// address meaning: "marker.txt" is the local file, not a module ref,
-		// even though the entrypoint defines a "file" function.
+		// A bare value that names no entrypoint function keeps its address
+		// meaning, even though the entrypoint defines a "file" function.
 		out, err = ctr.
 			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
 			Stdout(ctx)
@@ -344,11 +341,8 @@ settings.file = "marker.txt"
 	})
 
 	t.Run("settings stores entrypoint refs in long form", func(ctx context.Context, t *testctx.T) {
-		// `dagger settings` accepts the short form for an address-typed
-		// setting but always writes the long form, so dagger.toml stays
-		// explicit about which module a value comes from. A plain string
-		// setting is never rewritten, even when its value matches an
-		// entrypoint function name.
+		// The short form is accepted but the long form is written; a string
+		// setting is never rewritten.
 		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
@@ -373,7 +367,6 @@ source = "../service-ref-consumer"
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
 
-		// The long form is accepted on the command line too and stored as is.
 		cfg, err = ctr.
 			With(daggerExec("settings", "service-ref-consumer", "base", "container-provider:image")).
 			File("dagger.toml").Contents(ctx)

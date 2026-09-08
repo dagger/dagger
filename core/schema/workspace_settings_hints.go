@@ -83,8 +83,7 @@ func introspectModuleFromDirectory(
 	return mod.Self(), nil
 }
 
-// mainObjectFunctionNames lists the functions of the module's main object in
-// GraphQL field form, sorted.
+// mainObjectFunctionNames lists the main object's functions in GraphQL field form, sorted.
 func mainObjectFunctionNames(mod *core.Module) []string {
 	if mod == nil {
 		return nil

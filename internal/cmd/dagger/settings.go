@@ -45,10 +45,8 @@ query WorkspaceModuleSettings($module: String!) {
 }
 `
 
-// workspaceModuleSettingsQueryForWrite additionally requests the setting
-// shape a write needs: isList (multi-value writes) and isObject (module
-// reference normalization). Older engines don't expose these fields, so writes
-// fall back to the query above against them and skip what the fields enable.
+// workspaceModuleSettingsQueryForWrite adds isList and isObject, which older
+// engines don't expose; writes fall back to the query above against them.
 const workspaceModuleSettingsQueryForWrite = `
 query WorkspaceModuleSettings($module: String!) {
   currentWorkspace {
@@ -248,14 +246,10 @@ type workspaceSetting struct {
 	IsObject    bool
 }
 
-// normalizeEntrypointFunctionRef rewrites a short-form reference to a function
-// of the workspace entrypoint module ("image") into the long form the config
-// always stores ("container-provider:image"). Both forms resolve identically at
-// runtime; storing the long form keeps dagger.toml explicit about which module
-// a value comes from. Only address-typed (object) settings are candidates, so a
-// string setting whose value happens to match a function name is left alone.
-// Anything else, including values on engines that predate the fields this
-// relies on, passes through unchanged.
+// normalizeEntrypointFunctionRef rewrites a short-form entrypoint function
+// reference ("image") to the long form the config stores ("provider:image").
+// Only object-typed settings are candidates, so a string setting whose value
+// matches a function name is left alone.
 func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
 	if !setting.IsObject || !workspacepkg.IsBareModuleFunctionRef(value) {
 		return value, nil
@@ -308,8 +302,7 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 	return value, nil
 }
 
-// isUnknownGraphQLFieldError reports whether err is the engine rejecting a
-// field the CLI asked for, i.e. the engine predates that field.
+// isUnknownGraphQLFieldError reports whether the engine predates a requested field.
 func isUnknownGraphQLFieldError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "Cannot query field")
 }
@@ -366,7 +359,6 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleN
 			Variables: map[string]any{"module": moduleName},
 		}, &dagger.Response{Data: &res})
 		if err != nil && forWrite && isUnknownGraphQLFieldError(err) {
-			// Older engine: retry without the write-only fields.
 			err = dag.Do(ctx, &dagger.Request{
 				Query:     workspaceModuleSettingsQuery,
 				Variables: map[string]any{"module": moduleName},
