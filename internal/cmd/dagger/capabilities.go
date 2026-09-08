@@ -153,7 +153,7 @@ func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	// them quiet, or a deprecated flag prints its warning once per pass; the
 	// callers report their own errors.
 	flags.SetOutput(io.Discard)
-	if cmd.DisableFlagParsing {
+	if cmd.DisableFlagParsing || commandName(cmd) == "module init" {
 		// Dynamic commands parse their own arguments after loading a schema.
 		// Stop the early global pass at the first schema-owned token.
 		flags.SetInterspersed(false)

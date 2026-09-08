@@ -247,6 +247,9 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
+	// Parse each parent's flags before entering a child command. SDK settings
+	// can then use the same name as a module-init flag without replacing it.
+	TraverseChildren:      true,
 	Use:                   "dagger [options] [subcommand | file...]",
 	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
@@ -513,6 +516,9 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 }
 
 func execXRelease(ctx context.Context) error {
+	if xRelease == "" {
+		return nil
+	}
 	ref := strings.TrimSpace(xRelease)
 	downloadRef, engineRef, release := xReleaseReleaseRef(ref)
 	resolved := false
@@ -564,7 +570,7 @@ func execXRelease(ctx context.Context) error {
 	if err := execCLI(binPath, execArgs, env); err != nil {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
 	}
-	return nil
+	return errors.New("internal error: experimental release exec returned without replacing the current process")
 }
 
 func xReleaseReleaseRef(ref string) (downloadRef string, engineRef string, ok bool) {
@@ -893,6 +899,11 @@ func Main() {
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
 	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
+	invocationDir, err := pathutil.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -909,12 +920,17 @@ func Main() {
 		stop()
 		os.Exit(code)
 	}
-	if xRelease != "" {
-		if err := execXRelease(ctx); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	// A trailing inherited --x-release is known only after SDK discovery.
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
 	opts.Silent = silent                   // show no progress
@@ -992,13 +1008,6 @@ func Main() {
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
-
-	if selectedSDK, ok := moduleSDKCommandSelection(commandArgs); ok {
-		if err := registerModuleSDKCommands(ctx, selectedSDK); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError

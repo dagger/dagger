@@ -3,6 +3,8 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,6 +106,169 @@ func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
 		sdk, ok := moduleSDKCommandSelection(parseGlobalFlags(root, test.args))
 		require.True(t, ok, test.args)
 		require.Equal(t, test.wantSDK, sdk, test.args)
+	}
+}
+
+func TestModuleInitFlagCommandPosition(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		args       []string
+		settings   bool
+		modulePath string
+		sdkPath    string
+	}{
+		{name: "parent flag", args: []string{"--path=src", "custom"}, settings: true, modulePath: "src"},
+		{name: "SDK flag", args: []string{"custom", "--path=assets"}, settings: true, sdkPath: "assets"},
+		{name: "both flags", args: []string{"--path", "src", "custom", "--path", "assets"}, settings: true, modulePath: "src", sdkPath: "assets"},
+		{name: "inherited flag", args: []string{"custom", "--path=src"}, modulePath: "src"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := &cobra.Command{Use: "dagger", TraverseChildren: rootCmd.TraverseChildren}
+			module := &cobra.Command{Use: "module"}
+			init := &cobra.Command{Use: "init"}
+			var modulePath string
+			init.PersistentFlags().StringVar(&modulePath, "path", "", "Module path")
+			root.AddCommand(module)
+			module.AddCommand(init)
+			argv := append([]string{"module", "init"}, test.args...)
+			// Main performs this pass before it can inspect the SDK constructor.
+			sdkName, ok := moduleSDKCommandSelection(parseGlobalFlags(root, argv))
+			require.True(t, ok)
+			require.Equal(t, "custom", sdkName)
+			require.Empty(t, modulePath)
+
+			var args []*modFunctionArg
+			if test.settings {
+				args = []*modFunctionArg{{Name: "path", TypeDef: &modTypeDef{Kind: dagger.TypeDefKindStringKind, Optional: true}}}
+			}
+			cmd, err := newSDKModuleInitCommand(configuredSDK{commandName: sdkName}, args)
+			require.NoError(t, err)
+			cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+				require.Equal(t, test.modulePath, modulePath)
+				if test.settings {
+					value, err := cmd.Flags().GetString("path")
+					require.NoError(t, err)
+					require.Equal(t, test.sdkPath, value)
+				}
+				return nil
+			}
+			init.AddCommand(cmd)
+			root.SetArgs(argv)
+			require.NoError(t, root.Execute())
+		})
+	}
+}
+
+func TestModuleInitGlobalFlagDiscovery(t *testing.T) {
+	oldWorkdir, oldWorkspace, oldDebug, oldRelease := workdir, workspaceRef, debugFlag, xRelease
+	t.Cleanup(func() { workdir, workspaceRef, debugFlag, xRelease = oldWorkdir, oldWorkspace, oldDebug, oldRelease })
+	for _, test := range []struct {
+		name          string
+		prefix        []string
+		suffix        []string
+		settings      []string
+		nextSettings  []string
+		missing       bool
+		wantDir       string
+		wantWorkspace string
+		wantDebug     bool
+		wantRelease   string
+		wantCalls     int
+		wantError     string
+	}{
+		{name: "SDK workdir", suffix: []string{"--workdir=assets"}, settings: []string{"workdir"}, wantCalls: 1},
+		{name: "global and SDK workdir", prefix: []string{"--workdir=src"}, suffix: []string{"--workdir=assets"}, settings: []string{"workdir"}, wantDir: "src", wantCalls: 1},
+		{name: "SDK workspace", suffix: []string{"--workspace=assets"}, settings: []string{"workspace"}, wantCalls: 1},
+		{name: "inherited workspace", suffix: []string{"--workspace=target"}, wantWorkspace: "target", wantCalls: 2},
+		{name: "SDK debug string", suffix: []string{"--debug=assets"}, settings: []string{"debug"}, wantCalls: 1},
+		{name: "global debug and SDK debug string", prefix: []string{"--debug"}, suffix: []string{"--debug=assets"}, settings: []string{"debug"}, wantDebug: true, wantCalls: 1},
+		{name: "inherited debug", suffix: []string{"--debug"}, wantDebug: true, wantCalls: 1},
+		{name: "inherited x-release", suffix: []string{"--x-release=next"}, wantRelease: "next", wantCalls: 1},
+		{name: "inherited workdir", suffix: []string{"--workdir=target"}, wantDir: "target", wantCalls: 2},
+		{name: "relative workdir keeps invocation base", prefix: []string{"--workdir=src"}, suffix: []string{"--workdir=target"}, wantDir: "target", wantCalls: 2},
+		{name: "counters and repeatable flags", prefix: []string{"-v", "--label=first"}, suffix: []string{"-v", "--label=second", "--workdir=target"}, wantDir: "target", wantCalls: 2},
+		{name: "SDK absent initially", suffix: []string{"--workdir=target"}, missing: true, wantCalls: 1, wantError: "the SDK is absent from the initial workspace"},
+		{name: "different settings after context change", suffix: []string{"--workdir=target"}, nextSettings: []string{"workdir"}, wantCalls: 2, wantError: "different settings"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invocationDir := t.TempDir()
+			t.Chdir(invocationDir)
+			require.NoError(t, os.Mkdir("src", 0o755))
+			require.NoError(t, os.Mkdir("target", 0o755))
+			workdir, workspaceRef, debugFlag, xRelease = ".", "", false, ""
+			t.Setenv(daggerXReleaseEnv, "")
+			root := &cobra.Command{Use: "dagger", TraverseChildren: true}
+			root.PersistentFlags().StringVar(&workdir, "workdir", ".", "Workdir")
+			root.PersistentFlags().StringVar(&workspaceRef, "workspace", "", "Workspace")
+			root.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Debug")
+			root.PersistentFlags().StringVar(&xRelease, "x-release", "", "Release")
+			var verbose int
+			var labels []string
+			root.PersistentFlags().CountVarP(&verbose, "verbose", "v", "Verbosity")
+			root.PersistentFlags().StringSliceVar(&labels, "label", nil, "Labels")
+			module := &cobra.Command{Use: "module"}
+			init := &cobra.Command{Use: "init"}
+			root.AddCommand(module)
+			module.AddCommand(init)
+			argv := append(append(append([]string{}, test.prefix...), "module", "init", "custom"), test.suffix...)
+			remaining := parseGlobalFlags(root, argv)
+			// Main changes directory before inspecting the SDK. Its setting
+			// value must not affect that first directory selection.
+			initialDir, err := NormalizeWorkdir(workdir)
+			require.NoError(t, err)
+			require.NoError(t, os.Chdir(initialDir))
+			workdir = initialDir
+			calls := 0
+			err = prepareModuleSDKCommands(context.Background(), root, remaining, invocationDir, func(_ context.Context, sdk string) error {
+				calls++
+				require.Equal(t, "custom", sdk)
+				for _, cmd := range init.Commands() {
+					init.RemoveCommand(cmd)
+				}
+				if test.missing {
+					return nil
+				}
+				settings := test.settings
+				if calls == 2 && test.nextSettings != nil {
+					settings = test.nextSettings
+				}
+				var args []*modFunctionArg
+				for _, name := range settings {
+					args = append(args, &modFunctionArg{Name: name, TypeDef: &modTypeDef{Kind: dagger.TypeDefKindStringKind, Optional: true}})
+				}
+				cmd, err := newSDKModuleInitCommand(configuredSDK{commandName: sdk}, args)
+				require.NoError(t, err)
+				cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+					for _, name := range settings {
+						value, err := cmd.Flags().GetString(name)
+						require.NoError(t, err)
+						require.Equal(t, "assets", value)
+					}
+					return nil
+				}
+				init.AddCommand(cmd)
+				return nil
+			})
+			require.Equal(t, test.wantCalls, calls)
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				require.ErrorContains(t, err, "dagger --workdir=<value> module init custom")
+				return
+			}
+			require.NoError(t, err)
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(invocationDir, test.wantDir), cwd)
+			require.Equal(t, test.wantDebug, debugFlag)
+			require.Equal(t, test.wantWorkspace, workspaceRef)
+			require.Equal(t, test.wantRelease, xRelease)
+			if test.name == "counters and repeatable flags" {
+				require.Equal(t, 2, verbose)
+				require.Equal(t, []string{"first", "second"}, labels)
+			}
+			root.SetArgs(argv)
+			require.NoError(t, root.Execute())
+		})
 	}
 }
 

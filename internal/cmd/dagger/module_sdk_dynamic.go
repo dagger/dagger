@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func moduleSDKCommandSelection(args []string) (string, bool) {
@@ -36,6 +40,111 @@ func moduleSDKCommandSelection(args []string) (string, bool) {
 		return "", true
 	}
 	return "", false
+}
+
+// prepareModuleSDKCommands parses the unconsumed suffix after discovering SDK
+// settings. A context change permits one more discovery, with the same flags.
+func prepareModuleSDKCommands(ctx context.Context, root *cobra.Command, args []string, invocationDir string, register func(context.Context, string) error) error {
+	selectedSDK, needed := moduleSDKCommandSelection(args)
+	if !needed {
+		return nil
+	}
+	if selectedSDK == "" || args[0] == "help" {
+		return register(ctx, selectedSDK)
+	}
+
+	cmd, _ := resolveCommand(root, args)
+	contextValues := moduleSDKContextValues(root)
+	possibleContext := copyCommandFlags(cmd, "SDK context")
+	possibleContext.SetInterspersed(true)
+	possibleContext.VisitAll(func(flag *pflag.Flag) { flag.Value = ignoredFlagValue{Value: flag.Value} })
+	_ = possibleContext.Parse(args[3:])
+	var contextFlags []string
+	possibleContext.Visit(func(flag *pflag.Flag) {
+		if _, ok := contextValues[flag.Name]; ok {
+			contextFlags = append(contextFlags, flag.Name)
+		}
+	})
+	ambiguous := func(reason string) error {
+		example := []string{root.Name()}
+		for _, name := range contextFlags {
+			arg := "--" + name
+			if root.PersistentFlags().Lookup(name).NoOptDefVal == "" {
+				arg += "=<value>"
+			}
+			example = append(example, arg)
+		}
+		example = append(example, "module", "init", selectedSDK)
+		return fmt.Errorf("SDK %q: %s. Flags after the SDK name can be SDK settings. Put global context flags before SDK selection, for example: %s", selectedSDK, reason, strings.Join(example, " "))
+	}
+	if err := register(ctx, selectedSDK); err != nil {
+		if len(contextFlags) > 0 {
+			return fmt.Errorf("%w: %w", ambiguous("cannot load the SDK in the initial workspace"), err)
+		}
+		return err
+	}
+	cmd, _ = resolveCommand(root, args)
+	if commandName(cmd) != "module init "+selectedSDK {
+		if len(contextFlags) > 0 {
+			return ambiguous("the SDK is absent from the initial workspace, so trailing context flags cannot be classified")
+		}
+		return nil // Cobra reports the unknown SDK command.
+	}
+	settings := moduleSDKSettingTypes(cmd)
+	contextFlags = slices.DeleteFunc(contextFlags, func(name string) bool {
+		return cmd.Flags().Lookup(name) != root.PersistentFlags().Lookup(name)
+	})
+	// args contains only the command path and the unconsumed suffix. Prefix
+	// counters and repeatable flags must not be applied a second time.
+	parseGlobalFlags(root, args)
+	if maps.Equal(contextValues, moduleSDKContextValues(root)) {
+		return nil
+	}
+	if workdir != contextValues["workdir"] {
+		path := workdir
+		if path == "" {
+			path = os.Getenv("DAGGER_WORKDIR")
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(invocationDir, path)
+		}
+		resolved, err := NormalizeWorkdir(path)
+		if err != nil {
+			return err
+		}
+		if err := os.Chdir(resolved); err != nil {
+			return fmt.Errorf("change workdir: %w", err)
+		}
+		workdir = resolved
+	}
+	if err := register(ctx, selectedSDK); err != nil {
+		return fmt.Errorf("%w: %w", ambiguous("cannot load the SDK with the trailing context flags"), err)
+	}
+	cmd, _ = resolveCommand(root, args)
+	if commandName(cmd) != "module init "+selectedSDK || !maps.Equal(settings, moduleSDKSettingTypes(cmd)) {
+		return ambiguous("the trailing context flags select an SDK with different settings")
+	}
+	return nil
+}
+
+func moduleSDKContextValues(root *cobra.Command) map[string]string {
+	values := map[string]string{}
+	for _, name := range []string{"workdir", "workspace", "env", "engine", "cloud"} {
+		if flag := root.PersistentFlags().Lookup(name); flag != nil {
+			values[name] = flag.Value.String()
+		}
+	}
+	return values
+}
+
+func moduleSDKSettingTypes(cmd *cobra.Command) map[string]string {
+	settings := map[string]string{}
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		if len(flag.Annotations[sdkModuleSettingAnnotation]) > 0 {
+			settings[flag.Name] = flag.Value.Type()
+		}
+	})
+	return settings
 }
 
 func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
@@ -76,6 +185,9 @@ func registerModuleSDKCommandsFromConfig(
 	sdks, err := configuredSDKs(cfg)
 	if err != nil {
 		return err
+	}
+	for _, cmd := range moduleInitCmd.Commands() {
+		moduleInitCmd.RemoveCommand(cmd)
 	}
 	registerModuleClientSDKFlagHelp(sdks)
 	cfgDir := filepath.Dir(cfgPath)
