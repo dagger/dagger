@@ -57,6 +57,9 @@ type DefaultTerminalCmdOpts struct {
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
+	// Disable access to the Dagger API from terminal commands.
+	DisableNesting bool `default:"false"`
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
@@ -7004,6 +7007,9 @@ type ContainerAsServiceArgs struct {
 
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Disable access to the Dagger API from the service command.
+	DisableNesting bool `default:"false"`
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`

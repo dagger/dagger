@@ -103,7 +103,6 @@ func (sdk *moduleTypes) ModuleTypes(
 			Args: []dagql.NamedInput{
 				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
-				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
 				{Name: "execMD", Value: dagql.NewDigestedSerializedString(&execMD, moduleTypesExecMDDigest)},
 				{Name: "moduleContext", Value: dagql.Opt(moduleContextID)},
 			},
