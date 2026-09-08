@@ -14,9 +14,12 @@ type ScopeSdk {
   ): Workspace! {
     let generated = if (isModule) {
       ws
-        .withFile(
+        .withNewFile(
           "dagger-module.toml",
-          moduleManifest(name: name).withLegacyDangRuntime.tomlFile,
+          "name = " + JSON.encode(name) + "\n" +
+            "engineVersion = \"latest\"\n\n" +
+            "[runtime]\n" +
+            "  source = \"dang\"\n",
         )
         .withNewFile(
           "main.dang",
