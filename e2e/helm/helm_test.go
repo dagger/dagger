@@ -226,6 +226,26 @@ func helmContainer(dag *dagger.Client) *dagger.Container {
 }
 
 func runInstallAssertions(ctx context.Context, engineName string, engineKind string, port int, kubectl *dagger.Container) error {
+	// Helm can report success before the controller creates its first pod.
+	for _, condition := range []string{"create", "condition=Ready"} {
+		_, err := kubectl.WithExec([]string{
+			"kubectl", "wait", "pod",
+			"--selector=name=" + engineName,
+			"--namespace=dagger",
+			"--for=" + condition,
+			"--timeout=5m",
+		}).Sync(ctx)
+		if err != nil {
+			status, _ := kubectl.WithExec([]string{
+				"kubectl", "get", "pod",
+				"--selector=name=" + engineName,
+				"--namespace=dagger",
+				"--output=wide",
+			}).Stdout(ctx)
+			return fmt.Errorf("wait for engine pod %s (%s): %w\n%s", engineName, condition, err, status)
+		}
+	}
+
 	podName, err := kubectl.WithExec([]string{
 		"kubectl", "get", "pod",
 		"--selector=name=" + engineName,
