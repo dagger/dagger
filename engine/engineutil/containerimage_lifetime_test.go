@@ -80,7 +80,12 @@ func TestPreparedImageCanceledLateCompletion(t *testing.T) {
 		})
 		caller <- err
 	}()
-	prepared := <-ready
+	var prepared *PreparedContainerImage
+	select {
+	case prepared = <-ready:
+	case err := <-caller:
+		t.Fatalf("image preparation completed before readiness: %v", err)
+	}
 	require.NoError(t, store.Manager.RemoveLease(context.Background(), owner))
 	require.NoError(t, a.Release(context.Background()))
 	store.GC(t)
