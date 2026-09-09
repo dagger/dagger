@@ -283,6 +283,7 @@ func init() {
 		shellCmd,
 		mcpCmd,
 		moduleInitCmd,
+		moduleRecommendCmd,
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
@@ -293,6 +294,7 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		moduleDepInstallCmd,
+		moduleRecommendCmd,
 		installAliasCmd,
 		moduleDepUninstallCmd,
 		uninstallAliasCmd,
@@ -352,6 +354,7 @@ func init() {
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
 		setupCmd,
+		moduleRecommendCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)
 	}

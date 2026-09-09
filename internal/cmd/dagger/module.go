@@ -92,6 +92,7 @@ func init() {
 		installedCmd,
 		moduleUpdateCmd,
 		searchCmd,
+		moduleRecommendCmd,
 		settingsCmd,
 		moduleInitCmd,
 		moduleClientCmd,
@@ -121,6 +122,7 @@ func init() {
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd)
+	setWorkspaceFlagPolicy(moduleRecommendCmd)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd)
 	setWorkspaceFlagPolicy(installAliasCmd)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd)

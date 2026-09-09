@@ -1253,6 +1253,7 @@ dagger module
 * [dagger module init](#dagger-module-init)	 - Initialize a new module for development with an SDK
 * [dagger module install](#dagger-module-install)	 - Install a module into your workspace
 * [dagger module list](#dagger-module-list)	 - List installed modules
+* [dagger module recommend](#dagger-module-recommend)	 - Find recommended modules and select which modules to install
 * [dagger module search](#dagger-module-search)	 - Search for modules you can install
 * [dagger module settings](#dagger-module-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger module uninstall](#dagger-module-uninstall)	 - Uninstall a module from your workspace
@@ -1587,6 +1588,43 @@ dagger module list [flags]
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
+
+## dagger module recommend
+
+Find recommended modules and select which modules to install
+
+### Synopsis
+
+Find modules for the current workspace and select which modules to install.
+Already installed modules are skipped.
+
+Use --auto-apply to install all recommended modules without a prompt.
+Without --auto-apply, installation is skipped in non-interactive mode.
+
+```
+dagger module recommend [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
