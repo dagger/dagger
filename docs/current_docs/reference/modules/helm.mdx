@@ -8,12 +8,12 @@ description: "Lint Helm charts and check rendered templates."
 
 The Helm module validates Helm charts across your workspace. It discovers charts, lints them, and checks that values files render with `helm template --dry-run=client`. That catches structural and templating problems before a PR ever reaches a cluster. Reach for it in any repo that ships Kubernetes applications with Helm, where it makes a strong PR check by validating chart changes before deploy tooling sees them, and it shares one pinned Helm version across the whole workspace.
 
-Official module: [dagger/helm](https://github.com/dagger/helm)
+Official module: `dagger.io/kubernetes/helm`
 
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/helm
+dagger module install dagger.io/kubernetes/helm
 ```
 
 ## Run the checks

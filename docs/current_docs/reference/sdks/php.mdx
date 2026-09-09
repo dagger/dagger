@@ -19,11 +19,11 @@ This page is a standalone guide to the PHP SDK. It assumes you already understan
 
 A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The PHP SDK currently supports checks. See [Checks, directives, and ignore patterns](#checks-directives-and-ignore-patterns) for the PHP syntax and what is still missing.
 
-The PHP SDK is itself a Dagger module, `github.com/dagger/php-sdk`. Install it into your workspace once, then use Dagger's module commands to scaffold, generate, and maintain PHP modules:
+The PHP SDK is itself a Dagger module, `dagger.io/sdk/php`. Install it into your workspace once, then use Dagger's module commands to scaffold, generate, and maintain PHP modules:
 
 ```shell
 # Install the PHP SDK into your workspace (once)
-dagger module install github.com/dagger/php-sdk
+dagger module install dagger.io/sdk/php
 
 # Create a PHP module
 dagger module init php --name my-module
@@ -38,14 +38,14 @@ Run these commands from inside a Git repository. That's where the new module goe
 Install the PHP SDK into your workspace, then create a new module. The SDK argument is required. This example also sets the optional module name:
 
 ```shell
-dagger module install github.com/dagger/php-sdk
+dagger module install dagger.io/sdk/php
 dagger module init php --name my-module
 ```
 
 `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger module install --here github.com/dagger/php-sdk` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here dagger.io/sdk/php` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -1015,7 +1015,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger module install github.com/dagger/php-sdk`, scaffold with `dagger module init php --name <name>`, and regenerate with `dagger generate`.
+**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger module install dagger.io/sdk/php`, scaffold with `dagger module init php --name <name>`, and regenerate with `dagger generate`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 

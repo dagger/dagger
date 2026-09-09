@@ -18,7 +18,7 @@ Install a module into a workspace (`dagger.toml`) to make it part of the command
 
 ## Developer workflow
 
-Each SDK is a Dagger module, such as `github.com/dagger/go-sdk` or `github.com/dagger/dang-sdk`. Install it with `dagger module install`, then use `dagger module init <SDK>` to create a module. See each [SDK page](#choose-your-sdk) for language options; the development loop is the same:
+Each SDK is a Dagger module, such as `dagger.io/sdk/go` or `dagger.io/sdk/dang`. Install it with `dagger module install`, then use `dagger module init <SDK>` to create a module. See each [SDK page](#choose-your-sdk) for language options; the development loop is the same:
 
 1. **Scaffold** a new module with `dagger module init <SDK>`. It records the module in `dagger.toml` and generates its source and bindings in one [changeset](../../using/generating.mdx).
 2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](../api/index.mdx).

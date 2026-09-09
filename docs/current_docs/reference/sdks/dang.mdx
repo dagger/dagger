@@ -20,11 +20,11 @@ Every SDK shares a few platform concepts. Read these first if they are new to yo
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
-The Dang SDK is a Dagger module, `github.com/dagger/dang-sdk`. Install it once, then create and maintain modules with the CLI module commands:
+The Dang SDK is a Dagger module, `dagger.io/sdk/dang`. Install it once, then create and maintain modules with the CLI module commands:
 
 ```shell
 # Install the Dang SDK into your workspace (once)
-dagger module install github.com/dagger/dang-sdk
+dagger module install dagger.io/sdk/dang
 
 # Create a module
 dagger module init dang --name my-ci
@@ -52,7 +52,7 @@ Install the Dang SDK into your workspace, then create a new module with `dagger 
 ```
 
 ```shell
-dagger module install github.com/dagger/dang-sdk
+dagger module install dagger.io/sdk/dang
 dagger module init dang --name my-ci
 ```
 
@@ -824,7 +824,7 @@ They can then call its functions (`dagger api call ...`) and run its checks (`da
 ## Troubleshooting
 
 - **Module not found.** Check `dagger module list`. A module created with `--path` needs a separate `dagger module install <path>`, or use `-m <path>` for one command.
-- **SDK not found.** Install `github.com/dagger/dang-sdk`, then check `dagger sdk list`.
+- **SDK not found.** Install `dagger.io/sdk/dang`, then check `dagger sdk list`.
 - **Parser and type errors.** Dang reports these straight from the module source. Check the non-null markers (`!`), that the last expression in a function body matches the declared return type, and that every custom type and enum name you reference exists.
 - **A `Void` function must end in `null`.** A `Void` function usually calls `.sync` on a container or service to force evaluation, then returns `null` as its final expression.
 - **Changeset not written.** `dagger module init`, module client commands, and `dagger generate` present a [changeset](../../using/generating.mdx). Review and apply it to write the files.

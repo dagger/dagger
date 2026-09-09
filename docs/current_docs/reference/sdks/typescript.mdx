@@ -26,7 +26,7 @@ where relevant:
 
 :::important
 **The TypeScript SDK is itself a Dagger module**,
-`github.com/dagger/typescript-sdk`. The CLI module commands use an installed SDK
+`dagger.io/sdk/typescript`. The CLI module commands use an installed SDK
 for source and client generation.
 :::
 
@@ -39,7 +39,7 @@ Run these commands from inside a Git repository. That's where the new module is 
 Install the TypeScript SDK into your workspace, then use the module initialization command:
 
 ```shell
-dagger module install github.com/dagger/typescript-sdk
+dagger module install dagger.io/sdk/typescript
 dagger module init typescript --name=my-module
 ```
 
@@ -559,9 +559,9 @@ Manage module clients from the module directory:
 ```shell
 cd .dagger/modules/my-module
 dagger module client list --sdk=typescript
-dagger module client add github.com/dagger/dagger/modules/go --sdk=typescript
+dagger module client add dagger.io/go --sdk=typescript
 dagger module client update --sdk=typescript
-dagger module client rm github.com/dagger/dagger/modules/go --sdk=typescript
+dagger module client rm dagger.io/go --sdk=typescript
 ```
 
 These commands require the updated TypeScript SDK interface. Client add and remove commands update targets in `dagger.toml`. Client update refreshes `dagger.lock`. All three run generation. Installed module names are not valid client targets.
@@ -580,7 +580,7 @@ source = "typescript"
 
 [[dependencies]]
 name = "go"
-source = "github.com/dagger/dagger/modules/go"
+source = "dagger.io/go"
 ```
 
 Once a dependency is added and bindings are regenerated, call it through `dag`.

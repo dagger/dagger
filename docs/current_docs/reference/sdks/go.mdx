@@ -15,11 +15,11 @@ This page is a standalone guide to the Go SDK. It assumes you already understand
 
 A useful, reusable module provides at least one of the three first-class function types: a **check**, a **generator**, or a **service**. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Go syntax.
 
-The Go SDK is itself a Dagger module, `github.com/dagger/go-sdk`. Install it into your workspace once, then scaffold, generate, and maintain Go modules with Dagger's module commands:
+The Go SDK is itself a Dagger module, `dagger.io/sdk/go`. Install it into your workspace once, then scaffold, generate, and maintain Go modules with Dagger's module commands:
 
 ```shell
 # Install the Go SDK into your workspace (once)
-dagger module install github.com/dagger/go-sdk
+dagger module install dagger.io/sdk/go
 
 # Create a Go module
 dagger module init go --name my-module
@@ -34,14 +34,14 @@ Run these commands from inside a Git repository. That's where the new module is 
 Install the Go SDK into your workspace, then create a new module:
 
 ```shell
-dagger module install github.com/dagger/go-sdk
+dagger module install dagger.io/sdk/go
 dagger module init go --name my-module
 ```
 
 `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files to create. Dagger shows you the changeset to review before anything is written to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger module install --here github.com/dagger/go-sdk` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here dagger.io/sdk/go` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -964,7 +964,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`; the versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the Go SDK with `dagger module install github.com/dagger/go-sdk`, scaffold with `dagger module init go --name <name>`, and regenerate with `dagger generate`.
+**`dagger init` / `dagger develop` not found.** Install the Go SDK with `dagger module install dagger.io/sdk/go`, scaffold with `dagger module init go --name <name>`, and regenerate with `dagger generate`.
 
 **Nothing was written after `dagger module init go`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 
