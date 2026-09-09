@@ -675,6 +675,54 @@ func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx contex
 	require.Contains(t, string(out), pinnedCommit)
 }
 
+// A scheme-less source must keep its own transport fallback. The workspace
+// lock is shared and committed, so it can name a transport that this user
+// cannot reach: one contributor pins over SSH, the next has HTTPS access only.
+// Selecting the locked transport strands the second contributor on a
+// repository they can otherwise read.
+//
+// The entry is written userless, as ssh://host/path, because that is the form
+// ParseCloneURL builds for a scheme-less ref and therefore the only form a
+// candidate can match. Dagger records a resolved SSH remote as
+// ssh://git@host/path, which matches no candidate, so rewriting the entry that
+// way would leave the test passing against the very selection it guards.
+//
+// This covers transport selection, not credentials. Proving the HTTPS-only
+// versus SSH-only case needs two credential environments, which the suite
+// cannot provide.
+func (LockfileSuite) TestSchemelessRemoteIgnoresLockedTransport(ctx context.Context, t *testctx.T) {
+	const schemelessRemote = "github.com/dagger/dagger-test-modules"
+	const sshRemote = "ssh://" + schemelessRemote
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-url.graphql", `{
+  git(url: "`+schemelessRemote+`") {
+    url
+  }
+}
+`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		sshRemote,
+		"refs/heads/main@4232918aa11c5347758ce657659e92f43610f0ff",
+	)
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "https://"+schemelessRemote)
+}
+
 func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
