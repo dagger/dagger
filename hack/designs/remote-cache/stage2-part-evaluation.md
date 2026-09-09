@@ -1123,7 +1123,7 @@ Directed plan, part of stage 2's model commit:
    not silent.
 5. Apply the same procedure to any other configuration the dev box
    measures over 20 minutes after the stage-2 model lands
-   (`resources_gated_growth` at ~114M distinct states is the likely
+   (`resources_requirement_growth` at ~114M distinct states is the likely
    second candidate; at this box's measured ~4M distinct states/minute it
    sits near 28 minutes).
 
@@ -1133,7 +1133,7 @@ before handoff, run the touched configurations plus the quick set; run
 the full suite only if time permits.
 
 Outcome record (post-implementation review): `attach_release_reader` and
-`resources_gated_growth` were scoped under budget with re-breaks
+`resources_requirement_growth` were scoped under budget with re-breaks
 re-verified. `resources_restart` (~110M distinct states) cannot be
 scoped honestly with the new constants — its scenario is persistence
 itself, so persistable intent is load-bearing and single-session release

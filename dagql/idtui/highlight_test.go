@@ -62,7 +62,7 @@ func TestHighlightANSI(t *testing.T) {
 		reset := "\x1b[0m"
 		input := faint + green + "foo bar baz" + reset
 		got := highlightANSI(input, "bar", style)
-		// After highlight, both faint and green should be replayed
+		// After highlight, both faint and green should be restored
 		want := faint + green + "foo " + hlStart + "bar" + hlEnd + faint + green + " baz" + reset
 		if got != want {
 			t.Errorf("got  %q\nwant %q", got, want)

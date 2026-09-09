@@ -15,8 +15,8 @@ import (
 
 // displayPhase tracks a single display span for streaming LLM content
 // (text response, thinking, or tool call arguments). The span names, emojis and
-// attributes mirror emitMessageSpan so a live turn and a replayed turn render
-// identically; the difference is only that these stream token-by-token.
+// attributes mirror emitMessageSpan so a live turn and a history-emitted turn
+// render identically; the difference is only that these stream token-by-token.
 type displayPhase struct {
 	ctx  context.Context
 	span trace.Span

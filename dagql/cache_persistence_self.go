@@ -51,7 +51,7 @@ type PersistedObject interface {
 }
 
 // PersistedObjectDecoder is implemented by zero-value object types that know
-// how to reconstruct a persisted object self payload without replaying the
+// how to reconstruct a persisted object self payload without re-evaluating the
 // original dagql call chain.
 type PersistedObjectDecoder interface {
 	Typed

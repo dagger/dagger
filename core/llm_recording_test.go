@@ -1,10 +1,10 @@
 package core
 
-// The replay provider must build the same per-block display spans a streaming
-// provider builds. Without them every replayed tool call ran under the shared
-// evaluation-loop context, so every replay-driven test exercised a telemetry
-// shape production never has (the tool-call Boundary span) -- a blind spot real
-// bugs shipped through.
+// The recorded-response provider must build the same per-block display spans a
+// streaming provider builds. Without them every recording-backed tool call ran
+// under the shared evaluation-loop context, so every recording-driven test
+// exercised a telemetry shape production never has (the tool-call Boundary
+// span) -- a blind spot real bugs shipped through.
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-func replayTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context) {
+func recordingTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context) {
 	t.Helper()
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(
@@ -28,7 +28,7 @@ func replayTestRecorder(t *testing.T) (*tracetest.SpanRecorder, context.Context)
 		sdktrace.WithSpanProcessor(sr),
 	)
 	// core.Tracer resolves the provider off the span in ctx.
-	ctx, _ := tp.Tracer("llm-replay-test").Start(context.Background(), "root")
+	ctx, _ := tp.Tracer("llm-recording-test").Start(context.Background(), "root")
 	return sr, ctx
 }
 
@@ -41,10 +41,10 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	return attribute.Value{}, false
 }
 
-func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
-	sr, ctx := replayTestRecorder(t)
+func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
 
-	replayer := newHistoryReplay([]*LLMMessage{
+	provider := newRecordedResponseProvider([]*LLMMessage{
 		{
 			Role: LLMMessageRoleAssistant,
 			Content: []*LLMContentBlock{
@@ -55,7 +55,7 @@ func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 		},
 	})
 
-	res, err := replayer.SendQuery(ctx, nil, nil, &LLMCallOpts{CallDigest: "sha256:deadbeef"})
+	res, err := provider.SendQuery(ctx, nil, nil, &LLMCallOpts{CallDigest: "sha256:deadbeef"})
 	require.NoError(t, err)
 
 	// One display span per tool call, keyed by call ID -- so CallBatch parents

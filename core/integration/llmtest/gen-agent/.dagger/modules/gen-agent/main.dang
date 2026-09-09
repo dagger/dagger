@@ -1,5 +1,5 @@
 """
-An agent that runs a workspace generator, for replay golden tests.
+An agent that runs a workspace generator, for recording-based golden tests.
 
 Proves the LLM's bound (overlaid) Workspace propagates through the module's
 `generate` tool into the generator leaves it rolls up and runs: the agent

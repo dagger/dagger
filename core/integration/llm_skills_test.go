@@ -4,7 +4,7 @@ package core
 // files discovered in the bound workspace, and skill directories installed
 // with withSkills. Discovery is asserted through LLM.skills — the same index
 // the ListSkills tool serves the model — and the tool path itself is driven
-// end to end with a canned replay conversation (see llm_test.go).
+// end to end with a canned recorded conversation (see llm_test.go).
 
 import (
 	"context"
@@ -122,7 +122,7 @@ func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.
 }
 
 // TestSkillTools drives the real ListSkills/ReadSkill tools through a canned
-// replay conversation: the recorded tool results are placeholders, so any
+// recorded conversation: the stored tool results are placeholders, so any
 // skill content appearing in the transcript is the live result of dispatching
 // the tools against the installed skill directory.
 func (LLMSuite) TestSkillTools(ctx context.Context, t *testctx.T) {
@@ -135,7 +135,7 @@ func (LLMSuite) TestSkillTools(ctx context.Context, t *testctx.T) {
 			"# Checklist\n- run the tests\n- ship it\n")
 
 	prompt := "How do I deploy this project?"
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt(prompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Let me see what skills are available."},

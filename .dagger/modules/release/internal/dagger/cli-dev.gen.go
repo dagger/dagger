@@ -273,7 +273,7 @@ type CliDevOpts struct {
 	//
 	// Version of the Dagger CLI being built. Surfaced as CliDev.Version and
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
-	// semver release-gating). The built binary self-reports its own version
+	// semver release compatibility). The built binary self-reports its own version
 	// from the embedded internal/version/VERSION file regardless of what's
 	// passed here, but this decides which engine the binary provisions by
 	// default: a valid semver means a tag build (embedded VERSION already
@@ -286,7 +286,7 @@ type CliDevOpts struct {
 	// default engine tag on commit builds. Auto-injected when cli-dev is
 	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
 	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
-	// session-scoped Workspace never taints the cached build.
+	// session-scoped Workspace never makes the build cache key session-specific.
 	//
 	Ws *Workspace // cli-dev (../../../../../.dagger/modules/cli-dev/main.go:62:2)
 	//

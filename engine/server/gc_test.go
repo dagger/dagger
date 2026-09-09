@@ -842,7 +842,7 @@ func TestMetadataPruneMonitorBlockSuppressesOnlyStructuralStage(t *testing.T) {
 	require.NoError(t, cache.ReleaseSession(activeCtx, "metadata-active"))
 }
 
-func TestMetadataPruneBlockBypassesLifecycleReasons(t *testing.T) {
+func TestLifecycleGCIgnoresMetadataPruneBlock(t *testing.T) {
 	for _, reason := range []localCacheGCReason{localCacheGCScheduled, localCacheGCGracefulShutdown} {
 		reason := reason
 		t.Run(fmt.Sprintf("reason-%d", reason), func(t *testing.T) {

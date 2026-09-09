@@ -31,7 +31,7 @@ var (
 //
 // The key challenge is that ANSI formatting is cumulative across multiple
 // CSI sequences (e.g., faint + foreground color). We can't just track the
-// "last" sequence — we need to replay ALL sequences seen before the highlight
+// "last" sequence — we need to reapply ALL sequences seen before the highlight
 // to fully restore the prior formatting state after the highlight ends.
 func highlightANSI(s, query string, style searchHighlight) string {
 	if query == "" || s == "" {
@@ -95,7 +95,7 @@ func highlightANSI(s, query string, style searchHighlight) string {
 
 	// Second pass: reconstruct the string, injecting highlight markers.
 	// We accumulate ALL ANSI sequences seen outside of highlights so that
-	// after hlEnd (full reset) we can replay them to restore the complete
+	// after hlEnd (full reset) we can reapply them to restore the complete
 	// formatting state (faint, bold, fg color, etc.).
 	var out strings.Builder
 	out.Grow(len(s) + len(matches)*(len(hlStart)+len(hlEnd)+32))
@@ -105,7 +105,7 @@ func highlightANSI(s, query string, style searchHighlight) string {
 	inHighlight := false
 
 	// savedANSI accumulates all ANSI sequences seen while NOT in a highlight.
-	// When a highlight ends, we replay them all to restore cumulative state.
+	// When a highlight ends, we reapply them all to restore cumulative state.
 	var savedANSI strings.Builder
 
 	for byteIdx < len(s) {
@@ -123,7 +123,7 @@ func highlightANSI(s, query string, style searchHighlight) string {
 
 		// Visible character.
 		if hlEnds[visIdx] && inHighlight {
-			// End highlight: full reset then replay all prior ANSI state.
+			// End highlight: full reset then reapply all prior ANSI state.
 			out.WriteString(hlEnd)
 			out.WriteString(savedANSI.String())
 			inHighlight = false

@@ -27,7 +27,7 @@ type AgentGroup struct {
 	// auto-injected Workspace! (and any currentWorkspace read, e.g. a project-
 	// context scan) resolves against it, rather than the session's frozen current
 	// workspace. Transient (not persisted): it is re-established when `agents`
-	// re-runs on replay.
+	// re-runs when the ID is loaded.
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
@@ -66,7 +66,7 @@ func (r *AgentGroup) List() []*Agent {
 // Compose threads a single base LLM through every selected @agent middleware in
 // alphabetical module:fn order, returning the composed LLM (hack/designs/workspace-agents.md §3).
 // Each leaf is invoked with base explicitly set to the running accumulator; the
-// composed LLM's ID records the full chain and replays deterministically.
+// composed LLM's ID records the full chain and reconstructs deterministically.
 func (r *AgentGroup) Compose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	// Compose the agents against the workspace this group was rolled up from, so
 	// each @agent leaf's auto-injected Workspace! and any currentWorkspace read

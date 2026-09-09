@@ -32,7 +32,7 @@ type CheckGroup struct {
 	// it into the context (WorkspaceToContext) so each check leaf's auto-injected
 	// Workspace! (and any currentWorkspace read) resolves against it, rather than
 	// the session's frozen current workspace. Transient (not persisted): it is
-	// re-established when `checks` re-runs on replay.
+	// re-established when `checks` re-runs after loading the ID.
 	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 

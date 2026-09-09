@@ -32,6 +32,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+     */
+    public function emitHistory(): LLM
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
+        $this->queryLeaf($leafQueryBuilder, 'emitHistory');
+        return $this;
+    }
+
+    /**
      * Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
      */
     public function fork(string $label): LLM
@@ -126,16 +136,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reasoningEffort');
         return (string)$this->queryLeaf($leafQueryBuilder, 'reasoningEffort');
-    }
-
-    /**
-     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-     */
-    public function replay(): LLM
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('replay');
-        $this->queryLeaf($leafQueryBuilder, 'replay');
-        return $this;
     }
 
     /**

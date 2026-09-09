@@ -891,9 +891,8 @@ type DaggerEngineOpts struct {
 	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
 	// when it's a dependency the caller must forward it. It is resolved to
 	// scalar commit/dirty values here and never stored: keeping a Workspace
-	// field would taint the cache key of every EngineDev method (a
-	// session-scoped resource), which would break disk-cache reuse across
-	// engine restarts.
+	// field would make the cache key of every EngineDev method session-specific,
+	// which would prevent disk-cache reuse across engine restarts.
 	//
 	Ws *Workspace // dagger-engine (../../../../toolchains/engine-dev/main.go:64:2)
 }

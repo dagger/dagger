@@ -125,9 +125,9 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			OfInputItemList: inputItems,
 		},
 		Store: param.NewOpt(false),
-		// Return the encrypted reasoning chain so it can be replayed on the next
+		// Return the encrypted reasoning chain so it can be resubmitted on the next
 		// turn. With Store:false the server keeps no state, so a reasoning model
-		// (e.g. gpt-5-codex) would otherwise reject a function call replayed
+		// (e.g. gpt-5-codex) would otherwise reject a resubmitted function call
 		// without the reasoning item that produced it.
 		Include: []responses.ResponseIncludable{
 			responses.ResponseIncludableReasoningEncryptedContent,
@@ -186,7 +186,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
 			case "reasoning":
 				// Capture the reasoning item (its id, encrypted content, and
-				// summary) so it can be replayed before the function call it
+				// summary) so it can be resubmitted before the function call it
 				// produced. It's appended in stream order, so it precedes that
 				// call. The opaque data is stashed in a THINKING block's
 				// Signature; the summary text (if any) is human-readable.
@@ -273,7 +273,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	// Add the text answer as a content block. When there's reasoning, it must
 	// come after the reasoning/tool-call blocks: the Responses API requires each
 	// reasoning item to be immediately followed by the item it produced, so a
-	// leading text block would strand a reasoning item on replay. Without
+	// leading text block would strand a reasoning item when resubmitted. Without
 	// reasoning, keep the text ahead of any tool calls (unchanged behavior).
 	if content.Len() > 0 {
 		textBlock := &LLMContentBlock{
@@ -343,7 +343,7 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 		case LLMMessageRoleAssistant:
 			// Emit blocks in their stored order so a reasoning item precedes the
 			// function call it produced, as the Responses API requires when the
-			// reasoning chain is replayed (Store:false).
+			// reasoning chain is resubmitted (Store:false).
 			for _, block := range msg.Content {
 				switch block.Kind {
 				case LLMContentText:
@@ -358,7 +358,7 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 						})
 					}
 				case LLMContentThinking:
-					// Replay a captured reasoning item ahead of its function call.
+					// Resubmit a captured reasoning item ahead of its function call.
 					// Only when we have its encrypted content: with Store:false a
 					// bare id references server state that no longer exists.
 					if reasoning, ok := decodeCodexReasoning(block.Signature); ok {
@@ -392,7 +392,7 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 // codexReasoning is the opaque data stashed in a THINKING block's Signature so a
 // Responses API reasoning item can be round-tripped across turns. Codex requests
 // use Store:false, so the server keeps no state and the reasoning item's id +
-// encrypted content must be carried in the history and replayed verbatim.
+// encrypted content must be carried in the history and resubmitted verbatim.
 type codexReasoning struct {
 	ID               string   `json:"id"`
 	EncryptedContent string   `json:"encrypted_content,omitempty"`
@@ -400,7 +400,7 @@ type codexReasoning struct {
 }
 
 // encodeCodexReasoning converts a streamed reasoning item into a human-readable
-// summary (for display) and an opaque signature (for replay).
+// summary (for display) and an opaque signature (for resubmission).
 func encodeCodexReasoning(r responses.ResponseReasoningItem) (summary string, signature string) {
 	cr := codexReasoning{
 		ID:               r.ID,
@@ -423,7 +423,7 @@ func encodeCodexReasoning(r responses.ResponseReasoningItem) (summary string, si
 // decodeCodexReasoning reconstructs a reasoning input item from a THINKING
 // block's Signature. It returns ok=false when the signature isn't a codex
 // reasoning payload (e.g. another provider's thinking signature) or lacks the
-// encrypted content required to replay it under Store:false.
+// encrypted content required to resubmit it under Store:false.
 func decodeCodexReasoning(signature string) (*responses.ResponseReasoningItemParam, bool) {
 	if signature == "" {
 		return nil, false
