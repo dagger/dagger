@@ -79,6 +79,11 @@ func (v *SpanListView) sync() bool {
 		return v.clear()
 	}
 
+	ids := []dagui.SpanID(nil)
+	if v.include != nil {
+		ids = v.include()
+	}
+
 	opts := v.fe.FrontendOpts
 	opts.ZoomedSpan = rootID
 	rowsView := v.fe.db.RowsView(opts)
@@ -89,10 +94,6 @@ func (v *SpanListView) sync() bool {
 	v.scope.rows = rowsView.Rows(opts)
 	v.scope.opts = opts
 
-	ids := []dagui.SpanID(nil)
-	if v.include != nil {
-		ids = v.include()
-	}
 	children := make([]tuist.Component, 0, len(rowsView.Body))
 	if v.include == nil {
 		ids = make([]dagui.SpanID, 0, len(rowsView.Body))

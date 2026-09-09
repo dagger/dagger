@@ -901,6 +901,26 @@ func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
 	fmt.Fprint(out, badge)
 }
 
+// renderServiceURLs shows, inline on a service's display row, the local URLs
+// where the service is reachable (ServiceURLs, stamped by core's PrepareUp
+// once the health check passes). The chip makes a collapsed service row
+// self-sufficient: no need to expand it to find where to point a browser.
+// Only display rows chip — the engine's service-instance span carries no
+// URLs, and the `ready <url>` marker (no service name) already says its URL
+// in its own name.
+func (r renderer) renderServiceURLs(out TermOutput, span *dagui.Span) {
+	if span == nil || span.ServiceName == "" || span.Service || len(span.ServiceURLs) == 0 {
+		return
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	for i, url := range span.ServiceURLs {
+		if i > 0 {
+			fmt.Fprint(out, " ")
+		}
+		fmt.Fprint(out, out.String(url).Foreground(termenv.ANSICyan))
+	}
+}
+
 // tokenSizeColor grades a token count so a context-bloating tool result reads as
 // a warning: small results stay faint, a few thousand tokens turn yellow, and
 // tens of thousands turn red.

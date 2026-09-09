@@ -119,6 +119,23 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "infra:database")
 }
 
+func (UpSuite) TestUpNoServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+
+	// An empty workspace must report the problem rather than wait for Ctrl+C.
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	out, err := modGen.
+		WithWorkdir("/empty").
+		WithNewFile("dagger.toml", "").
+		With(daggerExecFail("up")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "no services found")
+}
+
 func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
