@@ -17305,6 +17305,11 @@ impl WorkspaceModule {
         let query = self.selection.select("entrypoint");
         query.execute(self.graphql_client.clone()).await
     }
+    /// List the functions of this module's main object, in GraphQL field form.
+    pub async fn functions(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("functions");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this WorkspaceModule.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
@@ -17388,6 +17393,11 @@ impl WorkspaceModuleSetting {
     /// Whether the setting accepts a list of values.
     pub async fn is_list(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("isList");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+    pub async fn is_object(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isObject");
         query.execute(self.graphql_client.clone()).await
     }
     /// The setting key.

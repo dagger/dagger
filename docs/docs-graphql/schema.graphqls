@@ -6357,6 +6357,11 @@ type WorkspaceModule implements Node {
   """
   entrypoint: Boolean!
 
+  """
+  List the functions of this module's main object, in GraphQL field form.
+  """
+  functions: [String!]!
+
   """A unique identifier for this WorkspaceModule."""
   id: ID!
 
@@ -6380,6 +6385,13 @@ type WorkspaceModuleSetting implements Node {
 
   """Whether the setting accepts a list of values."""
   isList: Boolean!
+
+  """
+  Whether the setting is an object type resolved from an address string
+  (Container, Directory, File, Secret, Service, ...), which may be a module
+  reference.
+  """
+  isObject: Boolean!
 
   """The setting key."""
   key: String!
