@@ -228,7 +228,7 @@ func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.Fil
 }
 
 func (s *fileSchema) name(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.String, error) {
-	filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
+	filePath, err := file.Self().PathOrEval(ctx, file)
 	if err != nil {
 		return "", err
 	}

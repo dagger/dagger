@@ -1084,7 +1084,7 @@ func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluat
 	if shared.lazyEvalComplete {
 		return false
 	}
-	if !shared.lazyWhole.settled() {
+	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !shared.lazyWhole.settled() {
 		return true
 	}
 	for key, group := range shared.lazyPartGroups {

@@ -392,7 +392,7 @@ For standalone `Directory` and `File`, persisted object encoding
 often has two broad forms:
 
 - **snapshot form**
-  - the object already has a materialized snapshot/accessor value
+  - the object has a completed snapshot, open or retained by saved identity
 - **lazy form**
   - the object has not been fully materialized, but it still has a structured
     lazy operation that can be serialized
@@ -423,9 +423,12 @@ attempts with separate `open:<part>` groups to open saved snapshots on demand.
 Joint computation outputs can open independently after restart. Descriptors
 remain on the Container after opening and after the operational lazy pointer
 clears, so typed decode, usage accounting, owner-lease sync, and a second flush
-retain the same identities. Absence needs no opening. Pending recipe inputs
-still use the existing standalone Directory/File decoders, which may open their
-own snapshots immediately.
+retain the same identities. Absence needs no opening. Pending recipe inputs use the standalone
+Directory/File decoders. These retain saved snapshot identity and path, and open
+through the ordinary whole-result attempt on the first filesystem demand.
+The stored identity remains after opening and supports links, usage and another
+flush. Metadata path readers use saved paths only on restored snapshot forms;
+fresh work still evaluates even when a path was prefilled.
 
 This container payload change is persistence schema 18. Older stores are wiped;
 there is no migration. See `core/container_persistence.go` and the bounded model
@@ -570,6 +573,12 @@ The implementation detail behind that is important:
 - so object payloads that cannot be reconstructed in that reduced context remain
   as persisted envelopes and are decoded later by
   `ensurePersistedHitValueLoaded`
+- lists with referenced child rows also defer before lookup when the server is
+  absent, including lists of scalars
+- live list decode loads each nonzero child ID through the exact empty-session
+  loader, preserving its shared state and existing dependency ownership
+- zero-ID list elements remain inline; referenced children resolve their schema
+  from their own authoritative calls rather than the enclosing list call
 
 This matches the current code path and is not just a vague policy choice.
 

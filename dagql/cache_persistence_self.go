@@ -289,6 +289,21 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		}
 		items := make([]AnyResult, 0, len(env.Items))
 		for i, itemEnv := range env.Items {
+			if itemEnv.ResultID != 0 {
+				if dag == nil {
+					return nil, fmt.Errorf("decode list item %d: referenced result requires a dagql server", i+1)
+				}
+				cache, err := EngineCache(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
+				}
+				itemRes, err := cache.LoadResultByResultID(ctx, "", dag, itemEnv.ResultID)
+				if err != nil {
+					return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
+				}
+				items = append(items, itemRes)
+				continue
+			}
 			itemCall := call.fork()
 			itemCall.Nth = int64(i + 1)
 			if itemCall.Type != nil {
