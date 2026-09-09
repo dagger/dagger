@@ -23,6 +23,7 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -1648,7 +1649,7 @@ func (s *containerSchema) stdout(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().Stdout(ctx)
@@ -1689,7 +1690,7 @@ func (s *containerSchema) stderr(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().Stderr(ctx)
@@ -1730,7 +1731,7 @@ func (s *containerSchema) combinedOutput(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return "", err
 	}
 	return parent.Self().CombinedOutput(ctx)
@@ -1741,7 +1742,7 @@ func (s *containerSchema) exitCode(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return 0, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartExecMeta); err != nil {
 		return 0, err
 	}
 	return parent.Self().ExitCode(ctx)
@@ -1769,41 +1770,19 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
-	if err != nil {
-		return inst, err
-	}
-	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
-	if err != nil {
-		return inst, err
-	}
-	ctr := &core.Container{
-		FS:                 clonedFS,
-		MetaSnapshot:       clonedMeta,
-		Config:             core.CloneContainerImageConfig(parent.Self().Config),
-		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
-		Mounts:             clonedMounts,
-		Platform:           parent.Self().Platform,
-		Annotations:        slices.Clone(parent.Self().Annotations),
-		Secrets:            slices.Clone(parent.Self().Secrets),
-		Sockets:            slices.Clone(parent.Self().Sockets),
-		ImageRef:           parent.Self().ImageRef,
-		Ports:              slices.Clone(parent.Self().Ports),
-		Services:           slices.Clone(parent.Self().Services),
-		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
-		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
-		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
-		DefaultArgs:        parent.Self().DefaultArgs,
-		Lazy: &core.ContainerWithSymlinkLazy{
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithSymlinkLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 			Target:    target,
 			LinkPath:  linkName,
-		},
+		}
+	} else if _, err := ctr.WithSymlink(ctx, parent, target, linkName); err != nil {
+		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -1916,7 +1895,7 @@ func (s *containerSchema) entrypoint(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 	return slices.Clone(parent.Self().Config.Entrypoint), nil
@@ -1981,7 +1960,7 @@ func (s *containerSchema) defaultArgs(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 	return slices.Clone(parent.Self().Config.Cmd), nil
@@ -2039,7 +2018,7 @@ func (s *containerSchema) user(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return "", err
 	}
 	return parent.Self().Config.User, nil
@@ -2104,7 +2083,7 @@ func (s *containerSchema) workdir(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return "", err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return "", err
 	}
 	return parent.Self().Config.WorkingDir, nil
@@ -2371,7 +2350,7 @@ func (s *containerSchema) envVariables(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -2394,7 +2373,7 @@ func (s *containerSchema) envVariable(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return none, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return none, err
 	}
 
@@ -2426,7 +2405,7 @@ func (s *containerSchema) labels(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -2455,7 +2434,7 @@ func (s *containerSchema) label(ctx context.Context, parent dagql.ObjectResult[*
 	if err != nil {
 		return none, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return none, err
 	}
 
@@ -2491,15 +2470,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
-	if err != nil {
-		return nil, err
-	}
-	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
-	if err != nil {
-		return nil, err
-	}
-	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2507,34 +2478,21 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
-	ctr := &core.Container{
-		FS:                 clonedFS,
-		MetaSnapshot:       clonedMeta,
-		Config:             core.CloneContainerImageConfig(parent.Self().Config),
-		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
-		Mounts:             clonedMounts,
-		Platform:           parent.Self().Platform,
-		Annotations:        slices.Clone(parent.Self().Annotations),
-		Secrets:            slices.Clone(parent.Self().Secrets),
-		Sockets:            slices.Clone(parent.Self().Sockets),
-		ImageRef:           "",
-		Ports:              slices.Clone(parent.Self().Ports),
-		Services:           slices.Clone(parent.Self().Services),
-		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
-		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
-		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
-		DefaultArgs:        parent.Self().DefaultArgs,
-		Lazy: &core.ContainerWithMountedDirectoryLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Target:    absPath(parent.Self().Config.WorkingDir, path),
-			Source:    dir,
-			Owner:     owner,
-			Readonly:  args.ReadOnly,
-		},
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedDirectory(ctx, parent, target, dir, owner, args.ReadOnly)
+		return ctr, err
+	}
+	ctr.Lazy = &core.ContainerWithMountedDirectoryLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Source:    dir,
+		Owner:     owner,
+		Readonly:  args.ReadOnly,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
-		Target:          absPath(parent.Self().Config.WorkingDir, path),
+		Target:          target,
 		Readonly:        args.ReadOnly,
 		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
 	})
@@ -2643,6 +2601,24 @@ type containerPublishArgs struct {
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
 }
 
+func evaluateContainerImageParts(
+	ctx context.Context,
+	cache *dagql.Cache,
+	containers ...dagql.ObjectResult[*core.Container],
+) error {
+	eg, egctx := errgroup.WithContext(ctx)
+	for _, container := range containers {
+		if container.Self() == nil {
+			continue
+		}
+		container := container
+		eg.Go(func() error {
+			return cache.EvaluateParts(egctx, container, core.ContainerPartMetadata, core.ContainerPartFS)
+		})
+	}
+	return eg.Wait()
+}
+
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2656,14 +2632,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return "", err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(variantResults))
-	evals = append(evals, parent)
-	for _, variant := range variantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
 	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
@@ -2726,7 +2695,7 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2735,6 +2704,10 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedFile(ctx, parent, target, file, owner, false)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedFileLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -2768,26 +2741,47 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	if err != nil {
 		return inst, err
 	}
-
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	dagqlCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
+	}
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
 
 	target := absPath(parent.Self().Config.WorkingDir, args.Path)
-	ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
-		LazyState:  core.NewLazyState(),
-		Parent:     parent,
-		Target:     target,
-		Source:     dir,
-		SourcePath: args.SourcePath,
-		Readonly:   args.ReadOnly,
+	if !parentPendingLazy {
+		if _, err := ctr.WithMountedPathDockerfileCompat(ctx, target, dir, args.SourcePath, args.ReadOnly); err != nil {
+			return inst, err
+		}
+	} else {
+		sourceIsFile, err := core.DockerfileCompatMountSourceIsFile(ctx, dir, srv, args.SourcePath)
+		if err != nil {
+			return inst, err
+		}
+		ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Target:     target,
+			Source:     dir,
+			SourcePath: args.SourcePath,
+			Readonly:   args.ReadOnly,
+		}
+		mount := core.ContainerMount{
+			Target:   target,
+			Readonly: args.ReadOnly,
+		}
+		if sourceIsFile {
+			mount.FileSource = new(core.LazyAccessor[*core.File, *core.Container])
+		} else {
+			mount.DirectorySource = new(core.LazyAccessor[*core.Directory, *core.Container])
+		}
+		ctr.Mounts = ctr.Mounts.With(mount)
 	}
-	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
-		Target:          target,
-		Readonly:        args.ReadOnly,
-		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
-	})
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	if err != nil {
@@ -2802,13 +2796,6 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	parentDgst, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: parent digest: %w", err)
-	}
-	dagqlCache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
-		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
 	}
 	srcSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
 	if err != nil {
@@ -2972,11 +2959,15 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedCache(ctx, target, cache)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedCacheLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3018,11 +3009,15 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedVolume(ctx, target, volume, args.ReadOnly)
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedVolumeLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3052,11 +3047,15 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedTemp(ctx, target, args.Size.Value.Int())
+		return ctr, err
+	}
 	ctr.Lazy = &core.ContainerWithMountedTempLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3083,7 +3082,7 @@ func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectR
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3091,10 +3090,12 @@ func (s *containerSchema) withoutMount(ctx context.Context, parent dagql.ObjectR
 	if _, err := ctr.WithoutMount(ctx, target); err != nil {
 		return nil, err
 	}
-	ctr.Lazy = &core.ContainerWithoutMountLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Target:    target,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithoutMountLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Target:    target,
+		}
 	}
 	return ctr, nil
 }
@@ -3104,7 +3105,7 @@ func (s *containerSchema) mounts(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 
@@ -3265,7 +3266,7 @@ func (s *containerSchema) healthcheck(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return inst, err
 	}
 	if parent.Self().Config.Healthcheck == nil || len(parent.Self().Config.Healthcheck.Test) == 0 || parent.Self().Config.Healthcheck.Test[0] == "NONE" {
@@ -3566,7 +3567,7 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3574,6 +3575,10 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
+	}
+	if !parentPendingLazy {
+		_, err := ctr.WithMountedSecret(ctx, parent, target, secret, owner, fs.FileMode(args.Mode))
+		return ctr, err
 	}
 	var secretOwner *core.Ownership
 	if owner != "" {
@@ -3632,7 +3637,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3640,13 +3645,17 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return nil, err
 	}
-	ctr.Lazy = &core.ContainerWithDirectoryLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Path:      path,
-		Source:    dir,
-		Filter:    args.CopyFilter,
-		Owner:     owner,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithDirectoryLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+			Source:    dir,
+			Filter:    args.CopyFilter,
+			Owner:     owner,
+		}
+	} else if _, err := ctr.WithDirectory(ctx, parent, path, dir, args.CopyFilter, owner); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3680,7 +3689,7 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -3688,13 +3697,17 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	ctr.Lazy = &core.ContainerWithFileLazy{
-		LazyState:   core.NewLazyState(),
-		Parent:      parent,
-		Path:        path,
-		Source:      file,
-		Permissions: perms,
-		Owner:       owner,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithFileLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			Path:        path,
+			Source:      file,
+			Permissions: perms,
+			Owner:       owner,
+		}
+	} else if _, err := ctr.WithFile(ctx, parent, path, file, perms, owner); err != nil {
+		return inst, err
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3783,6 +3796,7 @@ type containerWithoutDirectoryArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with withoutFile; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -3794,14 +3808,18 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr.Lazy = &core.ContainerWithoutPathLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Path:      path,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithoutPathLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+		}
+	} else if _, err := ctr.WithoutPaths(ctx, parent, path); err != nil {
+		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -3811,6 +3829,7 @@ type containerWithoutFileArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with withoutDirectory; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -3822,14 +3841,18 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr.Lazy = &core.ContainerWithoutPathLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Path:      path,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithoutPathLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+		}
+	} else if _, err := ctr.WithoutPaths(ctx, parent, path); err != nil {
+		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -3908,7 +3931,7 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, fmt.Errorf("failed to create new file %s: %w", path, err)
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -3916,12 +3939,16 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	ctr.Lazy = &core.ContainerWithFileLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Path:      path,
-		Source:    newFile,
-		Owner:     owner,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithFileLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      path,
+			Source:    newFile,
+			Owner:     owner,
+		}
+	} else if _, err := ctr.WithFile(ctx, parent, path, newFile, nil, owner); err != nil {
+		return inst, err
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3959,16 +3986,20 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 		return inst, fmt.Errorf("failed to create new file %s: %w", args.Path, err)
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
-	ctr.Lazy = &core.ContainerWithFileLazy{
-		LazyState: core.NewLazyState(),
-		Parent:    parent,
-		Path:      args.Path,
-		Source:    newFile,
-		Owner:     args.Owner,
+	if parentPendingLazy {
+		ctr.Lazy = &core.ContainerWithFileLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Path:      args.Path,
+			Source:    newFile,
+			Owner:     args.Owner,
+		}
+	} else if _, err := ctr.WithFile(ctx, parent, args.Path, newFile, nil, args.Owner); err != nil {
+		return inst, err
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3998,7 +4029,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -4006,6 +4037,10 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
 		return nil, err
+	}
+	if !parentPendingLazy {
+		_, err := ctr.WithUnixSocketFromParent(ctx, parent, target, socket, owner)
+		return ctr, err
 	}
 	var socketOwner *core.Ownership
 	if owner != "" {
@@ -4065,11 +4100,15 @@ func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	if !parentPendingLazy {
+		_, err := ctr.WithoutUnixSocket(ctx, target)
+		return ctr, err
+	}
 	for i, sock := range ctr.Sockets {
 		if sock.ContainerPath != target {
 			continue
@@ -4090,7 +4129,7 @@ func (s *containerSchema) platform(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return core.Platform{}, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return core.Platform{}, err
 	}
 	return parent.Self().Platform, nil
@@ -4121,14 +4160,7 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return "", err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(variantResults))
-	evals = append(evals, parent)
-	for _, variant := range variantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
 	variants := make([]*core.Container, 0, len(variantResults))
@@ -4202,14 +4234,7 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(platformVariantResults))
-	evals = append(evals, parent)
-	for _, variant := range platformVariantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
 		return inst, err
 	}
 	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
@@ -4269,14 +4294,7 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, err
 	}
-	evals := make([]dagql.AnyResult, 0, 1+len(platformVariantResults))
-	evals = append(evals, parent)
-	for _, variant := range platformVariantResults {
-		if variant.Self() != nil {
-			evals = append(evals, variant)
-		}
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
 		return core.Void{}, err
 	}
 	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
@@ -4418,7 +4436,7 @@ func (s *containerSchema) manifest(
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
 		return inst, err
 	}
 	parentDigest, err := parent.RecipeDigest(ctx)
@@ -4455,7 +4473,7 @@ func (s *containerSchema) layer(
 	if err != nil {
 		return inst, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
 		return inst, err
 	}
 	parentDigest, err := parent.RecipeDigest(ctx)
@@ -4566,7 +4584,7 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return nil, err
 	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
 		return nil, err
 	}
 

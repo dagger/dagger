@@ -185,7 +185,7 @@ func (chk *dockerHealthcheck) Check(ctx context.Context) error {
 func (chk *dockerHealthcheck) check(ctx context.Context) error {
 	healthcheckMeta, err := chk.ctr.metaSpec(ctx, ContainerExecOpts{
 		Args: chk.args,
-	}, false)
+	}, nil)
 	if err != nil {
 		return err
 	}
