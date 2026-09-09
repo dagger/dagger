@@ -4002,6 +4002,8 @@ func prepareLazyGroupEvalLocked(
 // published attempt, trust settled object-side state, or lead a fresh
 // attempt. For LazyGroupWhole with a nil partsVal this is exactly the
 // former whole-result evaluateOne loop.
+//
+//nolint:gocyclo // Keep joining, cancellation, and retirement in one shared attempt loop.
 func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts) (rerr error) {
 	stack := lazyEvalStackFromContext(ctx)
 	if stack != nil && lazyEvalStackContains(stack, shared.id, group) {
