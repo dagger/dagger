@@ -29,6 +29,7 @@ import (
 	"dagger.io/dagger"
 )
 
+//nolint:gocyclo // Independent restart subtests share engine fixtures; the metric counts their bodies together.
 func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
 
