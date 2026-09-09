@@ -67,7 +67,8 @@ func (*Agent) Type() *ast.Type {
 }
 
 func (*Agent) TypeDescription() string {
-	return "A conversation loop running as an addressable, long-lived entity within the session. " +
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\n" +
+		"A conversation loop running as an addressable, long-lived entity within the session. " +
 		"The conversation itself remains observable at any time as an immutable LLM value."
 }
 
@@ -106,7 +107,8 @@ func (state AgentState) Type() *ast.Type {
 }
 
 func (state AgentState) TypeDescription() string {
-	return "Computed lifecycle state of an agent."
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\n" +
+		"Computed lifecycle state of an agent."
 }
 
 func (state AgentState) Decoder() dagql.InputDecoder {
@@ -168,7 +170,8 @@ func (*AgentMessage) Type() *ast.Type {
 }
 
 func (*AgentMessage) TypeDescription() string {
-	return "A message delivered to an agent's mailbox."
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\n" +
+		"A message delivered to an agent's mailbox."
 }
 
 func (m *AgentMessage) Clone() *AgentMessage {
@@ -204,7 +207,8 @@ func (delivery AgentMessageDelivery) Type() *ast.Type {
 }
 
 func (delivery AgentMessageDelivery) TypeDescription() string {
-	return "How a message landed in an agent's evaluation."
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\n" +
+		"How a message landed in an agent's evaluation."
 }
 
 func (delivery AgentMessageDelivery) Decoder() dagql.InputDecoder {

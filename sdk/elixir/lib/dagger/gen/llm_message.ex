@@ -53,6 +53,10 @@ defmodule Dagger.LLMMessage do
   Who put this message on the record, when it arrived through an agent mailbox.
 
   Null for the user's own prompts and for everything the model or tools produced.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
   """
   @spec origin(t()) :: {:ok, Dagger.LLMMessageOrigin.t() | nil} | {:error, term()}
   def origin(%__MODULE__{} = llm_message) do
