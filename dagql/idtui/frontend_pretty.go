@@ -2745,11 +2745,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	var chrome []string
 	if len(logsLines) > 0 {
 		chrome = append(chrome, logsLines...)
-		chrome = append(chrome, "") // trailing gap
 	}
 	if len(globalTestLines) > 0 {
+		if len(chrome) > 0 {
+			chrome = append(chrome, "")
+		}
 		chrome = append(chrome, globalTestLines...)
-		chrome = append(chrome, "") // trailing gap
 	}
 	chromeReserve := 0
 	if h := ctx.ScreenHeight(); h > 0 && len(chrome) > 0 {
@@ -2762,8 +2763,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
-		body = append(body, "") // gap line after progress
+		if len(chrome) > 0 {
+			body = append(body, "") // separate tree from logs/tests
+		}
 	}
+	// The keymap supplies its own leading gap; content sections only need
+	// separators between them, not a trailing blank line.
 	body = append(body, chrome...)
 
 	// Crop the bottom to the rows available for the body: the screen minus the
