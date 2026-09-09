@@ -447,6 +447,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")
 	}
 
+	// Compare final reports without timer-dependent heartbeat lines in either run.
+	ex.Env = append(ex.Env, "DAGGER_REPORT_HEARTBEAT=0")
+
 	realHome, _ := os.UserHomeDir()
 
 	// NOTE: we care about CACHED states for these tests, so we need some way for
