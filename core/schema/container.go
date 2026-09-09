@@ -4723,6 +4723,7 @@ func (s *containerSchema) terminalLegacy(
 	err = srv.Select(ctx, ctr, new(dagql.Result[*core.Container]),
 		dagql.Selector{
 			Field: "terminal",
+			View:  "v0.12.0",
 			Args:  inputs,
 		},
 	)
