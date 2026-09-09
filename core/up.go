@@ -76,6 +76,9 @@ func (ug *UpGroup) List() []*Up {
 // returning from each as soon as it is healthy, so a service that fails to
 // start surfaces immediately without leaving sibling goroutines hanging.
 func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
+	if len(ug.Ups) == 0 {
+		return nil, errors.New("no services found")
+	}
 	ug = ug.Clone()
 
 	// Run the services against the workspace this group was rolled up from, so
