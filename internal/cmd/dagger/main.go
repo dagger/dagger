@@ -667,6 +667,17 @@ func shouldCleanupOldEngines() bool {
 }
 
 func parseGlobalFlags(root *cobra.Command, args []string) []string {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if _, ok := flag.Value.(interface{ replay() }); ok || flag.Name == "help" {
+			return
+		}
+		value := &parsedGlobalFlagValue{Value: flag.Value}
+		if slice, ok := flag.Value.(pflag.SliceValue); ok {
+			flag.Value = &parsedGlobalSliceFlagValue{parsedGlobalFlagValue: value, SliceValue: slice}
+		} else {
+			flag.Value = value
+		}
+	})
 	cmd, commandArgs := resolveCommand(root, args)
 	if cmd == nil {
 		return args
@@ -702,6 +713,63 @@ func parseGlobalFlags(root *cobra.Command, args []string) []string {
 	// Dynamic SDK command registration needs the command path as well as its
 	// positional arguments. resolveCommand removed that path before parsing.
 	return append(strings.Fields(commandName(cmd)), flags.Args()...)
+}
+
+// replayGlobalFlags skips the occurrences already applied during setup. Later
+// occurrences, such as a global flag after a dynamic function, still apply.
+func replayGlobalFlags(root *cobra.Command) {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if value, ok := flag.Value.(interface{ replay() }); ok {
+			value.replay()
+		}
+	})
+}
+
+type parsedGlobalFlagValue struct {
+	pflag.Value
+	values    []string
+	replaying bool
+}
+
+func (value *parsedGlobalFlagValue) Set(arg string) error {
+	if value.replaying && len(value.values) > 0 && value.values[0] == arg {
+		value.values = value.values[1:]
+		return nil
+	}
+	if err := value.Value.Set(arg); err != nil {
+		return err
+	}
+	if !value.replaying {
+		value.values = append(value.values, arg)
+	}
+	return nil
+}
+
+func (value *parsedGlobalFlagValue) replay() {
+	value.replaying = true
+}
+
+type parsedGlobalSliceFlagValue struct {
+	*parsedGlobalFlagValue
+	pflag.SliceValue
+}
+
+// parseCommandFlagsWithoutGlobals adds module constructor flags to a dynamic
+// command. Its globals were already parsed before loading the module.
+func parseCommandFlagsWithoutGlobals(cmd *cobra.Command, args []string) error {
+	values := map[*pflag.Flag]pflag.Value{}
+	cmd.Root().PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			values[flag] = flag.Value
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	defer func() {
+		for flag, value := range values {
+			flag.Value = value
+		}
+	}()
+	return cmd.ParseFlags(args)
 }
 
 func xReleaseLogLine(msg string) string {
@@ -858,7 +926,7 @@ func commandShowsFinalProgress(cmd *cobra.Command) bool {
 // `dagger api session`). Empty when unresolvable or unannotated; a resolution
 // error just means cobra will reject the command line later anyway.
 func commandProgressDefault(args []string) string {
-	cmd, _, err := rootCmd.Traverse(args)
+	cmd, _, err := rootCmd.Find(args)
 	if err != nil || cmd == nil {
 		return ""
 	}
@@ -933,6 +1001,7 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
+	replayGlobalFlags(rootCmd)
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)

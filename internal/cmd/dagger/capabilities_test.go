@@ -770,6 +770,125 @@ func TestGlobalFlagParsingStopsAtDynamicArguments(t *testing.T) {
 	})
 }
 
+func TestGlobalFlagsApplyOnce(t *testing.T) {
+	oldRelease := xRelease
+	t.Cleanup(func() { xRelease = oldRelease })
+	for _, test := range []struct {
+		name        string
+		args        []string
+		dynamic     bool
+		wantVerbose int
+		wantQuiet   int
+		wantLabels  []string
+		wantHelp    bool
+		lateFlags   bool
+	}{
+		{
+			name:    "telemetry command",
+			args:    []string{"--progress=report", "-v", "call", "-m", "./viztest", "hello-world"},
+			dynamic: true, wantVerbose: 1,
+		},
+		{
+			name:        "static command",
+			args:        []string{"-v", "--label=first", "call", "-v", "-q", "--label=second"},
+			wantVerbose: 2, wantQuiet: 1, wantLabels: []string{"first", "second"},
+		},
+		{
+			name:    "dynamic command",
+			args:    []string{"-vq", "--label=first", "call", "-vvq", "--label=second", "hello-world"},
+			dynamic: true, wantVerbose: 3, wantQuiet: 2, wantLabels: []string{"first", "second"},
+		},
+		{
+			name:        "explicit count",
+			args:        []string{"--verbose=3", "call", "-v"},
+			wantVerbose: 4,
+		},
+		{
+			name:    "dynamic help",
+			args:    []string{"-v", "call", "--help"},
+			dynamic: true, wantVerbose: 1, wantHelp: true,
+		},
+		{
+			name:    "flags after a dynamic function",
+			args:    []string{"-v", "--label=first", "--progress=report", "call", "hello-world", "-v", "--label=second", "--progress=logs"},
+			dynamic: true, wantVerbose: 1, wantLabels: []string{"first"}, lateFlags: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := &cobra.Command{Use: "dagger", TraverseChildren: true}
+			var verbose, quiet int
+			var labels []string
+			root.PersistentFlags().CountVarP(&verbose, "verbose", "v", "Verbosity")
+			root.PersistentFlags().CountVarP(&quiet, "quiet", "q", "Quiet output")
+			root.PersistentFlags().StringSliceVar(&labels, "label", nil, "Labels")
+			root.PersistentFlags().String("progress", "auto", "Progress output")
+			root.PersistentFlags().BoolP("help", "h", false, "Print usage")
+			assertValues := func() {
+				t.Helper()
+				require.Equal(t, test.wantVerbose, verbose)
+				require.Equal(t, test.wantQuiet, quiet)
+				require.Equal(t, test.wantLabels, labels)
+				count, err := root.PersistentFlags().GetCount("verbose")
+				require.NoError(t, err)
+				require.Equal(t, verbose, count)
+				savedLabels, err := root.PersistentFlags().GetStringSlice("label")
+				require.NoError(t, err)
+				require.Equal(t, len(labels), len(savedLabels))
+				for i, label := range labels {
+					require.Equal(t, label, savedLabels[i])
+				}
+			}
+			root.PersistentPreRun = func(*cobra.Command, []string) { assertValues() }
+			called := false
+			call := &cobra.Command{
+				Use: "call", DisableFlagParsing: test.dynamic,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					called = true
+					if test.dynamic {
+						// Dynamic command loading parses these arguments again
+						// after it adds the module constructor flags.
+						require.NoError(t, parseCommandFlagsWithoutGlobals(cmd, args))
+					}
+					assertValues()
+					help, err := cmd.Flags().GetBool("help")
+					require.NoError(t, err)
+					require.Equal(t, test.wantHelp, help)
+					if test.lateFlags {
+						function := &cobra.Command{Use: "hello-world"}
+						cmd.AddCommand(function)
+						require.NoError(t, function.ParseFlags(cmd.Flags().Args()[1:]))
+						require.Equal(t, 2, verbose)
+						require.Equal(t, []string{"first", "second"}, labels)
+						progress, err := function.Flags().GetString("progress")
+						require.NoError(t, err)
+						require.Equal(t, "logs", progress)
+					}
+					return nil
+				},
+			}
+			call.Flags().StringP("load-module", "m", "", "Load a module")
+			if test.dynamic {
+				call.PreRunE = func(cmd *cobra.Command, args []string) error {
+					cmd.DisableFlagParsing = false
+					cmd.Flags().SetInterspersed(false)
+					return cmd.ParseFlags(args)
+				}
+			}
+			root.AddCommand(call)
+			parseGlobalFlags(root, test.args)
+			replayGlobalFlags(root)
+			_, ok := root.PersistentFlags().Lookup("label").Value.(pflag.SliceValue)
+			require.True(t, ok, "repeatable flags must keep their slice methods")
+			root.SetArgs(test.args)
+			require.NoError(t, root.Execute())
+			require.True(t, called)
+			if !test.lateFlags {
+				assertValues()
+			}
+		})
+	}
+}
+
 func TestCapabilityScopedFlagCompletion(t *testing.T) {
 	complete := func(render bool) string {
 		t.Helper()

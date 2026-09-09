@@ -266,8 +266,13 @@ func TestModuleInitGlobalFlagDiscovery(t *testing.T) {
 				require.Equal(t, 2, verbose)
 				require.Equal(t, []string{"first", "second"}, labels)
 			}
+			replayGlobalFlags(root)
 			root.SetArgs(argv)
 			require.NoError(t, root.Execute())
+			if test.name == "counters and repeatable flags" {
+				require.Equal(t, 2, verbose)
+				require.Equal(t, []string{"first", "second"}, labels)
+			}
 		})
 	}
 }

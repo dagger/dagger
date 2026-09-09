@@ -487,7 +487,12 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 
 		// Even if just for --help, parsing flags is needed to clean up the
 		// args while traversing sub-commands.
-		if err := c.ParseFlags(a); err != nil {
+		parse := c.ParseFlags
+		if c == fc.cmd {
+			// PreRunE already parsed the global flags on this command.
+			parse = func(args []string) error { return parseCommandFlagsWithoutGlobals(c, args) }
+		}
+		if err := parse(a); err != nil {
 			return c.FlagErrorFunc()(c, err)
 		}
 
