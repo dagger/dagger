@@ -2274,6 +2274,13 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 				if sr, ok := fe.spanTrees[id]; ok {
 					sr.Update()
 				}
+				// The rolled-up lines land in the roll-up span's own Vterm, so
+				// its memoized LogsView must be invalidated too — an *expanded*
+				// roll-up row (a promoted `dagger up` service) renders through
+				// it and would otherwise freeze at its first-paint content.
+				if lv, ok := fe.logsViews[id]; ok {
+					lv.Update()
+				}
 				break
 			}
 			if !span.ParentID.IsValid() {
@@ -2846,7 +2853,11 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// passing ones. Fall back to the progress tree when there are no surfaced
 	// checks (e.g. a plain trace, or one whose only checks are test fixtures).
 	var renderedRows bool
-	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
+	if fe.RootFilter != nil && !zoomed {
+		lines := fe.renderProgressLines(r, ctx, 0)
+		ctx.Lines(lines...)
+		renderedRows = len(lines) > 0
+	} else if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
 		renderedRows = true
 	} else if genRows := fe.generatorsReport(ctx, r, zoomed); len(genRows) > 0 {
@@ -3457,7 +3468,7 @@ func (fe *frontendPretty) formHeight() int {
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
-	if !fe.reportScopedSubtree {
+	if !fe.reportScopedSubtree && fe.RootFilter == nil {
 		// Promotion reshapes the trace around what the whole run was about: it
 		// hangs the surfaced checks/conversation/generators off the zoomed span
 		// as revealed spans and marks it passthrough, so RowsView iterates
@@ -6268,6 +6279,9 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// Flag how many tokens a tool call's result added to the model's
 		// context, so an outsized one stands out at a glance.
 		r.renderToolResultTokens(out, span)
+
+		// Show where a ready service is reachable, right on its own row.
+		r.renderServiceURLs(out, span)
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {

@@ -37,6 +37,11 @@ Examples:
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !upListMode {
+			previous := opts.RootFilter
+			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
+			defer func() { opts.RootFilter = previous }()
+		}
 		return withEngine(
 			cmd.Context(),
 			client.Params{

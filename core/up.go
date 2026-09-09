@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -61,13 +62,19 @@ func (ug *UpGroup) List() []*Up {
 	return ug.Ups
 }
 
-// Run starts all service functions in the group.
-// Before starting, it evaluates all services to detect port collisions.
+// Run starts all service functions in the group and blocks until ctx is
+// cancelled (e.g. Ctrl+C).
 //
-// Uses a two-phase approach: phase 1 starts all services in parallel and
-// returns immediately once each is healthy; phase 2 blocks on ctx.Done().
-// This ensures that if one service fails to start, the error is surfaced
-// immediately without leaving sibling goroutines hanging forever.
+// It runs in two phases. Phase 1 evaluates every service in parallel, each
+// beneath its own display span (see ModTreeNode.PrepareUp) — evaluating
+// there matters beyond ordering: the evaluation's API spans are what the
+// service's log stream is routed to (dagui routes a service's stdio to the
+// span that created its value), so this is what makes `dagger up` show each
+// service's logs under its own row rather than under a separate preflight
+// subtree. Nothing starts until every service has evaluated and the group's
+// host ports are collision-free. Phase 2 then starts them all in parallel,
+// returning from each as soon as it is healthy, so a service that fails to
+// start surfaces immediately without leaving sibling goroutines hanging.
 func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	ug = ug.Clone()
 
@@ -79,21 +86,54 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 		ctx = WorkspaceToContext(ctx, ug.BoundWorkspace)
 	}
 
-	if err := ug.checkPortCollisions(ctx); err != nil {
+	// Phase 1: evaluate every service beneath its own display span, in
+	// parallel, collecting the host ports each wants. The jobs themselves are
+	// untraced: each service's display span is its row, and a wrapper job
+	// span would only duplicate it.
+	preps := make([]*preparedUp, len(ug.Ups))
+	jobs := parallel.New().WithTracing(false)
+	for i, up := range ug.Ups {
+		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
+			prep, err := up.Node.PrepareUp(ctx, up.PortMappings)
+			if err != nil {
+				return err
+			}
+			preps[i] = prep
+			return nil
+		})
+	}
+	// abort ends every prepared service's display span without starting it —
+	// the group never partially starts when it's known to be doomed.
+	abort := func(cause error) {
+		for _, prep := range preps {
+			if prep != nil {
+				prep.Abort(cause)
+			}
+		}
+	}
+	if err := jobs.Run(ctx); err != nil {
+		abort(errors.New("not started: another service in the group failed"))
 		return nil, err
 	}
 
-	// Phase 1: start all services in parallel. Each RunUp evaluates the
-	// module function, creates the host tunnel, and waits for the health
-	// check — then returns immediately (no blocking).
+	// Verdict: refuse to start anything when two services claim the same
+	// host port.
+	if err := checkPortCollisions(preps); err != nil {
+		abort(err)
+		return nil, err
+	}
+
+	// Phase 2: start all services in parallel. Each Start creates the host
+	// tunnel and waits for the health check — then returns immediately (no
+	// blocking).
 	var (
 		mu      sync.Mutex
 		results []*runUpStartResult
 	)
-	jobs := parallel.New().WithContextualTracer(true)
-	for _, up := range ug.Ups {
-		jobs = jobs.WithJob(up.Name(), func(ctx context.Context) error {
-			result, err := up.Node.RunUp(ctx, nil, nil, up.PortMappings)
+	jobs = parallel.New().WithTracing(false)
+	for _, prep := range preps {
+		jobs = jobs.WithJob(prep.Name(), func(ctx context.Context) error {
+			result, err := prep.Start(ctx)
 			if err != nil {
 				return err
 			}
@@ -111,8 +151,8 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 		return nil, err
 	}
 
-	// Phase 2: all services started successfully. Block until context
-	// cancellation (e.g. Ctrl+C).
+	// All services started successfully. Block until context cancellation
+	// (e.g. Ctrl+C).
 	<-ctx.Done()
 	for _, r := range results {
 		r.ReadySpan.End()
@@ -120,88 +160,33 @@ func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	return ug, nil
 }
 
-// checkPortCollisions evaluates all service functions to collect their exposed
-// ports and fails fast if two services expose the same host port.
-func (ug *UpGroup) checkPortCollisions(ctx context.Context) error {
-	type portKey struct {
-		port     int
-		protocol NetworkProtocol
-	}
-
-	// Evaluate all services in parallel to collect ports.
-	// NOTE: the same DagqlValue() call happens again in runUpLocally during
-	// Run(). This is safe because dagql caches Select results by content
-	// address, so the second evaluation is a cache hit with no re-execution.
-	type servicePort struct {
-		name string
-		port portKey
-	}
-	var (
-		mu       = new(sync.Mutex)
-		allPorts []servicePort
-	)
-
-	jobs := parallel.New().WithContextualTracer(true)
-	for _, up := range ug.Ups {
-		jobs = jobs.WithJob(up.Name()+":preflight", func(ctx context.Context) error {
-			// If port mappings are configured, use the frontend (host) ports
-			// for collision detection instead of the container ports.
-			if len(up.PortMappings) > 0 {
-				mu.Lock()
-				defer mu.Unlock()
-				for _, pf := range up.PortMappings {
-					hostPort := pf.Backend
-					if pf.Frontend != nil {
-						hostPort = *pf.Frontend
-					}
-					allPorts = append(allPorts, servicePort{
-						name: up.Name(),
-						port: portKey{port: hostPort, protocol: pf.Protocol},
-					})
-				}
-				return nil
-			}
-
-			var svcResult dagql.ObjectResult[*Service]
-			if err := up.Node.DagqlValue(ctx, &svcResult); err != nil {
-				return err
-			}
-			svc := svcResult.Self()
-			if svc == nil || svc.Container.Self() == nil {
-				return nil
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			for _, p := range svc.Container.Self().Ports {
-				allPorts = append(allPorts, servicePort{
-					name: up.Name(),
-					port: portKey{port: p.Port, protocol: p.Protocol},
-				})
-			}
-			return nil
-		})
-	}
-	if err := jobs.Run(ctx); err != nil {
-		return err
-	}
-
-	// Check for duplicates.
-	seen := make(map[portKey]string) // port → first service name
+// checkPortCollisions reports an error when two prepared services claim the
+// same host port. preps follows the group's declaration order, so the
+// output is deterministic.
+func checkPortCollisions(preps []*preparedUp) error {
+	seen := make(map[upHostPort]string) // port → first service name
 	var conflicts []string
-	for _, sp := range allPorts {
-		if first, ok := seen[sp.port]; ok {
-			conflicts = append(conflicts, fmt.Sprintf(
-				"port %d/%s is exposed by both %q and %q",
-				sp.port.port, strings.ToLower(string(sp.port.protocol)), first, sp.name,
-			))
-		} else {
-			seen[sp.port] = sp.name
+	for _, prep := range preps {
+		for _, port := range prep.hostPorts {
+			if first, ok := seen[port]; ok {
+				conflicts = append(conflicts, fmt.Sprintf(
+					"port %d/%s is exposed by both %q and %q",
+					port.port, strings.ToLower(string(port.protocol)), first, prep.Name(),
+				))
+			} else {
+				seen[port] = prep.Name()
+			}
 		}
 	}
 	if len(conflicts) > 0 {
 		return fmt.Errorf("port collision detected:\n  %s", strings.Join(conflicts, "\n  "))
 	}
 	return nil
+}
+
+type upHostPort struct {
+	port     int
+	protocol NetworkProtocol
 }
 
 func (ug *UpGroup) Clone() *UpGroup {
@@ -248,7 +233,11 @@ func (u *Up) Clone() *Up {
 // Run starts the service returned by this up function and blocks until ctx is cancelled.
 func (u *Up) Run(ctx context.Context) (*Up, error) {
 	u = u.Clone()
-	result, err := u.Node.RunUp(ctx, nil, nil, u.PortMappings)
+	prep, err := u.Node.PrepareUp(ctx, u.PortMappings)
+	if err != nil {
+		return u, err
+	}
+	result, err := prep.Start(ctx)
 	if err != nil {
 		return u, err
 	}
