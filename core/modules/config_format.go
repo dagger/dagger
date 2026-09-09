@@ -57,9 +57,6 @@ type CurrentModuleConfigDependency struct {
 
 	// The source ref of the module dependency.
 	Source string `json:"source" toml:"source"`
-
-	// The pinned version of the module dependency.
-	Pin string `json:"pin,omitempty" toml:"pin,omitempty"`
 }
 
 // LegacyModuleConfigWithUserFields is the frozen public schema for dagger.json.
@@ -124,7 +121,6 @@ func currentModuleConfigDependencies(deps []*ModuleConfigDependency) []*CurrentM
 		current = append(current, &CurrentModuleConfigDependency{
 			Name:   dep.Name,
 			Source: dep.Source,
-			Pin:    dep.Pin,
 		})
 	}
 	return current
@@ -142,7 +138,6 @@ func moduleConfigDependenciesFromCurrent(deps []*CurrentModuleConfigDependency) 
 		current = append(current, &ModuleConfigDependency{
 			Name:   dep.Name,
 			Source: dep.Source,
-			Pin:    dep.Pin,
 		})
 	}
 	return current

@@ -12,10 +12,6 @@
         "source": {
           "type": "string",
           "description": "The source ref of the module dependency."
-        },
-        "pin": {
-          "type": "string",
-          "description": "The pinned version of the module dependency."
         }
       },
       "additionalProperties": false,

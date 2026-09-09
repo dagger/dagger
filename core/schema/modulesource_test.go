@@ -128,7 +128,7 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	)
 }
 
-func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *testing.T) {
+func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceWithoutPin(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -165,7 +165,7 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	cfg, err := (&moduleSourceSchema{}).loadModuleSourceConfig(parent)
 	require.NoError(t, err)
 	require.Len(t, cfg.Dependencies, 1)
-	require.Equal(t, "1234567890abcdef", cfg.Dependencies[0].Pin)
+	require.Empty(t, cfg.Dependencies[0].Pin)
 
 	out, err := modules.MarshalModuleConfigForFilename(cfg, modules.Filename)
 	require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	require.Contains(t, string(out), `engineVersion = "`+engine.Version+`"`)
 	require.Contains(t, string(out), `name = "dep"`)
 	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk@v1.2"`)
-	require.Contains(t, string(out), `pin = "1234567890abcdef"`)
+	require.NotContains(t, string(out), `pin =`)
 	require.NotContains(t, string(out), `version =`)
 }
 

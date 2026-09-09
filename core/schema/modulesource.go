@@ -2102,6 +2102,13 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 		return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind.HumanString())
 	}
 
+	// Exact dependency resolutions belong to the consuming workspace's
+	// dagger.lock. The legacy dagger.json format keeps its frozen pin behavior,
+	// but dagger-module.toml only records the declared source/version query.
+	if modules.ConfigFormatForFilename(moduleSourceConfigFilename(parentSrc)) == modules.ConfigFormatCurrent {
+		depCfg.Pin = ""
+	}
+
 	return depCfg, nil
 }
 

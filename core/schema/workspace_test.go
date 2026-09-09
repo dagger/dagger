@@ -733,7 +733,8 @@ func TestWorkspaceMigrationModuleConfigConversions(t *testing.T) {
 	require.Equal(t, "video", cfg.Name)
 	require.Equal(t, "go", cfg.SDK.Source)
 	require.Equal(t, "github.com/acme/dep@main", cfg.Dependencies[0].Source)
-	require.Equal(t, "sha256:abc", cfg.Dependencies[0].Pin)
+	require.Empty(t, cfg.Dependencies[0].Pin)
+	require.NotContains(t, string(conversions[0].ConfigData), "pin =")
 	require.Equal(t, "./local", cfg.Dependencies[1].Source)
 
 	// A root sdk-only config is the "repo is just a dagger module" shape and

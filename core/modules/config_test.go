@@ -147,8 +147,20 @@ func TestParseLegacyModuleConfigRejectsRuntime(t *testing.T) {
 	require.ErrorContains(t, err, "uses sdk instead of runtime")
 }
 
-func TestMarshalCurrentModuleConfigUsesRuntimeAndPreservesPins(t *testing.T) {
+func TestCurrentModuleConfigIgnoresDependencyPins(t *testing.T) {
 	t.Parallel()
+
+	cfg, err := ParseModuleConfigForFilename([]byte(`
+name = "mod"
+
+[[dependencies]]
+name = "dep"
+source = "github.com/acme/dep@main"
+pin = "sha256:old"
+`), Filename)
+	require.NoError(t, err)
+	require.Len(t, cfg.Dependencies, 1)
+	require.Empty(t, cfg.Dependencies[0].Pin)
 
 	out, err := MarshalModuleConfigForFilename(&ModuleConfigWithUserFields{
 		ModuleConfig: ModuleConfig{
@@ -167,14 +179,14 @@ func TestMarshalCurrentModuleConfigUsesRuntimeAndPreservesPins(t *testing.T) {
 	require.Contains(t, string(out), "[[dependencies]]")
 	require.Contains(t, string(out), `name = "dep"`)
 	require.Contains(t, string(out), `source = "github.com/acme/dep"`)
-	require.Contains(t, string(out), `pin = "sha256:abc"`)
+	require.NotContains(t, string(out), `pin =`)
 	require.NotContains(t, string(out), "sdk")
 
-	cfg, err := ParseModuleConfigForFilename(out, Filename)
+	cfg, err = ParseModuleConfigForFilename(out, Filename)
 	require.NoError(t, err)
 	require.Equal(t, "go", cfg.SDK.Source)
 	require.Equal(t, "src", cfg.Source)
-	require.Equal(t, "sha256:abc", cfg.Dependencies[0].Pin)
+	require.Empty(t, cfg.Dependencies[0].Pin)
 }
 
 func TestMarshalCurrentModuleConfigOmitsEmptyDependencyName(t *testing.T) {
@@ -208,7 +220,7 @@ func TestModuleConfigSchemasKeepLegacyFrozenFieldsOutOfCurrentConfig(t *testing.
 
 	currentSchema := reflectedSchemaJSON(t, &CurrentModuleConfigWithUserFields{})
 	require.Contains(t, currentSchema, `"runtime"`)
-	require.Contains(t, currentSchema, `"pin"`)
+	require.NotContains(t, currentSchema, "The pinned version of the module dependency.")
 	require.NotContains(t, currentSchema, `"sdk"`)
 	require.NotContains(t, currentSchema, `"blueprint"`)
 	require.NotContains(t, currentSchema, `"toolchains"`)

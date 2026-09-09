@@ -344,6 +344,56 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 	})
 }
 
+func (LockfileSuite) TestWorkspaceLockContainsFlatModuleDependencyResolution(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	depRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		WithNewFile("dagger-module.toml", `name = "dep"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile("main.dang", `type Dep {
+  pub hello: String! { "hello from dep" }
+}
+`))
+
+	upstreamRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		WithNewFile("dagger-module.toml", `name = "upstream"
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "dep"
+source = "`+depRef+`"
+pin = "this-old-pin-must-be-ignored"
+`).
+		WithNewFile("main.dang", `type Upstream {
+  pub hello: String! { dep.hello }
+}
+`))
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.toml", `[modules.upstream]
+source = "`+upstreamRef+`"
+entrypoint = true
+`).
+		With(daggerExecRaw("--silent", "call", "hello"))
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from dep", strings.TrimSpace(out))
+
+	lockContents, err := ctr.File("dagger.lock").Contents(ctx)
+	require.NoError(t, err)
+	depURL, found := strings.CutSuffix(depRef, "@main")
+	require.True(t, found)
+	upstreamURL, found := strings.CutSuffix(upstreamRef, "@main")
+	require.True(t, found)
+	assertGitLockEntry(t, []byte(lockContents), []any{upstreamURL, "main"})
+	assertGitLockEntry(t, []byte(lockContents), []any{depURL, "main"})
+}
+
 func writeContainerFromQuery(t *testctx.T, workdir string) string {
 	return writeQueryDoc(t, workdir, "query.graphql", containerFromQuery)
 }
