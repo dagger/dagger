@@ -38,10 +38,11 @@ type File struct {
 	// Services necessary to provision the file.
 	Services ServiceBindings
 
-	stored   *storedSnapshot
-	Lazy     Lazy[*File]
-	File     *LazyAccessor[string, *File]
-	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
+	storedDiagnostics *storedSnapshotDiagnostics
+	stored            *storedSnapshot
+	Lazy              Lazy[*File]
+	File              *LazyAccessor[string, *File]
+	Snapshot          *LazyAccessor[bkcache.ImmutableRef, *File]
 }
 
 func (*File) Type() *ast.Type {
@@ -285,6 +286,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 			return nil, err
 		}
 		file.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		file.storedDiagnostics = newStoredSnapshotDiagnostics()
 		file.File.setValue(persisted.File)
 		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}
 		return file, nil

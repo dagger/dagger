@@ -47,10 +47,11 @@ type Directory struct {
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
-	stored   *storedSnapshot
-	Lazy     Lazy[*Directory]
-	Dir      *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
-	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
+	storedDiagnostics *storedSnapshotDiagnostics
+	stored            *storedSnapshot
+	Lazy              Lazy[*Directory]
+	Dir               *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
+	Snapshot          *LazyAccessor[bkcache.ImmutableRef, *Directory]
 }
 
 func (*Directory) Type() *ast.Type {
@@ -306,6 +307,7 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 			return nil, err
 		}
 		dir.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		dir.storedDiagnostics = newStoredSnapshotDiagnostics()
 		dir.Dir.setValue(persisted.Dir)
 		dir.Lazy = &DirectoryRestoreLazy{LazyState: NewLazyState()}
 		return dir, nil
