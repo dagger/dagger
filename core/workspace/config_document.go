@@ -3,10 +3,10 @@ package workspace
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/creachadair/tomledit"
+	"github.com/creachadair/tomledit/parser"
 	neontoml "github.com/neongreen/mono/lib/toml"
 )
 
@@ -15,6 +15,9 @@ import (
 func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if cfg == nil {
 		cfg = &Config{}
+	}
+	if err := ValidateSDKs(cfg); err != nil {
+		return nil, err
 	}
 
 	if len(existingData) == 0 {
@@ -55,7 +58,7 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err = rewriteModuleAsSDKSections(out, cfg)
+	out, err = rewriteSDKSections(out, cfg.SDKs)
 	if err != nil {
 		return nil, err
 	}
@@ -206,13 +209,10 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
-	// Per-module as-sdk sub-blocks are intentionally NOT included here.
-	// The neontoml ApplyMap path can't express array-of-tables (it would
-	// emit inline arrays of inline tables and leave any pre-existing
-	// [[modules.X.as-sdk.modules]] blocks orphaned). Those sub-blocks are
-	// managed surgically for base and environment modules by
-	// rewriteModuleAsSDKSections after the rest of the document is
-	// format-preserved.
+	// SDK declarations are intentionally not included here. They are CLI-managed
+	// state with canonical inline-array formatting, so rewriteSDKSections owns
+	// both legacy removal and canonical rendering after other config formatting
+	// has been preserved.
 
 	return values
 }
@@ -223,6 +223,11 @@ func configRequiresQuotedPathSegments(cfg *Config) bool {
 	}
 	for moduleName, module := range cfg.Modules {
 		if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+			return true
+		}
+	}
+	for sdkName := range cfg.SDKs {
+		if pathSegmentUnsafeForDocumentUpdate(sdkName) {
 			return true
 		}
 	}
@@ -375,86 +380,74 @@ func keepEmptyConfigSectionHeaders(cfg *Config) map[string]bool {
 	return keep
 }
 
-// rewriteModuleAsSDKSections drops every existing base or environment
-// module as-sdk block from data and appends a canonical rendering of the
-// desired blocks. Format preservation inside an as-sdk sub-block is
-// intentionally given up: the block is treated as CLI-managed state, not
-// human-curated configuration. Everything outside the as-sdk sub-blocks
-// passes through unchanged.
-func rewriteModuleAsSDKSections(data []byte, cfg *Config) ([]byte, error) {
+// rewriteSDKSections removes both beta-era [modules.*.as-sdk] declarations and
+// current [sdks.*] declarations, then appends the canonical top-level SDK
+// registry. SDK state is CLI-managed; everything else retains its formatting
+// and comments.
+func rewriteSDKSections(data []byte, sdks map[string]SDKEntry) ([]byte, error) {
 	doc, err := tomledit.Parse(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("parse config for as-sdk rewrite: %w", err)
+		return nil, fmt.Errorf("parse config for SDK rewrite: %w", err)
 	}
 
+	stripSDKConfigItems(doc.Global)
 	kept := doc.Sections[:0]
 	for _, section := range doc.Sections {
-		if section.Heading != nil && isModuleAsSDKHeading(section.Heading.Name) {
+		if section.Heading != nil && isSDKConfigHeading(section.Heading.Name) {
 			continue
 		}
+		stripSDKConfigItems(section)
 		kept = append(kept, section)
 	}
 	doc.Sections = kept
 
-	type sdkSection struct {
-		path  string
-		asSDK *ModuleAsSDK
-	}
-	var sections []sdkSection
-	for name, entry := range cfg.Modules {
-		// Preserve the marker even when empty: presence of AsSDK = "this
-		// install is an SDK," whether or not anything is authored yet.
-		if entry.AsSDK != nil {
-			sections = append(sections, sdkSection{
-				path:  "modules." + formatConfigPathSegment(name),
-				asSDK: entry.AsSDK,
-			})
-		}
-	}
-	for envName, env := range cfg.Env {
-		for moduleName, overlay := range env.Modules {
-			if overlay.AsSDK == nil {
-				continue
-			}
-			sections = append(sections, sdkSection{
-				path: strings.Join([]string{
-					"env",
-					formatConfigPathSegment(envName),
-					"modules",
-					formatConfigPathSegment(moduleName),
-				}, "."),
-				asSDK: overlay.AsSDK,
-			})
-		}
-	}
-	sort.Slice(sections, func(i, j int) bool { return sections[i].path < sections[j].path })
-
-	for _, section := range sections {
-		var rendered strings.Builder
-		writeModuleAsSDK(&rendered, section.path, section.asSDK)
-		if rendered.Len() == 0 {
-			continue
-		}
-		asSDKDoc, parseErr := tomledit.Parse(strings.NewReader(rendered.String()))
-		if parseErr != nil {
-			return nil, fmt.Errorf("parse rendered as-sdk for %q: %w", section.path, parseErr)
-		}
-		doc.Sections = append(doc.Sections, asSDKDoc.Sections...)
-	}
-
 	var buf bytes.Buffer
 	var formatter tomledit.Formatter
 	if err := formatter.Format(&buf, doc); err != nil {
-		return nil, fmt.Errorf("format config after as-sdk rewrite: %w", err)
+		return nil, fmt.Errorf("format config after SDK rewrite: %w", err)
+	}
+	if len(sdks) > 0 {
+		if buf.Len() > 0 {
+			trimmed := bytes.TrimRight(buf.Bytes(), "\n")
+			buf.Reset()
+			buf.Write(trimmed)
+			buf.WriteString("\n\n")
+		}
+		var rendered strings.Builder
+		writeSDKEntries(&rendered, sdks)
+		buf.WriteString(rendered.String())
 	}
 	return buf.Bytes(), nil
 }
 
-// isModuleAsSDKHeading reports whether a section heading targets a base or
-// environment module's as-sdk sub-block.
-func isModuleAsSDKHeading(key []string) bool {
-	return len(key) >= 3 && key[0] == "modules" && key[2] == "as-sdk" ||
-		len(key) >= 5 && key[0] == "env" && key[2] == "modules" && key[4] == "as-sdk"
+func stripSDKConfigItems(section *tomledit.Section) {
+	if section == nil {
+		return
+	}
+	base := section.TableName()
+	kept := section.Items[:0]
+	for _, item := range section.Items {
+		kv, ok := item.(*parser.KeyValue)
+		if ok {
+			full := make([]string, 0, len(base)+len(kv.Name))
+			full = append(full, base...)
+			full = append(full, kv.Name...)
+			if isSDKConfigHeading(full) {
+				continue
+			}
+		}
+		kept = append(kept, item)
+	}
+	section.Items = kept
+}
+
+// isSDKConfigHeading reports canonical [sdks.*] sections and legacy
+// [modules.*.as-sdk] sections.
+func isSDKConfigHeading(key []string) bool {
+	if len(key) >= 1 && key[0] == "sdks" {
+		return true
+	}
+	return len(key) >= 3 && key[0] == "modules" && key[2] == "as-sdk"
 }
 
 func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) ([]byte, error) {

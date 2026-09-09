@@ -94,7 +94,7 @@ func TestDebugFlags(t *testing.T) {
 	require.True(t, FlagAvailableForCommand(settingsCmd, flag))
 	require.True(t, FlagAvailableForCommand(traceCmd, flag))
 	require.False(t, FlagAvailableForCommand(activityCmd, flag))
-	require.False(t, FlagAvailableForCommand(sdkInstalledCmd, flag))
+	require.False(t, FlagAvailableForCommand(sdkCmd, flag))
 }
 
 func TestMayCallEngineFlags(t *testing.T) {
@@ -185,7 +185,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.True(t, FlagAvailableForCommand(settingsCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(traceCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(activityCmd, flags.Lookup("shell-on-error")))
-	require.False(t, FlagAvailableForCommand(sdkInstalledCmd, flags.Lookup("shell-on-error")))
+	require.False(t, FlagAvailableForCommand(sdkCmd, flags.Lookup("shell-on-error")))
 }
 
 // testRootCommand returns the real root command with the global flags
@@ -244,8 +244,6 @@ func TestMayCallEngineCommands(t *testing.T) {
 	expected := []string{
 		"dagger agent",
 		"dagger api call",
-		"dagger api client init",
-		"dagger api client list",
 		"dagger api functions",
 		"dagger api listen",
 		"dagger api query",
@@ -257,25 +255,26 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger functions",
 		"dagger generate",
 		"dagger install",
-		"dagger installed",
 		"dagger listen",
 		"dagger mcp",
-		"dagger module deps add",
-		"dagger module deps list",
-		"dagger module deps rm",
-		"dagger module deps update",
-		"dagger module engine require",
-		"dagger module engine require-current",
-		"dagger module engine require-latest",
-		"dagger module engine required",
+		"dagger module client add",
+		"dagger module client list",
+		"dagger module client rm",
+		"dagger module client scope",
+		"dagger module client update",
 		"dagger module init",
-		"dagger module sdk",
+		"dagger module install",
+		"dagger module list",
+		"dagger module settings",
+		"dagger module uninstall",
+		"dagger module update",
 		"dagger query",
 		"dagger run",
-		"dagger sdk client-options",
-		"dagger sdk install",
-		"dagger sdk module-options",
-		"dagger sdk uninstall",
+		"dagger sdk list",
+		"dagger sdk scope is-module",
+		"dagger sdk scope list",
+		"dagger sdk scope name",
+		"dagger sdk scope sdk",
 		"dagger session",
 		"dagger settings",
 		"dagger setup",
@@ -283,14 +282,13 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger terminal",
 		"dagger uninstall",
 		"dagger up",
-		"dagger update",
 		"dagger workspace",
 		"dagger workspace config",
 		"dagger workspace config-file",
 		"dagger workspace cwd",
 		"dagger workspace remotes",
 		"dagger workspace root",
-		"dagger workspace settings",
+		"dagger workspace update",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
 
@@ -298,7 +296,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"root":             rootCmd,
 		"activity":         activityCmd,
 		"cloud rerun":      cloudRerunCmd,
-		"sdk installed":    sdkInstalledCmd,
+		"sdk":              sdkCmd,
 		"trace":            traceCmd,
 		"workspace remote": workspaceRemoteCmd,
 	} {
@@ -330,9 +328,9 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
-		"dagger activity",
 		"dagger cloud check",
 		"dagger cloud rerun",
+		"dagger workspace activity",
 		"dagger workspace remote",
 	)
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, maySelectWorkspace))
@@ -359,11 +357,10 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
 	for name, cmd := range map[string]*cobra.Command{
-		"root":          rootCmd,
-		"cloud login":   cloudLoginCmd,
-		"sdk installed": sdkInstalledCmd,
-		"sdk search":    sdkSearchCmd,
-		"trace":         traceCmd,
+		"root":        rootCmd,
+		"cloud login": cloudLoginCmd,
+		"sdk":         sdkCmd,
+		"trace":       traceCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, maySelectWorkspace), name)
 	}
@@ -404,10 +401,12 @@ func TestModuleFlagsRequireMayCallEngine(t *testing.T) {
 func TestMayProduceOutputCommands(t *testing.T) {
 	expected := []string{
 		"dagger api call",
-		"dagger api client init",
 		"dagger call",
 		"dagger core",
 		"dagger generate",
+		"dagger module client add",
+		"dagger module client rm",
+		"dagger module client update",
 		"dagger module init",
 		"dagger setup",
 	}
@@ -420,20 +419,22 @@ func TestMayProduceOutputCommands(t *testing.T) {
 	autoApplyFlag := flags.Lookup("auto-apply")
 	require.NotNil(t, autoApplyFlag)
 	for name, cmd := range map[string]*cobra.Command{
-		"api call":        apiCallCmd.Command(),
-		"api client init": apiClientInitCmd,
-		"call":            callModCmd.Command(),
-		"core":            callCoreCmd.Command(),
-		"generate":        generateCmd,
-		"module init":     moduleInitCmd,
-		"setup":           setupCmd,
+		"api call":             apiCallCmd.Command(),
+		"call":                 callModCmd.Command(),
+		"core":                 callCoreCmd.Command(),
+		"generate":             generateCmd,
+		"module client add":    moduleClientAddCmd,
+		"module client rm":     moduleClientRemoveCmd,
+		"module client update": moduleClientUpdateCmd,
+		"module init":          moduleInitCmd,
+		"setup":                setupCmd,
 	} {
 		require.True(t, FlagAvailableForCommand(cmd, autoApplyFlag), name)
 	}
 	for name, cmd := range map[string]*cobra.Command{
 		"api functions": apiFunctionsCmd,
 		"check":         checksCmd,
-		"sdk installed": sdkInstalledCmd,
+		"sdk list":      sdkListCmd,
 		"trace":         traceCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayProduceOutput), name)
@@ -452,10 +453,12 @@ func TestMayProduceOutputCommands(t *testing.T) {
 		require.True(t, FlagAvailableForCommand(cmd, flag), name)
 	}
 	for name, cmd := range map[string]*cobra.Command{
-		"api client init": apiClientInitCmd,
-		"generate":        generateCmd,
-		"module init":     moduleInitCmd,
-		"setup":           setupCmd,
+		"generate":             generateCmd,
+		"module client add":    moduleClientAddCmd,
+		"module client rm":     moduleClientRemoveCmd,
+		"module client update": moduleClientUpdateCmd,
+		"module init":          moduleInitCmd,
+		"setup":                setupCmd,
 	} {
 		require.Nil(t, cmd.Flags().Lookup("output"), name)
 	}
@@ -513,18 +516,15 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	envFlag := flags.Lookup("env")
 	require.NotNil(t, envFlag)
 	require.True(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
-	require.True(t, FlagAvailableForCommand(apiClientInitCmd, envFlag))
-	require.True(t, FlagAvailableForCommand(sdkInstalledCmd, envFlag))
+	require.True(t, FlagAvailableForCommand(sdkListCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(rootCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(setupCmd, envFlag))
-	require.False(t, FlagAvailableForCommand(sdkInstallCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(sdkCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(workspaceRootCmd, envFlag))
 
 	readers := []string{
 		"dagger agent",
 		"dagger api call",
-		"dagger api client init",
-		"dagger api client list",
 		"dagger api functions",
 		"dagger api listen",
 		"dagger api query",
@@ -536,51 +536,59 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger functions",
 		"dagger generate",
 		"dagger install",
-		"dagger installed",
 		"dagger listen",
 		"dagger mcp",
-		"dagger module deps add",
-		"dagger module deps list",
-		"dagger module deps rm",
-		"dagger module deps update",
-		"dagger module engine require",
-		"dagger module engine require-current",
-		"dagger module engine require-latest",
-		"dagger module engine required",
+		"dagger module client add",
+		"dagger module client list",
+		"dagger module client rm",
+		"dagger module client scope",
+		"dagger module client update",
 		"dagger module init",
-		"dagger module sdk",
+		"dagger module install",
+		"dagger module list",
+		"dagger module settings",
+		"dagger module uninstall",
+		"dagger module update",
 		"dagger query",
 		"dagger run",
-		"dagger sdk client-options",
-		"dagger sdk installed",
-		"dagger sdk module-options",
+		"dagger sdk list",
+		"dagger sdk scope is-module",
+		"dagger sdk scope list",
+		"dagger sdk scope name",
+		"dagger sdk scope sdk",
 		"dagger session",
 		"dagger settings",
 		"dagger shell",
 		"dagger terminal",
 		"dagger uninstall",
 		"dagger up",
-		"dagger update",
 		"dagger workspace",
 		"dagger workspace config",
-		"dagger workspace settings",
+		"dagger workspace update",
 	}
 	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
 
 	writers := []string{
-		"dagger api client init",
 		"dagger install",
+		"dagger module client add",
+		"dagger module client rm",
+		"dagger module client update",
 		"dagger module init",
+		"dagger module install",
+		"dagger module settings",
+		"dagger module uninstall",
+		"dagger sdk scope is-module",
+		"dagger sdk scope name",
+		"dagger sdk scope sdk",
 		"dagger settings",
 		"dagger uninstall",
 		"dagger workspace",
 		"dagger workspace config",
-		"dagger workspace settings",
 	}
 	require.ElementsMatch(t, writers, commandsDeclaringCapability(rootCmd, mayWriteWorkspaceConfig))
 
 	for name, cmd := range map[string]*cobra.Command{
-		"sdk install":      sdkInstallCmd,
+		"sdk":              sdkCmd,
 		"setup":            setupCmd,
 		"workspace root":   workspaceRootCmd,
 		"workspace remote": workspaceRemoteCmd,
@@ -588,8 +596,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		require.False(t, commandHasCapability(cmd, mayReadWorkspaceConfig), name)
 		require.False(t, commandHasCapability(cmd, mayWriteWorkspaceConfig), name)
 	}
-	require.True(t, commandHasCapability(sdkInstalledCmd, mayReadWorkspaceConfig))
-	require.False(t, commandHasCapability(sdkInstalledCmd, mayWriteWorkspaceConfig))
+	require.True(t, commandHasCapability(sdkListCmd, mayReadWorkspaceConfig))
+	require.False(t, commandHasCapability(sdkListCmd, mayWriteWorkspaceConfig))
 }
 
 func TestMayRenderPipelineCommands(t *testing.T) {
@@ -606,7 +614,10 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger generate",
 		"dagger listen",
 		"dagger mcp",
-		"dagger module sdk",
+		"dagger module client add",
+		"dagger module client rm",
+		"dagger module client update",
+		"dagger module init",
 		"dagger query",
 		"dagger run",
 		"dagger session",
@@ -622,6 +633,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"settings":  settingsCmd,
 		"setup":     setupCmd,
 		"installed": installedCmd,
+		"sdk list":  sdkListCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayRenderPipeline), name)
 	}
@@ -756,6 +768,125 @@ func TestGlobalFlagParsingStopsAtDynamicArguments(t *testing.T) {
 		parseGlobalFlags(root, []string{"--cloud", "dynamic", "function"})
 		require.True(t, cloud)
 	})
+}
+
+func TestGlobalFlagsApplyOnce(t *testing.T) {
+	oldRelease := xRelease
+	t.Cleanup(func() { xRelease = oldRelease })
+	for _, test := range []struct {
+		name        string
+		args        []string
+		dynamic     bool
+		wantVerbose int
+		wantQuiet   int
+		wantLabels  []string
+		wantHelp    bool
+		lateFlags   bool
+	}{
+		{
+			name:    "telemetry command",
+			args:    []string{"--progress=report", "-v", "call", "-m", "./viztest", "hello-world"},
+			dynamic: true, wantVerbose: 1,
+		},
+		{
+			name:        "static command",
+			args:        []string{"-v", "--label=first", "call", "-v", "-q", "--label=second"},
+			wantVerbose: 2, wantQuiet: 1, wantLabels: []string{"first", "second"},
+		},
+		{
+			name:    "dynamic command",
+			args:    []string{"-vq", "--label=first", "call", "-vvq", "--label=second", "hello-world"},
+			dynamic: true, wantVerbose: 3, wantQuiet: 2, wantLabels: []string{"first", "second"},
+		},
+		{
+			name:        "explicit count",
+			args:        []string{"--verbose=3", "call", "-v"},
+			wantVerbose: 4,
+		},
+		{
+			name:    "dynamic help",
+			args:    []string{"-v", "call", "--help"},
+			dynamic: true, wantVerbose: 1, wantHelp: true,
+		},
+		{
+			name:    "flags after a dynamic function",
+			args:    []string{"-v", "--label=first", "--progress=report", "call", "hello-world", "-v", "--label=second", "--progress=logs"},
+			dynamic: true, wantVerbose: 1, wantLabels: []string{"first"}, lateFlags: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := &cobra.Command{Use: "dagger", TraverseChildren: true}
+			var verbose, quiet int
+			var labels []string
+			root.PersistentFlags().CountVarP(&verbose, "verbose", "v", "Verbosity")
+			root.PersistentFlags().CountVarP(&quiet, "quiet", "q", "Quiet output")
+			root.PersistentFlags().StringSliceVar(&labels, "label", nil, "Labels")
+			root.PersistentFlags().String("progress", "auto", "Progress output")
+			root.PersistentFlags().BoolP("help", "h", false, "Print usage")
+			assertValues := func() {
+				t.Helper()
+				require.Equal(t, test.wantVerbose, verbose)
+				require.Equal(t, test.wantQuiet, quiet)
+				require.Equal(t, test.wantLabels, labels)
+				count, err := root.PersistentFlags().GetCount("verbose")
+				require.NoError(t, err)
+				require.Equal(t, verbose, count)
+				savedLabels, err := root.PersistentFlags().GetStringSlice("label")
+				require.NoError(t, err)
+				require.Equal(t, len(labels), len(savedLabels))
+				for i, label := range labels {
+					require.Equal(t, label, savedLabels[i])
+				}
+			}
+			root.PersistentPreRun = func(*cobra.Command, []string) { assertValues() }
+			called := false
+			call := &cobra.Command{
+				Use: "call", DisableFlagParsing: test.dynamic,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					called = true
+					if test.dynamic {
+						// Dynamic command loading parses these arguments again
+						// after it adds the module constructor flags.
+						require.NoError(t, parseCommandFlagsWithoutGlobals(cmd, args))
+					}
+					assertValues()
+					help, err := cmd.Flags().GetBool("help")
+					require.NoError(t, err)
+					require.Equal(t, test.wantHelp, help)
+					if test.lateFlags {
+						function := &cobra.Command{Use: "hello-world"}
+						cmd.AddCommand(function)
+						require.NoError(t, function.ParseFlags(cmd.Flags().Args()[1:]))
+						require.Equal(t, 2, verbose)
+						require.Equal(t, []string{"first", "second"}, labels)
+						progress, err := function.Flags().GetString("progress")
+						require.NoError(t, err)
+						require.Equal(t, "logs", progress)
+					}
+					return nil
+				},
+			}
+			call.Flags().StringP("load-module", "m", "", "Load a module")
+			if test.dynamic {
+				call.PreRunE = func(cmd *cobra.Command, args []string) error {
+					cmd.DisableFlagParsing = false
+					cmd.Flags().SetInterspersed(false)
+					return cmd.ParseFlags(args)
+				}
+			}
+			root.AddCommand(call)
+			parseGlobalFlags(root, test.args)
+			replayGlobalFlags(root)
+			_, ok := root.PersistentFlags().Lookup("label").Value.(pflag.SliceValue)
+			require.True(t, ok, "repeatable flags must keep their slice methods")
+			root.SetArgs(test.args)
+			require.NoError(t, root.Execute())
+			require.True(t, called)
+			if !test.lateFlags {
+				assertValues()
+			}
+		})
+	}
 }
 
 func TestCapabilityScopedFlagCompletion(t *testing.T) {

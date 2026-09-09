@@ -1,0 +1,14 @@
+[modules.scope-sdk]
+source = ".dagger/modules/scope-sdk"
+
+[sdks.test]
+module = "scope-sdk"
+
+[sdks.test.scopes."."]
+is-module = true
+name = "root"
+
+[sdks.test.scopes.nested]
+is-module = true
+name = "nested"
+clients = ["."]

@@ -153,7 +153,7 @@ func copyCommandFlags(cmd *cobra.Command, name string) *pflag.FlagSet {
 	// them quiet, or a deprecated flag prints its warning once per pass; the
 	// callers report their own errors.
 	flags.SetOutput(io.Discard)
-	if cmd.DisableFlagParsing {
+	if cmd.DisableFlagParsing || commandName(cmd) == "module init" {
 		// Dynamic commands parse their own arguments after loading a schema.
 		// Stop the early global pass at the first schema-owned token.
 		flags.SetInterspersed(false)
@@ -282,7 +282,10 @@ func init() {
 		shellCmd,
 		terminalCmd,
 		mcpCmd,
-		moduleSdkCmd,
+		moduleInitCmd,
+		moduleClientAddCmd,
+		moduleClientRemoveCmd,
+		moduleClientUpdateCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
@@ -290,12 +293,19 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		moduleDepInstallCmd,
+		installAliasCmd,
 		moduleDepUninstallCmd,
+		uninstallAliasCmd,
 		settingsCmd,
-		workspaceSettingsCmd,
+		settingsAliasCmd,
 		workspaceConfigCmd,
 		moduleInitCmd,
-		apiClientInitCmd,
+		moduleClientAddCmd,
+		moduleClientRemoveCmd,
+		moduleClientUpdateCmd,
+		sdkScopeIsModuleCmd,
+		sdkScopeNameCmd,
+		sdkScopeSDKCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 	}
@@ -305,29 +315,19 @@ func init() {
 		functionsAliasCmd,
 		moduleUpdateCmd,
 		installedCmd,
-		moduleDepsAddCmd,
-		moduleDepsRmCmd,
-		moduleDepsUpdateCmd,
-		moduleDepsListCmd,
-		moduleEngineRequiredCmd,
-		moduleEngineRequireCmd,
-		moduleEngineRequireLatestCmd,
-		moduleEngineRequireCurrentCmd,
-		apiClientListCmd,
-		sdkModuleOptionsCmd,
-		sdkClientOptionsCmd,
+		moduleClientScopeCmd,
+		moduleClientListCmd,
+		sdkListCmd,
+		sdkScopeListCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	}
-	setCommandCapabilities(sdkInstalledCmd, mayReadWorkspaceConfig)
 
 	for _, cmd := range []*cobra.Command{
 		workspaceRootCmd,
 		workspaceCwdCmd,
 		workspaceConfigFileCmd,
 		workspaceRemotesCmd,
-		sdkInstallCmd,
-		sdkUninstallCmd,
 		setupCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
@@ -348,7 +348,9 @@ func init() {
 		callModCmd.Command(),
 		callCoreCmd.Command(),
 		moduleInitCmd,
-		apiClientInitCmd,
+		moduleClientAddCmd,
+		moduleClientRemoveCmd,
+		moduleClientUpdateCmd,
 		setupCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)

@@ -12,38 +12,46 @@ type workspaceUninstallArgs struct {
 	Here bool `default:"false"`
 }
 
-// removeSDKManagedModuleReference removes the installed module's source path
-// from any [[modules.<sdk>.as-sdk.modules]] list. It returns a workspace-relative
-// path only when the matched source is safe to delete from the overlay. An
-// as-sdk entry that cannot be resolved is a corruption every other reader fails
-// on, so it fails here too rather than being mistaken for a miss.
-func removeSDKManagedModuleReference(cfg *workspace.Config, configDir string, entry workspace.ModuleEntry) (string, bool, error) {
-	if cfg == nil || entry.AsSDK != nil || !workspace.IsLocalRef(entry.Source, entry.Pin) {
+// removeSDKManagedModuleReference clears the installed module's SDK scope. It
+// returns a workspace-relative path only when the matched source is safe to
+// delete from the overlay. An SDK scope that cannot be resolved is invalid,
+// so this function returns the error instead of treating it as a miss.
+func removeSDKManagedModuleReference(cfg *workspace.Config, configDir, moduleName string, entry workspace.ModuleEntry) (string, bool, error) {
+	if cfg == nil || !workspace.IsLocalRef(entry.Source, entry.Pin) {
+		return "", false, nil
+	}
+	if _, isSDK := workspace.SDKNameForModule(cfg, moduleName); isSDK {
 		return "", false, nil
 	}
 
 	resolvedSource := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 	sourcePath := filepath.ToSlash(resolvedSource)
 	removed := false
-	for moduleName, sdkEntry := range cfg.Modules {
-		if sdkEntry.AsSDK == nil || len(sdkEntry.AsSDK.Modules) == 0 {
+	for sdkName, sdk := range cfg.SDKs {
+		if len(sdk.Scopes) == 0 {
 			continue
 		}
 
-		kept := make([]workspace.SDKManagedModule, 0, len(sdkEntry.AsSDK.Modules))
-		for _, mod := range sdkEntry.AsSDK.Modules {
-			managed, err := workspace.ResolveSDKManagedPath(configDir, mod.Path)
+		for modulePath, scope := range sdk.Scopes {
+			if !scope.IsModule {
+				continue
+			}
+			managed, err := workspace.ResolveSDKManagedPath(configDir, modulePath)
 			if err != nil {
-				return "", false, fmt.Errorf("module managed by %q: %w", moduleName, err)
+				return "", false, fmt.Errorf("module managed by %q: %w", sdkName, err)
 			}
 			if managed == sourcePath {
 				removed = true
-				continue
+				if len(scope.Clients) == 0 {
+					delete(sdk.Scopes, modulePath)
+				} else {
+					scope.IsModule = false
+					scope.Name = ""
+					sdk.Scopes[modulePath] = scope
+				}
 			}
-			kept = append(kept, mod)
 		}
-		sdkEntry.AsSDK.Modules = kept
-		cfg.Modules[moduleName] = sdkEntry
+		cfg.SDKs[sdkName] = sdk
 	}
 	if !removed {
 		return "", false, nil

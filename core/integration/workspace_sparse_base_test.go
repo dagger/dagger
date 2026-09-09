@@ -25,14 +25,14 @@ func (LockfileSuite) TestUpdateFromNestedConfigKeepsSiblings(ctx context.Context
 	require.NoError(t, os.WriteFile(filepath.Join(nested, "keep.txt"), []byte("keep"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(nested, "src", "main.go"), []byte("package main"), 0o600))
 
-	_, err := hostDaggerExec(ctx, t, nested, "update")
+	_, err := hostDaggerExec(ctx, t, nested, "workspace", "update")
 	require.NoError(t, err)
 
 	_, err = os.Stat(filepath.Join(nested, "dagger.lock"))
 	require.NoError(t, err, "nested dagger.lock should be created")
 	for _, p := range []string{"dagger.toml", "keep.txt", filepath.Join("src", "main.go")} {
 		_, err := os.Stat(filepath.Join(nested, p))
-		require.NoError(t, err, "%s should survive dagger update", p)
+		require.NoError(t, err, "%s should survive dagger workspace update", p)
 	}
 }
 

@@ -16,7 +16,7 @@ Official module: [dagger/prettier](https://github.com/dagger/prettier)
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/prettier
+dagger module install github.com/dagger/prettier
 ```
 
 ## Run the check
@@ -43,8 +43,8 @@ dagger api call prettier write
 
 ## Configure it
 
-List the current settings with `dagger settings prettier`, then change one with
-`dagger settings prettier <key> <value>`. They live in `dagger.toml`
+List the current settings with `dagger module settings prettier`, then change one with
+`dagger module settings prettier <key> <value>`. They live in `dagger.toml`
 under `[modules.prettier.settings]`:
 
 - `packageManager` (default `npm`) is the package manager used to install

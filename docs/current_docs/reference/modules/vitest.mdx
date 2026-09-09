@@ -13,7 +13,7 @@ Official module: [dagger/vitest](https://github.com/dagger/vitest)
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/vitest
+dagger module install github.com/dagger/vitest
 ```
 
 ## Run the tests
@@ -37,7 +37,7 @@ Use `list` to print the tests Vitest discovers when test selection is unclear.
 
 ## Configure it
 
-List the current settings and their values with `dagger settings vitest`, then set one with `dagger settings vitest <key> <value>`. They live in `dagger.toml` under `[modules.vitest.settings]`:
+List the current settings and their values with `dagger module settings vitest`, then set one with `dagger module settings vitest <key> <value>`. They live in `dagger.toml` under `[modules.vitest.settings]`:
 
 - `packageManager` (default `npm`) is the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project; with `pnpm`, the module enables Corepack automatically.
 - `baseImageAddress` (default `node:25-alpine`) is the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.

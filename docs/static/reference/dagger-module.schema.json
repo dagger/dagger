@@ -87,8 +87,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "name",
-        "engineVersion"
+        "name"
       ],
       "description": "CurrentModuleConfigWithUserFields is the public schema for dagger-module.toml."
     },

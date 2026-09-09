@@ -2151,8 +2151,11 @@ func ResolveDepToSource(
 			}
 			selectors := []dagql.Selector{{
 				Field: "moduleSource",
+				// depPath is workspace-root relative, so anchor it: a relative
+				// path would resolve against the workspace cwd, which sits at
+				// the module's scope while an SDK generates that scope.
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(filepath.ToSlash(depPath))},
+					{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", depPath)))},
 				},
 			}}
 			if depName != "" {

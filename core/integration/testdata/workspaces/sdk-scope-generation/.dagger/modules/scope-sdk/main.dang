@@ -1,0 +1,39 @@
+"""
+Test SDK for dependency-ordered scope generation.
+"""
+type ScopeSdk {
+  findClientRoot(ws: Workspace!): String {
+    "."
+  }
+
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    let generated = if (isModule) {
+      ws
+        .withNewFile(
+          "dagger-module.toml",
+          "name = " + JSON.encode(name) + "\n" +
+            "engineVersion = \"latest\"\n\n" +
+            "[runtime]\n" +
+            "  source = \"dang\"\n",
+        )
+        .withNewFile(
+          "main.dang",
+          "type Generated {\n  pub hello: String! {\n    \"hello\"\n  }\n}\n",
+        )
+    } else {
+      ws
+    }
+
+    clients.reduce(generated) { current, target =>
+      current.withFile(
+        "generated/" + target.moduleOriginalName + ".schema.json",
+        target.clientSchemaIntrospectionJSON,
+      )
+    }
+  }
+}

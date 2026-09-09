@@ -15,14 +15,14 @@ This page is a standalone guide to the Java SDK. It assumes you already know the
 
 A module worth sharing provides at least one of the three first-class function types: a check, a generator, or a service. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Java syntax.
 
-The Java SDK is itself a Dagger module, `github.com/dagger/java-sdk`. Install it into your workspace once, then use Dagger's SDK and module commands to scaffold, generate, and maintain Java modules:
+The Java SDK is itself a Dagger module, `github.com/dagger/java-sdk`. Install it into your workspace once, then use Dagger's module commands to scaffold, generate, and maintain Java modules:
 
 ```shell
 # Install the Java SDK into your workspace (once)
-dagger sdk install java
+dagger module install java
 
 # Create a Java module
-dagger module init java my-module
+dagger module init java --name my-module
 ```
 
 Java modules are self-contained. The SDK library, annotation processor, and generated client bindings live in the module as real, buildable source, and the generated entrypoint is committed next to your code. Nothing is generated when the module loads; the runtime builds and packages only what is in Git. The Go SDK works differently. The upside of the Java approach is that a plain `mvn package` builds the module in an IDE or CI without Dagger. The cost is that you commit generated files and regenerate them yourself when the module's shape changes. See [Resulting file layout](#resulting-file-layout).
@@ -33,17 +33,17 @@ Java modules are self-contained. The SDK library, annotation processor, and gene
 Run these commands from inside a Git repository. That's where Dagger creates the new module.
 :::
 
-Install the Java SDK into your workspace, then create a new module. The required arguments are the SDK and module name:
+Install the Java SDK into your workspace, then create a new module. The SDK argument is required. This example also sets the optional module name:
 
 ```shell
-dagger sdk install java
-dagger module init java my-module
+dagger module install java
+dagger module init java --name my-module
 ```
 
 Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files to create. Dagger shows it to you for review before writing anything to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here java` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here java` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -61,11 +61,11 @@ when several projects share one repository.
 Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type; a leading `/` means the workspace root.
 
 ```shell
-dagger module init java my-module --path ci     # ./ci
-dagger module init java my-module --path /ci    # <workspace root>/ci
+dagger module init java --name my-module --path ci     # ./ci
+dagger module init java --name my-module --path /ci    # <workspace root>/ci
 ```
 
-Dagger registers a module at a custom path as authored by the SDK, but does not install it as a callable workspace module. Use `dagger install ./ci` to install it too.
+Dagger registers a module at a custom path as authored by the SDK, but does not install it as a callable workspace module. Use `dagger module install ./ci` to install it too.
 
 The Java SDK ships three starter templates. Pick one with `--template`:
 
@@ -76,7 +76,7 @@ The Java SDK ships three starter templates. Pick one with `--template`:
 | `legacy` | The classic `containerEcho` / `grepDir` starter from earlier Dagger versions |
 
 ```shell
-dagger module init java my-module --template empty
+dagger module init java --name my-module --template empty
 ```
 
 List the Java SDK's module initialization options with:
@@ -125,7 +125,7 @@ engineVersion = "v{{ version }}"
 source = "github.com/dagger/java-sdk/runtime"
 ```
 
-The workspace's `dagger.toml` records the module separately under `modules.dagger-java-sdk.as-sdk`. That entry is how the Java SDK discovers which modules to generate. You never write the files under `sdk/` and `src/generated/` by hand; see [Regenerate the SDK and entrypoint](#regenerate-bindings-and-generated-files).
+The workspace's `dagger.toml` records the SDK under `sdks.java` and records the module path as one of its scopes. That scope is how the Java SDK discovers which modules to generate. You never write the files under `sdk/` and `src/generated/` by hand; see [Regenerate the SDK and entrypoint](#regenerate-bindings-and-generated-files).
 
 ### How the module is built and run
 
@@ -830,25 +830,7 @@ source = "../wolfi"
 
 A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
 
-Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
-
-Add a dependency by source:
-
-```shell
-dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
-```
-
-List the current dependencies:
-
-```shell
-dagger module deps list
-```
-
-Remove a dependency by name:
-
-```shell
-dagger module deps rm hello
-```
+Manage dependencies by adding, updating, or removing `[[dependencies]]` entries in `dagger-module.toml`.
 
 After changing dependencies, [regenerate](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag()`. A dependency's functions follow the same conventions as the core API. Required arguments are positional, and optional ones go in an `XxxArguments` builder:
 
@@ -912,26 +894,7 @@ vendorSdkJar = true
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
-
-Read the currently required version:
-
-```shell
-dagger module engine required
-```
-
-Pin a specific version, the current engine, or the latest stable release:
-
-```shell template
-# A specific version
-dagger module engine require v{{ version }}
-
-# Whatever engine you're running now
-dagger module engine require-current
-
-# Latest stable release
-dagger module engine require-latest
-```
+Each module declares the Dagger engine version it requires in the `engineVersion` field of `dagger-module.toml`. Set it to a concrete version.
 
 Bumping the engine version usually means the generated client bindings should change too, so follow with `dagger generate`.
 
@@ -1150,7 +1113,7 @@ You distribute a Java SDK module as a Git repository. There is no build artifact
 
 Recommended release checklist:
 
-1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+1. **Pin the engine version.** Set `engineVersion` in `dagger-module.toml` to the oldest engine version your module supports.
 2. **Commit the generated files.** Run `dagger generate`, review the changes, and commit `sdk/` and `src/generated/` with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
@@ -1159,23 +1122,18 @@ Before publishing, run `dagger check --generate` to confirm that the committed f
 Consumers can install your module into a workspace with:
 
 ```shell
-dagger install github.com/you/your-module@v1.2.0
+dagger module install github.com/you/your-module@v1.2.0
 ```
 
-To add it as a dependency of another module, run these commands from that module's directory:
-
-```shell
-dagger module deps add github.com/you/your-module@v1.2.0
-dagger generate
-```
+To add it as a dependency of another module, add a `[[dependencies]]` entry to that module's `dagger-module.toml`, then run `dagger generate`.
 
 A module reference follows `[proto://]host/repo[/subpath][@version]`. The version may be a tag, branch, or commit. Dagger resolves it over HTTPS or SSH depending on the authentication available.
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the Java SDK with `dagger sdk install java`, scaffold with `dagger module init java <name>`, and regenerate with `dagger generate`.
+**`dagger init` / `dagger develop` not found.** Install the Java SDK with `dagger module install java`, scaffold with `dagger module init java --name <name>`, and regenerate with `dagger generate`.
 
-**`dagger sdk install java` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger sdk install --here java`.
+**`dagger module install java` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger module install --here java`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 
@@ -1189,11 +1147,11 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 **"The class … must have a single non-empty constructor".** The main object may have only one parameterized constructor, since that one becomes the module constructor. Move the alternatives to static factory methods.
 
-**Compile errors mentioning `io.dagger.client` or `dag()`.** The vendored SDK is stale or missing. Regenerate as above. If you bumped the engine version, regenerate after `dagger module engine require …` so the bindings match the schema.
+**Compile errors mentioning `io.dagger.client` or `dag()`.** The vendored SDK is stale or missing. Regenerate as above. If you changed `engineVersion`, regenerate so the bindings match the schema.
 
 **Maven build failures at module load.** The runtime prints Maven's output in the trace, and `mvn package` locally reproduces the same build. The processor reports annotation misuse during `dagger generate`, for example `@DefaultPath` on a type other than `Directory`, `File`, `GitRepository`, or `GitRef`, `@Ignore` on a non-`Directory`, or `@Default` combined with `@DefaultPath`.
 
-**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+**Engine version mismatch.** Align the module's `engineVersion` in `dagger-module.toml`, then regenerate.
 
 ## Next steps
 

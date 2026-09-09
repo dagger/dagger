@@ -106,12 +106,12 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 // TestGeneratePrivateGitDependency verifies that `dagger generate` can resolve a
 // module's private Git dependency.
 //
-// Codegen runs through the go-sdk *module*'s `generate-all` generator
-// (github.com/dagger/go-sdk). That generator executes as module code, i.e. under
-// a nested module client rather than the user's main client. The dependency is
-// resolved inside that nested execution (generatedContextChangeset -> codegen ->
-// loadDependencyModules -> ResolveDepToSource), so the engine must forward the
-// non-module parent client's Git credentials. Before the fix in
+// Codegen runs through a test SDK module. That provider executes as module code,
+// under a nested module client rather than the user's main client. The
+// dependency is resolved inside that nested execution
+// (generatedContextDirectory -> codegen -> loadDependencyModules ->
+// ResolveDepToSource), so the engine must forward the non-module parent
+// client's Git credentials. Before the fix in
 // ResolveDepToSource, the git resolver only authenticated for the main client
 // (core/schema/git.go), and this failed with "git authentication failed" even
 // though `dagger -m <private-ref> ...` and `dagger develop` worked.
@@ -125,6 +125,10 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 	tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
 	workDir := t.TempDir()
+	require.NoError(t, os.CopyFS(
+		filepath.Join(workDir, "sdk"),
+		os.DirFS("testdata/sdks/module-max-codegen"),
+	))
 
 	// Isolated git credential helper for the private repo's host.
 	gitConfigPath := filepath.Join(workDir, ".gitconfig")
@@ -155,15 +159,15 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 		return out, runErr
 	}
 
-	// Initialize a workspace with go-sdk installed and marked as an SDK.
+	// Initialize a workspace with the test provider installed as an SDK.
 	// Workspace creation is implicit on first install (it creates dagger.toml
 	// at the workspace root), so there is no separate `workspace init` step.
 	require.NoError(t, exec.Command("git", "-C", workDir, "init").Run())
-	out, err := run("sdk", "install", "go")
+	out, err := run("module", "install", "./sdk")
 	require.NoError(t, err, string(out))
 
-	// A Go SDK module (discovered by go-sdk's generate-all) that declares the
-	// private repo as a dependency.
+	// A Go module handled by the test provider declares the private repo as a
+	// dependency.
 	daggerJSON := fmt.Sprintf(`{
   "name": "consumer",
   "engineVersion": "latest",
