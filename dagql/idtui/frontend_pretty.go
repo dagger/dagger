@@ -3034,32 +3034,8 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header: the zoomed span shown above its (unindented) content as a
-	// title bar -- a full-width background bar, the same style the log pager
-	// gives its title (frontend_log_pager.go). Captured rather than emitted
-	// directly so its height can be reserved out of the body crop below --
-	// otherwise it pushes the body down until the focused row's header, or the
-	// zoom header itself, scrolls off the top. The rich row's own colours are
-	// flattened to plain text so the bar reads uniformly and stays legible on the
-	// background (the caret, for one, is the same bright black as the bar).
-	var zoomHeader []string
-	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		zoomBuf := new(strings.Builder)
-		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
-		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
-			Span:     fe.rowsView.Zoomed,
-			Expanded: true,
-		}, fe, false)
-		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
-			if ctx.Width > 0 {
-				line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
-					Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
-			}
-			zoomHeader = append(zoomHeader, line)
-		}
-		zoomHeader = append(zoomHeader, "") // blank line separating the bar from the content
-	}
+	// Capture the zoom header so its height can be reserved out of the body crop.
+	zoomHeader := fe.renderZoomHeader(ctx, r)
 
 	// Seed test-case claims for the checks whose inline rollups render below, so
 	// the global tests section (rendered first, just below) subtracts them
@@ -3151,6 +3127,32 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// NOTE: textInput, active forms, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
 	// propagate through tuist automatically.
+}
+
+// renderZoomHeader renders the zoomed span as a full-width title bar, matching
+// the log pager's title (frontend_log_pager.go). The rich row's colours are
+// flattened to plain text so the bar stays uniform and legible on the background.
+func (fe *frontendPretty) renderZoomHeader(ctx tuist.Context, r *renderer) []string {
+	if fe.rowsView == nil || fe.rowsView.Zoomed == nil || fe.rowsView.Zoomed.ID == fe.db.PrimarySpan {
+		return nil
+	}
+
+	zoomBuf := new(strings.Builder)
+	zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+	fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+		Span:     fe.rowsView.Zoomed,
+		Expanded: true,
+	}, fe, false)
+	titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	var zoomHeader []string
+	for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
+		if ctx.Width > 0 {
+			line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
+				Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+		}
+		zoomHeader = append(zoomHeader, line)
+	}
+	return append(zoomHeader, "") // blank line separating the bar from the content
 }
 
 // renderFinalReport renders the whole-trace report for the final
