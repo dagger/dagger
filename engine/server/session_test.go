@@ -2066,11 +2066,20 @@ func TestRemoteWorkspaceAddress(t *testing.T) {
 func TestParseWorkspaceRemoteRef(t *testing.T) {
 	t.Parallel()
 
-	t.Run("rejects fragment without subpath", func(t *testing.T) {
+	t.Run("supports address fragment ref at repository root", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main")
-		require.ErrorContains(t, err, "must have the form #ref:subpath")
+		for _, address := range []string{
+			"https://github.com/dagger/dagger#main",
+			"https://github.com/dagger/dagger#main:.",
+		} {
+			ref, err := parseWorkspaceRemoteRef(context.Background(), address)
+			require.NoError(t, err)
+			require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
+			require.Equal(t, "main", ref.version)
+			require.Equal(t, ".", ref.workspaceSubdir)
+			require.Equal(t, gitref.GitRefSelector, ref.selector)
+		}
 	})
 
 	t.Run("supports address fragment ref and subdir", func(t *testing.T) {
@@ -2142,6 +2151,7 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 	for _, invalid := range []string{
 		"github.com/dagger/python/ruff#main",
 		"https://github.com/dagger/python/ruff#main",
+		"https://github.com/dagger/python#main:",
 		"github.com/dagger/python@main:ruff",
 		"https://github.com/dagger/python@main:ruff",
 		"github.com/dagger/python#main:ruff",

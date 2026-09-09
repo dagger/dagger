@@ -172,12 +172,20 @@ func TestParseRefString(t *testing.T) {
 			wantSelector: gitref.GitRefSelector,
 		},
 		{
+			urlStr:       "https://github.com/dagger/python#main",
+			wantKind:     ModuleSourceKindGit,
+			wantCloneRef: "https://github.com/dagger/python",
+			wantSubdir:   "/",
+			wantVersion:  "main",
+			wantSelector: gitref.GitRefSelector,
+		},
+		{
 			urlStr:          "github.com/dagger/python/ruff#main",
 			wantErrContains: "requires an explicit protocol",
 		},
 		{
 			urlStr:          "https://github.com/dagger/python/ruff#main",
-			wantErrContains: "must have the form #ref:subpath",
+			wantErrContains: "repository root is \"github.com/dagger/python\"",
 		},
 		{
 			urlStr:          "github.com/dagger/python@main:ruff",

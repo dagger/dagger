@@ -66,6 +66,38 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			urlStr: "https://github.com/dagger/python#v1.2",
+			want: Parsed{
+				ModPath:        "github.com/dagger/python",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/dagger/python", Repo: "https://github.com/dagger/python"},
+				RepoRootSubdir: "/",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr: "https://github.com/dagger/python#v1.2:.",
+			want: Parsed{
+				ModPath:        "github.com/dagger/python",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/dagger/python", Repo: "https://github.com/dagger/python"},
+				RepoRootSubdir: ".",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr:          "https://github.com/dagger/python#",
+			wantErrContains: "requires a ref after #",
+		},
+		{
+			urlStr:          "https://github.com/dagger/python#main:",
+			wantErrContains: "empty subpath",
+		},
+		{
 			urlStr: "https://git.example.com/team/repo#main:src",
 			want: Parsed{
 				ModPath:        "git.example.com/team/repo",

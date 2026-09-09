@@ -167,6 +167,21 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			selector:    gitref.GitRefSelector,
 			expected:    "https://github.com/user/repo.git#v1.2:subdir",
 		},
+		{
+			name:     "literal Git ref at repository root",
+			cloneRef: "https://github.com/user/repo.git",
+			version:  "v1.2",
+			selector: gitref.GitRefSelector,
+			expected: "https://github.com/user/repo.git#v1.2",
+		},
+		{
+			name:        "literal Git ref with explicit dot subpath",
+			cloneRef:    "https://github.com/user/repo.git",
+			rootSubpath: ".",
+			version:     "v1.2",
+			selector:    gitref.GitRefSelector,
+			expected:    "https://github.com/user/repo.git#v1.2",
+		},
 	}
 
 	for _, tc := range testCases {

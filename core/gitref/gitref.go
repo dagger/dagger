@@ -53,7 +53,7 @@ const (
 	// ModuleVersionSelector is the Go-like import path form: path/to/module@ref.
 	// SemVer-shaped refs in this form may be resolved as version queries.
 	ModuleVersionSelector
-	// GitRefSelector is the Git URL form: protocol://repo#ref:subpath. Its ref
+	// GitRefSelector is the Git URL form: protocol://repo#ref[:subpath]. Its ref
 	// is always resolved literally, even when it looks like a SemVer query.
 	GitRefSelector
 )
@@ -91,10 +91,13 @@ func RefString(cloneRef, sourceRootSubpath, version string) string {
 	return refPath
 }
 
-// GitURLRefString builds the explicit Git URL form protocol://repo#ref:subpath.
+// GitURLRefString builds the explicit Git URL form protocol://repo#ref[:subpath].
 func GitURLRefString(cloneRef, sourceRootSubpath, version string) string {
 	subpath := filepath.ToSlash(filepath.Clean(sourceRootSubpath))
 	subpath = strings.TrimPrefix(subpath, "/")
+	if subpath == "" || subpath == "." {
+		return cloneRef + "#" + version
+	}
 	return cloneRef + "#" + version + ":" + subpath
 }
 
@@ -299,9 +302,12 @@ func parseGitFragmentSelector(scheme SchemeType, ref string) (gitRef, subdir str
 	if strings.Contains(fragment, "#") {
 		return "", "", false, errors.New("git URL selector contains multiple # delimiters")
 	}
-	gitRef, subdir, ok = strings.Cut(fragment, ":")
-	if !ok || gitRef == "" || subdir == "" {
-		return "", "", false, errors.New("git URL selector must have the form #ref:subpath")
+	gitRef, subdir, hasSubdir := strings.Cut(fragment, ":")
+	if gitRef == "" {
+		return "", "", false, errors.New("git URL selector requires a ref after #")
+	}
+	if hasSubdir && subdir == "" {
+		return "", "", false, errors.New("git URL selector has an empty subpath after colon")
 	}
 	return gitRef, subdir, true, nil
 }
