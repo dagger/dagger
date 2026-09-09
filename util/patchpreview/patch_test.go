@@ -68,6 +68,24 @@ func TestTruncateLabelRenameAware(t *testing.T) {
 	require.LessOrEqual(t, len(got), 40)
 }
 
+func TestSummarizeUsesActualDiffstatWidth(t *testing.T) {
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	Summarize(out, []Entry{
+		{Path: "commit-file-name.go", Kind: KindModified, Added: 46},
+		{Path: "another-file-name.go", Kind: KindModified, Added: 1, Removed: 2},
+	}, 26) // The narrowest Changes bubble has 26 columns for content.
+
+	// The widest diffstat suffix (" +1 -2") is 6 columns, so 20 columns
+	// remain for filenames — enough to show both without truncation.
+	require.Equal(t, strings.Join([]string{
+		"another-file-name.go +1 -2",
+		"commit-file-name.go  +46",
+		"",
+		"2 files changed, +47 -2 lines",
+	}, "\n"), buf.String())
+}
+
 func TestSummarizeEmpty(t *testing.T) {
 	var buf strings.Builder
 	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))

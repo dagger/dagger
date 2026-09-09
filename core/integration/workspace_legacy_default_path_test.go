@@ -113,6 +113,63 @@ legacy-default-path = true
 	require.NotContains(t, out, toolMarker)
 }
 
+// Value workspaces load legacy toolchains with their own root as the
+// +defaultPath context, including pending edits.
+func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromValueWorkspace(ctx context.Context, t *testctx.T) {
+	const (
+		workspaceMarker = "from workspace root"
+		toolMarker      = "from tool module source"
+	)
+
+	c := connect(ctx, t)
+
+	readerFixture := c.Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
+	source := c.Directory().
+		WithNewFile("dagger.toml", `[modules.reader]
+source = "tool"
+legacy-default-path = true
+`).
+		WithNewFile("workspace-marker.txt", workspaceMarker).
+		WithDirectory("tool", readerFixture).
+		WithNewFile("tool/workspace-marker.txt", toolMarker)
+	daemon, url := gitService(ctx, t, c, source)
+	for _, tc := range []struct {
+		name string
+		ws   *dagger.Workspace
+	}{
+		{"directory", source.AsWorkspace()},
+		{"git", c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ws := tc.ws
+			checks, err := ws.Checks().List(ctx)
+			require.NoError(t, err)
+			require.Len(t, checks, 1)
+			name, err := checks[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "reader:check-marker", name)
+
+			passed, err := checks[0].Run().Passed(ctx)
+			require.NoError(t, err)
+			require.True(t, passed)
+
+			// The module code is unchanged, so only the context tree differs.
+			// Its content must distinguish module instances in the cache.
+			edited := ws.WithNewFile("workspace-marker.txt", "wrong marker")
+			editedChecks, err := edited.Checks().List(ctx)
+			require.NoError(t, err)
+			require.Len(t, editedChecks, 1)
+			passed, err = editedChecks[0].Run().Passed(ctx)
+			require.NoError(t, err)
+			require.False(t, passed)
+
+			passed, err = checks[0].Run().Passed(ctx)
+			require.NoError(t, err)
+			require.True(t, passed)
+		})
+	}
+}
+
 func legacyDefaultPathFixture(t testing.TB, c *dagger.Client, workspaceMarker, toolMarker string) *dagger.Container {
 	t.Helper()
 

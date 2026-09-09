@@ -13,8 +13,6 @@ makes it a good fit for monorepos, service repos, and libraries with generated
 code, especially when several modules should share one Go version and the same
 CI checks.
 
-Official module: [dagger/go](https://github.com/dagger/go)
-
 ## Add it to your workspace
 
 ```bash
@@ -96,3 +94,5 @@ selector array rather than splitting the repo into separate check systems.
 When the tests need a service the module cannot start, such as a database, wire
 a container with that service bound into the `base` setting.
 [Daggerize a Go Project](../../guides/go/index.mdx) walks through it.
+
+[source code](https://github.com/dagger/go)

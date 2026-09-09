@@ -1,6 +1,6 @@
 ---
 title: "Deno"
-slug: /reference/modules/deno
+slug: /reference/modules/js/deno
 description: "Test, lint, format, and type-check Deno projects across a workspace."
 ---
 
@@ -17,12 +17,10 @@ Rather than wrapping the `deno` CLI, it models a Deno project as a typed object
 graph and maps Deno's toolchain onto Dagger's first-class verbs, so the same
 checks run locally, in CI, and in Dagger Cloud.
 
-Official module: [dagger/deno](https://github.com/dagger/deno)
-
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/deno
+dagger module install dagger.io/js/deno
 ```
 
 ## Run the checks
@@ -103,3 +101,5 @@ especially when they should share the same Deno version and CI checks. It
 composes with the rest of your workspace. The `base` and `install` functions
 expose a Deno-ready container you can hand to other modules, and `version` prints
 the configured toolchain version.
+
+[source code](https://github.com/dagger/deno)

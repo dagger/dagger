@@ -256,6 +256,9 @@ type workspaceConfigKeyArgs struct {
 }
 
 func selectedWorkspaceEnv(ctx context.Context, ws *core.Workspace) (string, bool) {
+	if ws != nil && ws.IsValueWorkspace() {
+		return ws.SelectedEnv(), ws.SelectedEnv() != ""
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err == nil && clientMetadata.WorkspaceEnv != nil && *clientMetadata.WorkspaceEnv != "" {
 		return *clientMetadata.WorkspaceEnv, true

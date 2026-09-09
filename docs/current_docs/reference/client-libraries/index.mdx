@@ -14,11 +14,11 @@ There are two ways to get one.
 
 A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in an SDK scope. `dagger.toml` records the scope and target module, and `dagger generate` regenerates it with the other generated files.
 
-Install the SDK for the required language. Run the client command from a project that the SDK can detect, then add the target module:
+Install the SDK for the required language. For Go, run the client command from a project with a `go.mod` file, then add the target module:
 
 ```shell
-dagger module install typescript
-dagger module client add ./.dagger/modules/api --sdk=typescript
+dagger module install dagger.io/sdk/go
+dagger module client add ./.dagger/modules/api --sdk=go
 ```
 
 The module argument must be an explicit local path, such as `./api` or `../api`, or a module address.
@@ -52,7 +52,7 @@ List also shows invalid old targets. Remove them with their exact listed target.
 If invalid targets remain, removal succeeds and generation is skipped with a warning.
 Correct or remove those targets to resume generation.
 
-Only SDKs that implement the client contract can generate clients. Today that is [Go](../sdks/go.mdx), [TypeScript](../sdks/typescript.mdx), and [PHP](../sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
+The current [Go SDK](../sdks/go.mdx) supports clients in ordinary Go projects. Python, Dang, and Java currently require a Dagger module in the scope. TypeScript and PHP still need an update to the new SDK interface. The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
 
 ## Standalone client libraries
 
