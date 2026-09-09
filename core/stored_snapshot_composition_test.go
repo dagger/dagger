@@ -113,6 +113,11 @@ func TestWorkspaceRestoreOpensNothing(t *testing.T) {
 		require.NotNil(t, ws.source.(*WorkspaceSourceDirectory).Root.Self().stored)
 		require.Equal(t, original, storedSnapshotTestEnvelope(t, ctx, cache, loaded))
 		require.Empty(t, manager.opens)
+		if session == "c" {
+			require.NoError(t, cache.Evaluate(ctx, ws.rootfs))
+			require.Equal(t, 1, manager.openCount("root"))
+			require.Zero(t, manager.openCount("source"))
+		}
 		require.NoError(t, cache.ReleaseSession(ctx, session))
 		require.NoError(t, cache.Close(ctx))
 	}

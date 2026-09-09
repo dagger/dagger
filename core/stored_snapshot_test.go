@@ -368,3 +368,69 @@ func TestRestoredSnapshotAttemptLifetime(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoredSnapshotUntouchedEnvelope(t *testing.T) {
+	for _, kind := range []string{"Directory", "File"} {
+		t.Run(kind, func(t *testing.T) {
+			db := filepath.Join(t.TempDir(), "cache.db")
+			ctx, cache, srv := containerPersistenceTestCache(t, db, newContainerPersistenceTestSnapshots(), "a")
+			res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "a", "saved", storedSnapshotTestValue(kind, "saved", "", false), true)
+			id, err := cache.PersistedResultID(res)
+			require.NoError(t, err)
+			require.NoError(t, cache.ReleaseSession(ctx, "a"))
+			require.NoError(t, cache.Close(ctx))
+			manager := newContainerPersistenceTestSnapshots()
+			ctx, cache, _ = containerPersistenceTestCache(t, db, manager, "b")
+			require.NoError(t, cache.Close(ctx))
+			require.Empty(t, manager.opens)
+			ctx, cache, srv = containerPersistenceTestCache(t, db, manager, "c")
+			res, err = cache.LoadResultByResultID(ctx, "c", srv, id)
+			require.NoError(t, err)
+			require.Empty(t, manager.opens)
+			require.NoError(t, cache.Evaluate(ctx, res))
+			require.Equal(t, 1, manager.openCount("saved"))
+		})
+	}
+}
+
+func TestSourceFilePathsPreservesFreshErrors(t *testing.T) {
+	manager := newContainerPersistenceTestSnapshots()
+	ctx, cache, srv := containerPersistenceTestCache(t, "", manager, "sources")
+	stored := attachStoredSnapshotTestValue(t, ctx, cache, srv, "sources", "stored", storedSnapshotTestValue("File", "saved", "/saved.txt", true), false).(dagql.ObjectResult[*File])
+	fresh := storedSnapshotTestValue("File", "unused", "seed", false).(*File)
+	failure := errors.New("fresh source failed")
+	fresh.Lazy = &storedSnapshotTestLazy[*File]{LazyState: NewLazyState(), run: func(*File) error { return failure }}
+	freshRes := attachStoredSnapshotTestValue(t, ctx, cache, srv, "sources", "fresh", fresh, false).(dagql.ObjectResult[*File])
+	_, err := SourceFilePaths(ctx, []dagql.ObjectResult[*File]{stored, freshRes})
+	require.ErrorIs(t, err, failure)
+	require.Zero(t, manager.openCount("saved"))
+}
+
+func TestRestoredSnapshotDiagnostics(t *testing.T) {
+	previous := containerPartDiagnosticsEnabled
+	defer func() { containerPartDiagnosticsEnabled = previous }()
+	containerPartDiagnosticsEnabled = false
+	require.Nil(t, newStoredSnapshotDiagnostics())
+	containerPartDiagnosticsEnabled = true
+	for _, kind := range []string{"Directory", "File"} {
+		db := filepath.Join(t.TempDir(), "cache.db")
+		ctx, cache, srv := containerPersistenceTestCache(t, db, newContainerPersistenceTestSnapshots(), "a")
+		res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "a", "saved", storedSnapshotTestValue(kind, "saved", "/", false), true)
+		id, err := cache.PersistedResultID(res)
+		require.NoError(t, err)
+		require.NoError(t, cache.ReleaseSession(ctx, "a"))
+		require.NoError(t, cache.Close(ctx))
+		ctx, cache, srv = containerPersistenceTestCache(t, db, newContainerPersistenceTestSnapshots(), "b")
+		res, err = cache.LoadResultByResultID(ctx, "b", srv, id)
+		require.NoError(t, err)
+		debug := res.Unwrap().(interface{ CacheDebugValue() any })
+		before := debug.CacheDebugValue().(storedSnapshotDebugValue)
+		require.Equal(t, "saved", before.StoredSnapshotID)
+		require.Empty(t, before.OpenSnapshotID)
+		require.Zero(t, before.Counts["storedOpen"])
+		require.NoError(t, cache.Evaluate(ctx, res))
+		after := debug.CacheDebugValue().(storedSnapshotDebugValue)
+		require.Equal(t, "saved", after.OpenSnapshotID)
+		require.EqualValues(t, 1, after.Counts["storedOpen"])
+	}
+}
