@@ -54,6 +54,14 @@ var expectedOutcome = map[string]string{
 	"flush_inflight":    "",
 	"flush_drained":     "",
 	"lazy_release":      "",
+
+	// green: reader cancellation inside the persisted-decode singleflight.
+	// A joiner that wakes on a departed leader's cancellation retries
+	// instead of failing (persistDecodeRetry), and a post-install failure
+	// leaves persistLeaseSyncPending set so the next demand retries the
+	// lease sync; see the config headers.
+	"decode_cancel":          "",
+	"decode_cancel_liveness": "",
 }
 
 type TlaCheck struct {
