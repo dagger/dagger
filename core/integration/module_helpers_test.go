@@ -72,9 +72,8 @@ func daggerCallFail(args ...string) dagger.WithContainerFunc {
 		return c.WithExec(
 			append([]string{"dagger", "--progress=report", "call"}, args...),
 			dagger.ContainerWithExecOpts{
-				UseEntrypoint:                 true,
-				ExperimentalPrivilegedNesting: true,
-				Expect:                        dagger.ReturnTypeFailure,
+				UseEntrypoint: true,
+				Expect:        dagger.ReturnTypeFailure,
 			},
 		)
 	}
