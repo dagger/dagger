@@ -124,10 +124,11 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
-		name        string
-		cloneRef    string
-		rootSubpath string
-		expected    string
+		name         string
+		cloneRef     string
+		rootSubpath  string
+		versionQuery string
+		expected     string
 	}{
 		{
 			name:        "Go-style URL",
@@ -147,6 +148,13 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			rootSubpath: "",
 			expected:    "git@github.com:user/repo.git",
 		},
+		{
+			name:         "version query",
+			cloneRef:     "https://github.com/user/repo.git",
+			rootSubpath:  "subdir",
+			versionQuery: "v1.2",
+			expected:     "https://github.com/user/repo.git/subdir@v1.2",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -154,7 +162,8 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			src := &ModuleSource{
 				Kind: ModuleSourceKindGit,
 				Git: &GitModuleSource{
-					CloneRef: tc.cloneRef,
+					CloneRef:     tc.cloneRef,
+					VersionQuery: tc.versionQuery,
 				},
 				SourceRootSubpath: tc.rootSubpath,
 			}

@@ -44,6 +44,23 @@ func TestModuleGitDefaultRefSelector(t *testing.T) {
 	}
 }
 
+func TestParsedGitRefStringSetVersion(t *testing.T) {
+	t.Parallel()
+
+	parsed := &ParsedGitRefString{}
+	require.NoError(t, parsed.SetVersion("v1.2-beta"))
+	require.True(t, parsed.HasVersion)
+	require.Equal(t, "v1.2-beta", parsed.ModVersion)
+
+	require.EqualError(t,
+		parsed.SetVersion("v2"),
+		`version query "v2" cannot be used because the module source ref already has version "v1.2-beta"`,
+	)
+
+	invalid := &ParsedGitRefString{}
+	require.ErrorContains(t, invalid.SetVersion("main"), `invalid version query "main"`)
+}
+
 func TestMatchVersion(t *testing.T) {
 	vers := []string{"v1.0.0", "v1.0.1", "v2.0.0", "path/v1.0.1", "path/v2.0.1"}
 

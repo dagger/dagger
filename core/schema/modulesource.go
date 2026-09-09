@@ -65,6 +65,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`Create a new module source instance from a source ref string`).
 			Args(
 				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
+				dagql.Arg("version").
+					Doc(`Version query for a Git module source.`).
+					View(AfterVersion(workspace.VersionQueriesVersion)),
 				dagql.Arg("refPin").Doc(`The pinned version of the module source`),
 				dagql.Arg("disableFindUp").Doc(`If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.`),
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
@@ -313,6 +316,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
 	RefString      string
+	Version        string `default:""`
 	RefPin         string `default:""`
 	DisableFindUp  bool   `default:"false"`
 	AllowNotExists bool   `default:"false"`
@@ -346,6 +350,14 @@ func (s *moduleSourceSchema) moduleSource(
 	}
 	if err != nil {
 		return inst, err
+	}
+	if args.Version != "" {
+		if parsedRef.Kind != core.ModuleSourceKindGit {
+			return inst, errors.New("version query requires a Git module source")
+		}
+		if err := parsedRef.Git.SetVersion(args.Version); err != nil {
+			return inst, err
+		}
 	}
 
 	if args.RequireKind.Valid && parsedRef.Kind != args.RequireKind.Value {
@@ -769,6 +781,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
+	versionQuery := ""
+	if core.Supports(ctx, workspace.VersionQueriesVersion) && core.IsReleaseVersionQuery(parsed.ModVersion) {
+		versionQuery = parsed.ModVersion
+	}
 
 	gitSrc := &core.ModuleSource{
 		ConfigExists:   true, // we can't load uninitialized git modules, we'll error out later if it's not there
@@ -778,6 +794,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			HTMLRepoURL:  parsed.RepoRoot.Repo,
 			RepoRootPath: parsed.RepoRoot.Root,
 			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
+			VersionQuery: versionQuery,
 			Commit:       gitRef.Self().Ref.SHA,
 			Ref:          gitRef.Self().Ref.Name,
 			CloneRef:     parsed.SourceCloneRef,
@@ -2039,8 +2056,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 			}
 			depCfg.Source = rel
 		case core.ModuleSourceKindGit:
-			depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
-			depCfg.Pin = relatedSrc.Git.Commit
+			setModuleConfigDependencyGitSource(depCfg, relatedSrc)
 		default:
 			return nil, fmt.Errorf("unhandled module source kind: %s", relatedSrc.Kind.HumanString())
 		}
@@ -2058,8 +2074,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 				}
 				depCfg.Source = rel
 			} else {
-				depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
-				depCfg.Pin = relatedSrc.Git.Commit
+				setModuleConfigDependencyGitSource(depCfg, relatedSrc)
 			}
 		default:
 			return nil, fmt.Errorf("unhandled module source kind: %s", relatedSrc.Kind.HumanString())
@@ -2075,8 +2090,7 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 			}
 			depCfg.Source = rel
 		case core.ModuleSourceKindGit:
-			depCfg.Source = moduleSourceDeclaredRef(relatedSrc)
-			depCfg.Pin = relatedSrc.Git.Commit
+			setModuleConfigDependencyGitSource(depCfg, relatedSrc)
 		default:
 			return nil, fmt.Errorf(
 				"parent module source kind %s cannot reference module source kind %s",
@@ -2089,6 +2103,14 @@ func (s *moduleSourceSchema) moduleConfigDependencyForRelatedSource(
 	}
 
 	return depCfg, nil
+}
+
+func setModuleConfigDependencyGitSource(depCfg *modules.ModuleConfigDependency, src *core.ModuleSource) {
+	depCfg.Source = moduleSourceDeclaredRef(src)
+	if src.Git.VersionQuery != "" {
+		depCfg.Source = replaceModuleRefVersion(depCfg.Source, src.Git.VersionQuery)
+	}
+	depCfg.Pin = src.Git.Commit
 }
 
 func moduleSourceDeclaredRef(src *core.ModuleSource) string {

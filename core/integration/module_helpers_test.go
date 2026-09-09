@@ -71,6 +71,19 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 	}
 }
 
+func daggerCallFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(
+			append([]string{"dagger", "--progress=report", "call"}, args...),
+			dagger.ContainerWithExecOpts{
+				UseEntrypoint:                 true,
+				ExperimentalPrivilegedNesting: true,
+				Expect:                        dagger.ReturnTypeFailure,
+			},
+		)
+	}
+}
+
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{

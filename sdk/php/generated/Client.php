@@ -392,6 +392,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
      */
     public function moduleSource(
         string $refString,
+        ?string $version = '',
         ?string $refPin = '',
         ?bool $disableFindUp = false,
         ?bool $allowNotExists = false,
@@ -399,6 +400,9 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     ): ModuleSource {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
         $innerQueryBuilder->setArgument('refString', $refString);
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
+        }
         if (null !== $refPin) {
         $innerQueryBuilder->setArgument('refPin', $refPin);
         }
