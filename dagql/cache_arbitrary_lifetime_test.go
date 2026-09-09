@@ -39,7 +39,7 @@ func TestCacheArbitraryLateCleanupBlocksClose(t *testing.T) {
 						return cacheTestOpaqueValue{value: "late", onRelease: func(ctx context.Context) error {
 							require.NoError(t, ctx.Err())
 							cache.callsMu.Lock()
-							cache.callsMu.Unlock()
+							cache.callsMu.Unlock() //nolint:staticcheck // SA2001: acquiring the lock proves cleanup runs outside callsMu.
 							releases.Add(1)
 							close(releasing)
 							<-allowRelease
@@ -200,7 +200,7 @@ func TestCacheArbitraryCanceledWaiterTakesPublishedCleanup(t *testing.T) {
 	res.onRelease = func(ctx context.Context) error {
 		require.NoError(t, ctx.Err())
 		cache.callsMu.Lock()
-		cache.callsMu.Unlock()
+		cache.callsMu.Unlock() //nolint:staticcheck // SA2001: acquiring the lock proves cleanup runs outside callsMu.
 		releases.Add(1)
 		return nil
 	}

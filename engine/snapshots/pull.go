@@ -137,6 +137,7 @@ func (cm *snapshotManager) ImportImage(
 	return current, nil
 }
 
+//nolint:gocyclo // Keep snapshot reuse, content ownership, and apply cleanup in one import flow.
 func (cm *snapshotManager) importLayer(
 	ctx context.Context,
 	desc ocispecs.Descriptor,

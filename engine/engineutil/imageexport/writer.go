@@ -3,20 +3,19 @@ package imageexport
 import (
 	"bytes"
 	"context"
-	stderrors "errors"
-	"sync"
-
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
-	"github.com/containerd/containerd/v2/core/leases"
 	"maps"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/platforms"
 	cache "github.com/dagger/dagger/engine/snapshots"
