@@ -27,8 +27,8 @@ func (w *debugSnapshotQueuedWriter) Write(p []byte) (int, error) {
 	w.once.Do(func() {
 		go func() {
 			w.cache.egraphMu.Lock()
-			w.cache.egraphMu.Unlock()
 			close(w.writerDone)
+			w.cache.egraphMu.Unlock()
 		}()
 		// The snapshot owns a read lock at this flush. Wait until the writer
 		// queues, so a recursive read would block deterministically.
