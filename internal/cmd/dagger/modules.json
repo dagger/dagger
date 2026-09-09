@@ -30,6 +30,11 @@
     "recommend": ["**/jest.config.*"]
   },
   {
+    "name": "mochajs",
+    "description": "Run JavaScript and TypeScript tests with Mocha",
+    "repo": "dagger.io/js/mocha"
+  },
+  {
     "name": "vitest",
     "description": "Run JavaScript and TypeScript tests with Vitest",
     "repo": "dagger.io/js/vitest",
@@ -40,6 +45,26 @@
     "description": "Run Python tests with pytest",
     "repo": "dagger.io/python/pytest",
     "recommend": ["**/pytest.ini", "**/pyproject.toml"]
+  },
+  {
+    "name": "mypy",
+    "description": "Type-check Python projects with mypy",
+    "repo": "dagger.io/python/mypy"
+  },
+  {
+    "name": "ruff",
+    "description": "Lint and format Python projects with Ruff",
+    "repo": "dagger.io/python/ruff"
+  },
+  {
+    "name": "ty",
+    "description": "Type-check Python projects with ty",
+    "repo": "dagger.io/python/ty"
+  },
+  {
+    "name": "uv",
+    "description": "Lock, build, and audit Python projects with uv",
+    "repo": "dagger.io/python/uv"
   },
   {
     "name": "biomejs",
