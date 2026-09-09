@@ -109,10 +109,18 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	}
 
 	type savedSnapshotRow struct {
-		ID      uint64                          `json:"shared_result_id"`
-		Payload string                          `json:"payload_state"`
-		Links   []struct{ RefKey, Role string } `json:"snapshot_links"`
-		Value   *struct {
+		ID      uint64 `json:"shared_result_id"`
+		Payload string `json:"payload_state"`
+		Call    *struct {
+			Field string `json:"field"`
+			Type  *struct {
+				Elem *struct {
+					NamedType string `json:"namedType"`
+				} `json:"elem"`
+			} `json:"type"`
+		} `json:"result_call"`
+		Links []struct{ RefKey, Role string } `json:"snapshot_links"`
+		Value *struct {
 			StoredSnapshotID string            `json:"storedSnapshotID"`
 			OpenSnapshotID   string            `json:"openSnapshotID"`
 			Counts           map[string]uint64 `json:"counts"`
@@ -314,6 +322,17 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
 		ids := request(a, "id entries")
 		rows := readSnapshotRows(ctx, t, c, upA)
+		var listID uint64
+		for id, row := range rows {
+			if row.Call != nil && row.Call.Field == "directories" && row.Call.Type != nil &&
+				row.Call.Type.Elem != nil && row.Call.Type.Elem.NamedType == "Directory" {
+				require.Zero(t, listID, "one module function list row")
+				listID = id
+			}
+		}
+		require.NotZero(t, listID)
+		require.Equal(t, "materialized", rows[listID].Payload)
+		logSnapshotRow(t, "list first engine parent", rows[listID])
 		saved := make([]string, len(ids))
 		for i, id := range ids {
 			row := rows[snapshotResultID(t, id)]
@@ -326,11 +345,16 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		upA, tunnelA, a = nil, nil, nil
 		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		rows = readSnapshotRows(ctx, t, c, upB)
+		require.Equal(t, "imported_lazy_envelope", rows[listID].Payload)
+		logSnapshotRow(t, "list middle engine before request", rows[listID])
 		middleIDs := request(b, "id")
 		for i, id := range middleIDs {
 			require.Equal(t, snapshotResultID(t, ids[i]), snapshotResultID(t, id), "middle engine preserves each exact child row")
 		}
 		rows = readSnapshotRows(ctx, t, c, upB)
+		require.Equal(t, "materialized", rows[listID].Payload)
+		logSnapshotRow(t, "list middle engine after request", rows[listID])
 		for i, id := range middleIDs {
 			row := rows[snapshotResultID(t, id)]
 			checkSnapshotClosed(t, row, saved[i])
