@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * A message delivered to an agent's mailbox.
  */
 class AgentMessage extends Client\AbstractObject implements Client\IdAble, Node

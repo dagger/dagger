@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * Who put a message on the conversation record.
  */
 enum LLMMessageOriginKind: string

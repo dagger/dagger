@@ -186,6 +186,8 @@ type LLMContentBlockInput struct {
 	ToolName string `json:"toolName,omitempty"`
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // The provenance of a message delivered through an agent mailbox.
 type LLMMessageOriginInput struct {
 	// The sending or observed agent's runtime handle.
@@ -448,6 +450,8 @@ func (r *Address) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
 type Agent struct {
 	query *querybuilder.Selection
@@ -478,6 +482,8 @@ func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 // Why the loop failed, for a FAILED agent; empty otherwise.
 //
 // The snapshot holds the completed prefix — send or resume retries from it.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Error(ctx context.Context) (string, error) {
 	if r.error != nil {
 		return *r.error, nil
@@ -493,6 +499,8 @@ func (r *Agent) Error(ctx context.Context) (string, error) {
 // The opaque runtime handle minted by the spawn that created this agent.
 //
 // It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Handle(ctx context.Context) (string, error) {
 	if r.handle != nil {
 		return *r.handle, nil
@@ -550,6 +558,8 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 // The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
 //
 // On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Interrupt(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("interrupt")
 
@@ -567,6 +577,8 @@ func (r *Agent) Interrupt(ctx context.Context) (*Agent, error) {
 // This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
 //
 // Fails if the agent has no runtime entry in this session, or no record of the given handle.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Message(handle string) *AgentMessage {
 	q := r.query.Select("message")
 	q = q.Arg("handle", handle)
@@ -577,6 +589,8 @@ func (r *Agent) Message(handle string) *AgentMessage {
 }
 
 // Display label for the agent; carries no identity.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -604,6 +618,8 @@ type AgentNotifyOpts struct {
 // Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
 //
 // Idempotent per subscriber; re-subscribing replaces the state set.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNotifyOpts) (*Agent, error) {
 	assertNotNil("subscriber", subscriber)
 	q := r.query.Select("notify")
@@ -629,6 +645,8 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 // Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
 //
 // Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("pause")
 
@@ -660,6 +678,8 @@ type AgentRehydrateOpts struct {
 // The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
 //
 // Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Agent, error) {
 	q := r.query.Select("rehydrate")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -689,6 +709,8 @@ func (r *Agent) Rehydrate(ctx context.Context, opts ...AgentRehydrateOpts) (*Age
 // The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
 //
 // Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
 	assertNotNil("conversation", conversation)
 	q := r.query.Select("reseed")
@@ -708,6 +730,8 @@ func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
 // Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
 //
 // No-op on a running or idle agent.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("resume")
 
@@ -733,6 +757,8 @@ type AgentSendOpts struct {
 // The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts) (*AgentMessage, error) {
 	q := r.query.Select("send")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -757,6 +783,8 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 // The seed conversation if the agent never stepped.
 //
 // Branching from it does not affect the agent.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Snapshot() *LLM {
 	q := r.query.Select("snapshot")
 
@@ -768,6 +796,8 @@ func (r *Agent) Snapshot() *LLM {
 // Start the agent's evaluation loop. No-op if it is already running.
 //
 // The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Start(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("start")
 
@@ -783,6 +813,8 @@ func (r *Agent) Start(ctx context.Context) (*Agent, error) {
 // Computed lifecycle state; never stored.
 //
 // An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) State(ctx context.Context) (AgentState, error) {
 	if r.state != nil {
 		return *r.state, nil
@@ -802,6 +834,8 @@ type AgentStopOpts struct {
 }
 
 // Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error) {
 	q := r.query.Select("stop")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -823,6 +857,8 @@ func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error)
 // Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
 //
 // Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("wait")
 
@@ -843,6 +879,8 @@ func (r *Agent) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // A message delivered to an agent's mailbox.
 type AgentMessage struct {
 	query *querybuilder.Selection
@@ -862,6 +900,8 @@ func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage
 // How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
 //
 // Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMessage) Delivery(ctx context.Context) (AgentMessageDelivery, error) {
 	if r.delivery != nil {
 		return *r.delivery, nil
@@ -917,6 +957,8 @@ func (r *AgentMessage) MarshalJSON() ([]byte, error) {
 // The message's short ref within the receiving agent's runtime, e.g. "#3".
 //
 // This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
@@ -936,6 +978,8 @@ func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
 // Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
 //
 // Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMessage) Response(ctx context.Context) (string, error) {
 	if r.response != nil {
 		return *r.response, nil
@@ -956,6 +1000,9 @@ func (r *AgentMessage) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// An agent middleware contributed by a module.
 type AgentMiddleware struct {
 	query *querybuilder.Selection
 
@@ -971,6 +1018,8 @@ func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMidd
 }
 
 // The description of the agent
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -1024,6 +1073,8 @@ func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
 }
 
 // Return the fully qualified name of the agent
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -1037,6 +1088,8 @@ func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
 }
 
 // The original module in which the agent has been defined
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddleware) OriginalModule() *Module {
 	q := r.query.Select("originalModule")
 
@@ -1046,6 +1099,8 @@ func (r *AgentMiddleware) OriginalModule() *Module {
 }
 
 // The path of the agent within its module
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
 	q := r.query.Select("path")
 
@@ -1063,6 +1118,9 @@ func (r *AgentMiddleware) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A group of agent middlewares composable onto a base LLM.
 type AgentMiddlewareGroup struct {
 	query *querybuilder.Selection
 
@@ -1082,6 +1140,8 @@ type AgentMiddlewareGroupComposeOpts struct {
 }
 
 // Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddlewareGroup) Compose(opts ...AgentMiddlewareGroupComposeOpts) *LLM {
 	q := r.query.Select("compose")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1137,6 +1197,8 @@ func (r *AgentMiddlewareGroup) MarshalJSON() ([]byte, error) {
 }
 
 // Return a list of individual agents and their details
+//
+// Experimental: Agent APIs are likely to change.
 func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, error) {
 	q := r.query.Select("list")
 
@@ -7611,6 +7673,8 @@ func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
 }
 
 // Returns the function with a flag indicating it is an agent middleware.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Function) WithAgent() *Function {
 	q := r.query.Select("withAgent")
 
@@ -10787,6 +10851,8 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 // Reconstruct a spawned agent from its runtime handle.
 //
 // This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLM) Agent(handle string, name string) *Agent {
 	q := r.query.Select("agent")
 	q = q.Arg("handle", handle)
@@ -11066,6 +11132,8 @@ type LLMSpawnOpts struct {
 // Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
 //
 // Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	q := r.query.Select("spawn")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -11652,6 +11720,8 @@ func (r *LLMMessage) MarshalJSON() ([]byte, error) {
 // Who put this message on the record, when it arrived through an agent mailbox.
 //
 // Null for the user's own prompts and for everything the model or tools produced.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessage) Origin(ctx context.Context) (*LLMMessageOrigin, error) {
 	q := r.query.Select("origin")
 
@@ -11698,6 +11768,8 @@ func (r *LLMMessage) AsNode() Node {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // The recorded provenance of a message that arrived through an agent mailbox.
 type LLMMessageOrigin struct {
 	query *querybuilder.Selection
@@ -11717,6 +11789,8 @@ func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessa
 }
 
 // The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessageOrigin) AgentHandle(ctx context.Context) (string, error) {
 	if r.agentHandle != nil {
 		return *r.agentHandle, nil
@@ -11730,6 +11804,8 @@ func (r *LLMMessageOrigin) AgentHandle(ctx context.Context) (string, error) {
 }
 
 // The display name of the agent behind agentHandle.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessageOrigin) AgentName(ctx context.Context) (string, error) {
 	if r.agentName != nil {
 		return *r.agentName, nil
@@ -11783,6 +11859,8 @@ func (r *LLMMessageOrigin) MarshalJSON() ([]byte, error) {
 }
 
 // Who put this message on the record.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -11796,6 +11874,8 @@ func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, erro
 }
 
 // The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
@@ -11809,6 +11889,8 @@ func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
 }
 
 // The ref of the message this one answers, in the sender's own runtime, if any.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *LLMMessageOrigin) ReplyTo(ctx context.Context) (string, error) {
 	if r.replyTo != nil {
 		return *r.replyTo, nil
@@ -17085,6 +17167,8 @@ type WorkspaceAgentsOpts struct {
 }
 
 // Return all agent middlewares from modules loaded in the workspace.
+//
+// Experimental: Agent APIs are likely to change.
 func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	q := r.query.Select("agents")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -19278,6 +19362,8 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 	}
 }
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // How a message landed in an agent's evaluation.
 type AgentMessageDelivery string
 
@@ -19342,6 +19428,8 @@ const (
 	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
 )
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // Computed lifecycle state of an agent.
 type AgentState string
 
@@ -20107,6 +20195,8 @@ const (
 	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
 )
 
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
 // Who put a message on the conversation record.
 type LLMMessageOriginKind string
 

@@ -139,6 +139,10 @@ defmodule Dagger.Function do
 
   @doc """
   Returns the function with a flag indicating it is an agent middleware.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
   """
   @spec with_agent(t()) :: Dagger.Function.t()
   def with_agent(%__MODULE__{} = function) do

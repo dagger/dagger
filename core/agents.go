@@ -60,6 +60,10 @@ func (*AgentMiddlewareGroup) Type() *ast.Type {
 	}
 }
 
+func (*AgentMiddlewareGroup) TypeDescription() string {
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\nA group of agent middlewares composable onto a base LLM."
+}
+
 func (r *AgentMiddlewareGroup) List() []*AgentMiddleware {
 	return r.Agents
 }
@@ -132,6 +136,10 @@ func (*AgentMiddleware) Type() *ast.Type {
 		NamedType: "AgentMiddleware",
 		NonNull:   true,
 	}
+}
+
+func (*AgentMiddleware) TypeDescription() string {
+	return "EXPERIMENTAL: Agent APIs are likely to change.\n\nAn agent middleware contributed by a module."
 }
 
 func (a *AgentMiddleware) Path() []string {

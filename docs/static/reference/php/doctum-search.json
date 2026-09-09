@@ -30,7 +30,7 @@
 			"t": "C",
 			"n": "Dagger\\Agent",
 			"p": "Dagger/Agent.html",
-			"d": "<p>A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.</p>",
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -50,7 +50,7 @@
 			"t": "C",
 			"n": "Dagger\\AgentMessage",
 			"p": "Dagger/AgentMessage.html",
-			"d": "<p>A message delivered to an agent's mailbox.</p>",
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -60,7 +60,7 @@
 			"t": "C",
 			"n": "Dagger\\AgentMiddleware",
 			"p": "Dagger/AgentMiddleware.html",
-			"d": null,
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -70,7 +70,7 @@
 			"t": "C",
 			"n": "Dagger\\AgentMiddlewareGroup",
 			"p": "Dagger/AgentMiddlewareGroup.html",
-			"d": null,
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1250,7 +1250,7 @@
 			"t": "C",
 			"n": "Dagger\\LLMMessageOrigin",
 			"p": "Dagger/LLMMessageOrigin.html",
-			"d": "<p>The recorded provenance of a message that arrived through an agent mailbox.</p>",
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1260,7 +1260,7 @@
 			"t": "C",
 			"n": "Dagger\\LLMMessageOriginInput",
 			"p": "Dagger/LLMMessageOriginInput.html",
-			"d": "<p>The provenance of a message delivered through an agent mailbox.</p>",
+			"d": "<p>EXPERIMENTAL: Agent APIs are likely to change.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"

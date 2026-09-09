@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * The provenance of a message delivered through an agent mailbox.
  */
 class LLMMessageOriginInput extends Client\AbstractInputObject
