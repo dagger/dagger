@@ -39,21 +39,21 @@ type containerStoredPart struct {
 	Services   ServiceBindings
 }
 
-func (ctr *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	if ctr == nil {
+func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	lazy := ctr.lazyOpForRouting()
-	metadata, err := ctr.encodeContainerMetadata(ctx, cache)
+	lazy := container.lazyOpForRouting()
+	metadata, err := container.encodeContainerMetadata(cache)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
-	pending, parts, links, err := ctr.encodeContainerParts(ctx, cache, lazy)
+	pending, parts, links, err := container.encodeContainerParts(ctx, cache, lazy)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedContainerPayload{
-		Metadata: persistedContainerMetadata{Consumed: ctr.containerPartComputed(ctx, lazy, ContainerPartMetadata), Value: metadata},
+		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputed(ctx, lazy, ContainerPartMetadata), Value: metadata},
 		Parts:    parts,
 	}
 	if pending {
@@ -84,33 +84,33 @@ func containerStoredOpenGroup(part dagql.PartKey) dagql.LazyGroupKey {
 
 var _ dagql.HasLazyEvaluationReporting = (*Container)(nil)
 
-func (ctr *Container) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
-	if ctr == nil {
+func (container *Container) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
+	if container == nil {
 		return ""
 	}
 	part, ok := strings.CutPrefix(string(group), containerStoredOpenPrefix)
-	if ok && hasStoredContainerPart(ctr, dagql.PartKey(part)) {
+	if ok && hasStoredContainerPart(container, dagql.PartKey(part)) {
 		return dagql.PartKey(part)
 	}
 	return ""
 }
 
-func (ctr *Container) HasPendingLazyComputation() bool {
-	if ctr == nil {
+func (container *Container) HasPendingLazyComputation() bool {
+	if container == nil {
 		return false
 	}
-	lazy := ctr.lazyOpForRouting()
+	lazy := container.lazyOpForRouting()
 	if lazy == nil {
 		return false
 	}
 	// Current settled mappings inspect plain metadata only. Metadata consumption
 	// orders those reads after the metadata body; no context service is needed.
 	ctx := context.Background()
-	if !ctr.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
+	if !container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
 		return true
 	}
-	for _, part := range containerSnapshotParts(ctr) {
-		if !ctr.containerPartComputed(ctx, lazy, part) {
+	for _, part := range containerSnapshotParts(container) {
+		if !container.containerPartComputed(ctx, lazy, part) {
 			return true
 		}
 	}
@@ -222,8 +222,8 @@ func hasStoredContainerPart(ctr *Container, part dagql.PartKey) bool {
 // containerPartValue describes the container-owned value, without evaluating
 // an accessor or opening a snapshot. Stored descriptors remain authoritative
 // after opening, and after the restore operation has been cleared.
-func (ctr *Container) containerPartValue(part dagql.PartKey) (containerStoredPart, error) {
-	if stored, ok := ctr.storedParts[part]; ok {
+func (container *Container) containerPartValue(part dagql.PartKey) (containerStoredPart, error) {
+	if stored, ok := container.storedParts[part]; ok {
 		return stored, nil
 	}
 	var value containerStoredPart
@@ -232,16 +232,16 @@ func (ctr *Container) containerPartValue(part dagql.PartKey) (containerStoredPar
 	var snapshot bkcache.ImmutableRef
 	switch part {
 	case ContainerPartFS:
-		if ctr.FS != nil {
-			dir, _ = ctr.FS.Peek()
+		if container.FS != nil {
+			dir, _ = container.FS.Peek()
 		}
 		value.Kind, value.Role = containerPartDirectory, "fs"
 		if dir == nil {
 			return containerStoredPart{Kind: containerPartAbsent}, nil
 		}
 	case ContainerPartExecMeta:
-		if ctr.MetaSnapshot != nil {
-			snapshot, _ = ctr.MetaSnapshot.Peek()
+		if container.MetaSnapshot != nil {
+			snapshot, _ = container.MetaSnapshot.Peek()
 		}
 		value.Kind, value.Role = containerPartSnapshot, "meta"
 		if snapshot == nil {
@@ -253,7 +253,7 @@ func (ctr *Container) containerPartValue(part dagql.PartKey) (containerStoredPar
 			return value, fmt.Errorf("unknown container part %q", part)
 		}
 		found := false
-		for i, mnt := range ctr.Mounts {
+		for i, mnt := range container.Mounts {
 			if mnt.Target != target {
 				continue
 			}
@@ -297,20 +297,20 @@ func (ctr *Container) containerPartValue(part dagql.PartKey) (containerStoredPar
 	return value, nil
 }
 
-func (ctr *Container) encodeContainerParts(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
+func (container *Container) encodeContainerParts(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
 	parts := make(map[dagql.PartKey]persistedContainerPart)
-	if !ctr.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
+	if !container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
 		return true, parts, nil, nil
 	}
 	pending := false
 	var links []dagql.PersistedSnapshotRefLink
-	for _, part := range containerSnapshotParts(ctr) {
-		if !ctr.containerPartComputed(ctx, lazy, part) {
+	for _, part := range containerSnapshotParts(container) {
+		if !container.containerPartComputed(ctx, lazy, part) {
 			parts[part] = persistedContainerPart{Kind: containerPartPending}
 			pending = true
 			continue
 		}
-		value, err := ctr.containerPartValue(part)
+		value, err := container.containerPartValue(part)
 		if err != nil {
 			return false, nil, nil, err
 		}
@@ -337,7 +337,9 @@ func (ctr *Container) encodeContainerParts(ctx context.Context, cache dagql.Pers
 // joint completion from shared group consumption at quiescent flush. Decode
 // maps completed entries only; pending targets may have an ordinary demand
 // error, and remain attached to their original recipe.
-func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Server, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
+//
+//nolint:gocyclo // Validate every part and restore its shared recipe state before publication.
+func (container *Container) installContainerParts(ctx context.Context, dag *dagql.Server, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
 	if !metadataConsumed {
 		if len(parts) != 0 {
 			return fmt.Errorf("container with pending metadata has snapshot part records")
@@ -345,7 +347,7 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 		if recipe == nil {
 			return fmt.Errorf("container with pending metadata has no recipe")
 		}
-		ctr.Lazy = recipe
+		container.Lazy = recipe
 		return nil
 	}
 	var refined LazyContainerParts
@@ -360,7 +362,7 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 		statePtr = refined.ContainerLazyState()
 	}
 	statePtr.seedConsumedGroups(ContainerLazyGroupMetadata)
-	expected := containerSnapshotParts(ctr)
+	expected := containerSnapshotParts(container)
 	if len(parts) != len(expected) {
 		return fmt.Errorf("container part records do not match metadata")
 	}
@@ -371,7 +373,7 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 		}
 		byRole[link.Role] = link.RefKey
 	}
-	ctr.storedParts = make(map[dagql.PartKey]containerStoredPart, len(parts))
+	container.storedParts = make(map[dagql.PartKey]containerStoredPart, len(parts))
 	needsOp := false
 	for _, part := range expected {
 		record, found := parts[part]
@@ -391,7 +393,7 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 			kind, role = containerPartDirectory, "fs"
 		case ContainerPartExecMeta:
 		default:
-			for i, mnt := range ctr.Mounts {
+			for i, mnt := range container.Mounts {
 				if ContainerPartMount(mnt.Target) != part {
 					continue
 				}
@@ -428,7 +430,7 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 			needsOp = true
 		}
 		if refined != nil {
-			groups, err := refined.ContainerLazyGroups(ctx, ctr, []dagql.PartKey{part})
+			groups, err := refined.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
 			if err != nil {
 				return fmt.Errorf("map completed container part %q: %w", part, err)
 			}
@@ -437,10 +439,10 @@ func (ctr *Container) installContainerParts(ctx context.Context, dag *dagql.Serv
 			}
 			statePtr.seedConsumedGroups(groups[0])
 		}
-		ctr.storedParts[part] = value
+		container.storedParts[part] = value
 	}
 	if needsOp {
-		ctr.Lazy = &ContainerRestoreLazy{LazyState: statePtr, recipe: refined}
+		container.Lazy = &ContainerRestoreLazy{LazyState: statePtr, recipe: refined}
 	}
 	return nil
 }
@@ -461,8 +463,8 @@ func (lazy *ContainerRestoreLazy) EvaluateContainerGroup(ctx context.Context, ct
 	return lazy.recipe.EvaluateContainerGroup(ctx, ctr, group)
 }
 
-func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.PartKey) error {
-	stored, ok := ctr.storedParts[part]
+func (container *Container) openStoredContainerPart(ctx context.Context, part dagql.PartKey) error {
+	stored, ok := container.storedParts[part]
 	if !ok {
 		return fmt.Errorf("container part %q has no stored value", part)
 	}
@@ -474,15 +476,15 @@ func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.Pa
 	var publish func(bkcache.ImmutableRef)
 	switch stored.Kind {
 	case containerPartSnapshot:
-		if part != ContainerPartExecMeta || ctr.MetaSnapshot == nil {
+		if part != ContainerPartExecMeta || container.MetaSnapshot == nil {
 			return fmt.Errorf("invalid stored snapshot part %q", part)
 		}
-		publish = ctr.MetaSnapshot.setValue
+		publish = container.MetaSnapshot.setValue
 	case containerPartDirectory:
-		dest := ctr.FS
+		dest := container.FS
 		if part != ContainerPartFS {
 			target, ok := strings.CutPrefix(string(part), containerPartMountPrefix)
-			mnt := ctr.mountAt(target)
+			mnt := container.mountAt(target)
 			if !ok || mnt == nil {
 				return fmt.Errorf("invalid stored directory part %q", part)
 			}
@@ -503,7 +505,7 @@ func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.Pa
 		}
 	case containerPartFile:
 		target, ok := strings.CutPrefix(string(part), containerPartMountPrefix)
-		mnt := ctr.mountAt(target)
+		mnt := container.mountAt(target)
 		if !ok || mnt == nil || mnt.FileSource == nil {
 			return fmt.Errorf("invalid stored file part %q", part)
 		}
@@ -532,6 +534,6 @@ func (ctr *Container) openStoredContainerPart(ctx context.Context, part dagql.Pa
 		return fmt.Errorf("open stored container part %q: %w", part, err)
 	}
 	publish(ref)
-	ctr.recordPartDiagnostic("storedOpen", part)
+	container.recordPartDiagnostic("storedOpen", part)
 	return nil
 }
