@@ -178,9 +178,9 @@ func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML st
 func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("git refs accept the same separators in sources and settings", func(ctx context.Context, t *testctx.T) {
+	t.Run("git refs accept at separators in sources and settings", func(ctx context.Context, t *testctx.T) {
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.wolfi]
-source = "https://github.com/dagger/dagger/modules/wolfi#v0.20.2"
+source = "https://github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
 [modules.superconstructor]
 source = "defaults/superconstructor"
