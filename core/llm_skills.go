@@ -232,7 +232,7 @@ type directorySkillSource struct {
 }
 
 func (s directorySkillSource) enumerate(ctx context.Context) (map[string]discoveredSkill, error) {
-	srv, err := s.m.Server(ctx)
+	srv, err := s.m.baseServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (s directorySkillSource) read(ctx context.Context, name, rel string) (strin
 		return "", errSkillNotFound
 	}
 	rel = skillFilePath(rel)
-	srv, err := s.m.Server(ctx)
+	srv, err := s.m.baseServer(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -279,7 +279,7 @@ func (s workspaceSkillSource) enumerate(ctx context.Context) (map[string]discove
 	if s.m.workspace.Self() == nil {
 		return nil, nil
 	}
-	srv, err := s.m.Server(ctx)
+	srv, err := s.m.baseServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (strin
 		return "", errSkillNotFound
 	}
 	rel = skillFilePath(rel)
-	srv, err := s.m.Server(ctx)
+	srv, err := s.m.baseServer(ctx)
 	if err != nil {
 		return "", err
 	}

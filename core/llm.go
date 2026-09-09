@@ -1128,7 +1128,7 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	// binds currentWorkspace at session start, agent composition seeds the base
 	// from the workspace the group was rolled up from, and a module function
 	// returning an LLM threads a Workspace it was handed. An unbound LLM is
-	// valid — MCP.Server falls back to the current client's served deps —
+	// valid — MCP.baseServer falls back to the current client's served deps —
 	// so nothing here depends on the calling context's ambient workspace.
 	_ = ctx
 	return &LLM{

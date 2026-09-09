@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"dagger/reader/internal/dagger"
 )
@@ -19,4 +21,19 @@ func New(
 
 func (m *Reader) Read(ctx context.Context) (string, error) {
 	return m.Source.File("workspace-marker.txt").Contents(ctx)
+}
+
+// CheckMarker asserts the +defaultPath context resolved from the consuming
+// workspace root ("from workspace root", the marker the legacy-default-path
+// tests write there) rather than this module's own source directory.
+// +check
+func (m *Reader) CheckMarker(ctx context.Context) error {
+	contents, err := m.Source.File("workspace-marker.txt").Contents(ctx)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(contents) != "from workspace root" {
+		return fmt.Errorf("unexpected marker: %q", contents)
+	}
+	return nil
 }
