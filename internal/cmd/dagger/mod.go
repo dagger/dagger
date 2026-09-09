@@ -78,7 +78,7 @@ func loadSDKSearchRegistry() ([]registryModule, error) {
 		mods = append(mods, registryModule{
 			Name:        entry.Name,
 			Description: entry.Description,
-			Repo:        entry.Repo,
+			Repo:        "dagger.io/sdk/" + entry.Name,
 			Aliases:     entry.Aliases,
 		})
 	}
