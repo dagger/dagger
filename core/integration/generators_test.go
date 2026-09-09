@@ -798,6 +798,7 @@ name = "project"
 
 		regenerated := initialized.
 			WithoutFile(moduleRoot + "/internal/dagger/sdk-module-max.gen.txt").
+			WithWorkdir("/work/apps/shop").
 			With(daggerNonNestedExec("generate", "-y"))
 		marker, err = regenerated.File(moduleRoot + "/internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
 		require.NoError(t, err)
