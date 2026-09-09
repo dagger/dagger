@@ -72,7 +72,7 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
-        { type: "doc", id: "guides/go/index", label: "Go" },
+        { type: "doc", id: "guides/go/index" },
       ],
     },
 

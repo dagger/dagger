@@ -13,7 +13,7 @@ Complete [Install](../../getting-started/install.mdx) before you start. The proj
 
 ## How the pieces fit together
 
-- **The Go module** is a reusable module from `github.com/dagger/go`. It finds every `go.mod` in the workspace and exposes Checks that test and lint each Go module, and a generator that runs `go generate`. It knows Go. It knows nothing about your project.
+- **The Go module** is a reusable module from `dagger.io/go`. It finds every `go.mod` in the workspace and exposes Checks that test and lint each Go module, and a generator that runs `go generate`. It knows Go. It knows nothing about your project.
 - **Settings** in `dagger.toml` tune the Go module. One of them, `base`, is the container it derives every Go command from.
 - **A test services module**, a few lines of [Dang](../../reference/sdks/dang.mdx), describes the services your tests need and how they are configured.
 - **Module wiring** points a setting at a function of your module. That is how the reusable module gets a project-specific container without anyone writing a custom test Check.
@@ -23,7 +23,7 @@ Most Go projects only need the first two. The last two are for projects whose te
 ## Install the Go module
 
 ```shell
-dagger install github.com/dagger/go
+dagger module install dagger.io/go
 ```
 
 The first install creates `dagger.toml` at the repository root and records the module in it. List the Checks the module added:
@@ -46,20 +46,14 @@ dagger check
 
 `go:test-all` runs `go test ./...` in every Go module it finds. Each Go test is reported as its own span, so a failure names the test that failed. `go:lint-all` runs a pinned `golangci-lint` and picks up the project's own `.golangci.*` config if it has one. `go:generate-all` is the drift check for the generator: it fails when `go generate` would change a committed file.
 
-To see individual tests, add verbosity:
-
-```shell
-dagger check go:test-all -vvv
-```
-
-Look at the summary line for skipped tests. A test that skips itself because a service is unavailable is not a failure, so the Check passes and reports `skipped` alongside `passed`. If that count is not zero, the project needs the second half of this guide.
+A test that skips itself because a service is unavailable is not a failure, so the Check passes and reports `skipped` alongside `passed`. If that count is not zero, the project needs the second half of this guide.
 
 ## Configure the Go module
 
 Most projects need no configuration. List the settings:
 
 ```shell
-dagger settings go
+dagger module settings go
 ```
 
 ```text
@@ -75,7 +69,7 @@ go      generate                  Module roots to run go generate in. Same selec
 Set a single value with the same command:
 
 ```shell
-dagger settings go version 1.26
+dagger module settings go version 1.26
 ```
 
 The settings that come up most often:
@@ -84,7 +78,7 @@ The settings that come up most often:
 - **`includeExtraFiles`**: files the tests need that the Go module does not detect on its own, such as fixtures kept outside `testdata/` or assets embedded with `go:embed`.
 - **`lint`, `test`, `generate`**: which Go modules each workflow covers, as path selectors. Use them in a monorepo to exclude a module from one workflow without excluding it from the others.
 
-List-valued settings are edited in `dagger.toml` directly:
+Settings are stored in `dagger.toml`, so they apply to everyone who uses the repository:
 
 ```toml
 [modules.go.settings]
@@ -93,7 +87,7 @@ includeExtraFiles = ["Makefile", "tools/**"]
 test = ["**", "!legacy-service"]
 ```
 
-Settings are stored in `dagger.toml`, so they apply to everyone who uses the repository. The [Go module reference](../../reference/modules/go.mdx) describes every setting. The rest of this guide is about `base`.
+The [Go module reference](../../reference/modules/go.mdx) describes every setting. The rest of this guide is about `base`.
 
 ## Run generators
 
@@ -107,7 +101,7 @@ Dagger shows the resulting changes as a changeset to review before applying them
 
 ## Give the tests the services they need
 
-End-to-end tests often need a database or another service running. The Go module does not know which services your tests need or how they should be configured, so it cannot start them. What it does accept is a base container, and a base container can have those services already attached.
+End-to-end tests often need a database or another service running, so the Go module needs to be given a test runtime that already has those services configured. That is what its `base` setting is for.
 
 Two conventions on the test side make this work without any Dagger-specific code in the project:
 
@@ -121,8 +115,8 @@ The rest of this section provides the container that sets the variable.
 Install the Dang SDK into the workspace, then create a module to hold the services:
 
 ```shell
-dagger sdk install dang
-dagger module init dang test-services
+dagger module install github.com/dagger/dang-sdk
+dagger module init dang --name test-services
 ```
 
 `dagger module init` creates the module at `.dagger/modules/test-services` and records it in `dagger.toml`. Replace its `main.dang` with two functions:
@@ -159,14 +153,14 @@ test-services:postgres   # A Postgres database for development and tests.
 A setting can hold a module reference instead of a literal value. `test-services:go-test-base` names the `test-services` module and its `go-test-base` function. Dagger calls the function when it loads the Go module and passes the result in as the setting's value.
 
 ```shell
-dagger settings go base test-services:go-test-base
+dagger module settings go base test-services:go-test-base
 ```
 
 `dagger.toml` now connects the two modules:
 
 ```toml
 [modules.go]
-source = "github.com/dagger/go"
+source = "dagger.io/go"
 
 [modules.test-services]
 source = ".dagger/modules/test-services"
@@ -178,7 +172,7 @@ base = "test-services:go-test-base"
 Run the tests again:
 
 ```shell
-dagger check go:test-all -vvv
+dagger check go:test-all
 ```
 
 The tests that skipped before now run, and the output gains a services section showing Postgres starting alongside them. The Go module still owns the test logic. The project's own code is two functions that describe its database, and `dagger.toml` connects them.
@@ -186,8 +180,8 @@ The tests that skipped before now run, and the output gains a services section s
 To prove the wiring is doing the work, remove it and run the tests once more:
 
 ```shell
-dagger settings -u go base
-dagger check go:test-all -vvv
+dagger module settings -u go base
+dagger check go:test-all
 ```
 
 The skipped count returns. Put the setting back before continuing.
