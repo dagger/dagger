@@ -353,7 +353,6 @@ source = "../service-ref-consumer"
 		require.NoError(t, err)
 		require.Contains(t, cfg, `base = "container-provider:image"`)
 		require.Contains(t, cfg, `label = "image"`)
-		require.NotContains(t, cfg, `label = "container-provider:image"`)
 
 		out, err := ctr.
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).

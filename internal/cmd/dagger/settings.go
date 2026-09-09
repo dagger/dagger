@@ -251,7 +251,7 @@ type workspaceSetting struct {
 // Only object-typed settings are candidates, so a string setting whose value
 // matches a function name is left alone.
 func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
-	if !setting.IsObject || !workspacepkg.IsBareModuleFunctionRef(value) {
+	if !setting.IsObject || !workspacepkg.IsShortFormModuleRef(value) {
 		return value, nil
 	}
 
@@ -288,9 +288,6 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 		Query:     workspaceModuleFunctionsQuery,
 		Variables: map[string]any{"module": entrypoint},
 	}, &dagger.Response{Data: &functions}); err != nil {
-		if isUnknownGraphQLFieldError(err) {
-			return value, nil
-		}
 		return "", err
 	}
 	want := gqlFieldName(value)

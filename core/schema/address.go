@@ -30,7 +30,8 @@ type moduleRefCycleKey struct{}
 //   - A long-form candidate contains EXACTLY one ":" with non-empty parts on
 //     both sides. Strings containing "://" (URL-ish, e.g. "tcp://...") are
 //     never module refs.
-//   - A short-form candidate is a bare name, committed only if the entrypoint
+//   - A short-form candidate has no ":" or "/" and no leading "." (see
+//     workspace.IsShortFormModuleRef). It is committed only if the entrypoint
 //     has that function; otherwise it keeps its ordinary address meaning.
 //   - The first segment is normalized to a gql field name and looked up on the
 //     canonical Query root's object type (the sugared root omits the
@@ -59,7 +60,7 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	switch {
 	case !ok:
 		// Short form: resolve "<function>" as "<entrypoint>:<function>".
-		if !workspace.IsBareModuleFunctionRef(addr) {
+		if !workspace.IsShortFormModuleRef(addr) {
 			return false, nil
 		}
 		entrypoint, found := workspaceEntrypointModuleName(ctx)
@@ -199,7 +200,7 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 // err reports the load outcome and srv is the refreshed schema served to the
 // current client (which now carries the module as a root field).
 func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Server, installed bool, err error) {
-	cfg, ws, ok := currentWorkspaceConfig(ctx)
+	q, ws, cfg, ok := currentWorkspaceConfig(ctx)
 	if !ok {
 		return nil, false, nil
 	}
@@ -228,10 +229,6 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	// the recorded error here without reloading, and ModTree runs nodes
 	// without fail-fast — so only the node that genuinely needs the broken
 	// module fails, and repair generators keep running.
-	q, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, true, err
-	}
 	if _, err := q.Server.EnsureWorkspaceModules(ctx, []string{name}, false); err != nil {
 		return nil, true, err
 	}
@@ -246,27 +243,27 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	return srv, true, nil
 }
 
-// currentWorkspaceConfig returns the workspace config visible to the current
-// query, or ok=false when there is none (errors are deliberately discarded).
-func currentWorkspaceConfig(ctx context.Context) (cfg *workspace.Config, ws *core.Workspace, ok bool) {
-	q, _ := core.CurrentQuery(ctx)
+// currentWorkspaceConfig returns the current query with its workspace and
+// config, or ok=false when there is none (errors are deliberately discarded).
+func currentWorkspaceConfig(ctx context.Context) (q *core.Query, ws *core.Workspace, cfg *workspace.Config, ok bool) {
+	q, _ = core.CurrentQuery(ctx)
 	if q == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	ws, _ = q.Server.CurrentWorkspace(ctx)
 	if ws == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	cfg, _ = workspaceConfigWithCompatFallback(ctx, ws)
 	if cfg == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	return cfg, ws, true
+	return q, ws, cfg, true
 }
 
 // workspaceEntrypointModuleName returns the install name of the entrypoint module.
 func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
-	cfg, _, ok := currentWorkspaceConfig(ctx)
+	_, _, cfg, ok := currentWorkspaceConfig(ctx)
 	if !ok {
 		return "", false
 	}

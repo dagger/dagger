@@ -170,48 +170,63 @@ func (s *workspaceSchema) workspaceModule(
 	}, nil
 }
 
-// workspaceModuleEntry resolves the effective (overlay-merged) config entry
-// behind a WorkspaceModule result, with its owning workspace and config directory.
-func (s *workspaceSchema) workspaceModuleEntry(
+// loadWorkspaceModule loads the module behind a WorkspaceModule
+// result, with the effective (overlay-merged) workspace config. mod is nil
+// when the config entry has no source.
+func (s *workspaceSchema) loadWorkspaceModule(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.WorkspaceModule],
-) (ws *core.Workspace, effectiveCfg *workspace.Config, entry workspace.ModuleEntry, configDir string, err error) {
+) (mod *core.Module, effectiveCfg *workspace.Config, err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, nil, entry, "", err
+		return nil, nil, err
 	}
 
 	// modules creates WorkspaceModule results from Workspace.__workspaceModule,
 	// so the DagQL receiver is the workspace that owns this module entry.
 	receiver, err := parent.Receiver(ctx, srv)
 	if err != nil {
-		return nil, nil, entry, "", err
+		return nil, nil, err
 	}
 	wsResult, ok := receiver.(dagql.ObjectResult[*core.Workspace])
 	if !ok {
-		return nil, nil, entry, "", fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
+		return nil, nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
 	}
-	ws = wsResult.Self()
+	ws := wsResult.Self()
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
-		return nil, nil, entry, "", err
+		return nil, nil, err
 	}
 
+	// Values come from the user-level overlay and the selected env overlay,
+	// merged in the same order as module loading. The entry lookup is also
+	// effective so modules an overlay itself adds resolve their settings.
 	effectiveCfg, err = effectiveWorkspaceConfig(ctx, ws, cfg)
 	if err != nil {
-		return nil, nil, entry, "", err
+		return nil, nil, err
 	}
 
-	entry, ok = effectiveCfg.Modules[parent.Self().Name]
+	entry, ok := effectiveCfg.Modules[parent.Self().Name]
 	if !ok {
-		return nil, nil, entry, "", fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
+		return nil, nil, fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
+	}
+	if entry.Source == "" {
+		return nil, effectiveCfg, nil
 	}
 
-	configDir, err = workspaceConfigDirectory(ws)
+	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
-		return nil, nil, entry, "", err
+		return nil, nil, err
 	}
-	return ws, effectiveCfg, entry, configDir, nil
+	ctx, srv, err = workspaceSettingsHintIntrospectionContext(ctx, ws)
+	if err != nil {
+		return nil, nil, err
+	}
+	mod, err = introspectWorkspaceModule(ctx, srv, ws, configDir, entry.Source)
+	if err != nil {
+		return nil, nil, fmt.Errorf("introspect module %q: %w", parent.Self().Name, err)
+	}
+	return mod, effectiveCfg, nil
 }
 
 func (s *workspaceSchema) moduleSettings(
@@ -219,22 +234,12 @@ func (s *workspaceSchema) moduleSettings(
 	parent dagql.ObjectResult[*core.WorkspaceModule],
 	_ struct{},
 ) ([]*core.WorkspaceModuleSetting, error) {
-	ws, effectiveCfg, entry, configDir, err := s.workspaceModuleEntry(ctx, parent)
+	mod, effectiveCfg, err := s.loadWorkspaceModule(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	if entry.Source == "" {
+	if mod == nil {
 		return nil, nil
-	}
-
-	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-
-	mod, err := introspectWorkspaceModule(ctx, srv, ws, configDir, entry.Source)
-	if err != nil {
-		return nil, fmt.Errorf("discover settings for module %q: %w", parent.Self().Name, err)
 	}
 	hints := constructorHintsFromModule(mod)
 
@@ -266,29 +271,11 @@ func (s *workspaceSchema) moduleFunctions(
 	parent dagql.ObjectResult[*core.WorkspaceModule],
 	_ struct{},
 ) (dagql.Array[dagql.String], error) {
-	ws, _, entry, configDir, err := s.workspaceModuleEntry(ctx, parent)
+	mod, _, err := s.loadWorkspaceModule(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	if entry.Source == "" {
-		return dagql.Array[dagql.String]{}, nil
-	}
-
-	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-
-	mod, err := introspectWorkspaceModule(ctx, srv, ws, configDir, entry.Source)
-	if err != nil {
-		return nil, fmt.Errorf("discover functions for module %q: %w", parent.Self().Name, err)
-	}
-	names := mainObjectFunctionNames(mod)
-	result := make(dagql.Array[dagql.String], 0, len(names))
-	for _, name := range names {
-		result = append(result, dagql.String(name))
-	}
-	return result, nil
+	return dagql.NewStringArray(mainObjectFunctionNames(mod)...), nil
 }
 
 // introspectWorkspaceModule loads the module behind a config entry's source.

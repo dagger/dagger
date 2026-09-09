@@ -94,9 +94,6 @@ func mainObjectFunctionNames(mod *core.Module) []string {
 	}
 	names := make([]string, 0, len(mainObj.Functions))
 	for _, fn := range mainObj.Functions {
-		if fn.Self() == nil {
-			continue
-		}
 		names = append(names, fn.Self().Name)
 	}
 	sort.Strings(names)
