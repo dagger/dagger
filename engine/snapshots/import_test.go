@@ -3,11 +3,8 @@ package snapshots_test
 import (
 	"bytes"
 	"context"
-
 	"errors"
 	"fmt"
-	"github.com/dagger/dagger/internal/buildkit/client"
-	digest "github.com/opencontainers/go-digest"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -21,7 +18,9 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -82,12 +81,13 @@ func TestImportChainSameManager(t *testing.T) {
 			ctx := context.Background()
 			store := testutil.NewStore(t)
 			var parent bkcache.ImmutableRef
-			if root == "scratch" {
+			switch root {
+			case "scratch":
 				var err error
 				parent, err = store.Manager.Scratch(ctx)
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, parent.Release(ctx)) })
-			} else if root == "empty" {
+			case "empty":
 				parent, _ = store.Build(t, nil, "", "")
 			}
 			a, _ := store.Build(t, parent, "a.txt", "same manager")
