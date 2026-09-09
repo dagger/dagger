@@ -122,7 +122,7 @@ name = "my-module"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/java-sdk/runtime"
+source = "dagger.io/sdk/java/runtime"
 ```
 
 The workspace's `dagger.toml` records the SDK under `sdks.java` and records the module path as one of its scopes. That scope is how the Java SDK discovers which modules to generate. You never write the files under `sdk/` and `src/generated/` by hand; see [Regenerate the SDK and entrypoint](#regenerate-bindings-and-generated-files).
@@ -817,7 +817,7 @@ name = "dev"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/java-sdk/runtime"
+source = "dagger.io/sdk/java/runtime"
 
 [[dependencies]]
 name = "golang"

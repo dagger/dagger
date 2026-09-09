@@ -116,7 +116,7 @@ name = "my-module"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/elixir-sdk/runtime"
+source = "dagger.io/sdk/elixir/runtime"
 ```
 
 Elixir has no built-in engine runtime, so `runtime.source` points at the Elixir SDK's own runtime module. That runtime compiles your module in an `elixir:*-alpine` container and runs `mix dagger.entrypoint.invoke <ModuleName>`. The workspace's `dagger.toml` records the SDK under `sdks.elixir` and records the module path as one of its scopes. Elixir binding generation uses that scope to discover the module. Nobody writes the files in `dagger_sdk/` by hand; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
@@ -583,7 +583,7 @@ name = "dev"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/elixir-sdk/runtime"
+source = "dagger.io/sdk/elixir/runtime"
 
 [[dependencies]]
 name = "hello"
