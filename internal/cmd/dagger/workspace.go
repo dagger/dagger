@@ -38,83 +38,11 @@ a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
-applies a named overlay; dagger.toml is the source of truth.
-
-Run with no subcommand to print a digest of workspace state (cwd, root,
-current remote, installed modules summary).`,
+applies a named overlay; dagger.toml is the source of truth.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
 	Args: cobra.NoArgs,
-	RunE: runWorkspaceDigest,
-}
-
-// runWorkspaceDigest prints a one-shot summary of the current workspace:
-// cwd, root, selected remote, all selectable remotes, and a brief list of
-// installed modules. Bound to bare `dagger workspace` invocation; replaces
-// the briefly-considered `dagger status` verb.
-func runWorkspaceDigest(cmd *cobra.Command, _ []string) error {
-	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
-	}, func(ctx context.Context, engineClient *client.Client) error {
-		dag := engineClient.Dagger()
-		ws := dag.CurrentWorkspace()
-		out := cmd.OutOrStdout()
-
-		cwd, err := ws.Cwd(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace cwd: %w", err)
-		}
-		address, err := ws.Address(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace address: %w", err)
-		}
-		root, err := workspaceRootFromAddress(address, cwd)
-		if err != nil {
-			return err
-		}
-		configFile, err := ws.ConfigFile(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace config file: %w", err)
-		}
-		if configFile == "" {
-			configFile = "none"
-		}
-
-		fmt.Fprintf(out, "cwd:     %s\n", cwd)
-		fmt.Fprintf(out, "root:    %s\n", root)
-		fmt.Fprintf(out, "config:  %s\n", configFile)
-
-		// Remote info — best-effort; an unconfigured remote is normal.
-		if _, remote, err := selectedRemoteWorkspaceAddress(ctx, "workspace"); err == nil && remote != "" {
-			fmt.Fprintf(out, "remote:  %s\n", remote)
-		}
-
-		// Modules summary.
-		var res struct {
-			CurrentWorkspace struct {
-				Modules []struct {
-					Name   string
-					Source string
-				}
-			}
-		}
-		if err := dag.Do(ctx, &dagger.Request{
-			Query: `query { currentWorkspace { modules { name source } } }`,
-		}, &dagger.Response{Data: &res}); err != nil {
-			return fmt.Errorf("list installed modules: %w", err)
-		}
-		mods := res.CurrentWorkspace.Modules
-		if len(mods) == 0 {
-			fmt.Fprintln(out, "modules: (none installed)")
-			return nil
-		}
-		fmt.Fprintln(out, "modules:")
-		for _, m := range mods {
-			fmt.Fprintf(out, "  %s (%s)\n", m.Name, m.Source)
-		}
-		return nil
-	})
 }
 
 var workspaceRootCmd = &cobra.Command{

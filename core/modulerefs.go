@@ -149,6 +149,7 @@ func (p *ParsedGitRefString) SetVersion(version string) error {
 	}
 	p.ModVersion = version
 	p.HasVersion = true
+	p.Selector = gitref.ModuleVersionSelector
 	return nil
 }
 
@@ -166,12 +167,7 @@ func (p *ParsedGitRefString) GitRef(
 		return selector
 	}
 
-	versionQuery := ""
-	if p.HasVersion && Supports(ctx, workspace.VersionQueriesVersion) {
-		if IsReleaseVersionQuery(p.ModVersion) {
-			versionQuery = p.ModVersion
-		}
-	}
+	versionQuery := p.versionQuery(ctx)
 
 	repoSelector := dagql.Selector{
 		Field: "git",
@@ -237,6 +233,15 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	return gitRef, nil
+}
+
+func (p *ParsedGitRefString) versionQuery(ctx context.Context) string {
+	if p.Selector == gitref.ModuleVersionSelector &&
+		Supports(ctx, workspace.VersionQueriesVersion) &&
+		IsReleaseVersionQuery(p.ModVersion) {
+		return p.ModVersion
+	}
+	return ""
 }
 
 func moduleGitDefaultRefSelector(

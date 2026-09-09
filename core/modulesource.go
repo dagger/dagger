@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -436,15 +437,16 @@ func (src *ModuleSource) AttachDependencyResults(
 }
 
 type persistedGitModuleSourcePayload struct {
-	CloneRef     string `json:"cloneRef,omitempty"`
-	Symbolic     string `json:"symbolic,omitempty"`
-	HTMLRepoURL  string `json:"htmlRepoURL,omitempty"`
-	HTMLURL      string `json:"htmlURL,omitempty"`
-	RepoRootPath string `json:"repoRootPath,omitempty"`
-	Version      string `json:"version,omitempty"`
-	VersionQuery string `json:"versionQuery,omitempty"`
-	Commit       string `json:"commit,omitempty"`
-	Ref          string `json:"ref,omitempty"`
+	CloneRef     string              `json:"cloneRef,omitempty"`
+	Symbolic     string              `json:"symbolic,omitempty"`
+	HTMLRepoURL  string              `json:"htmlRepoURL,omitempty"`
+	HTMLURL      string              `json:"htmlURL,omitempty"`
+	RepoRootPath string              `json:"repoRootPath,omitempty"`
+	Version      string              `json:"version,omitempty"`
+	VersionQuery string              `json:"versionQuery,omitempty"`
+	Selector     gitref.SelectorType `json:"selector,omitempty"`
+	Commit       string              `json:"commit,omitempty"`
+	Ref          string              `json:"ref,omitempty"`
 }
 
 type persistedDirModuleSourcePayload struct {
@@ -887,6 +889,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			RepoRootPath: src.Git.RepoRootPath,
 			Version:      src.Git.Version,
 			VersionQuery: src.Git.VersionQuery,
+			Selector:     src.Git.Selector,
 			Commit:       src.Git.Commit,
 			Ref:          src.Git.Ref,
 		}
@@ -983,6 +986,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			RepoRootPath: persisted.Git.RepoRootPath,
 			Version:      persisted.Git.Version,
 			VersionQuery: persisted.Git.VersionQuery,
+			Selector:     persisted.Git.Selector,
 			Commit:       persisted.Git.Commit,
 			Ref:          persisted.Git.Ref,
 		}
@@ -1028,6 +1032,9 @@ func (src *ModuleSource) AsString() string {
 		version := src.Git.VersionQuery
 		if version == "" {
 			version = src.Git.Version
+		}
+		if src.Git.Selector == gitref.GitRefSelector {
+			return gitref.GitURLRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
 		}
 		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
 
@@ -2047,6 +2054,10 @@ type GitModuleSource struct {
 
 	// The version query used to select Version.
 	VersionQuery string
+
+	// Selector preserves whether the source used @ version-query semantics or
+	// literal #ref:subpath Git URL semantics.
+	Selector gitref.SelectorType
 
 	// The resolved commit hash of the source
 	Commit string

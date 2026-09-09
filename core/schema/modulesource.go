@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
@@ -782,7 +783,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
 	versionQuery := ""
-	if core.Supports(ctx, workspace.VersionQueriesVersion) && core.IsReleaseVersionQuery(parsed.ModVersion) {
+	if parsed.Selector == gitref.ModuleVersionSelector && core.Supports(ctx, workspace.VersionQueriesVersion) && core.IsReleaseVersionQuery(parsed.ModVersion) {
 		versionQuery = parsed.ModVersion
 	}
 
@@ -795,6 +796,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			RepoRootPath: parsed.RepoRoot.Root,
 			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
 			VersionQuery: versionQuery,
+			Selector:     parsed.Selector,
 			Commit:       gitRef.Self().Ref.SHA,
 			Ref:          gitRef.Self().Ref.Name,
 			CloneRef:     parsed.SourceCloneRef,
