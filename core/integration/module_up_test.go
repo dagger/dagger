@@ -1,6 +1,6 @@
 package core
 
-// These tests cover `dagger call ... up` and `dagger shell ... up` for module
+// These tests cover `dagger call ... up` and `dagger script ... up` for module
 // functions that return containers or services. They verify endpoint discovery,
 // port mapping, and serving module results for local development.
 //
@@ -84,7 +84,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 			name:         "shell container port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23104",
-			daggerArgs:   []string{"-m", ".", "shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
+			daggerArgs:   []string{"-m", ".", "script", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{

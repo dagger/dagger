@@ -39,16 +39,16 @@ var (
 func shellAddFlags(cmd *cobra.Command) {
 	// -c stays ungated: on the root command it is how a user reaches the shell
 	// at all, so the root usage message must keep naming it.
-	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
+	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a Dagger script")
 
 	// The model is an engine session parameter.
 	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')")
 	setFlagCapabilities(cmd.Flags().Lookup("model"), mayCallEngine)
 }
 
-var shellCmd = &cobra.Command{
-	Use:   "shell [options] [file...]",
-	Short: "Run an interactive dagger shell",
+var scriptCmd = &cobra.Command{
+	Use:   "script [options] [file...]",
+	Short: "Run Dagger scripts or start the interactive interpreter",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
@@ -263,14 +263,14 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// Example: `dagger shell -c 'container | workdir'`
+	// Example: `dagger script -c 'container | workdir'`
 	if shellCode != "" {
 		return h.run(ctx, strings.NewReader(shellCode), "")
 	}
 
 	// Use stdin only when no file paths are provided
 	if len(args) == 0 {
-		// Example: `dagger shell`
+		// Example: `dagger script`
 		//
 		// Go interactive when stdin is a terminal, or when the TUI console
 		// (DAGGER_TUI_CONSOLE) is serving the prompt over HTTP -- there the
@@ -279,11 +279,11 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		if isatty.IsTerminal(os.Stdin.Fd()) || os.Getenv("DAGGER_TUI_CONSOLE") != "" {
 			return h.runInteractive(ctx)
 		}
-		// Example: `echo 'container | workdir' | dagger shell`
+		// Example: `echo 'container | workdir' | dagger script`
 		return h.run(ctx, os.Stdin, "-")
 	}
 
-	// Example: `dagger shell job1.dsh job2.dsh`
+	// Example: `dagger script job1.dsh job2.dsh`
 	for _, path := range args {
 		if err := h.runPath(ctx, path); err != nil {
 			return err
@@ -299,7 +299,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		interp.CallHandler(h.Call),
 		interp.ExecHandlers(h.Exec),
 
-		// The "Interactive" option is useful even when not running dagger shell
+		// The "Interactive" option is useful even when not running dagger script
 		// in interactive mode. It expands aliases and maybe more in the future.
 		interp.Interactive(true),
 	)

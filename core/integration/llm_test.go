@@ -1,7 +1,7 @@
 package core
 
 // These tests cover module functions that call Dagger's LLM API. They verify
-// direct calls, `dagger shell` argument handling, API limit errors, and the
+// direct calls, `dagger script` argument handling, API limit errors, and the
 // `--allow-llm` permission gate.
 
 import (
@@ -646,7 +646,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "shell", "-m", indirectModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "-m", indirectModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).
@@ -656,7 +656,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "shell", "--allow-llm", directModuleSymbolic}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "--allow-llm", directModuleSymbolic}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).

@@ -109,8 +109,8 @@ func init() {
 
 	moduleAddFlags(mcpCmd, mcpCmd.PersistentFlags(), true)
 
-	moduleAddFlags(shellCmd, shellCmd.PersistentFlags(), true)
-	shellAddFlags(shellCmd)
+	moduleAddFlags(scriptCmd, scriptCmd.PersistentFlags(), true)
+	shellAddFlags(scriptCmd)
 	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
