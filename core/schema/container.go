@@ -1671,6 +1671,7 @@ func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectR
 		var ctr dagql.ObjectResult[*core.Container]
 		if err := srv.Select(ctx, parent, &ctr, dagql.Selector{
 			Field: "withExec",
+			View:  "v0.12.0",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "args",
@@ -1712,6 +1713,7 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 		var ctr dagql.ObjectResult[*core.Container]
 		if err := srv.Select(ctx, parent, &ctr, dagql.Selector{
 			Field: "withExec",
+			View:  "v0.12.0",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "args",
