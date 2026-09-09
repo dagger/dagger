@@ -82,7 +82,7 @@ func TestLazyEmitProducerRepointStampsDirectChildrenOnly(t *testing.T) {
 		ClientID:  "client-1",
 	})
 
-	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "directory"})
+	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "directory"}, "")
 	if !isResume {
 		t.Fatal("producer context captured ⇒ must be the resume re-point case")
 	}
@@ -152,7 +152,7 @@ func TestLazyEmitNoProducerNestsUnderHiddenLazyOp(t *testing.T) {
 		SessionID: "sess", ClientID: "client",
 	})
 
-	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, sharedResultID(7), LazyGroupWhole, &ResultCall{Field: "withNewFile"})
+	callbackCtx, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, sharedResultID(7), LazyGroupWhole, &ResultCall{Field: "withNewFile"}, "")
 	if isResume {
 		t.Fatal("no producer context ⇒ must NOT be the resume re-point case")
 	}
