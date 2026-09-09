@@ -25,6 +25,8 @@ type TlaCheck struct { // tla-check (../../../../../:0:0)
 	cacheLifecycle *Void
 	id             *ID
 	one            *string
+	quick          *Void
+	some           *Void
 }
 
 func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
@@ -35,6 +37,14 @@ func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
 
 // CacheLifecycle model-checks every configuration of the dagql cache spec
 // and verifies each outcome against its expectation.
+//
+// WARNING: the full run is expensive - well over an hour wall with four
+// TLC JVMs, and the largest configurations reach more than 110 million
+// distinct states each. Run it sparingly: it is required before pushing changes
+// under dagql/tla (it no longer runs in CI), but for iteration prefer
+// Quick (seconds), Some (chosen configurations with their expectations
+// enforced), or One (a single configuration, raw output, optional probe
+// injection).
 func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
 	if r.cacheLifecycle != nil {
 		return nil
@@ -134,6 +144,32 @@ func (r *TlaCheck) One(ctx context.Context, config string, opts ...TlaCheckOneOp
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Quick model-checks only the cheap configurations (quickConfigs), with
+// their expectations enforced. It finishes in about a minute and is the
+// right default while iterating; it does not replace the full
+// CacheLifecycle run before a push.
+func (r *TlaCheck) Quick(ctx context.Context) error {
+	if r.quick != nil {
+		return nil
+	}
+	q := r.query.Select("quick")
+
+	return q.Execute(ctx)
+}
+
+// Some model-checks the named configurations (without the CacheLifecycle_
+// prefix), with their expectations enforced - the middle ground between
+// the full check and One, which enforces nothing.
+func (r *TlaCheck) Some(ctx context.Context, configs []string) error {
+	if r.some != nil {
+		return nil
+	}
+	q := r.query.Select("some")
+	q = q.Arg("configs", configs)
+
+	return q.Execute(ctx)
 }
 
 // The dagql/tla spec directory.
