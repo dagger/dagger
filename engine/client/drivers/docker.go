@@ -22,17 +22,7 @@ type docker struct {
 var _ containerBackend = docker{}
 
 func (d docker) Available(ctx context.Context) (bool, error) {
-	// check binary exists
-	if _, err := exec.LookPath(d.cmd); err != nil {
-		return false, nil //nolint:nilerr
-	}
-
-	// check daemon is running
-	cmd := exec.CommandContext(ctx, d.cmd, "version")
-	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
-		return false, err
-	}
-	return true, nil
+	return containerRuntimeAvailable(ctx, d.cmd, "version")
 }
 
 func (d docker) ImagePull(ctx context.Context, image string) error {

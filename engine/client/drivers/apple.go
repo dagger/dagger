@@ -20,17 +20,7 @@ type apple struct{}
 var _ containerBackend = apple{}
 
 func (apple) Available(ctx context.Context) (bool, error) {
-	// check binary exists
-	if _, err := exec.LookPath("container"); err != nil {
-		return false, nil //nolint:nilerr
-	}
-
-	// check daemon is running
-	cmd := exec.CommandContext(ctx, "container", "system", "status")
-	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
-		return false, err
-	}
-	return true, nil
+	return containerRuntimeAvailable(ctx, "container", "system", "status")
 }
 
 func (apple) ImagePull(ctx context.Context, image string) error {
