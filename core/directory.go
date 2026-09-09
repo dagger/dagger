@@ -47,6 +47,7 @@ type Directory struct {
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
+	stored   *storedSnapshot
 	Lazy     Lazy[*Directory]
 	Dir      *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
 	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
@@ -144,52 +145,50 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 	}
 }
 
-func (dir *Directory) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
+func (dir *Directory) snapshotIdentity() (string, bool) {
+	if dir == nil {
+		return "", false
+	}
+	if dir.Snapshot != nil {
+		if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
+			return snapshot.SnapshotID(), true
+		}
+	}
+	if dir.stored != nil {
+		return dir.stored.SnapshotID, true
+	}
+	return "", false
+}
+
+func (dir *Directory) CacheUsageSize(ctx context.Context, provider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if dir == nil {
 		return 0, false, nil
 	}
-	if dir.Snapshot == nil {
-		return 0, false, nil
+	if dir.Snapshot != nil {
+		if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil && snapshot.SnapshotID() == identity {
+			size, err := snapshot.Size(ctx)
+			return size, err == nil, err
+		}
 	}
-	snapshot, ok := dir.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return 0, false, nil
+	if dir.stored != nil && dir.stored.SnapshotID == identity && provider != nil {
+		size, err := provider.SnapshotSize(ctx, identity)
+		return size, err == nil, err
 	}
-	if snapshot.SnapshotID() != identity {
-		return 0, false, nil
-	}
-	size, err := snapshot.Size(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	return size, true, nil
+	return 0, false, nil
 }
 
 func (dir *Directory) CacheUsageIdentities() []string {
-	if dir == nil || dir.Snapshot == nil {
-		return nil
+	if identity, ok := dir.snapshotIdentity(); ok {
+		return []string{identity}
 	}
-	snapshot, ok := dir.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return nil
-	}
-	return []string{snapshot.SnapshotID()}
+	return nil
 }
 
 func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
-	if dir == nil || dir.Snapshot == nil {
-		return nil
+	if identity, ok := dir.snapshotIdentity(); ok {
+		return []dagql.PersistedSnapshotRefLink{{RefKey: identity, Role: "snapshot"}}
 	}
-	snapshot, ok := dir.Snapshot.Peek()
-	if !ok || snapshot == nil {
-		return nil
-	}
-	return []dagql.PersistedSnapshotRefLink{
-		{
-			RefKey: snapshot.SnapshotID(),
-			Role:   "snapshot",
-		},
-	}
+	return nil
 }
 
 const (
@@ -243,21 +242,19 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 		Platform: dir.Platform,
 		Services: services,
 	}
-	if dir.Snapshot != nil {
-		if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-			payload.Form = persistedDirectoryFormSnapshot
-			payloadJSON, err := json.Marshal(payload)
-			if err != nil {
-				return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
-			}
-			return dagql.PersistedObjectEncoding{
-				JSON: payloadJSON,
-				SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
-					RefKey: snapshot.SnapshotID(),
-					Role:   "snapshot",
-				}},
-			}, nil
+	if identity, ok := dir.snapshotIdentity(); ok {
+		payload.Form = persistedDirectoryFormSnapshot
+		payloadJSON, err := json.Marshal(payload)
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
 		}
+		return dagql.PersistedObjectEncoding{
+			JSON: payloadJSON,
+			SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
+				RefKey: identity,
+				Role:   "snapshot",
+			}},
+		}, nil
 	}
 	if dir.Lazy != nil {
 		payload.Form = persistedDirectoryFormLazy
@@ -304,11 +301,13 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 	}
 	switch persisted.Form {
 	case persistedDirectoryFormSnapshot:
-		snapshot, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", snapshotRole)
+		link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "directory", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
-		dir.Snapshot.setValue(snapshot)
+		dir.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		dir.Dir.setValue(persisted.Dir)
+		dir.Lazy = &DirectoryRestoreLazy{LazyState: NewLazyState()}
 		return dir, nil
 	case persistedDirectoryFormLazy:
 		if persisted.LazyKind == "" {

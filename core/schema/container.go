@@ -3732,15 +3732,8 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	cache, err := dagql.EngineCache(ctx)
+	paths, err := core.SourceFilePaths(ctx, files)
 	if err != nil {
-		return inst, err
-	}
-	evals := make([]dagql.AnyResult, len(files))
-	for i, file := range files {
-		evals[i] = file
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
 		return inst, err
 	}
 
@@ -3759,11 +3752,8 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 	current := parent
-	for _, file := range files {
-		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
-		if err != nil {
-			return inst, err
-		}
+	for i, file := range files {
+		filePath := paths[i]
 		fileID, err := file.ID()
 		if err != nil {
 			return inst, err
