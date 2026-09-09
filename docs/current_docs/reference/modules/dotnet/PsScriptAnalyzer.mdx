@@ -1,6 +1,6 @@
 ---
 title: "PSScriptAnalyzer"
-slug: /reference/modules/psscriptanalyzer
+slug: /reference/modules/dotnet/PsScriptAnalyzer
 description: "Check PowerShell scripts with PSScriptAnalyzer."
 ---
 
@@ -8,12 +8,10 @@ description: "Check PowerShell scripts with PSScriptAnalyzer."
 
 The PSScriptAnalyzer module checks PowerShell scripts with PSScriptAnalyzer, applying the same review bar to your `.ps1`, `.psm1`, and `.psd1` files as you would to application code. Reach for it whenever PowerShell is part of the project and you want to enforce style, safety, and ruleset expectations in CI and Dagger Cloud. Its workspace alias is `ps-analyzer`, so its check and settings use that name.
 
-Official module: [dagger/PsScriptAnalyzer](https://github.com/dagger/PsScriptAnalyzer)
-
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/PsScriptAnalyzer
+dagger module install dagger.io/dotnet/PsScriptAnalyzer
 ```
 
 ## Run the check
@@ -49,3 +47,5 @@ includeExtraFiles = ["data/"]
 ## Working with other modules
 
 Use this module for repos with PowerShell automation, Windows support scripts, or PowerShell modules. It complements ShellCheck in mixed shell workspaces.
+
+[source code](https://github.com/dagger/PsScriptAnalyzer)

@@ -1,6 +1,6 @@
 ---
 title: "Prettier"
-slug: /reference/modules/prettier
+slug: /reference/modules/js/prettier
 description: "Check and rewrite source formatting with Prettier."
 ---
 
@@ -11,12 +11,10 @@ code review. It checks formatting locally, in CI, and in Dagger Cloud, and can
 rewrite source to match, always using your project's own Prettier config. Keep
 it alongside a linter so formatting policy stays separate from lint rules.
 
-Official module: [dagger/prettier](https://github.com/dagger/prettier)
-
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/prettier
+dagger module install dagger.io/js/prettier
 ```
 
 ## Run the check
@@ -61,5 +59,7 @@ baseImageAddress = "node:22-alpine"
 ## Working with other modules
 
 Prettier pairs well with ESLint. ESLint checks code quality, Prettier owns
-formatting. If your project uses Biome for both, use the [Biome](./biomejs.mdx)
+formatting. If your project uses Biome for both, use the [Biome](./biome.mdx)
 module instead.
+
+[source code](https://github.com/dagger/prettier)

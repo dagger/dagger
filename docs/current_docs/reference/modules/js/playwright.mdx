@@ -1,6 +1,6 @@
 ---
 title: "Playwright"
-slug: /reference/modules/playwright
+slug: /reference/modules/js/playwright
 description: "Run Playwright browser tests, wired to the service under test."
 ---
 
@@ -9,16 +9,14 @@ description: "Run Playwright browser tests, wired to the service under test."
 The Playwright module runs your [Playwright](https://playwright.dev) browser
 tests in a container whose browsers always match your Playwright version, the
 same way locally, in CI, and in Dagger Cloud. Its distinctive feature is
-first-class [module wiring](../../config/module-wiring.mdx). If another
+first-class [module wiring](../../../config/module-wiring.mdx). If another
 module in your workspace serves your app, one line of configuration points
 the tests at it. No glue module, no port juggling.
-
-Official module: [dagger/playwright](https://github.com/dagger/playwright)
 
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/playwright
+dagger module install dagger.io/js/playwright
 ```
 
 Pin your project's `@playwright/test` version exactly (or commit a lockfile).
@@ -159,5 +157,7 @@ dagger api call playwright report -o ./playwright-report
 Playwright covers browser-level end-to-end testing; pair it with
 [Jest](./jest.mdx) or [Vitest](./vitest.mdx) for unit tests. Any module whose
 function returns a `Service` can be the app under test. That's the
-[wiring contract](../../config/module-wiring.mdx), not a special
+[wiring contract](../../../config/module-wiring.mdx), not a special
 integration.
+
+[source code](https://github.com/dagger/playwright)

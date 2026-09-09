@@ -1,6 +1,6 @@
 ---
 title: "Biome"
-slug: /reference/modules/biomejs
+slug: /reference/modules/js/biome
 description: "Lint and fix source with Biome."
 ---
 
@@ -8,12 +8,10 @@ description: "Lint and fix source with Biome."
 
 The Biome module runs Biome linting over your JavaScript and TypeScript source and can return a fixed version when Biome can repair issues. Reach for it when a project uses Biome as its main code quality tool, so a single combined tool handles both lint and format rules instead of a separate ESLint and Prettier pair.
 
-Official module: [dagger/biomejs](https://github.com/dagger/biomejs)
-
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/biomejs
+dagger module install dagger.io/js/biome
 ```
 
 ## Run the check
@@ -43,3 +41,5 @@ baseImageAddress = "node:22-alpine"
 ## Working with other modules
 
 Use Biome for projects that already have Biome config. If your project uses ESLint and Prettier separately, use those modules instead.
+
+[source code](https://github.com/dagger/biomejs)

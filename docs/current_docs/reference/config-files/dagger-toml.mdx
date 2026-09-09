@@ -28,7 +28,7 @@ Resolved image and Git lookups are pinned in `dagger.lock` alongside the config,
 
 ```toml
 [modules.eslint]
-source = "github.com/dagger/eslint@v0.3.0"
+source = "dagger.io/js/eslint@v0.3.0"
 
 [modules.eslint.settings]
 packageManager = "yarn"
@@ -51,7 +51,7 @@ Settings can point at another module's output instead of a literal value — see
 
 ```toml
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk"
+source = "dagger.io/sdk/go"
 
 [sdks.go]
 module = "go-sdk"
@@ -62,7 +62,7 @@ name = "demo"
 clients = ["github.com/acme/api"]
 
 [sdks.go.scopes.".dagger/modules/demo".settings]
-legacy-module-compat = false
+template = "default"
 ```
 
 | Key | Type | Description |

@@ -6,6 +6,10 @@ description: "Develop Dagger modules in Elixir: create modules with the Elixir S
 
 # Elixir SDK
 
+:::note
+The Elixir SDK module still uses the previous beta SDK interface. It needs an update before the current `dagger module init` and module client commands can use it. The module runtime is unchanged.
+:::
+
 The Elixir SDK lets you write Dagger modules in Elixir. A module is an ordinary Mix project. Its main module uses `Dagger.Mod.Object` and declares functions with `defn`, and the SDK turns those into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, typed Elixir client for the whole Dagger API, reachable through `dag()`. That covers containers, directories, files, secrets, services, and every module you depend on.
 
 This page is a standalone guide to the Elixir SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
@@ -15,18 +19,18 @@ This page is a standalone guide to the Elixir SDK. It assumes you already unders
 
 A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The Elixir SDK supports checks only today. See [Checks, cache policy, directives, and ignore patterns](#checks-cache-policy-directives-and-ignore-patterns) for the Elixir syntax and the current limitations.
 
-The Elixir SDK is itself a Dagger module, `github.com/dagger/elixir-sdk`. Install it into your workspace once, then create and maintain Elixir modules with Dagger's module commands:
+The Elixir SDK is itself a Dagger module, `dagger.io/sdk/elixir`. Install it into your workspace once, then create and maintain Elixir modules with Dagger's module commands:
 
 ```shell
 # Install the Elixir SDK into your workspace (once)
-dagger module install github.com/dagger/elixir-sdk
+dagger module install dagger.io/sdk/elixir
 
 # Create an Elixir module
-dagger module init elixir-sdk --name my-module
+dagger module init elixir --name my-module
 ```
 
 :::note
-Unlike Go, Python, or TypeScript, `elixir` is not a name in the CLI's built-in SDK registry, so `dagger module install elixir` does not resolve. Pass the full reference instead. Dagger installs a directly referenced SDK under the basename of its ref, here `elixir-sdk`, and that is the name you pass to `dagger module init`. If you want a shorter name, pick it at install time with `dagger module install --name elixir github.com/dagger/elixir-sdk`, then run `dagger module init elixir --name my-module`.
+Use the full SDK reference for installation. With the current SDK interface, an installed `elixir-sdk` module provides the SDK name `elixir`. Use `dagger sdk list` to check the SDK names in your workspace.
 :::
 
 ## Create a module
@@ -38,14 +42,14 @@ Run these commands from inside a Git repository. That is where Dagger creates th
 Install the Elixir SDK into your workspace, then create a new module. The SDK argument is required. This example also sets the optional module name:
 
 ```shell
-dagger module install github.com/dagger/elixir-sdk
-dagger module init elixir-sdk --name my-module
+dagger module install dagger.io/sdk/elixir
+dagger module init elixir --name my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows it to you for review before writing anything to disk.
+`dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows it to you for review before writing anything to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger module install --here github.com/dagger/elixir-sdk` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here dagger.io/sdk/elixir` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -58,11 +62,11 @@ By default, `dagger module init` places the new module beside the `dagger.toml` 
 
 That is the workspace root unless the config lives in a subdirectory, as it does when several projects share one repository.
 
-Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
+Pass `--path` to choose a different location. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
 
 ```shell
-dagger module init elixir-sdk --name my-module --path ci     # ./ci
-dagger module init elixir-sdk --name my-module --path /ci    # <workspace root>/ci
+dagger module init elixir --name my-module --path ci     # ./ci
+dagger module init elixir --name my-module --path /ci    # <workspace root>/ci
 ```
 
 Dagger registers a custom path as a module authored by the SDK, but does not install it as a callable workspace module. Run `dagger module install ./ci` to install it too.
@@ -70,13 +74,13 @@ Dagger registers a custom path as a module authored by the SDK, but does not ins
 Pass `--template` to pick a starter. `default` gives you a working module with two example functions; `empty` gives you a bare object module with no functions:
 
 ```shell
-dagger module init elixir-sdk --name my-module --template empty
+dagger module init elixir --name my-module --template empty
 ```
 
 List the Elixir SDK's module initialization options with:
 
 ```shell
-dagger module init elixir-sdk --help
+dagger module init elixir --help
 ```
 
 ### Resulting file layout
@@ -102,7 +106,7 @@ my-module/
 The Dagger module name determines the Elixir names: `my-module` becomes the Mix application `:my_module`, the source file `lib/my_module.ex`, and the Elixir module `MyModule`. The runtime looks up the entrypoint module by that derived name, so keep `defmodule` in step with the module name.
 
 :::note
-`dagger module init` writes `dagger-module.toml`, updates the workspace config, and seeds `mix.exs`, `.formatter.exs`, `README.md`, and `lib/my_module.ex` from the SDK's template. It then runs the Elixir SDK's generator for the new module as part of the same changeset. The generator writes `dagger_sdk/`, the SDK library plus API bindings. A fresh module's `mix.exs` depends on `./dagger_sdk`, so it does not compile until that directory exists. Commit `dagger_sdk/` along with the rest of the module. The runtime builds from the committed sources and does not regenerate them. Pass `--no-generate` to scaffold without generating, then run `dagger generate` before you build.
+`dagger module init` writes `dagger-module.toml`, updates the workspace config, and seeds `mix.exs`, `.formatter.exs`, `README.md`, and `lib/my_module.ex` from the SDK's template. It then runs the Elixir SDK's generator for the new module as part of the same changeset. The generator writes `dagger_sdk/`, the SDK library plus API bindings. A fresh module's `mix.exs` depends on `./dagger_sdk`, so it does not compile until that directory exists. Commit `dagger_sdk/` along with the rest of the module. The runtime builds from the committed sources and does not regenerate them.
 :::
 
 The module config records the runtime separately from the SDK that authors it:
@@ -112,10 +116,10 @@ name = "my-module"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/elixir-sdk/runtime"
+source = "dagger.io/sdk/elixir/runtime"
 ```
 
-Elixir has no built-in engine runtime, so `runtime.source` points at the Elixir SDK's own runtime module. That runtime compiles your module in an `elixir:*-alpine` container and runs `mix dagger.entrypoint.invoke <ModuleName>`. The workspace's `dagger.toml` records the SDK under `sdks.elixir-sdk` and records the module path as one of its scopes. Elixir binding generation uses that scope to discover the module. Nobody writes the files in `dagger_sdk/` by hand; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
+Elixir has no built-in engine runtime, so `runtime.source` points at the Elixir SDK's own runtime module. That runtime compiles your module in an `elixir:*-alpine` container and runs `mix dagger.entrypoint.invoke <ModuleName>`. The workspace's `dagger.toml` records the SDK under `sdks.elixir` and records the module path as one of its scopes. Elixir binding generation uses that scope to discover the module. Nobody writes the files in `dagger_sdk/` by hand; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
 
 ## Define objects and functions
 
@@ -579,7 +583,7 @@ name = "dev"
 engineVersion = "v{{ version }}"
 
 [runtime]
-source = "github.com/dagger/elixir-sdk/runtime"
+source = "dagger.io/sdk/elixir/runtime"
 
 [[dependencies]]
 name = "hello"
@@ -631,7 +635,7 @@ A `.dagger-elixir-sdk-skip-generate` marker in a module or one of its ancestors 
 Generated SDK bindings are not in `.gitignore`; commit them with your module. Do ignore Mix build output, `_build/` and `deps/`, which the runtime recreates inside its container.
 :::
 
-If `dagger_sdk/mix.exs` is missing when the engine loads the module (for example, right after `dagger module init --no-generate`), the runtime vendors the SDK and generates the bindings on the fly so the module still loads. That fallback never writes to your workspace; run `dagger generate` to write the files.
+If `dagger_sdk/mix.exs` is missing when the engine loads the module, the runtime vendors the SDK and generates the bindings on the fly so the module still loads. That fallback never writes to your workspace; run `dagger generate` to write the files.
 
 ## Engine version
 
@@ -863,11 +867,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the Elixir SDK with `dagger module install github.com/dagger/elixir-sdk`, scaffold with `dagger module init elixir-sdk --name <name>`, and regenerate with `dagger generate`.
-
-**`dagger module install elixir` reports the SDK is not in the registry.** Install Elixir by full reference: `dagger module install github.com/dagger/elixir-sdk`. Add `--name elixir` if you want `dagger module init elixir` to work.
-
-**`dagger module install` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory.
+**`dagger init` / `dagger develop` not found.** Install the Elixir SDK with `dagger module install dagger.io/sdk/elixir`, scaffold with `dagger module init elixir --name <name>`, and regenerate with `dagger generate`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 

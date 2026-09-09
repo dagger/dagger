@@ -1,6 +1,6 @@
 ---
 title: "ESLint"
-slug: /reference/modules/eslint
+slug: /reference/modules/js/eslint
 description: "Lint JavaScript and TypeScript source with ESLint."
 ---
 
@@ -8,12 +8,10 @@ description: "Lint JavaScript and TypeScript source with ESLint."
 
 The ESLint module checks JavaScript and TypeScript source with ESLint, running the same lint check locally and in CI so issues get caught before a PR lands. Reach for it when the repo already has ESLint config and you want linting to run as a Dagger check, with a repair workflow available for fixable issues.
 
-Official module: [dagger/eslint](https://github.com/dagger/eslint)
-
 ## Add it to your workspace
 
 ```bash
-dagger module install github.com/dagger/eslint
+dagger module install dagger.io/js/eslint
 ```
 
 ## Run the check
@@ -45,3 +43,5 @@ baseImageAddress = "node:22-alpine"
 ## Working with other modules
 
 Use ESLint with Prettier when the project separates lint rules from formatting. Use Biome when the project has moved linting and formatting into one tool.
+
+[source code](https://github.com/dagger/eslint)
