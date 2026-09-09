@@ -234,9 +234,9 @@ Current core operation keys:
 
 | Operation | Required inputs | Optional inputs | Result |
 | --- | --- | --- | --- |
-| `oci-latest` | image name | registry transport | tag |
+| `oci-latest` | image name | registry transport, `version` | tag |
 | `oci-sha` | tagged image reference | registry transport | OCI digest |
-| `git-latest` | remote URL | `tagPrefix` | tag ref or canonical remote HEAD branch ref |
+| `git-latest` | remote URL | `tagPrefix`, `version` | tag ref or canonical remote HEAD branch ref |
 | `git-sha` | remote URL, ref | none | commit SHA |
 
 Notes:

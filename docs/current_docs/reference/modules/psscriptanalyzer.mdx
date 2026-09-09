@@ -13,7 +13,7 @@ Official module: [dagger/PsScriptAnalyzer](https://github.com/dagger/PsScriptAna
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/PsScriptAnalyzer
+dagger module install github.com/dagger/PsScriptAnalyzer
 ```
 
 ## Run the check
@@ -27,14 +27,14 @@ dagger check ps-analyzer:check # run PSScriptAnalyzer on discovered PowerShell s
 
 ## Configure it
 
-List the current settings and their values with `dagger settings ps-analyzer`, then set one with `dagger settings ps-analyzer <key> <value>`. They live in `dagger.toml` under `[modules.ps-analyzer.settings]`:
+List the current settings and their values with `dagger module settings ps-analyzer`, then set one with `dagger module settings ps-analyzer <key> <value>`. They live in `dagger.toml` under `[modules.ps-analyzer.settings]`:
 
 - `version` (default `1.22.0`) is the PSScriptAnalyzer release to install. Pin it so the same ruleset and analyzer behavior run locally and in CI.
 - `exclude` (default: none) is a list of script paths to skip.
 - `includeExtraFiles` (default empty) are extra non-PowerShell paths to mount, for scripts that read data files or other project context during analysis.
 
 ```bash
-dagger settings ps-analyzer version 1.22.0
+dagger module settings ps-analyzer version 1.22.0
 ```
 
 The list-valued settings are edited directly in `dagger.toml`:

@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/core/gitref"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -46,6 +47,8 @@ type mockServer struct {
 	functionCall   *FunctionCall
 	clientMetadata *engine.ClientMetadata
 	attachables    map[string]*grpc.ClientConn
+	workspaceLock  *workspacepkg.Lock
+	lockWritable   bool
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
@@ -132,12 +135,18 @@ func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID s
 	return conn, conn != nil, nil
 }
 
-func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg.Lock, bool, error) {
-	return nil, false, nil
+func (ms *mockServer) CurrentWorkspaceLock(_ context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error) {
+	if requireWritable && !ms.lockWritable {
+		return nil, false, nil
+	}
+	return ms.workspaceLock, ms.workspaceLock != nil, nil
 }
 
-func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, string) error {
-	return nil
+func (ms *mockServer) SetCurrentWorkspaceLookup(_ context.Context, namespace, operation string, inputs []any, value string) error {
+	if ms.workspaceLock == nil {
+		return nil
+	}
+	return ms.workspaceLock.SetLookup(namespace, operation, inputs, value)
 }
 
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
@@ -234,6 +243,18 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)
 	require.Equal(t, "0cabe03cc0a9079e738c92b2c589d81fd560011f", calleeRef.version)
 	require.Equal(t, "VersionedGitSSH.hello", calleeRef.functionName)
+
+	// Literal Git URL selectors serialize with #ref:subpath rather than @ref.
+	// Telemetry reads the structured source fields so both forms are safe.
+	mockSrv.moduleSource.SourceRootSubpath = "ruff"
+	mockSrv.moduleSource.Git.CloneRef = "https://github.com/dagger/python"
+	mockSrv.moduleSource.Git.Selector = gitref.GitRefSelector
+	mockSrv.moduleSource.Git.Version = "v1.2"
+
+	callerRef, _ = parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, call)
+	require.NotNil(t, callerRef)
+	require.Equal(t, "https://github.com/dagger/python/ruff", callerRef.ref)
+	require.Equal(t, "v1.2", callerRef.version)
 }
 
 func TestAroundFuncMarksIntrospectionRootAsSkipped(t *testing.T) {

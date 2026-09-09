@@ -214,7 +214,8 @@ func (d DocsDev) Check(ctx context.Context) error {
 }
 
 // Build the docs server
-func (d DocsDev) Server() *dagger.Container {
+// +up
+func (d DocsDev) Server() *dagger.Service {
 	return dag.
 		Container().
 		From("nginx").
@@ -222,7 +223,8 @@ func (d DocsDev) Server() *dagger.Container {
 		WithFile("/etc/nginx/conf.d/default.conf", d.NginxConfig).
 		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
 		WithDirectory("/var/www", d.Site()).
-		WithExposedPort(8000)
+		WithExposedPort(8000).
+		AsService()
 }
 
 // Regenerate the API schema and CLI reference docs

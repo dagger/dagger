@@ -7,6 +7,9 @@ import (
 )
 
 func TestCommandProgressDefault(t *testing.T) {
+	oldOrg := cloudOrgFlag
+	t.Cleanup(func() { cloudOrgFlag = oldOrg })
+	cloudOrgFlag = "unchanged"
 	// The session command keeps streaming plain progress for its SDK
 	// consumers, however it's spelled: bare, with global flags before the
 	// subcommand, or through the `api` group.
@@ -18,6 +21,13 @@ func TestCommandProgressDefault(t *testing.T) {
 	// the regular defaults.
 	require.Empty(t, commandProgressDefault([]string{"call"}))
 	require.Empty(t, commandProgressDefault(nil))
+	require.Equal(t, "unchanged", cloudOrgFlag, "looking up a command must not apply its flags")
+}
+
+func TestCloudOrgFlagHidden(t *testing.T) {
+	flag := rootCmd.PersistentFlags().Lookup("org")
+	require.NotNil(t, flag)
+	require.True(t, flag.Hidden)
 }
 
 func TestIsObviouslyRemoteWorkspaceRef(t *testing.T) {
@@ -35,4 +45,17 @@ func TestIsObviouslyRemoteWorkspaceRef(t *testing.T) {
 	require.False(t, isObviouslyRemoteWorkspaceRef("services/api.v2"))
 	require.False(t, isObviouslyRemoteWorkspaceRef("common/.dagger/mymod"))
 	require.False(t, isObviouslyRemoteWorkspaceRef("my.dir"))
+}
+
+func TestCanOpenShellOnError(t *testing.T) {
+	// Only the pretty TUI can run the shell, and it needs a terminal to read
+	// keys from.
+	require.True(t, canOpenShellOnError("tty", true))
+
+	require.False(t, canOpenShellOnError("tty", false))
+	// The report frontend is what an AI agent gets.
+	require.False(t, canOpenShellOnError("report", true))
+	require.False(t, canOpenShellOnError("plain", true))
+	require.False(t, canOpenShellOnError("dots", true))
+	require.False(t, canOpenShellOnError("logs", true))
 }

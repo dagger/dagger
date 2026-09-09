@@ -98,7 +98,7 @@ runs:
         if [[ -n "${{ inputs.workspace }}" ]]; then
           workspace_args=(-W "${{ inputs.workspace }}")
         fi
-        redirect_logs dagger --cloud "${module_args[@]}" "${workspace_args[@]}" call ${{ inputs.function }}
+        redirect_logs dagger --engine=cloud "${module_args[@]}" "${workspace_args[@]}" call ${{ inputs.function }}
       env:
         DAGGER_CLOUD_TOKEN: oidc
 

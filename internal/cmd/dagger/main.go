@@ -60,28 +60,33 @@ var (
 	workspaceRef string
 	workspaceEnv string
 
-	silent                   = silentFromEnv()
-	verbose                  int
-	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
-	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
-	expandCompleted          = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
-	debugFlag                bool
-	progress                 string
-	interactive              bool
-	interactiveCommand       string
-	interactiveCommandParsed []string
-	web                      bool
-	noExit                   bool
-	xRelease                 string
-	autoApply                bool
-	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
-	enableScaleOut           bool
-	profileFlag              bool
+	silent                    = silentFromEnv()
+	verbose                   int
+	quiet, _                  = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	reveal                    = os.Getenv("DAGGER_REVEAL") != ""
+	expandCompleted           = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
+	debugFlag                 bool
+	progress                  string
+	shellOnError              bool
+	shellCommandOnError       string
+	shellCommandOnErrorParsed []string
+	web                       bool
+	noExit                    bool
+	xRelease                  string
+	autoApply                 bool
+	engineFlag                string
+	// cloudFlag backs the deprecated --cloud flag, an alias for --engine=cloud.
+	cloudFlag bool
+	// cloudEngineEnvSet records the deprecated DAGGER_CLOUD_ENGINE variable.
+	// Any value selects Dagger Cloud.
+	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
+	profileFlag          bool
 
 	dotOutputFilePath string
 	dotFocusField     string
 	dotShowInternal   bool
 
+	stdinIsTTY  = isatty.IsTerminal(os.Stdin.Fd())
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
@@ -169,18 +174,14 @@ func init() {
 	upCmd.GroupID = "daily"
 	terminalCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
-	activityCmd.GroupID = "daily"
 
-	moduleDepInstallCmd.GroupID = "workspace"
-	moduleDepUninstallCmd.GroupID = "workspace"
-	installedCmd.GroupID = "workspace"
-	moduleUpdateCmd.GroupID = "workspace"
-	searchCmd.GroupID = "workspace"
-	settingsCmd.GroupID = "workspace"
+	moduleCmd.GroupID = "workspace"
+	sdkCmd.GroupID = "workspace"
+	installAliasCmd.GroupID = "workspace"
+	uninstallAliasCmd.GroupID = "workspace"
+	settingsAliasCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
-	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
@@ -196,22 +197,18 @@ func init() {
 		queryCmd,
 		apiCmd,
 		traceCmd,
-		settingsCmd,
 		checksCmd,
 		upCmd,
 		terminalCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
-		moduleDepInstallCmd,
-		moduleDepUninstallCmd,
-		moduleUpdateCmd,
-		setupCmd,
-		searchCmd,
-		installedCmd,
-		activityCmd,
 		moduleCmd,
 		sdkCmd,
+		installAliasCmd,
+		uninstallAliasCmd,
+		settingsAliasCmd,
+		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		functionsAliasCmd,
@@ -221,15 +218,19 @@ func init() {
 	)
 
 	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
+	rootCmd.PersistentFlags().Lookup("org").Hidden = true
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
-	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
+	cobra.AddTemplateFunc("availableFlags", availableFlagsForCommand)
+	cobra.AddTemplateFunc("inheritedFlags", inheritedFlags)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
 	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
+	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
+	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -246,6 +247,9 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
+	// Parse each parent's flags before entering a child command. SDK settings
+	// can then use the same name as a module-init flag without replacing it.
+	TraverseChildren:      true,
 	Use:                   "dagger [options] [subcommand | file...]",
 	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
@@ -255,6 +259,9 @@ var rootCmd = &cobra.Command{
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
+		if restore := hideUnavailableCompletionFlags(cmd, args); restore != nil {
+			cobra.OnFinalize(restore)
+		}
 		applyCommandProgressDefaults(cmd)
 
 		if cpuprofile != "" {
@@ -423,49 +430,80 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
-	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
-	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
-	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
-	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
-	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
-	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
-	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
-	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
-	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
-	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
+	flags.Lookup("x-release").Hidden = true
 
-	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
-	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
-	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
+	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
+	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
+	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
-	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
-	// all those functions will run in a remote cloud engine which gets created at execution time
-	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
-	flags.Lookup("cloud").Hidden = true
+	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")
+	setFlagCapabilities(flags.Lookup("auto-apply"), mayProduceOutput)
 
-	// this flag enables scale-out for a few commands, e.g. checks
-	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
-	flags.Lookup("scale-out").Hidden = true
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Enable engine and trace diagnostics")
+	setFlagAnyCapabilities(flags.Lookup("debug"), mayCallEngine, mayRenderPipeline)
 
-	// experimental: enable engine wall-clock profiling (wcprof) for this
-	// session; recorded events are retrieved from the engine debug endpoint
-	flags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
-	flags.Lookup("profile").Hidden = true
+	installMayCallEngineFlags(flags)
+	installMayRenderPipelineFlags(flags)
 
-	for _, fl := range []string{
-		"dot-output",
-		"dot-focus-field",
-		"dot-show-internal",
-		"workdir",
-	} {
-		if err := flags.MarkHidden(fl); err != nil {
-			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
-			os.Exit(1)
-		}
+	if err := flags.MarkHidden("workdir"); err != nil {
+		fmt.Fprintln(stdout, "Error hiding flag: workdir", err)
+		os.Exit(1)
 	}
+}
+
+// defaultShellCommandOnError is the command --shell-on-error runs in the
+// failed container.
+const defaultShellCommandOnError = "/bin/sh"
+
+// engineFlagUsage names the value space on one line and sends the reader to
+// the help topic for the rest. The full catalog is too long to repeat in the
+// usage message of every command that can call the engine.
+var engineFlagUsage = fmt.Sprintf(
+	"Select the engine: %s (or set %s; run 'dagger help engine' for details)",
+	drivers.SchemeSummary(), engineEnv,
+)
+
+func installMayCallEngineFlags(flags *pflag.FlagSet) {
+	engineFlags := pflag.NewFlagSet(string(mayCallEngine), pflag.ContinueOnError)
+	engineFlags.StringVar(&engineFlag, "engine", "", engineFlagUsage)
+	engineFlags.BoolVar(&cloudFlag, "cloud", false, "")
+	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
+	engineFlags.Lookup("cloud").Hidden = true
+	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails (needs an interactive terminal)")
+	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
+	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
+	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
+	engineFlags.Lookup("shell-command-on-error").Hidden = true
+	engineFlags.StringVar(&shellCommandOnError, "interactive-command", defaultShellCommandOnError, "")
+	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
+	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
+	engineFlags.Lookup("profile").Hidden = true
+	setFlagSetCapabilities(engineFlags, mayCallEngine)
+	flags.AddFlagSet(engineFlags)
+}
+
+func installMayRenderPipelineFlags(flags *pflag.FlagSet) {
+	renderFlags := pflag.NewFlagSet(string(mayRenderPipeline), pflag.ContinueOnError)
+	renderFlags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	renderFlags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	renderFlags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
+	renderFlags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
+	renderFlags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
+
+	hiddenFlags := pflag.NewFlagSet("hidden", pflag.ContinueOnError)
+	hiddenFlags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
+	hiddenFlags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
+	hiddenFlags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+	hiddenFlags.VisitAll(func(flag *pflag.Flag) {
+		flag.Hidden = true
+	})
+
+	renderFlags.AddFlagSet(hiddenFlags)
+	setFlagSetCapabilities(renderFlags, mayRenderPipeline)
+	flags.AddFlagSet(renderFlags)
 }
 
 // disableFlagsInUseLine disables the automatic addition of [flags]
@@ -478,6 +516,9 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 }
 
 func execXRelease(ctx context.Context) error {
+	if xRelease == "" {
+		return nil
+	}
 	ref := strings.TrimSpace(xRelease)
 	downloadRef, engineRef, release := xReleaseReleaseRef(ref)
 	resolved := false
@@ -517,19 +558,19 @@ func execXRelease(ctx context.Context) error {
 	}
 
 	args := xReleaseProcessArgs(os.Args[1:])
-	env, hasRunnerHost := xReleaseProcessEnv(os.Environ())
-	if hasRunnerHost {
+	env, engineEnvs := xReleaseProcessEnv(os.Environ())
+	if len(engineEnvs) > 0 {
 		fmt.Fprintln(stderr, xReleaseLogLine(fmt.Sprintf(
 			"warning: --x-release or %s is being used with %s",
 			daggerXReleaseEnv,
-			RunnerHostEnv,
+			strings.Join(engineEnvs, " and "),
 		)))
 	}
 	execArgs := append([]string{binPath}, args...)
 	if err := execCLI(binPath, execArgs, env); err != nil {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
 	}
-	return nil
+	return errors.New("internal error: experimental release exec returned without replacing the current process")
 }
 
 func xReleaseReleaseRef(ref string) (downloadRef string, engineRef string, ok bool) {
@@ -591,18 +632,19 @@ func xReleaseProcessArgs(args []string) []string {
 	return rewritten
 }
 
-func xReleaseProcessEnv(environ []string) ([]string, bool) {
-	env := make([]string, 0, len(environ)+1)
+// xReleaseProcessEnv returns the environment for the downloaded CLI, and the
+// names of the variables in it that select an engine. That engine may not
+// match the downloaded version, so the caller warns about them.
+func xReleaseProcessEnv(environ []string) (env []string, engineEnvs []string) {
+	env = make([]string, 0, len(environ)+1)
 	hasLeaveOldEngine := false
-	hasRunnerHost := false
 	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
 		switch key {
 		case daggerXReleaseEnv, RunnerImageLoaderEnv:
 			continue
-		}
-		if key == RunnerHostEnv {
-			hasRunnerHost = true
+		case engineEnv, RunnerHostEnv:
+			engineEnvs = append(engineEnvs, key)
 		}
 		if key == "DAGGER_LEAVE_OLD_ENGINE" {
 			hasLeaveOldEngine = true
@@ -612,7 +654,7 @@ func xReleaseProcessEnv(environ []string) ([]string, bool) {
 	if !hasLeaveOldEngine {
 		env = append(env, "DAGGER_LEAVE_OLD_ENGINE=1")
 	}
-	return env, hasRunnerHost
+	return env, engineEnvs
 }
 
 func shouldCleanupOldEngines() bool {
@@ -624,19 +666,110 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(args []string) {
-	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+func parseGlobalFlags(root *cobra.Command, args []string) []string {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if _, ok := flag.Value.(interface{ replay() }); ok || flag.Name == "help" {
+			return
+		}
+		value := &parsedGlobalFlagValue{Value: flag.Value}
+		if slice, ok := flag.Value.(pflag.SliceValue); ok {
+			flag.Value = &parsedGlobalSliceFlagValue{parsedGlobalFlagValue: value, SliceValue: slice}
+		} else {
+			flag.Value = value
+		}
+	})
+	cmd, commandArgs := resolveCommand(root, args)
+	if cmd == nil {
+		return args
+	}
+
+	flags := copyCommandFlags(cmd, "global")
 	flags.Usage = func() {}
-	flags.ParseErrorsAllowlist.UnknownFlags = true
-	installGlobalFlags(flags)
-	if err := flags.Parse(args); err != nil && !errors.Is(err, pflag.ErrHelp) {
+	flags.VisitAll(func(flag *pflag.Flag) {
+		// Cobra owns --help. The clones share the real flag values, so applying
+		// it here would set it before Cobra runs the command. Cobra reads the
+		// value even when a command disables flag parsing, so a dynamic command
+		// such as `dagger call` would print its static usage instead of loading
+		// the module and rendering its functions.
+		if flag.Name == "help" {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+			return
+		}
+		global := root.PersistentFlags().Lookup(flag.Name)
+		selected := cmd.Flags().Lookup(flag.Name)
+		if global == nil || selected != global {
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	if err := flags.Parse(commandArgs); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
-	if !flags.Changed("x-release") {
+	globalXRelease := root.PersistentFlags().Lookup("x-release")
+	if globalXRelease == nil || cmd.Flags().Lookup("x-release") != globalXRelease || !flags.Changed("x-release") {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	// Dynamic SDK command registration needs the command path as well as its
+	// positional arguments. resolveCommand removed that path before parsing.
+	return append(strings.Fields(commandName(cmd)), flags.Args()...)
+}
+
+// replayGlobalFlags skips the occurrences already applied during setup. Later
+// occurrences, such as a global flag after a dynamic function, still apply.
+func replayGlobalFlags(root *cobra.Command) {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if value, ok := flag.Value.(interface{ replay() }); ok {
+			value.replay()
+		}
+	})
+}
+
+type parsedGlobalFlagValue struct {
+	pflag.Value
+	values    []string
+	replaying bool
+}
+
+func (value *parsedGlobalFlagValue) Set(arg string) error {
+	if value.replaying && len(value.values) > 0 && value.values[0] == arg {
+		value.values = value.values[1:]
+		return nil
+	}
+	if err := value.Value.Set(arg); err != nil {
+		return err
+	}
+	if !value.replaying {
+		value.values = append(value.values, arg)
+	}
+	return nil
+}
+
+func (value *parsedGlobalFlagValue) replay() {
+	value.replaying = true
+}
+
+type parsedGlobalSliceFlagValue struct {
+	*parsedGlobalFlagValue
+	pflag.SliceValue
+}
+
+// parseCommandFlagsWithoutGlobals adds module constructor flags to a dynamic
+// command. Its globals were already parsed before loading the module.
+func parseCommandFlagsWithoutGlobals(cmd *cobra.Command, args []string) error {
+	values := map[*pflag.Flag]pflag.Value{}
+	cmd.Root().PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			values[flag] = flag.Value
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	defer func() {
+		for flag, value := range values {
+			flag.Value = value
+		}
+	}()
+	return cmd.ParseFlags(args)
 }
 
 func xReleaseLogLine(msg string) string {
@@ -647,15 +780,11 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
-// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
-//
-//nolint:unparam
-func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+func setWorkspaceFlagPolicy(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = workspaceFlagPolicyLocalOnly
 }
 
 func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
@@ -707,7 +836,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
-	case "settings", "workspace settings":
+	case "settings", "workspace settings", "module settings":
 		return len(args) >= 3
 	default:
 		return false
@@ -797,7 +926,7 @@ func commandShowsFinalProgress(cmd *cobra.Command) bool {
 // `dagger api session`). Empty when unresolvable or unannotated; a resolution
 // error just means cobra will reject the command line later anyway.
 func commandProgressDefault(args []string) string {
-	cmd, _, err := rootCmd.Traverse(args)
+	cmd, _, err := rootCmd.Find(args)
 	if err != nil || cmd == nil {
 		return ""
 	}
@@ -819,12 +948,30 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 	opts.Verbosity = verbosity
 }
 
+// canOpenShellOnError reports whether the CLI can hand the terminal to a shell
+// in a failed container: only the pretty TUI can run one, and it needs a
+// terminal to read keys from. The check runs before the command, so a
+// non-interactive caller -- a script, or an AI agent, which gets the report
+// frontend -- fails fast instead of hanging in a shell it cannot exit.
+func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
+	return progress == "tty" && stdinIsTTY
+}
+
 func Main() {
-	installGlobalFlags(rootCmd.PersistentFlags())
+	installRootGlobalFlags()
+	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(os.Args[1:])
+	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
+	invocationDir, err := pathutil.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -841,14 +988,20 @@ func Main() {
 		stop()
 		os.Exit(code)
 	}
-	if xRelease != "" {
-		if err := execXRelease(ctx); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
+	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	// A trailing inherited --x-release is known only after SDK discovery.
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	replayGlobalFlags(rootCmd)
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
@@ -858,7 +1011,7 @@ func Main() {
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
-	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, engine.CloudRunnerHostPrefix)
+	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
@@ -908,23 +1061,22 @@ func Main() {
 		exitWithCode(1)
 	}
 
-	// Parse the interactive command to support shell-like syntax
-	parsedCommand, err := shlex.Split(interactiveCommand)
-	if err != nil {
-		fmt.Fprintf(stderr, "cannot parse interactive command: %s", err)
+	if shellOnError && !canOpenShellOnError(progress, stdinIsTTY) {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(),
+			"--shell-on-error needs an interactive terminal, but none is available")
 		exitWithCode(1)
 	}
-	interactiveCommandParsed = parsedCommand
+
+	// Parse the shell command to support shell-like syntax.
+	parsedCommand, err := shlex.Split(shellCommandOnError)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot parse --shell-command-on-error: %s", err)
+		exitWithCode(1)
+	}
+	shellCommandOnErrorParsed = parsedCommand
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
-
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError
@@ -954,8 +1106,24 @@ func Main() {
 // documentation generation. It installs global flags so the reference includes
 // them, matching what Main does before Execute.
 func RootCommand() *cobra.Command {
-	installGlobalFlags(rootCmd.PersistentFlags())
+	installRootGlobalFlags()
 	return rootCmd
+}
+
+// installRootGlobalFlags installs the global flags on the root command and
+// registers the completions that need a command, not just a flag set.
+func installRootGlobalFlags() {
+	installGlobalFlags(rootCmd.PersistentFlags())
+	if err := rootCmd.RegisterFlagCompletionFunc("engine", completeEngineFlag); err != nil {
+		fmt.Fprintln(stderr, "Error registering completion: engine", err)
+		os.Exit(1)
+	}
+}
+
+// completeEngineFlag offers every non-deprecated engine selector prefix. The
+// values end in "://", so completion must not append a space after them.
+func completeEngineFlag(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return drivers.SchemeCompletions(), cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
 }
 
 // IsExperimental reports whether cmd (or any ancestor) is marked experimental.
@@ -1005,11 +1173,11 @@ func isExperimental(cmd *cobra.Command) bool {
 	return experimental
 }
 
-func hasInheritedFlags(cmd *cobra.Command) bool {
+func inheritedFlags(cmd *cobra.Command) *pflag.FlagSet {
 	if val, ok := cmd.Annotations["help:hideInherited"]; ok && val == "true" {
-		return false
+		return pflag.NewFlagSet("inherited", pflag.ContinueOnError)
 	}
-	return cmd.HasAvailableInheritedFlags()
+	return availableFlagsForCommand(cmd, cmd.InheritedFlags())
 }
 
 // getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
@@ -1029,6 +1197,23 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 
 const visibleAliasesAnnotation = "help:visibleAliases"
 const hiddenAliasesAnnotation = "help:hiddenAliases"
+const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
+const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+
+func availableSubcommandsTitle(cmd *cobra.Command) string {
+	title := "AVAILABLE COMMANDS"
+	if cmd.Annotations != nil && cmd.Annotations[availableSubcommandsTitleAnnotation] != "" {
+		title = cmd.Annotations[availableSubcommandsTitleAnnotation]
+	}
+	return termenv.String(title).Bold().String()
+}
+
+func noAvailableSubcommands(cmd *cobra.Command) string {
+	if cmd.HasAvailableSubCommands() || cmd.Annotations == nil {
+		return ""
+	}
+	return cmd.Annotations[noAvailableSubcommandsAnnotation]
+}
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -1370,20 +1555,27 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableSubCommands}}
 
-{{ "Available Commands" | toUpperBold }}
+{{ availableSubcommandsTitle . }}
 {{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
-{{- if .HasAvailableLocalFlags}}
+{{- if noAvailableSubcommands .}}
 
-{{ groupFlags .LocalFlags | trimTrailingWhitespaces }}
+{{ noAvailableSubcommands . }}
+{{- end}}
+
+{{- $localFlags := availableFlags . .LocalFlags}}
+{{- if $localFlags.HasAvailableFlags}}
+
+{{ groupFlags $localFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 
-{{- if hasInheritedFlags . }}
+{{- $inheritedFlags := inheritedFlags .}}
+{{- if $inheritedFlags.HasAvailableFlags}}
 
 {{ "Inherited Options" | toUpperBold }}
-{{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces }}
+{{ flagUsagesWrapped $inheritedFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 

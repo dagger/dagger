@@ -79,7 +79,7 @@ func versionHuman() string {
 		commit,
 		dirty,
 		platforms.DefaultString(),
-		RunnerHost,
+		configuredRunnerHost(),
 	)
 }
 

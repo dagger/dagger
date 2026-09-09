@@ -38,6 +38,71 @@ type parsedReleaseTag struct {
 	Semver semvery.Version
 }
 
+// releaseVersionQuery is a SemVer prefix query. Missing numeric components
+// match every value for that component. A prerelease suffix selects only that
+// prerelease channel.
+type releaseVersionQuery struct {
+	parts      []string
+	prerelease string
+}
+
+func parseReleaseVersionQuery(query string) (releaseVersionQuery, error) {
+	if query == "" {
+		return releaseVersionQuery{}, nil
+	}
+	parsed, ok := semvery.Parse(query)
+	if !ok || parsed.Build != "" {
+		return releaseVersionQuery{}, fmt.Errorf("invalid version query %q", query)
+	}
+	parts := make([]string, len(parsed.RawParts))
+	for i, part := range parsed.RawParts {
+		part = strings.TrimLeft(part, "0")
+		if part == "" {
+			part = "0"
+		}
+		parts[i] = part
+	}
+	return releaseVersionQuery{
+		parts:      parts,
+		prerelease: strings.TrimPrefix(parsed.Prerelease, "-"),
+	}, nil
+}
+
+// IsReleaseVersionQuery reports whether query uses the release query syntax.
+func IsReleaseVersionQuery(query string) bool {
+	if query == "" {
+		return false
+	}
+	_, err := parseReleaseVersionQuery(query)
+	return err == nil
+}
+
+func (query releaseVersionQuery) matches(candidate parsedReleaseTag) bool {
+	parts := candidate.Semver.RawParts
+	for i, want := range query.parts {
+		if i >= len(parts) {
+			// Missing candidate components are concrete zeroes.
+			if want != "0" {
+				return false
+			}
+			continue
+		}
+		got := strings.TrimLeft(parts[i], "0")
+		if got == "" {
+			got = "0"
+		}
+		if got != want {
+			return false
+		}
+	}
+
+	prerelease := strings.TrimPrefix(candidate.Semver.Prerelease, "-")
+	if query.prerelease == "" {
+		return prerelease == ""
+	}
+	return prerelease == query.prerelease || strings.HasPrefix(prerelease, query.prerelease+".")
+}
+
 func parseReleaseTag(candidate releaseTagCandidate) (parsedReleaseTag, bool) {
 	version, ok := semvery.Parse(candidate.Version)
 	if !ok {
@@ -52,7 +117,18 @@ func parseReleaseTag(candidate releaseTagCandidate) (parsedReleaseTag, bool) {
 func selectLatestReleaseTag(
 	candidates []releaseTagCandidate,
 ) (releaseTagCandidate, bool, error) {
-	winners := highestStableReleaseTags(candidates)
+	return selectReleaseTag(candidates, "")
+}
+
+func selectReleaseTag(
+	candidates []releaseTagCandidate,
+	versionQuery string,
+) (releaseTagCandidate, bool, error) {
+	query, err := parseReleaseVersionQuery(versionQuery)
+	if err != nil {
+		return releaseTagCandidate{}, false, err
+	}
+	winners := highestReleaseTags(candidates, query)
 	winners = preferCompleteReleaseAliases(winners)
 
 	switch len(winners) {
@@ -68,15 +144,16 @@ func selectLatestReleaseTag(
 	return preferCanonicalGitReleaseTag(winners).releaseTagCandidate, true, nil
 }
 
-func highestStableReleaseTags(
+func highestReleaseTags(
 	candidates []releaseTagCandidate,
+	query releaseVersionQuery,
 ) []parsedReleaseTag {
 	var winners []parsedReleaseTag
 	var best semvery.Version
 	found := false
 	for _, candidate := range candidates {
 		parsed, ok := parseReleaseTag(candidate)
-		if !ok || parsed.Semver.Prerelease != "" {
+		if !ok || !query.matches(parsed) {
 			continue
 		}
 

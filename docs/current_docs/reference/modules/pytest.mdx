@@ -13,7 +13,7 @@ Official module: [dagger/pytest](https://github.com/dagger/pytest)
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/pytest
+dagger module install github.com/dagger/pytest
 ```
 
 ## Run the tests
@@ -36,7 +36,7 @@ Keep this module focused on tests; use separate modules for formatting, linting,
 
 ## Configure it
 
-List the current settings and their values with `dagger settings pytest`, then set one with `dagger settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`:
+List the current settings and their values with `dagger module settings pytest`, then set one with `dagger module settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`:
 
 - `source` (default: workspace root) is the directory containing the Python project to test. Point it at a subdirectory when the project is not at the workspace root.
 - `container` (default: none) is a custom container that already has Python and `uv` installed. By default the module uses an Alpine base and provisions Python with `uv`; set a container when tests need system packages, a private index, or other setup the default image lacks.

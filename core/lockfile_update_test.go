@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
@@ -18,6 +21,126 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
+	require.ErrorIs(t, err, errUnsupportedLockEntry)
+}
+
+func TestUpdateWorkspaceLockIgnoresUnsupportedEntries(t *testing.T) {
+	t.Parallel()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"acme",
+		"resolve",
+		[]any{"input"},
+		"result",
+	))
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitSHA,
+		workspace.LookupInputs(
+			[]any{"https://example.com/repo.git", "refs/heads/main"},
+			workspace.LookupOption{Name: "futureOption", Value: true},
+		),
+		"0123456789012345678901234567890123456789",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(context.Background(), nil, lock))
+	require.Len(t, lock.Entries(), 2)
+}
+
+func TestUpdateVanityURLLockEntry(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://github.com/dagger/dagger?dagger-get=1", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	sourceURL := "https://" + srv.Listener.Addr().String() + "/go"
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+		"https://github.com/old/repository",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(t.Context(), nil, lock))
+	resolved, ok := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+	)
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
+}
+
+func TestUpdateVanityURLLockEntryValidatesInputs(t *testing.T) {
+	for _, inputs := range [][]any{
+		nil,
+		{42},
+		{""},
+		{"https://example.com/source", "extra"},
+		workspace.LookupInputs(
+			[]any{"https://example.com/source"},
+			workspace.LookupOption{Name: "other", Value: true},
+		),
+	} {
+		_, err := updateVanityURLLockEntry(t.Context(), workspace.LookupEntry{
+			Operation: workspace.LockOperationVanityURL,
+			Inputs:    inputs,
+		})
+		require.Error(t, err)
+	}
+}
+
+func TestUpdateVanityURLLockEntryPreservesMappingOnFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		location string
+		cancel   bool
+	}{
+		{name: "server error", status: http.StatusInternalServerError},
+		{name: "not a redirect", status: http.StatusOK},
+		{name: "missing location", status: http.StatusTemporaryRedirect},
+		{name: "invalid location", status: http.StatusTemporaryRedirect, location: "http://example.com/repo?dagger-get=1"},
+		{name: "cancelled request", status: http.StatusTemporaryRedirect, cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Location", tc.location)
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+			oldClient := daggerGetClient
+			daggerGetClient = srv.Client()
+			daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+			defer func() { daggerGetClient = oldClient }()
+
+			lock := workspace.NewLock()
+			inputs := []any{srv.URL + "/go"}
+			previous := "https://github.com/dagger/dagger@v1.2.3"
+			require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, inputs, previous))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancel {
+				cancel()
+			}
+			err := UpdateWorkspaceLock(ctx, nil, lock)
+			require.ErrorContains(t, err, "no valid redirect received")
+			actual, ok := lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationVanityURL, inputs)
+			require.True(t, ok)
+			require.Equal(t, previous, actual)
+		})
+	}
 }
 
 func TestSelectedSHAEntry(t *testing.T) {
@@ -32,6 +155,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"https://example.com/repo.git"},
 					workspace.LookupOption{Name: "tagPrefix", Value: "sdk/go"},
+					workspace.LookupOption{Name: "version", Value: "v1.2"},
 				),
 			},
 			"refs/tags/sdk/go/v1.2.3",
@@ -53,6 +177,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"registry.example/acme/image"},
 					workspace.LookupOption{Name: "protocol", Value: "http"},
+					workspace.LookupOption{Name: "version", Value: "2"},
 				),
 			},
 			"2.0.0",
@@ -92,6 +217,14 @@ func TestUpdateGitLatestLockEntryValidatesInputs(t *testing.T) {
 				workspace.LookupOption{Name: "tagPrefix", Value: ""},
 			),
 			wantErr: "invalid git-latest tagPrefix",
+		},
+		{
+			name: "invalid version query",
+			inputs: workspace.LookupInputs(
+				[]any{"https://example.com/repo.git"},
+				workspace.LookupOption{Name: "version", Value: "v1.x"},
+			),
+			wantErr: `invalid git-latest version v1.x: invalid version query "v1.x"`,
 		},
 		{
 			name: "unknown option",
@@ -134,6 +267,7 @@ func TestParseGitLookupInputsRejectsUnknownOption(t *testing.T) {
 		`cannot update git-sha: unsupported option "depth"; `+
 			`upgrade Dagger or remove the option`,
 	)
+	require.True(t, errors.Is(err, errUnsupportedLockEntry))
 }
 
 func TestParseOCILockInputs(t *testing.T) {
@@ -229,6 +363,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		[]any{"docker.io/library/alpine"},
 		workspace.LookupOption{Name: "protocol", Value: "https"},
 		workspace.LookupOption{Name: "insecureSkipTLSVerify", Value: true},
+		workspace.LookupOption{Name: "version", Value: "v3.20"},
 	)
 	got, err := parseOCILockInputs(workspace.LockOperationOCILatest, inputs, true)
 	require.NoError(t, err)
@@ -236,6 +371,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		Protocol:              serverresolver.RegistryProtocolHTTPS,
 		InsecureSkipTLSVerify: true,
 	}, got.registryTransport)
+	require.Equal(t, "v3.20", got.version)
 
 	_, err = parseOCILockInputs(
 		workspace.LockOperationOCILatest,

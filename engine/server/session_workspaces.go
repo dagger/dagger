@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
 	coresdk "github.com/dagger/dagger/core/sdk"
@@ -299,33 +300,62 @@ type workspaceRemoteRef struct {
 	cloneRef        string
 	version         string
 	workspaceSubdir string
+	selector        gitref.SelectorType
 }
 
 func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRemoteRef, error) {
-	// Fragment refs are parsed via the same git URL parser used by Address.*.
+	return parseWorkspaceRemoteRefWithResolver(ctx, remoteRef, core.ResolveDaggerGetRedirect)
+}
+
+func parseWorkspaceRemoteRefWithResolver(
+	ctx context.Context,
+	remoteRef string,
+	resolve func(context.Context, string) (string, error),
+) (workspaceRemoteRef, error) {
+	// A # selector is the explicit Git URL form: protocol://repo#ref:subpath.
 	if strings.Contains(remoteRef, "#") {
-		gitURL, err := gitutil.ParseURL(remoteRef)
+		parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
 		if err != nil {
 			return workspaceRemoteRef{}, err
 		}
-		version := ""
-		subdir := "."
-		if gitURL.Fragment != nil {
-			version = gitURL.Fragment.Ref
-			subdir = gitURL.Fragment.Subdir
-		}
-		workspaceSubdir, err := normalizeWorkspaceRemoteSubdir(subdir)
+		workspaceSubdir, err := normalizeWorkspaceRemoteSubdir(parsedRef.RepoRootSubdir)
 		if err != nil {
 			return workspaceRemoteRef{}, fmt.Errorf("invalid git subdir in workspace ref %q: %w", remoteRef, err)
 		}
+		cloneRef := parsedRef.SourceCloneRef
+		resolvedRef, err := resolve(ctx, cloneRef)
+		if err != nil {
+			return workspaceRemoteRef{}, err
+		}
+		if resolvedRef != cloneRef {
+			parsedRef, err := core.ParseGitRefString(ctx, resolvedRef)
+			if err != nil {
+				return workspaceRemoteRef{}, err
+			}
+			cloneRef = parsedRef.SourceCloneRef
+			resolvedSubdir := parsedRef.RepoRootSubdir
+			if resolvedSubdir == "/" {
+				resolvedSubdir = "."
+			}
+			workspaceSubdir, err = normalizeWorkspaceRemoteSubdir(filepath.Join(resolvedSubdir, workspaceSubdir))
+			if err != nil {
+				return workspaceRemoteRef{}, err
+			}
+		}
 		return workspaceRemoteRef{
-			cloneRef:        gitURL.Remote(),
-			version:         version,
+			cloneRef:        cloneRef,
+			version:         parsedRef.ModVersion,
 			workspaceSubdir: workspaceSubdir,
+			selector:        parsedRef.Selector,
 		}, nil
 	}
 
-	// Preserve legacy @ref parsing semantics for existing workspace refs.
+	// The @ selector uses Go-like import path semantics, with any path after the
+	// repository root identifying the workspace subdirectory.
+	remoteRef, err := resolve(ctx, remoteRef)
+	if err != nil {
+		return workspaceRemoteRef{}, err
+	}
 	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
 	if err != nil {
 		return workspaceRemoteRef{}, err
@@ -338,6 +368,7 @@ func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRe
 		cloneRef:        parsedRef.SourceCloneRef,
 		version:         parsedRef.ModVersion,
 		workspaceSubdir: workspaceSubdir,
+		selector:        parsedRef.Selector,
 	}, nil
 }
 
@@ -363,7 +394,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
 	}
 
-	tree, gitRef, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
+	tree, gitRef, err := srv.cloneGitTree(ctx, client.dag, parsedRef)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
 	}
@@ -512,7 +543,7 @@ func loadWorkspaceConfig(
 		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
 	}
 
-	cfg, err := workspace.ParseConfig(data)
+	cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
 	if err != nil {
 		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
 	}
@@ -539,14 +570,18 @@ func workspaceConfigPendingModules(
 	slices.Sort(names)
 
 	pending := make([]pendingModule, 0, len(names))
+	sdkProviders := make(map[string]bool, len(cfg.SDKs))
+	for _, sdk := range cfg.SDKs {
+		sdkProviders[sdk.Module] = true
+	}
 	for _, name := range names {
 		entry := cfg.Modules[name]
 		// A built-in SDK install entry (e.g. dang/go written by migration) has a
 		// bare runtime name as its source, not a loadable module ref. It exists
-		// only to carry the [modules.<sdk>.as-sdk] authoring metadata; the runtime
+		// only to back a top-level [sdks.<name>] entry; the runtime
 		// itself resolves in-engine when a consuming module loads. Skip it here so
 		// the loader doesn't try to resolve the bare name as a local path.
-		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+		if sdkProviders[name] && coresdk.IsBuiltinSDKName(entry.Source) {
 			continue
 		}
 		mod := pendingModule{
@@ -783,6 +818,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return fmt.Errorf("building workspace: %w", err)
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
+	if hasWorkspaceEnv {
+		coreWS.SetSelectedEnv(workspaceEnv)
+	}
 	if err := attachUserWorkspaceOverlay(ctx, clientMD, readFile, hostReadFile, ws, coreWS, remoteKey, isLocal); err != nil {
 		return err
 	}
@@ -1070,22 +1108,16 @@ func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
 }
 
 // cloneGitTree clones a git repository and returns its selected ref and tree.
-func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], dagql.ObjectResult[*core.GitRef], error) {
-	// Build the ref selector — use "head" if no version specified.
-	refSelector := dagql.Selector{Field: "head"}
-	if version != "" {
-		refSelector = dagql.Selector{
-			Field: "ref",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(version)}},
-		}
-	}
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, remote workspaceRemoteRef) (dagql.ObjectResult[*core.Directory], dagql.ObjectResult[*core.GitRef], error) {
+	supportsVersionQueries := core.AfterVersion(workspace.VersionQueriesVersion).Contains(dag.View)
+	refSelector := workspaceGitRefSelector(remote, supportsVersionQueries)
 
 	var gitRef dagql.ObjectResult[*core.GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",
 			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(cloneRef)},
+				{Name: "url", Value: dagql.String(remote.cloneRef)},
 			},
 		},
 		refSelector,
@@ -1107,6 +1139,36 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 		return tree, gitRef, fmt.Errorf("cloning repo: %w", err)
 	}
 	return tree, gitRef, nil
+}
+
+func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries bool) dagql.Selector {
+	// Use HEAD without a selector and literal ref resolution unless an @
+	// selector contains a SemVer query supported by this API version.
+	refSelector := dagql.Selector{Field: "head"}
+	if remote.version != "" {
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(remote.version)}},
+		}
+		if remote.selector == gitref.ModuleVersionSelector &&
+			supportsVersionQueries &&
+			core.IsReleaseVersionQuery(remote.version) {
+			refSelector = dagql.Selector{
+				Field: "latest",
+				Args: []dagql.NamedInput{{
+					Name:  "version",
+					Value: dagql.String(remote.version),
+				}},
+			}
+			if remote.workspaceSubdir != "." {
+				refSelector.Args = append(refSelector.Args, dagql.NamedInput{
+					Name:  "tagPrefix",
+					Value: dagql.String(remote.workspaceSubdir),
+				})
+			}
+		}
+	}
+	return refSelector
 }
 
 // ensureModulesLoaded loads pending modules (workspace, compat, and -m) on

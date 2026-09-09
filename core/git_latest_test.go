@@ -201,6 +201,55 @@ func TestSelectLatestGitRefAcceptsCalver(t *testing.T) {
 	require.Equal(t, latestCommit, ref.SHA)
 }
 
+func TestSelectGitRefWithVersionQuery(t *testing.T) {
+	t.Parallel()
+
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/tags/v1.2.3", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/tags/v1.2.4-beta.1", SHA: "2222222222222222222222222222222222222222"},
+		{Name: "refs/tags/v1.2.4-beta.2", SHA: "3333333333333333333333333333333333333333"},
+		{Name: "refs/tags/v1.3.0", SHA: "4444444444444444444444444444444444444444"},
+		{Name: "refs/tags/v2.0.0", SHA: "5555555555555555555555555555555555555555"},
+	}}
+
+	ref, err := SelectGitRefWithVersionQuery(remote, "", "v1.2")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v1.2.3", ref.Name)
+
+	ref, err = SelectGitRefWithVersionQuery(remote, "", "v1.2-beta")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v1.2.4-beta.2", ref.Name)
+
+	_, err = SelectGitRefWithVersionQuery(remote, "", "v3")
+	require.ErrorContains(t, err, `no Git ref matches version query "v3"`)
+}
+
+func TestSelectGitRefWithVersionQueryFallsBackToBranch(t *testing.T) {
+	t.Parallel()
+
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/heads/v1.2.4", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/heads/v1.2.5", SHA: "2222222222222222222222222222222222222222"},
+	}}
+
+	ref, err := SelectGitRefWithVersionQuery(remote, "", "v1.2")
+	require.NoError(t, err)
+	require.Equal(t, "refs/heads/v1.2.5", ref.Name)
+}
+
+func TestSelectGitRefWithVersionQueryPrefersTags(t *testing.T) {
+	t.Parallel()
+
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/tags/v1.2.3", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/heads/v1.2.4", SHA: "2222222222222222222222222222222222222222"},
+	}}
+
+	ref, err := SelectGitRefWithVersionQuery(remote, "", "v1.2")
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v1.2.3", ref.Name)
+}
+
 func TestValidateGitLatestRef(t *testing.T) {
 	t.Parallel()
 

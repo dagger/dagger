@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `dagger settings` now truncates long values and descriptions to the terminal
+  width, so table rows stay aligned. Read one setting with
+  `dagger settings MODULE KEY` to get its full value.
+time: 2026-09-01T19:46:52Z
+custom:
+  Author: shykes
+  PR: 14027

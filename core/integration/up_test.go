@@ -119,6 +119,23 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "infra:database")
 }
 
+func (UpSuite) TestUpNoServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+
+	// An empty workspace must report the problem rather than wait for Ctrl+C.
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	out, err := modGen.
+		WithWorkdir("/empty").
+		WithNewFile("dagger.toml", "").
+		With(daggerExecFail("up")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "no services found")
+}
+
 func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
@@ -269,6 +286,102 @@ settings.base = "container-provider:image"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
+	})
+
+	t.Run("entrypoint module ref via settings", func(ctx context.Context, t *testctx.T) {
+		// The referenced module is the workspace entrypoint.
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:image"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		// Filtered check: only the consumer loads up front, so the entrypoint
+		// module must be demand-loaded when the wiring resolves.
+		out, err = modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "hello-with-services:web"
+`).
+			With(daggerExec("check", "service-ref-consumer:check-service")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+	})
+
+	t.Run("short-form entrypoint ref via settings", func(ctx context.Context, t *testctx.T) {
+		// A bare "<function>" names a function of the entrypoint module.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "image"
+settings.file = "marker.txt"
+`)
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		// A bare value that names no entrypoint function keeps its address
+		// meaning, even though the entrypoint defines a "file" function.
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ambient", strings.TrimSpace(out))
+	})
+
+	t.Run("settings stores entrypoint refs in long form", func(ctx context.Context, t *testctx.T) {
+		// The short form is accepted but the long form is written; a string
+		// setting is never rewritten.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+entrypoint = true
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+`).
+			With(daggerExec("settings", "service-ref-consumer", "base", "image")).
+			With(daggerExec("settings", "service-ref-consumer", "label", "image"))
+
+		cfg, err := ctr.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, `base = "container-provider:image"`)
+		require.Contains(t, cfg, `label = "image"`)
+
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+
+		cfg, err = ctr.
+			With(daggerExec("settings", "service-ref-consumer", "base", "container-provider:image")).
+			File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cfg, `base = "container-provider:image"`)
 	})
 
 	t.Run("artifact refs via settings", func(ctx context.Context, t *testctx.T) {

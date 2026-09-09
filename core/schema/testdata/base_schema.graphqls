@@ -2812,8 +2812,10 @@ type Generator implements Node {
   """Return the fully qualified name of the generator"""
   name: String!
 
-  """The original module in which the generator has been defined"""
-  originalModule: Module!
+  """
+  The module that defined the generator, or null for an engine-defined generator
+  """
+  originalModule: Module
 
   """The path of the generator within its module"""
   path: [String!]!

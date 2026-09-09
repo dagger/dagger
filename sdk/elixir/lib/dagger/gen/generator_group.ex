@@ -107,6 +107,23 @@ defmodule Dagger.GeneratorGroup do
       client: generator_group.client
     }
   end
+
+  @doc """
+  The workspace with the combined output from the last generator run
+  """
+  @spec workspace(t(), [{:on_conflict, Dagger.ChangesetsMergeConflict.t() | nil}]) ::
+          Dagger.Workspace.t()
+  def workspace(%__MODULE__{} = generator_group, optional_args \\ []) do
+    query_builder =
+      generator_group.query_builder
+      |> QB.select("workspace")
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: generator_group.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.GeneratorGroup do

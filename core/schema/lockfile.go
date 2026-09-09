@@ -44,6 +44,7 @@ func workspaceLookupLockRefresh(ctx context.Context) bool {
 
 func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) context.Context {
 	ctx = context.WithValue(ctx, workspaceLookupLockOverrideKey{}, lock)
+	ctx = core.ContextWithVanityURLLookupLock(ctx, lock)
 	return dagql.WithPerClientCacheScope(ctx)
 }
 

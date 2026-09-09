@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestInstallAndUpdateCommandFlags(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"install"})
+	cmd, _, err := rootCmd.Find([]string{"module", "install"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
@@ -24,11 +25,37 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 	require.Nil(t, rootCmd.PersistentFlags().Lookup("lock"))
 
-	cmd, _, err = rootCmd.Find([]string{"update"})
+	cmd, _, err = rootCmd.Find([]string{"install"})
+	require.NoError(t, err)
+	require.Same(t, installAliasCmd, cmd)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
+	require.NotNil(t, cmd.Flags().Lookup("name"))
+
+	cmd, _, err = rootCmd.Find([]string{"module", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
+	require.NoError(t, err)
+	require.False(t, cmd.Hidden)
+}
+
+func TestWorkspaceUpdateGlobalFlags(t *testing.T) {
+	root := testRootCommand()
+	for _, flag := range []string{"--engine=auto", "--workspace=.", "--env=dev"} {
+		require.NoError(t, validateFlagCapabilities(root, []string{"workspace", "update", flag}), flag)
+	}
+	for _, flag := range []string{"--silent", "--progress", "--auto-apply"} {
+		arg := flag
+		if flag == "--progress" {
+			arg += "=plain"
+		}
+		require.EqualError(t, validateFlagCapabilities(root, []string{"workspace", "update", arg}),
+			fmt.Sprintf("flag %s is not supported by command %q", flag, "dagger workspace update"))
+	}
 }
 
 func TestWorkspaceCommandAliases(t *testing.T) {
@@ -36,15 +63,14 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, workspaceCmd, cmd)
 
-	cmd, _, err = rootCmd.Find([]string{"i"})
+	cmd, _, err = rootCmd.Find([]string{"mod"})
 	require.NoError(t, err)
-	require.Same(t, moduleDepInstallCmd, cmd)
-	require.False(t, cmd.Hidden)
+	require.Same(t, moduleCmd, cmd)
 
-	cmd, _, err = rootCmd.Find([]string{"un"})
+	cmd, args, err := rootCmd.Find([]string{"i"})
 	require.NoError(t, err)
-	require.Same(t, moduleDepUninstallCmd, cmd)
-	require.False(t, cmd.Hidden)
+	require.Same(t, rootCmd, cmd)
+	require.Equal(t, []string{"i"}, args)
 }
 
 func TestCosmeticCommandAliases(t *testing.T) {
@@ -57,15 +83,6 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"api", "client"})
-	require.NoError(t, err)
-	require.Same(t, apiClientCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"client"})
-	require.NoError(t, err)
-	require.NotSame(t, apiClientCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
@@ -128,17 +145,29 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, workspaceConfigCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"settings"})
+	cmd, _, err = rootCmd.Find([]string{"module", "settings"})
 	require.NoError(t, err)
 	require.Same(t, settingsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"uninstall"})
+	cmd, _, err = rootCmd.Find([]string{"settings"})
+	require.NoError(t, err)
+	require.Same(t, settingsAliasCmd, cmd)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
+
+	cmd, _, err = rootCmd.Find([]string{"module", "uninstall"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepUninstallCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"installed"})
+	cmd, _, err = rootCmd.Find([]string{"uninstall"})
+	require.NoError(t, err)
+	require.Same(t, uninstallAliasCmd, cmd)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
+
+	cmd, _, err = rootCmd.Find([]string{"module", "list"})
 	require.NoError(t, err)
 	require.Same(t, installedCmd, cmd)
 	require.False(t, cmd.Hidden)
@@ -205,27 +234,24 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.NotContains(t, help, "EXECUTION COMMANDS")
 	require.NotContains(t, help, "check, checks")
 	require.NotContains(t, help, "function, fn")
-	require.NotContains(t, help, "module, mod")
+	require.Contains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
+	require.Contains(t, help, "terminal, tty")
 	require.NotContains(t, help, "exec, run")
 
 	names := rootHelpCommandNames(help)
 	for _, name := range []string{
-		"activity",
 		"check",
 		"generate",
 		"install",
-		"installed",
-		"search",
+		"module",
 		"settings",
 		"setup",
 		"uninstall",
 		"up",
-		"update",
 		"version",
 		"api",
 		"cloud",
-		"module",
 		"sdk",
 		"workspace",
 	} {
@@ -251,12 +277,16 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"query",
 		"run",
 		"session",
+		"installed",
+		"search",
+		"update",
+		"activity",
 	} {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update"} {
-		for _, parent := range []string{"api", "cloud", "module", "sdk", "workspace"} {
+	for _, leaf := range []string{"check", "generate", "setup", "up"} {
+		for _, parent := range []string{"api", "cloud", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}
@@ -371,7 +401,7 @@ func commandIndex(names []string, name string) int {
 	return -1
 }
 
-func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
+func TestInstallGlobalFlags(t *testing.T) {
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	installGlobalFlags(flags)
 
@@ -388,6 +418,10 @@ func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
 	webFlag := flags.Lookup("web")
 	require.NotNil(t, webFlag)
 	require.Equal(t, "w", webFlag.Shorthand)
+
+	xReleaseFlag := flags.Lookup("x-release")
+	require.NotNil(t, xReleaseFlag)
+	require.True(t, xReleaseFlag.Hidden)
 }
 
 func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
@@ -401,10 +435,49 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	workdir = "."
 	workspaceRef = ""
 
-	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call"}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	args := parseGlobalFlags(root, []string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
 
 	require.Equal(t, "/work/shell", workdir)
 	require.Equal(t, "./ws", workspaceRef)
+	require.Equal(t, []string{"call", "identify"}, args)
+}
+
+// Cobra owns --help. The early global pass shares the real flag values, so it
+// must not apply --help: Cobra reads that value even for a command that
+// disables flag parsing, and a dynamic command such as `dagger call` would
+// then print its static usage instead of loading the module and listing its
+// functions.
+func TestParseGlobalFlagsLeavesHelpToCobra(t *testing.T) {
+	oldWorkdir := workdir
+	t.Cleanup(func() { workdir = oldWorkdir })
+	workdir = "."
+
+	root := &cobra.Command{Use: "root"}
+	call := &cobra.Command{Use: "call", DisableFlagParsing: true}
+	root.AddCommand(call)
+	installGlobalFlags(root.PersistentFlags())
+	root.PersistentFlags().BoolP("help", "h", false, "Print usage")
+
+	for _, args := range [][]string{
+		{"call", "--help"},
+		{"call", "-h"},
+		{"--help", "call"},
+		{"call", "build", "--help"},
+	} {
+		require.NoError(t, root.PersistentFlags().Set("help", "false"))
+		parseGlobalFlags(root, args)
+		help, err := root.PersistentFlags().GetBool("help")
+		require.NoError(t, err, args)
+		require.False(t, help, args)
+	}
+
+	// The other global flags still apply.
+	parseGlobalFlags(root, []string{"call", "--workdir", "/work/help"})
+	require.Equal(t, "/work/help", workdir)
 }
 
 func TestWorkspaceFlagPolicy(t *testing.T) {
@@ -416,11 +489,10 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	})
 
 	workspaceRef = "github.com/acme/ws"
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(newWorkspaceUpdateCmd(false), nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz", "qux"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
 
@@ -435,7 +507,6 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	workspaceSettingsGlobal = true
 	workspaceConfigGlobal = true
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.settings.x", "x"}))
 	workspaceSettingsGlobal = false
 	workspaceConfigGlobal = false
@@ -444,7 +515,6 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	require.NoError(t, validateWorkspaceFlagPolicy(apiCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
 }
 
 func TestApplyWorkspaceClientParams(t *testing.T) {

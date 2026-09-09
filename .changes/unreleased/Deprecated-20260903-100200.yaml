@@ -1,0 +1,9 @@
+kind: Deprecated
+body: |
+  `--cloud`, `DAGGER_CLOUD_ENGINE`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` are
+  deprecated. Use `--engine=cloud` or `--engine=URI`, or set `DAGGER_ENGINE`.
+  The old inputs still work as a fallback.
+time: 2026-09-03T10:02:00Z
+custom:
+  Author: shykes
+  PR: "14027"

@@ -1,0 +1,222 @@
+# Future CLI Global Flag Scoping
+
+author: shykes
+created: 2026-09-01
+status: implemented
+related: https://github.com/dagger/dagger/issues/14024
+
+## Context
+
+The Dagger CLI defines many flags as root-persistent flags. Cobra therefore
+shows them in the help for every command, including commands for which the
+flags have no useful effect.
+
+This design separates the original global flags into four groups:
+
+1. Command-specific flags are available only when a command declares the
+   required capability.
+2. Command-specific flags with one consumer move to that command.
+3. Bootstrap and framework flags stay global.
+4. Development controls stay available but hidden.
+
+Capability scoping controls flag validation and help output. It does not have
+to prevent a flag from appearing before the subcommand. For example,
+`dagger -W ./workspace check` can remain valid when `check` declares
+`MaySelectWorkspace`.
+
+## Command Capabilities
+
+| Capability | Meaning |
+|---|---|
+| `MayCallEngine` | The command can connect to and call the engine. |
+| `MaySelectWorkspace` | The command can use `-W`, `--workspace` to select or resolve a workspace. |
+| `MayReadWorkspaceConfig` | The command can use `--env` when reading workspace configuration. |
+| `MayWriteWorkspaceConfig` | The command can use `--env` when writing workspace configuration. |
+| `MayRenderPipeline` | The command can show a user-facing pipeline trace. |
+| `MayProduceOutput` | The command can produce an output whose disposition can require user input, such as review before a side effect or selection of a local output path. |
+
+The capabilities are independent. A command can declare more than one.
+
+- A normal pipeline command usually declares `MayCallEngine`,
+  `MaySelectWorkspace`, `MayReadWorkspaceConfig`, and `MayRenderPipeline`.
+- `dagger trace` declares `MayRenderPipeline` but does not call the engine.
+- A configuration command can call the engine without rendering its internal
+  trace to the user.
+- `dagger activity`, `dagger cloud rerun`, and `dagger workspace remote`
+  declare `MaySelectWorkspace` without declaring `MayCallEngine`.
+- `dagger check` renders pass or failure status, but does not produce an
+  output. `dagger generate` and `dagger api call` can produce outputs.
+
+An output is a returned value whose disposition the CLI must decide. The CLI
+can print, export, apply, save, discard, or request approval for the output.
+The capability does not depend on the current output type.
+
+`--verbose` remains global as a diagnostic escape hatch. When a command emits
+a trace, `--verbose` prints a final trace even if the command does not declare
+`MayRenderPipeline`. It does not enable the live TUI or make `--no-exit`,
+`--web`, or other pipeline rendering flags applicable.
+
+`--debug` enables engine and trace diagnostics. It is available when a command
+declares `MayCallEngine OR MayRenderPipeline`. Engine commands request debug
+logs from the engine. Rendering commands expose internal trace details. No
+current command outside this capability union implements debug behavior.
+
+`--engine` selects the engine and requires `MayCallEngine`. The value `cloud`
+selects Dagger Cloud Engines. Other values use the supported engine URI
+schemes. The CLI passes these URIs through without a syntax change. The old
+`--cloud` flag is a hidden compatibility alias for `--engine=cloud`.
+
+The full list of engine URI schemes is too long for a usage message that 34
+commands print. Four surfaces teach the values, and all four read one catalog
+in `engine/client/drivers`. A test asserts that the catalog covers the driver
+registry exactly, so no surface can name a scheme that does not work, or hide
+one that does:
+
+1. The `--engine` usage names the main values on one line: `cloud`, `image://`,
+   `container://`, `tcp://`, `tls://`, `ssh://`, `kube-pod://`, `unix://`. It
+   then points at the help topic.
+2. `dagger help engine` is a Cobra help topic. It holds the full catalog, the
+   engine selection priority, and examples. It declares no capabilities, so its
+   own usage message stays free of the global flags. `dagger --help` lists it
+   under `ADDITIONAL HELP TOPICS`, and the CLI reference documents it once.
+3. Shell completion of `--engine` offers every scheme prefix, without the
+   legacy Docker schemes.
+4. An unknown scheme fails with the list of supported schemes.
+
+`DAGGER_ENGINE` is the environment form of `--engine`. It takes the same
+values, so a shell session can select an engine once for every command.
+
+Engine selection has this priority:
+
+1. `--engine`
+2. Hidden `--cloud`
+3. `DAGGER_ENGINE`
+4. A future user-environment setting
+5. `DAGGER_CLOUD_ENGINE`
+6. `_EXPERIMENTAL_DAGGER_RUNNER_HOST`
+7. The built-in default
+
+Flags outrank the environment, and the current inputs outrank the deprecated
+ones. `--cloud` is a deprecated alias for `--engine=cloud`, so it keeps a
+flag's priority over `DAGGER_ENGINE`.
+
+`--cloud`, `DAGGER_CLOUD_ENGINE`, and `_EXPERIMENTAL_DAGGER_RUNNER_HOST` are
+all soft-deprecated: `--engine` and `DAGGER_ENGINE` replace them, but they
+still work as a fallback. `--engine=cloud` replaces `--cloud` and
+`DAGGER_CLOUD_ENGINE`. `--engine=URI` replaces
+`_EXPERIMENTAL_DAGGER_RUNNER_HOST`. Only `--cloud` warns today, because pflag
+prints the notice for a deprecated flag. The two environment variables stay
+silent; `dagger help engine` marks them deprecated. A warning for them, and
+their removal, belong to the user-environment design.
+
+The root command declares no capabilities. Bare `dagger` prints usage: it calls
+no engine, selects no workspace, reads no workspace configuration, and renders
+no pipeline, so the front-door usage message stays free of those flags. It is
+left with `-c`, `--command` and `--verbose`. Shell-style root invocations still
+do all of that:
+`dagger FILE` and `dagger -c COMMAND` run `dagger shell`, so the CLI checks
+their flags against the capabilities of `dagger shell`. Thus,
+`dagger --engine=cloud FILE` remains valid, and `dagger --engine=cloud` alone
+is an error.
+
+The module selection flags follow the same rule. `-m`, `--load-module`,
+`-M`, `--no-load-module`, `--allow-llm`, `--eager-runtime`, and `--model` are
+engine session parameters, so they require `MayCallEngine`. Every command that
+installs them declares it except the root command, which carries them only for
+the shell fallback. `-c`, `--command` stays ungated: on the root command it is
+how a user reaches the shell, so the root usage message must keep naming it. Dynamic commands stop early global
+flag parsing at their first schema-owned token. For example, the first
+`--engine` in `dagger --engine=cloud api call deploy --engine production`
+selects the engine. The second is an argument of `deploy`.
+
+A shell completion request (`__complete`) names the command that the user is
+completing, not the command that runs, so flag validation skips it. Completion
+hides the flags that the target command does not support, which gives the same
+result without an error.
+
+`-i`, `--shell-on-error` asks the engine to open a shell in the failed
+container state when a non-internal container exec fails. It requires
+`MayCallEngine`; it does not require `MayRenderPipeline`. The old
+`--interactive` name remains as a hidden deprecated alias.
+`--shell-command-on-error` sets the command that shell runs. It is hidden
+and also requires `MayCallEngine`; `--interactive-command` remains as a
+hidden deprecated alias.
+
+### Workspace environment selection
+
+`--env` selects an `env.<name>` overlay in `dagger.toml`. For a read, the
+command uses the environment-applied configuration. For a write, the command
+targets that environment overlay. The flag is available when a command
+declares `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig`.
+
+`dagger module init` and `dagger api client init` declare both capabilities.
+They resolve the SDK from the environment-applied configuration and record the
+new module or client in that environment overlay. Generated files are still
+exported to the workspace filesystem. Their dynamic SDK command registration
+also applies the selected environment.
+
+An environment SDK role replaces the base module's `as-sdk` value. An init
+command starts with the effective role, adds or replaces the requested entry,
+and writes the complete result under `env.<name>.modules.<sdk>.as-sdk`. This
+keeps the base role unchanged and gives the environment a consistent module and
+client ownership list.
+
+`dagger setup` remains base-only. It declares neither workspace configuration
+capability and does not accept `--env`.
+
+### Output disposition
+
+`--auto-apply` is available on commands that declare `MayProduceOutput`. It
+applies an output without interactive review when the output handler supports
+application.
+
+`-o`, `--output` is also scoped by `MayProduceOutput`, but it remains a
+command-local flag on function-call commands. It selects a local destination
+when the output handler supports saving the result. Other output-producing
+commands do not expose it until they define how an output path affects them.
+
+## Deferred Configuration
+
+Persisted engine selection, Cloud trace settings, and scale-out settings are
+not part of this change. This change does not add them to the workspace
+`dagger.toml` schema. A separate user-environment design will define their
+configuration shape and priority.
+
+The hidden `--scale-out` flag is local to `dagger check`, which is its only
+consumer.
+
+## Global Flag Disposition
+
+The table includes every root-persistent flag from the initial design review. A
+dash in the `Change` column means that no change was proposed.
+
+| Change | Flag | Original visibility | Capability or target |
+|---|---|---|---|
+| Scope to command and keep hidden | `--scale-out` | Hidden | `dagger check`; persisted configuration is deferred |
+| Scope by capability and rename | `--cloud` | Hidden | `--engine`; `MayCallEngine`; keep `--cloud` as a hidden deprecated alias |
+| Scope by capability | `-W`, `--workspace` | Visible | `MaySelectWorkspace` |
+| Scope by capability | `--env` | Visible | `MayReadWorkspaceConfig OR MayWriteWorkspaceConfig` |
+| Scope by capability | `-q`, `--quiet` | Visible | `MayRenderPipeline` |
+| Scope by capability | `-s`, `--silent` | Visible | `MayRenderPipeline` |
+| Scope by capability | `-d`, `--debug` | Visible | `MayCallEngine OR MayRenderPipeline` |
+| Scope by capability | `--progress` | Visible | `MayRenderPipeline` |
+| Scope by capability | `-w`, `--web` | Visible | `MayRenderPipeline` |
+| Scope by capability | `-E`, `--no-exit` | Visible | `MayRenderPipeline` |
+| Scope by capability | `-y`, `--auto-apply` | Visible | `MayProduceOutput` |
+| Scope by capability | `--profile` | Hidden | `MayCallEngine` |
+| Scope by capability | `--dot-output` | Hidden | `MayRenderPipeline` |
+| Scope by capability | `--dot-focus-field` | Hidden | `MayRenderPipeline`; requires DOT output |
+| Scope by capability | `--dot-show-internal` | Hidden | `MayRenderPipeline`; requires DOT output |
+| Scope by capability and rename | `-i`, `--interactive` | Visible | `-i`, `--shell-on-error`; `MayCallEngine`; keep `--interactive` as a hidden deprecated alias |
+| Scope by capability, rename and hide | `--interactive-command` | Visible | `--shell-command-on-error`; `MayCallEngine`; keep `--interactive-command` as a hidden deprecated alias |
+| Hide | `--org` | Visible | Existing Cloud organization selector; replacement design is unresolved |
+| Hide | `--x-release` | Visible | Bootstrap control; prefer `DAGGER_X_RELEASE` |
+| - | `--workdir` | Hidden | Bootstrap working directory |
+| - | `-v`, `--verbose` | Visible | Global diagnostic escape hatch |
+| - | `-h`, `--help` | Hidden | Framework flag |
+
+## Status
+
+All changes in the table are implemented. `--engine` and its hidden `--cloud`
+compatibility alias require `MayCallEngine`. The hidden `--scale-out` flag is
+local to `dagger check`. Persisted settings remain outside this plan.

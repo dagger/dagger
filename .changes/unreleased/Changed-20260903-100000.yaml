@@ -1,0 +1,10 @@
+kind: Changed
+body: |
+  The `-i` flag is now `--shell-on-error`. It opens a shell in the failed
+  container when a container exec fails. `--shell-command-on-error` sets the
+  command that shell runs. `--interactive` and `--interactive-command` still
+  work as deprecated aliases.
+time: 2026-09-03T10:00:00Z
+custom:
+  Author: shykes
+  PR: "14027"

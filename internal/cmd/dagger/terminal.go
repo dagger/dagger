@@ -26,7 +26,10 @@ func init() {
 var terminalCmd = &cobra.Command{
 	Use:     "terminal [options] [pattern]",
 	Aliases: []string{"tty"},
-	Short:   "Open a terminal for a container or directory in your project",
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "tty",
+	},
+	Short: "Open a terminal for a container or directory in your project",
 	Long: `Open a terminal for a container or directory in your project.
 
 Examples:

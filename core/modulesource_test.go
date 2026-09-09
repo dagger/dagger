@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/core/gitref"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
@@ -124,10 +126,13 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
-		name        string
-		cloneRef    string
-		rootSubpath string
-		expected    string
+		name         string
+		cloneRef     string
+		rootSubpath  string
+		versionQuery string
+		version      string
+		selector     gitref.SelectorType
+		expected     string
 	}{
 		{
 			name:        "Go-style URL",
@@ -147,6 +152,36 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			rootSubpath: "",
 			expected:    "git@github.com:user/repo.git",
 		},
+		{
+			name:         "version query",
+			cloneRef:     "https://github.com/user/repo.git",
+			rootSubpath:  "subdir",
+			versionQuery: "v1.2",
+			expected:     "https://github.com/user/repo.git/subdir@v1.2",
+		},
+		{
+			name:        "literal Git ref",
+			cloneRef:    "https://github.com/user/repo.git",
+			rootSubpath: "subdir",
+			version:     "v1.2",
+			selector:    gitref.GitRefSelector,
+			expected:    "https://github.com/user/repo.git#v1.2:subdir",
+		},
+		{
+			name:     "literal Git ref at repository root",
+			cloneRef: "https://github.com/user/repo.git",
+			version:  "v1.2",
+			selector: gitref.GitRefSelector,
+			expected: "https://github.com/user/repo.git#v1.2",
+		},
+		{
+			name:        "literal Git ref with explicit dot subpath",
+			cloneRef:    "https://github.com/user/repo.git",
+			rootSubpath: ".",
+			version:     "v1.2",
+			selector:    gitref.GitRefSelector,
+			expected:    "https://github.com/user/repo.git#v1.2",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -154,7 +189,10 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			src := &ModuleSource{
 				Kind: ModuleSourceKindGit,
 				Git: &GitModuleSource{
-					CloneRef: tc.cloneRef,
+					CloneRef:     tc.cloneRef,
+					VersionQuery: tc.versionQuery,
+					Version:      tc.version,
+					Selector:     tc.selector,
 				},
 				SourceRootSubpath: tc.rootSubpath,
 			}

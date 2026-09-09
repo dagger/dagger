@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -45,10 +45,9 @@ query WorkspaceModuleSettings($module: String!) {
 }
 `
 
-// workspaceModuleSettingsQueryWithIsList additionally requests isList, which
-// older engines don't expose. Only multi-value writes need it, so other flows
-// use the queries above and keep working against those engines.
-const workspaceModuleSettingsQueryWithIsList = `
+// workspaceModuleSettingsQueryForWrite adds isList and isObject, which older
+// engines don't expose; writes fall back to the query above against them.
+const workspaceModuleSettingsQueryForWrite = `
 query WorkspaceModuleSettings($module: String!) {
   currentWorkspace {
     module(name: $module) {
@@ -58,23 +57,40 @@ query WorkspaceModuleSettings($module: String!) {
         value
         description
         isList
+        isObject
       }
     }
   }
 }
 `
 
-var settingsCmd = newSettingsCmd(false)
+const workspaceEntrypointQuery = `
+query WorkspaceEntrypoint {
+  currentWorkspace {
+    modules {
+      name
+      entrypoint
+    }
+  }
+}
+`
 
-// workspaceSettingsCmd is retained as a hidden alias under `dagger workspace`
-// for any tests / scripts that still reach for `dagger workspace settings`.
-// It can be removed when there are no remaining callers.
-var workspaceSettingsCmd = newSettingsCmd(true)
+const workspaceModuleFunctionsQuery = `
+query WorkspaceModuleFunctions($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
+      functions
+    }
+  }
+}
+`
+
+var settingsCmd = newSettingsCmd(false)
+var settingsAliasCmd = newSettingsCmd(false)
 
 func init() {
-	workspaceCmd.AddCommand(workspaceSettingsCmd)
-	addWorkspaceHereFlag(workspaceSettingsCmd)
 	addWorkspaceHereFlag(settingsCmd)
+	addWorkspaceHereFlag(settingsAliasCmd)
 }
 
 var (
@@ -144,7 +160,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			moduleName = args[0]
 		}
 
-		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 3)
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 2)
 		if err != nil {
 			return err
 		}
@@ -180,6 +196,12 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			value, values, err := workspaceSettingWriteValue(setting, args[2:])
 			if err != nil {
 				return err
+			}
+			if values == nil {
+				value, err = normalizeEntrypointFunctionRef(ctx, engineClient.Dagger(), setting, value)
+				if err != nil {
+					return err
+				}
 			}
 			if workspaceSettingsGlobal {
 				// User-level writes happen client-side; --env composes there
@@ -221,6 +243,65 @@ type workspaceSetting struct {
 	Value       string
 	Description string
 	IsList      bool
+	IsObject    bool
+}
+
+// normalizeEntrypointFunctionRef rewrites a short-form entrypoint function
+// reference ("image") to the long form the config stores ("provider:image").
+// Only object-typed settings are candidates, so a string setting whose value
+// matches a function name is left alone.
+func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
+	if !setting.IsObject || !workspacepkg.IsShortFormModuleRef(value) {
+		return value, nil
+	}
+
+	var modules struct {
+		CurrentWorkspace struct {
+			Modules []struct {
+				Name       string
+				Entrypoint bool
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{Query: workspaceEntrypointQuery}, &dagger.Response{Data: &modules}); err != nil {
+		return "", err
+	}
+	entrypoint := ""
+	for _, module := range modules.CurrentWorkspace.Modules {
+		if module.Entrypoint {
+			entrypoint = module.Name
+			break
+		}
+	}
+	if entrypoint == "" {
+		return value, nil
+	}
+
+	var functions struct {
+		CurrentWorkspace struct {
+			Module struct {
+				Functions []string
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     workspaceModuleFunctionsQuery,
+		Variables: map[string]any{"module": entrypoint},
+	}, &dagger.Response{Data: &functions}); err != nil {
+		return "", err
+	}
+	want := gqlFieldName(value)
+	for _, fn := range functions.CurrentWorkspace.Module.Functions {
+		if fn == want {
+			return entrypoint + ":" + value, nil
+		}
+	}
+	return value, nil
+}
+
+// isUnknownGraphQLFieldError reports whether the engine predates a requested field.
+func isUnknownGraphQLFieldError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Cannot query field")
 }
 
 // workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
@@ -244,7 +325,7 @@ type workspaceSettingsState struct {
 	Settings  []workspaceSetting
 }
 
-func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, withIsList bool) (*workspaceSettingsState, error) {
+func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, forWrite bool) (*workspaceSettingsState, error) {
 	type settingsModule struct {
 		Name     string
 		Settings []workspaceSetting
@@ -262,18 +343,25 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleN
 		modules = res.CurrentWorkspace.Modules
 	} else {
 		query := workspaceModuleSettingsQuery
-		if withIsList {
-			query = workspaceModuleSettingsQueryWithIsList
+		if forWrite {
+			query = workspaceModuleSettingsQueryForWrite
 		}
 		var res struct {
 			CurrentWorkspace struct {
 				Module settingsModule
 			}
 		}
-		if err := dag.Do(ctx, &dagger.Request{
+		err := dag.Do(ctx, &dagger.Request{
 			Query:     query,
 			Variables: map[string]any{"module": moduleName},
-		}, &dagger.Response{Data: &res}); err != nil {
+		}, &dagger.Response{Data: &res})
+		if err != nil && forWrite && isUnknownGraphQLFieldError(err) {
+			err = dag.Do(ctx, &dagger.Request{
+				Query:     workspaceModuleSettingsQuery,
+				Variables: map[string]any{"module": moduleName},
+			}, &dagger.Response{Data: &res})
+		}
+		if err != nil {
 			return nil, err
 		}
 		modules = []settingsModule{res.CurrentWorkspace.Module}
@@ -321,26 +409,116 @@ func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) strin
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {
+	return writeWorkspaceSettingsTableAtWidth(out, settings, getViewWidth())
+}
+
+const (
+	workspaceSettingsColumnPadding = 2
+	workspaceSettingsModuleMax     = 20
+	workspaceSettingsKeyMax        = 24
+	workspaceSettingsValueMax      = 32
+	workspaceSettingsValueReserve  = 18
+	workspaceSettingsDescReserve   = 24
+)
+
+var workspaceSettingsHeaders = []string{"MODULE", "KEY", "VALUE", "DESCRIPTION"}
+
+func writeWorkspaceSettingsTableAtWidth(out io.Writer, settings []workspaceSetting, viewWidth int) error {
 	if len(settings) == 0 {
 		_, err := fmt.Fprintln(out, "(no settings)")
 		return err
 	}
 
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "MODULE\tKEY\tVALUE\tDESCRIPTION"); err != nil {
-		return err
-	}
+	rows := make([][]string, 0, len(settings)+1)
+	rows = append(rows, workspaceSettingsHeaders)
 	for _, setting := range settings {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			setting.Module,
-			setting.Key,
-			setting.Value,
-			workspaceSettingShortDescription(setting.Description),
-		); err != nil {
+		rows = append(rows, []string{
+			workspaceSettingSingleLine(setting.Module),
+			workspaceSettingSingleLine(setting.Key),
+			workspaceSettingSingleLine(setting.Value),
+			workspaceSettingSingleLine(workspaceSettingShortDescription(setting.Description)),
+		})
+	}
+
+	widths := workspaceSettingsColumnWidths(rows, viewWidth)
+	for _, row := range rows {
+		var line strings.Builder
+		for column, cell := range row {
+			cell = ansi.Truncate(cell, widths[column], "…")
+			line.WriteString(cell)
+			if column < len(row)-1 {
+				padding := widths[column] - ansi.StringWidth(cell) + workspaceSettingsColumnPadding
+				line.WriteString(strings.Repeat(" ", padding))
+			}
+		}
+		if _, err := fmt.Fprintln(out, line.String()); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	return nil
+}
+
+func workspaceSettingsColumnWidths(rows [][]string, viewWidth int) []int {
+	minimums := make([]int, len(workspaceSettingsHeaders))
+	desired := make([]int, len(workspaceSettingsHeaders))
+	for column, header := range workspaceSettingsHeaders {
+		minimums[column] = ansi.StringWidth(header)
+		desired[column] = minimums[column]
+	}
+	for _, row := range rows[1:] {
+		for column, cell := range row {
+			desired[column] = max(desired[column], ansi.StringWidth(cell))
+		}
+	}
+	desired[0] = min(desired[0], workspaceSettingsModuleMax)
+	desired[1] = min(desired[1], workspaceSettingsKeyMax)
+	desired[2] = min(desired[2], workspaceSettingsValueMax)
+
+	paddingWidth := workspaceSettingsColumnPadding * (len(workspaceSettingsHeaders) - 1)
+	minimumContentWidth := 0
+	for _, width := range minimums {
+		minimumContentWidth += width
+	}
+	contentWidth := max(viewWidth-paddingWidth, minimumContentWidth)
+
+	valueAndDescriptionReserve := min(desired[2], workspaceSettingsValueReserve) +
+		min(desired[3], workspaceSettingsDescReserve)
+	moduleAndKeyMinimum := minimums[0] + minimums[1]
+	moduleAndKeyWidth := max(contentWidth-valueAndDescriptionReserve, moduleAndKeyMinimum)
+	moduleWidth, keyWidth := workspaceSettingsFitColumns(
+		desired[0], desired[1], minimums[0], minimums[1], moduleAndKeyWidth,
+	)
+	valueAndDescriptionWidth := contentWidth - moduleWidth - keyWidth
+	valueWidth, descriptionWidth := workspaceSettingsFitColumns(
+		desired[2], desired[3], minimums[2], minimums[3], valueAndDescriptionWidth,
+	)
+
+	return []int{moduleWidth, keyWidth, valueWidth, descriptionWidth}
+}
+
+// workspaceSettingsFitColumns reduces two columns fairly until they fit the
+// available width. Each column always remains wide enough for its header.
+func workspaceSettingsFitColumns(first, second, firstMinimum, secondMinimum, available int) (int, int) {
+	if first+second <= available {
+		return first, second
+	}
+
+	extra := available - firstMinimum - secondMinimum
+	firstExtra := min(first-firstMinimum, (extra+1)/2)
+	secondExtra := min(second-secondMinimum, extra-firstExtra)
+	extra -= firstExtra + secondExtra
+
+	secondExtraMore := min(second-secondMinimum-secondExtra, extra)
+	secondExtra += secondExtraMore
+	extra -= secondExtraMore
+	firstExtra += min(first-firstMinimum-firstExtra, extra)
+
+	return firstMinimum + firstExtra, secondMinimum + secondExtra
+}
+
+func workspaceSettingSingleLine(value string) string {
+	replacer := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ")
+	return replacer.Replace(value)
 }
 
 func workspaceSettingShortDescription(description string) string {

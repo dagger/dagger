@@ -3532,12 +3532,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\CurrentModule::asSDK",
-			"p": "Dagger/CurrentModule.html#method_asSDK",
-			"d": "<p>Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\CurrentModule::dependencies",
 			"p": "Dagger/CurrentModule.html#method_dependencies",
 			"d": "<p>The dependencies of the module.</p>"
@@ -3631,12 +3625,6 @@
 			"n": "Dagger\\CurrentModuleAsSDKClient::path",
 			"p": "Dagger/CurrentModuleAsSDKClient.html#method_path",
 			"d": "<p>Workspace-root-relative path of the generated client.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\CurrentModuleAsSDKClient::pin",
-			"p": "Dagger/CurrentModuleAsSDKClient.html#method_pin",
-			"d": "<p>The pinned version of the bound module, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -5328,7 +5316,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::originalModule",
 			"p": "Dagger/Generator.html#method_originalModule",
-			"d": "<p>The original module in which the generator has been defined</p>"
+			"d": "<p>The module that defined the generator, or null for an engine-defined generator</p>"
 		},
 		{
 			"t": "M",
@@ -5377,6 +5365,12 @@
 			"n": "Dagger\\GeneratorGroup::run",
 			"p": "Dagger/GeneratorGroup.html#method_run",
 			"d": "<p>Execute all selected generators</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GeneratorGroup::workspace",
+			"p": "Dagger/GeneratorGroup.html#method_workspace",
+			"d": "<p>The workspace with the combined output from the last generator run</p>"
 		},
 		{
 			"t": "M",
@@ -6526,12 +6520,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::generateLocalDependencies",
-			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
-			"d": "<p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleSource::generatedContextChangeset",
 			"p": "Dagger/ModuleSource.html#method_generatedContextChangeset",
 			"d": "<p>The generated files and directories made on top of the module source's context directory, returned as a Changeset.</p>"
@@ -7510,6 +7498,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::detectScope",
+			"p": "Dagger/Workspace.html#method_detectScope",
+			"d": "<p>Return the selected SDK module's current scope at this workspace location.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"
@@ -7636,6 +7630,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withClient",
+			"p": "Dagger/Workspace.html#method_withClient",
+			"d": "<p>Return this workspace with a generated module client added to one SDK scope.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
@@ -7654,15 +7654,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::withInitClient",
-			"p": "Dagger/Workspace.html#method_withInitClient",
-			"d": "<p>Return this workspace with a generated API client initialized.</p>"
+			"n": "Dagger\\Workspace::withFile",
+			"p": "Dagger/Workspace.html#method_withFile",
+			"d": "<p>Return this workspace with a file added or replaced, without mutating the source.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::withInitModule",
 			"p": "Dagger/Workspace.html#method_withInitModule",
-			"d": "<p>Return this workspace with a new module initialized.</p>"
+			"d": "<p>Return this workspace with a location initialized as a module scope.</p>"
 		},
 		{
 			"t": "M",
@@ -7702,15 +7702,33 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withUpdatedClients",
+			"p": "Dagger/Workspace.html#method_withUpdatedClients",
+			"d": "<p>Return this workspace with the selected module clients updated.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withUpdatedLock",
 			"p": "Dagger/Workspace.html#method_withUpdatedLock",
 			"d": "<p>Return this workspace with refreshed lockfile state.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withUpdatedModules",
+			"p": "Dagger/Workspace.html#method_withUpdatedModules",
+			"d": "<p>Return this workspace with refreshed lockfile state for installed modules.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withWorkdir",
 			"p": "Dagger/Workspace.html#method_withWorkdir",
 			"d": "<p>Return this workspace with its working directory pointed at the given workspace-relative path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutClient",
+			"p": "Dagger/Workspace.html#method_withoutClient",
+			"d": "<p>Return this workspace with a module client removed from the deepest matching recorded scope.</p>"
 		},
 		{
 			"t": "M",
@@ -7822,6 +7840,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceModule::functions",
+			"p": "Dagger/WorkspaceModule.html#method_functions",
+			"d": "<p>List the functions of this module's main object, in GraphQL field form.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceModule::id",
 			"p": "Dagger/WorkspaceModule.html#method_id",
 			"d": "<p>A unique identifier for this WorkspaceModule.</p>"
@@ -7861,6 +7885,12 @@
 			"n": "Dagger\\WorkspaceModuleSetting::isList",
 			"p": "Dagger/WorkspaceModuleSetting.html#method_isList",
 			"d": "<p>Whether the setting accepts a list of values.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModuleSetting::isObject",
+			"p": "Dagger/WorkspaceModuleSetting.html#method_isObject",
+			"d": "<p>Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.</p>"
 		},
 		{
 			"t": "M",

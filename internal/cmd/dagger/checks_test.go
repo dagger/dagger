@@ -7,6 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestScaleOutFlagScopedToCheck(t *testing.T) {
+	flag := checksCmd.Flags().Lookup("scale-out")
+	require.NotNil(t, flag)
+	require.True(t, flag.Hidden)
+	require.Nil(t, rootCmd.PersistentFlags().Lookup("scale-out"))
+	version, _, err := rootCmd.Find([]string{"version"})
+	require.NoError(t, err)
+	require.Nil(t, version.Flags().Lookup("scale-out"))
+}
+
 func TestWriteCheckListWithGenerateChecks(t *testing.T) {
 	var out bytes.Buffer
 	err := writeCheckList(&out, []*CheckInfo{

@@ -57,7 +57,7 @@ jobs:
         run: |
           chmod +x /usr/local/bin/dagger
 
-          dagger call --cloud \
+          dagger call --engine=cloud \
             test specific \
             --race=true \
             --parallel=16 \
@@ -81,7 +81,7 @@ jobs:
         id: exec
         run: |
           chmod +x /usr/local/bin/dagger
-          dagger call --cloud test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
+          dagger call --engine=cloud test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
@@ -104,7 +104,7 @@ jobs:
           # NOTE: docker credentials are NOT injected,
           #  because .env.gha only works inside a local checkout.
           #  FIXME: get it to work with remotely loaded modules also.
-          dagger call --cloud check-go-sdk
+          dagger call --engine=cloud check-go-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
@@ -127,7 +127,7 @@ jobs:
           # NOTE: docker credentials are NOT injected,
           #  because .env.gha only works inside a local checkout.
           #  FIXME: get it to work with remotely loaded modules also.
-          dagger call --cloud check-go-sdk
+          dagger call --engine=cloud check-go-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}

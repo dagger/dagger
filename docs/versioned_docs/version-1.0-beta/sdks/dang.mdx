@@ -453,7 +453,7 @@ dagger api call deploy --token=env:DEPLOY_TOKEN        # environment variable
 dagger api call deploy --token=file:./token.txt        # file
 dagger api call deploy --token=cmd:"gh auth token"     # command output
 dagger api call deploy --token=op://vault/item/field   # 1Password
-dagger api call deploy --token=vault://path/to/secret  # HashiCorp Vault
+dagger api call deploy --token=vault://mount/path.field  # HashiCorp Vault
 dagger api call deploy --token=gcp://secret-name       # Google Cloud Secret Manager
 ```
 

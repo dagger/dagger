@@ -24,6 +24,7 @@ var (
 	checksNoGenerate   bool
 	checksOnlyGenerate bool
 	checksSkip         []string
+	checksScaleOut     bool
 )
 
 //go:embed checks.graphql
@@ -35,6 +36,8 @@ func init() {
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
 	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
+	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
+	checksCmd.Flags().Lookup("scale-out").Hidden = true
 	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
 }
 
@@ -56,7 +59,7 @@ Examples:
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
 	params := client.Params{
-		EnableCloudScaleOut:  enableScaleOut,
+		EnableCloudScaleOut:  checksScaleOut,
 		LoadWorkspaceModules: true,
 	}
 	return withEngine(

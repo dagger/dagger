@@ -57,7 +57,7 @@ func newUserConfigWorkdir(ctx context.Context, t *testctx.T, originURL, userConf
 func hostDaggerUserConfigExec(ctx context.Context, t *testctx.T, workdir, userConfigPath string, args ...string) ([]byte, error) {
 	t.Helper()
 
-	cmd := hostDaggerCommandRaw(ctx, t, workdir, append([]string{"--progress=report"}, args...)...)
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, args...)
 	cmd.Env = append(cmd.Env, "DAGGER_CONFIG="+userConfigPath)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -104,11 +104,11 @@ profile = "alice-dev"
 source = "github.com/acme/personal"
 `)
 
-		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "installed")
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "list")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "personal")
 
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "--env=staging", "installed")
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=staging", "module", "list")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "personal")
 	})
@@ -233,12 +233,12 @@ region = "us-west-2"
 region = "eu-west-1"
 `), 0o600))
 
-		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "aws", "region")
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
 		// The selected env overlay still layers over the user-level value.
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "settings", "aws", "region")
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
 	})
@@ -341,33 +341,33 @@ region = "us-east-1"
 		require.NoError(t, err, string(gitOutput))
 		userConfigPath := filepath.Join(t.TempDir(), "config.toml")
 
-		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "-g", "aws", "region", "us-west-2")
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "aws", "region", "us-west-2")
 		require.NoError(t, err)
 
 		userConfig, err := os.ReadFile(userConfigPath)
 		require.NoError(t, err)
 		require.Contains(t, string(userConfig), `region = "us-west-2"`)
 
-		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "aws", "region")
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
 		// --env scoping composes with --global.
-		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "settings", "-g", "aws", "region", "eu-west-1")
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "-g", "aws", "region", "eu-west-1")
 		require.NoError(t, err)
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "settings", "aws", "region")
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
 
 		// Unset targets only the user-level value.
-		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "-g", "-u", "aws", "region")
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "-u", "aws", "region")
 		require.NoError(t, err)
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "aws", "region")
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 
 		// A read invocation with --global is rejected.
-		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "-g", "aws", "region")
+		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "aws", "region")
 		require.Error(t, err)
 		requireErrOut(t, err, "--global stores a setting in user-level config")
 	})
@@ -392,7 +392,7 @@ region = "us-east-1"
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
 
 	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
-		return ctr.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -421,13 +421,13 @@ region = "us-east-1"
 	})
 
 	t.Run("settings --global writes for a remote workspace", func(ctx context.Context, t *testctx.T) {
-		written := userConfigDaggerExec(ctr, "-W", remoteRef, "settings", "-g", "aws", "region", "eu-west-1")
+		written := userConfigDaggerExec(ctr, "-W", remoteRef, "module", "settings", "-g", "aws", "region", "eu-west-1")
 
 		userConfig, err := written.File("/cfg/config.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, userConfig, `region = "eu-west-1"`)
 
-		out, err := userConfigDaggerExec(written, "-W", remoteRef, "settings", "aws", "region").Stdout(ctx)
+		out, err := userConfigDaggerExec(written, "-W", remoteRef, "module", "settings", "aws", "region").Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "eu-west-1", strings.TrimSpace(out))
 	})

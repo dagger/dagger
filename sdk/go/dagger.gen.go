@@ -1954,6 +1954,8 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 
 // ContainerFromOpts contains options for Container.From
 type ContainerFromOpts struct {
+	// Version query used to select an image tag. The address must not contain a tag or digest.
+	Version string
 	// Service to use as the registry endpoint for the image address.
 	//
 	// The service will be started only for this pull.
@@ -1970,6 +1972,10 @@ type ContainerFromOpts struct {
 func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 	q := r.query.Select("from")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
@@ -3693,19 +3699,6 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
-// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
-//
-// Errors if the current module is not installed as an SDK in this workspace.
-func (r *CurrentModule) AsSDK(workspace *Workspace) *CurrentModuleAsSDK {
-	assertNotNil("workspace", workspace)
-	q := r.query.Select("asSDK")
-	q = q.Arg("workspace", workspace)
-
-	return &CurrentModuleAsSDK{
-		query: q,
-	}
-}
-
 // The dependencies of the module.
 func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
@@ -3880,334 +3873,6 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 // AsNode returns this CurrentModule as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CurrentModule) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// The SDK-role data for the currently executing module, as installed in the supplied workspace.
-type CurrentModuleAsSDK struct {
-	query *querybuilder.Selection
-
-	id   *ID
-	name *string
-}
-
-func (r *CurrentModuleAsSDK) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDK {
-	return &CurrentModuleAsSDK{
-		query: q,
-	}
-}
-
-// The generated clients this SDK produces in the workspace.
-func (r *CurrentModuleAsSDK) Clients(ctx context.Context) ([]CurrentModuleAsSDKClient, error) {
-	q := r.query.Select("clients")
-
-	q = q.Select("id")
-
-	type clients struct {
-		Id ID
-	}
-
-	convert := func(fields []clients) []CurrentModuleAsSDKClient {
-		out := []CurrentModuleAsSDKClient{}
-
-		for i := range fields {
-			val := CurrentModuleAsSDKClient{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKClient")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []clients
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this CurrentModuleAsSDK.
-func (r *CurrentModuleAsSDK) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CurrentModuleAsSDK) XXX_GraphQLType() string {
-	return "CurrentModuleAsSDK"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CurrentModuleAsSDK) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CurrentModuleAsSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CurrentModuleAsSDK) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
-func (r *CurrentModuleAsSDK) Modules(ctx context.Context) ([]CurrentModuleAsSDKModule, error) {
-	q := r.query.Select("modules")
-
-	q = q.Select("id")
-
-	type modules struct {
-		Id ID
-	}
-
-	convert := func(fields []modules) []CurrentModuleAsSDKModule {
-		out := []CurrentModuleAsSDKModule{}
-
-		for i := range fields {
-			val := CurrentModuleAsSDKModule{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKModule")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []modules
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// The user-facing name of this SDK in the workspace.
-func (r *CurrentModuleAsSDK) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this CurrentModuleAsSDK as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CurrentModuleAsSDK) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// A generated client the current SDK produces in the workspace.
-type CurrentModuleAsSDKClient struct {
-	query *querybuilder.Selection
-
-	id     *ID
-	module *string
-	path   *string
-	pin    *string
-}
-
-func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKClient {
-	return &CurrentModuleAsSDKClient{
-		query: q,
-	}
-}
-
-// A unique identifier for this CurrentModuleAsSDKClient.
-func (r *CurrentModuleAsSDKClient) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CurrentModuleAsSDKClient) XXX_GraphQLType() string {
-	return "CurrentModuleAsSDKClient"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CurrentModuleAsSDKClient) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CurrentModuleAsSDKClient) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CurrentModuleAsSDKClient) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The module the client is bound to (workspace-relative path or canonical ref).
-func (r *CurrentModuleAsSDKClient) Module(ctx context.Context) (string, error) {
-	if r.module != nil {
-		return *r.module, nil
-	}
-	q := r.query.Select("module")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The resolved module source this client is bound to, including its dependency closure and pinned version.
-func (r *CurrentModuleAsSDKClient) ModuleSource() *ModuleSource {
-	q := r.query.Select("moduleSource")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Workspace-root-relative path of the generated client.
-func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
-	if r.path != nil {
-		return *r.path, nil
-	}
-	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The pinned version of the bound module, if any.
-func (r *CurrentModuleAsSDKClient) Pin(ctx context.Context) (string, error) {
-	if r.pin != nil {
-		return *r.pin, nil
-	}
-	q := r.query.Select("pin")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this CurrentModuleAsSDKClient as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CurrentModuleAsSDKClient) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// A workspace-local module managed by the current SDK.
-type CurrentModuleAsSDKModule struct {
-	query *querybuilder.Selection
-
-	id   *ID
-	path *string
-}
-
-func (r *CurrentModuleAsSDKModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKModule {
-	return &CurrentModuleAsSDKModule{
-		query: q,
-	}
-}
-
-// A unique identifier for this CurrentModuleAsSDKModule.
-func (r *CurrentModuleAsSDKModule) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CurrentModuleAsSDKModule) XXX_GraphQLType() string {
-	return "CurrentModuleAsSDKModule"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CurrentModuleAsSDKModule) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CurrentModuleAsSDKModule) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CurrentModuleAsSDKModule) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Workspace-root-relative path to the managed module.
-func (r *CurrentModuleAsSDKModule) Path(ctx context.Context) (string, error) {
-	if r.path != nil {
-		return *r.path, nil
-	}
-	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this CurrentModuleAsSDKModule as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CurrentModuleAsSDKModule) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -8263,13 +7928,21 @@ func (r *Generator) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original module in which the generator has been defined
-func (r *Generator) OriginalModule() *Module {
+// The module that defined the generator, or null for an engine-defined generator
+func (r *Generator) OriginalModule(ctx context.Context) (*Module, error) {
 	q := r.query.Select("originalModule")
 
-	return &Module{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Module{
+		query: selectNode(q.Root(), *objectID, "Module"),
+	}, nil
 }
 
 // The path of the generator within its module
@@ -8450,6 +8123,29 @@ func (r *GeneratorGroup) Run() *GeneratorGroup {
 	q := r.query.Select("run")
 
 	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// GeneratorGroupWorkspaceOpts contains options for GeneratorGroup.Workspace
+type GeneratorGroupWorkspaceOpts struct {
+	// Strategy to apply on conflicts between generators
+	//
+	// Default: FAIL_EARLY
+	OnConflict ChangesetsMergeConflict
+}
+
+// The workspace with the combined output from the last generator run
+func (r *GeneratorGroup) Workspace(opts ...GeneratorGroupWorkspaceOpts) *Workspace {
+	q := r.query.Select("workspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+
+	return &Workspace{
 		query: q,
 	}
 }
@@ -9451,11 +9147,23 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// GitRepositoryLatestOpts contains options for GitRepository.Latest
+type GitRepositoryLatestOpts struct {
+	// Version query used to select the greatest matching release ref.
+	Version string
+}
+
 // Return the latest stable release tag, falling back to HEAD when no release exists.
 //
 // Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
-func (r *GitRepository) Latest() *GitRef {
+func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -12604,19 +12312,6 @@ func (r *ModuleSource) Generate(workspace *Workspace) *Workspace {
 	}
 }
 
-// Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
-//
-// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
-func (r *ModuleSource) GenerateLocalDependencies(workspace *Workspace) *Changeset {
-	assertNotNil("workspace", workspace)
-	q := r.query.Select("generateLocalDependencies")
-	q = q.Arg("workspace", workspace)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // The generated files and directories made on top of the module source's context directory, returned as a Changeset.
 func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
 	q := r.query.Select("generatedContextChangeset")
@@ -14036,6 +13731,8 @@ func (r *Query) Module() *Module {
 
 // ModuleSourceOpts contains options for Query.ModuleSource
 type ModuleSourceOpts struct {
+	// Version query for a Git module source.
+	Version string
 	// The pinned version of the module source
 	RefPin string
 	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
@@ -14050,6 +13747,10 @@ type ModuleSourceOpts struct {
 func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `refPin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RefPin) {
 			q = q.Arg("refPin", opts[i].RefPin)
@@ -16600,13 +16301,14 @@ func (r *Volume) AsNode() Node {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address    *string
-	configFile *string
-	configRead *string
-	cwd        *string
-	export     *Void
-	findUp     *string
-	id         *ID
+	address     *string
+	configFile  *string
+	configRead  *string
+	cwd         *string
+	detectScope *string
+	export      *Void
+	findUp      *string
+	id          *ID
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16773,6 +16475,20 @@ func (r *Workspace) Cwd(ctx context.Context) (string, error) {
 		return *r.cwd, nil
 	}
 	q := r.query.Select("cwd")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return the selected SDK module's current scope at this workspace location.
+func (r *Workspace) DetectScope(ctx context.Context, sdk string) (string, error) {
+	if r.detectScope != nil {
+		return *r.detectScope, nil
+	}
+	q := r.query.Select("detectScope")
+	q = q.Arg("sdk", sdk)
 
 	var response string
 
@@ -17283,6 +16999,36 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// WorkspaceWithClientOpts contains options for Workspace.WithClient
+type WorkspaceWithClientOpts struct {
+	// Optional SDK name. Inspect all installed SDKs when omitted.
+	SDK string
+	// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+	Settings JSON
+}
+
+// Return this workspace with a generated module client added to one SDK scope.
+//
+// Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *Workspace {
+	q := r.query.Select("withClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `settings` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Settings) {
+			q = q.Arg("settings", opts[i].Settings)
+		}
+	}
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -17350,38 +17096,24 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
-// WorkspaceWithInitClientOpts contains options for Workspace.WithInitClient
-type WorkspaceWithInitClientOpts struct {
-	// SDK-specific init arguments.
-	Args JSON
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-	// Skip running the SDK's generators for the new client.
-	NoGenerate bool
+// WorkspaceWithFileOpts contains options for Workspace.WithFile
+type WorkspaceWithFileOpts struct {
+	// Permissions of the added file. Defaults to the source file permissions.
+	Permissions int
 }
 
-// Return this workspace with a generated API client initialized.
-//
-// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
-func (r *Workspace) WithInitClient(path string, sdk string, module string, opts ...WorkspaceWithInitClientOpts) *Workspace {
-	q := r.query.Select("withInitClient")
+// Return this workspace with a file added or replaced, without mutating the source.
+func (r *Workspace) WithFile(path string, source *File, opts ...WorkspaceWithFileOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
-	q = q.Arg("sdk", sdk)
-	q = q.Arg("module", module)
+	q = q.Arg("source", source)
 
 	return &Workspace{
 		query: q,
@@ -17390,52 +17122,33 @@ func (r *Workspace) WithInitClient(path string, sdk string, module string, opts 
 
 // WorkspaceWithInitModuleOpts contains options for Workspace.WithInitModule
 type WorkspaceWithInitModuleOpts struct {
-	// Path for the new module, relative to the workspace cwd; a leading "/" is relative to the workspace root. Defaults to .dagger/modules/<name> beside the workspace config.
+	// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
+	Name string
+	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
 	Path string
-	// Source subpath within the new module.
-	Source string
-	// Additional include patterns for the module.
-	Include []string
-	// SDK-specific init arguments.
-	Args JSON
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-	// Skip running the SDK's generators for the new module.
-	NoGenerate bool
+	// Explicit SDK-module constructor setting overrides for this scope.
+	Settings JSON
 }
 
-// Return this workspace with a new module initialized.
+// Return this workspace with a location initialized as a module scope.
 //
-// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
-func (r *Workspace) WithInitModule(name string, sdk string, opts ...WorkspaceWithInitModuleOpts) *Workspace {
+// The selected SDK module records the scope and generates the module source.
+func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOpts) *Workspace {
 	q := r.query.Select("withInitModule")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
 		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
 		}
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		// `settings` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Settings) {
+			q = q.Arg("settings", opts[i].Settings)
 		}
 	}
-	q = q.Arg("name", name)
 	q = q.Arg("sdk", sdk)
 
 	return &Workspace{
@@ -17546,7 +17259,7 @@ type WorkspaceWithSDKOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
-	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	// Optional override for the SDK name conventionally derived from the installed module name.
 	AsSDKName string
 }
 
@@ -17574,9 +17287,83 @@ func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace
 	}
 }
 
+// WorkspaceWithUpdatedClientsOpts contains options for Workspace.WithUpdatedClients
+type WorkspaceWithUpdatedClientsOpts struct {
+	// Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+	Modules []string
+	// Select clients in every scope instead of only the scopes containing the workspace cwd.
+	All bool
+	// Optional SDK name. All installed SDK modules are selected when omitted.
+	SDK string
+}
+
+// Return this workspace with the selected module clients updated.
+//
+// The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+//
+// The selected SDK module then regenerates every scope that owns one of the targets.
+func (r *Workspace) WithUpdatedClients(opts ...WorkspaceWithUpdatedClientsOpts) *Workspace {
+	q := r.query.Select("withUpdatedClients")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithUpdatedLockOpts contains options for Workspace.WithUpdatedLock
+type WorkspaceWithUpdatedLockOpts struct {
+	// Do not regenerate SDK client scopes.
+	NoGenerate bool
+}
+
 // Return this workspace with refreshed lockfile state.
-func (r *Workspace) WithUpdatedLock() *Workspace {
+//
+// SDK client scopes are regenerated unless noGenerate is true.
+func (r *Workspace) WithUpdatedLock(opts ...WorkspaceWithUpdatedLockOpts) *Workspace {
 	q := r.query.Select("withUpdatedLock")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithUpdatedModulesOpts contains options for Workspace.WithUpdatedModules
+type WorkspaceWithUpdatedModulesOpts struct {
+	// Installed module names to refresh. An empty list refreshes all installed modules.
+	Names []string
+}
+
+// Return this workspace with refreshed lockfile state for installed modules.
+//
+// An SDK client scope is regenerated when it targets an updated module.
+func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
+	q := r.query.Select("withUpdatedModules")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `names` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Names) {
+			q = q.Arg("names", opts[i].Names)
+		}
+	}
 
 	return &Workspace{
 		query: q,
@@ -17587,6 +17374,32 @@ func (r *Workspace) WithUpdatedLock() *Workspace {
 func (r *Workspace) WithWorkdir(path string) *Workspace {
 	q := r.query.Select("withWorkdir")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithoutClientOpts contains options for Workspace.WithoutClient
+type WorkspaceWithoutClientOpts struct {
+	// Optional SDK name. Search all installed SDKs when omitted.
+	SDK string
+}
+
+// Return this workspace with a module client removed from the deepest matching recorded scope.
+//
+// Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+//
+// If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
+func (r *Workspace) WithoutClient(module string, opts ...WorkspaceWithoutClientOpts) *Workspace {
+	q := r.query.Select("withoutClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+	}
+	q = q.Arg("module", module)
 
 	return &Workspace{
 		query: q,
@@ -18034,6 +17847,16 @@ func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// List the functions of this module's main object, in GraphQL field form.
+func (r *WorkspaceModule) Functions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("functions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this WorkspaceModule.
 func (r *WorkspaceModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -18148,6 +17971,7 @@ type WorkspaceModuleSetting struct {
 	description *string
 	id          *ID
 	isList      *bool
+	isObject    *bool
 	key         *string
 	value       *string
 }
@@ -18217,6 +18041,19 @@ func (r *WorkspaceModuleSetting) IsList(ctx context.Context) (bool, error) {
 		return *r.isList, nil
 	}
 	q := r.query.Select("isList")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
+	if r.isObject != nil {
+		return *r.isObject, nil
+	}
+	q := r.query.Select("isObject")
 
 	var response bool
 

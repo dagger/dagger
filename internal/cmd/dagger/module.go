@@ -29,6 +29,19 @@ const (
 	coreModuleRef    = "core"
 )
 
+var moduleCmd = &cobra.Command{
+	Use:     "module",
+	Aliases: []string{"mod"},
+	Short:   "Install, use, and develop Dagger modules",
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "mod",
+	},
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
+}
+
 func addWorkspaceInstallFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the module in the workspace. Defaults to the name of the module being installed.")
 	addWorkspaceHereFlag(cmd)
@@ -36,32 +49,54 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 
 // moduleAddFlags adds common module-loading flags to a command.
 // If optional is true, it also adds the --no-load-module flag and marks --load-module and --no-load-module as mutually exclusive.
+// moduleAddFlags installs the module selection flags. Every consumer but the
+// root command calls the engine: loading a module, allowing an LLM, and eager
+// runtime loading are all engine session parameters. They therefore require
+// MayCallEngine, which keeps them out of the root command's usage message.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
-	flags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
+	moduleFlags := pflag.NewFlagSet("Module", pflag.ContinueOnError)
+	moduleFlags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
 	// --mod is the pre-1.0 name for --load-module; keep it as a deprecated
 	// alias so existing scripts and shebangs don't break.
-	flags.StringVar(&moduleURL, "mod", "", "")
-	_ = flags.MarkDeprecated("mod", "use --load-module (-m) instead")
+	moduleFlags.StringVar(&moduleURL, "mod", "", "")
+	_ = moduleFlags.MarkDeprecated("mod", "use --load-module (-m) instead")
 	if optional {
-		flags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
-		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
+		moduleFlags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
 		// --no-mod is the pre-1.0 name for --no-load-module; keep it as a
 		// deprecated alias so existing scripts and shebangs don't break.
-		flags.BoolVar(&moduleNoURL, "no-mod", false, "")
-		_ = flags.MarkDeprecated("no-mod", "use --no-load-module (-M) instead")
+		moduleFlags.BoolVar(&moduleNoURL, "no-mod", false, "")
+		_ = moduleFlags.MarkDeprecated("no-mod", "use --no-load-module (-M) instead")
 	}
 
 	var defaultAllowLLM []string
 	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
-	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
 
 	// Add the eager module loading flag to disable lazy load on runtime.
-	flags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+
+	setFlagSetCapabilities(moduleFlags, mayCallEngine)
+	flags.AddFlagSet(moduleFlags)
+
+	if optional {
+		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
+	}
 }
 
 func init() {
+	moduleCmd.AddCommand(
+		moduleDepInstallCmd,
+		moduleDepUninstallCmd,
+		installedCmd,
+		moduleUpdateCmd,
+		searchCmd,
+		settingsCmd,
+		moduleInitCmd,
+		moduleClientCmd,
+	)
+
 	moduleAddFlags(apiCallCmd.Command(), apiCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
@@ -81,30 +116,54 @@ func init() {
 	shellAddFlags(rootCmd)
 
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
+	addWorkspaceInstallFlags(installAliasCmd)
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
+	addWorkspaceHereFlag(uninstallAliasCmd)
 
-	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleUpdateCmd)
+	setWorkspaceFlagPolicy(moduleDepInstallCmd)
+	setWorkspaceFlagPolicy(installAliasCmd)
+	setWorkspaceFlagPolicy(moduleDepUninstallCmd)
+	setWorkspaceFlagPolicy(uninstallAliasCmd)
 }
 
-var moduleUpdateCmd = newWorkspaceUpdateCmd(false)
+var moduleUpdateCmd = &cobra.Command{
+	Use:   "update [module...]",
+	Short: "Refresh lockfile state for installed modules",
+	Long: `Refresh lockfile state for installed modules.
+
+With no module names, this refreshes all installed modules. It does not refresh
+client targets or runtime targets. If a client scope targets an updated module,
+the command regenerates that scope. Use dagger workspace update to refresh all
+entries in dagger.lock.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runModuleUpdate,
+}
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
-	return &cobra.Command{
+	var noGenerate bool
+	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Refresh installed-module state",
-		Long: `Refresh installed-module state.
+		Short: "Refresh all workspace lockfile state",
+		Long: `Refresh all workspace lockfile state.
 
-Refreshes entries already recorded in dagger.lock.`,
-		Example: `"dagger update"`,
+Refreshes entries already recorded in dagger.lock. Regenerates SDK client scopes
+unless --no-generate is set.`,
+		Example: `"dagger workspace update"`,
 		Args:    cobra.NoArgs,
 		Hidden:  hidden,
-		RunE:    runWorkspaceUpdate,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkspaceUpdate(cmd, args, noGenerate)
+		},
 	}
+	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Update the lockfile without regenerating SDK client scopes")
+	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
+	setWorkspaceFlagPolicy(cmd)
+	return cmd
 }
 
-var moduleDepInstallCmd = newWorkspaceInstallCmd(false, []string{"i"})
+var moduleDepInstallCmd = newWorkspaceInstallCmd(false, nil)
+var installAliasCmd = newWorkspaceInstallCmd(false, nil)
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -118,14 +177,15 @@ Use --here to create the workspace config at the workspace cwd instead.
 
 With --env the module is recorded in that env's overlay (env.<name>.modules.*)
 and the env is created if missing.`,
-		Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
+		Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceInstall,
 	}
 }
 
-var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, []string{"un"})
+var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, nil)
+var uninstallAliasCmd = newWorkspaceUninstallCmd(false, nil)
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
@@ -135,7 +195,7 @@ func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
 
 With --env only the env's overlay entry is removed, never the base module.`,
-		Example: "dagger uninstall hello",
+		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceUninstall,

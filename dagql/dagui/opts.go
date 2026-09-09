@@ -57,6 +57,12 @@ type FrontendOpts struct {
 	// Whether the span has been expanded by the user.
 	SpanExpanded map[SpanID]bool
 
+	// RootFilter selects the top-level spans for a command at the primary zoom.
+	// Returning no spans keeps the normal startup tree. Explicit zooms use the
+	// regular subtree, so navigation and search share the same RowsView.
+	// The callback must not mutate the DB or its spans.
+	RootFilter func(*DB, *Span) []*Span
+
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
 

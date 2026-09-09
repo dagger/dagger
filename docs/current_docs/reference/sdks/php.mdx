@@ -15,14 +15,14 @@ This page is a standalone guide to the PHP SDK. It assumes you already understan
 
 A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. The PHP SDK currently supports checks. See [Checks, directives, and ignore patterns](#checks-directives-and-ignore-patterns) for the PHP syntax and what is still missing.
 
-The PHP SDK is itself a Dagger module, `github.com/dagger/php-sdk`. Install it into your workspace once, then use Dagger's SDK and module commands to scaffold, generate, and maintain PHP modules:
+The PHP SDK is itself a Dagger module, `github.com/dagger/php-sdk`. Install it into your workspace once, then use Dagger's module commands to scaffold, generate, and maintain PHP modules:
 
 ```shell
 # Install the PHP SDK into your workspace (once)
-dagger sdk install php
+dagger module install php
 
 # Create a PHP module
-dagger module init php my-module
+dagger module init php --name my-module
 ```
 
 ## Create a module
@@ -31,17 +31,17 @@ dagger module init php my-module
 Run these commands from inside a Git repository. That's where the new module goes.
 :::
 
-Install the PHP SDK into your workspace, then create a new module. The required arguments are the SDK and module name:
+Install the PHP SDK into your workspace, then create a new module. The SDK argument is required. This example also sets the optional module name:
 
 ```shell
-dagger sdk install php
-dagger module init php my-module
+dagger module install php
+dagger module init php --name my-module
 ```
 
 Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger sdk install --here php` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here php` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -59,16 +59,16 @@ when several projects share one repository.
 Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
 
 ```shell
-dagger module init php my-module --path ci     # ./ci
-dagger module init php my-module --path /ci    # <workspace root>/ci
+dagger module init php --name my-module --path ci     # ./ci
+dagger module init php --name my-module --path /ci    # <workspace root>/ci
 ```
 
-Dagger registers a module at a custom path as authored by the SDK but does not install it as a callable workspace module. Run `dagger install ./ci` to install it too.
+Dagger registers a module at a custom path as authored by the SDK but does not install it as a callable workspace module. Run `dagger module install ./ci` to install it too.
 
 The PHP SDK ships one starter template, `minimal`, and uses it by default. Pass `--template` to pick a template by name:
 
 ```shell
-dagger module init php my-module --template minimal
+dagger module init php --name my-module --template minimal
 ```
 
 List the PHP SDK's module initialization options with:
@@ -111,7 +111,7 @@ engineVersion = "v{{ version }}"
 source = "php"
 ```
 
-`runtime.source = "php"` tells the engine to use the PHP runtime. The workspace's `dagger.toml` separately records the module under `modules.dagger-php-sdk.as-sdk`. That authoring relationship is how the PHP SDK's generator finds workspace modules.
+`runtime.source = "php"` tells the engine to use the PHP runtime. The workspace's `dagger.toml` records the SDK under `sdks.php` and records the module path as one of its scopes. That scope is how the PHP SDK's generator finds workspace modules.
 
 `composer.json` declares the module as a Composer package in the `DaggerModule` namespace and depends on the generated client through a path repository:
 
@@ -766,25 +766,7 @@ source = "../wolfi"
 
 A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, such as `github.com/shykes/daggerverse/hello@v0.3.0`.
 
-Manage dependencies with the CLI's `dagger module deps` commands from the module directory rather than hand-editing `dagger-module.toml`.
-
-Add a dependency by source:
-
-```shell
-dagger module deps add github.com/shykes/daggerverse/hello@v0.3.0
-```
-
-List the current dependencies:
-
-```shell
-dagger module deps list
-```
-
-Remove a dependency by name:
-
-```shell
-dagger module deps rm hello
-```
+Manage dependencies by adding, updating, or removing `[[dependencies]]` entries in `dagger-module.toml`.
 
 After changing dependencies, [regenerate bindings](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag()`.
 
@@ -828,26 +810,7 @@ A `.dagger-php-sdk-skip-generate` marker in a module or one of its ancestors ski
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the CLI's `dagger module engine` commands from the module directory.
-
-Read the currently required version:
-
-```shell
-dagger module engine required
-```
-
-Pin a specific version, the current engine, or the latest stable release:
-
-```shell template
-# A specific version
-dagger module engine require v{{ version }}
-
-# Whatever engine you're running now
-dagger module engine require-current
-
-# Latest stable release
-dagger module engine require-latest
-```
+Each module declares the Dagger engine version it requires in the `engineVersion` field of `dagger-module.toml`. Set it to a concrete version.
 
 Bumping the engine version usually means the generated bindings change too, so follow up with `dagger generate`.
 
@@ -1021,7 +984,7 @@ Local development needs PHP 8.2 or newer and [Composer](https://getcomposer.org/
 Third-party packages are ordinary Composer dependencies. Add them with `composer require`; the runtime runs `composer install` when it loads the module, so they are available inside your functions. Keep `composer.json` and `composer.lock` in version control.
 
 :::tip
-Do not publish Dagger modules to Packagist. Consumers install modules through Dagger (`dagger install`), not Composer. Dagger does not register a module pulled in as a Composer package, so you cannot call its functions.
+Do not publish Dagger modules to Packagist. Consumers install modules through Dagger (`dagger module install`), not Composer. Dagger does not register a module pulled in as a Composer package, so you cannot call its functions.
 :::
 
 ## Packaging and release
@@ -1030,7 +993,7 @@ You distribute a PHP SDK module as a Git repository. There is no build artifact 
 
 Recommended release checklist:
 
-1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+1. **Pin the engine version.** Set `engineVersion` in `dagger-module.toml` to the oldest engine version your module supports.
 2. **Commit the lockfile.** Run `dagger generate`, review the changes, and commit `composer.json` and `composer.lock` with your module. `sdk/` and `vendor/` stay gitignored.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
@@ -1039,23 +1002,18 @@ Before publishing, run `dagger check --generate` to confirm that the committed f
 Consumers can install your module into a workspace with:
 
 ```shell
-dagger install github.com/you/your-module@v1.2.0
+dagger module install github.com/you/your-module@v1.2.0
 ```
 
-To add it as a dependency of another module, run these commands from that module's directory:
-
-```shell
-dagger module deps add github.com/you/your-module@v1.2.0
-dagger generate
-```
+To add it as a dependency of another module, add a `[[dependencies]]` entry to that module's `dagger-module.toml`, then run `dagger generate`.
 
 A module reference follows `[proto://]host/repo[/subpath][@version]`. The version may be a tag, branch, or commit, and Dagger resolves it over HTTPS or SSH depending on the authentication available.
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger sdk install php`, scaffold with `dagger module init php <name>`, and regenerate with `dagger generate`.
+**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger module install php`, scaffold with `dagger module init php --name <name>`, and regenerate with `dagger generate`.
 
-**`dagger sdk install php` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger sdk install --here php`.
+**`dagger module install php` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger module install --here php`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 
@@ -1073,7 +1031,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 **A check is rejected at registration.** Checks take no required arguments (give every argument a default or make it nullable) and must return `void` or `Container`.
 
-**Engine version mismatch.** Align the module with `dagger module engine require <version>` (or `require-current` / `require-latest`), then regenerate.
+**Engine version mismatch.** Align the module's `engineVersion` in `dagger-module.toml`, then regenerate.
 
 ## Next steps
 

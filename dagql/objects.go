@@ -1876,6 +1876,8 @@ func assign(field reflect.Value, val any) error {
 	if reflect.TypeOf(val).AssignableTo(field.Type()) {
 		field.Set(reflect.ValueOf(val))
 		return nil
+	} else if dest, ok := nullableDestination(field); ok {
+		return dest.setFromValue(val)
 	} else if setter, ok := val.(Setter); ok {
 		err := setter.SetField(field)
 		if err != nil {

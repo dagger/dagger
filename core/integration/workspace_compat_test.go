@@ -44,7 +44,7 @@ func TestWorkspaceCompat(t *testing.T) {
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -52,7 +52,7 @@ func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 
 func compatDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 			Expect:                        dagger.ReturnTypeFailure,
 		})
@@ -547,7 +547,7 @@ func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context,
 	// With no detected workspace root this cannot become an ambient compat
 	// workspace. Load it explicitly to verify legacy workspace fields are still
 	// rejected as generic module fields.
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
+	_, err := hostDaggerExec(ctx, t, workdir, "api", "functions", "-m", ".")
 	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
 }
 
@@ -569,7 +569,7 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 		copyTestdataFixture(ctx, t, workdir, "modules", "go", "minimal-app")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "module", "install", "./dep")
 		require.Error(t, err)
 		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger setup first")
 
@@ -596,8 +596,14 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
   ]
 }`), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
+		// The assertion matches the raw error text, which the plain frontend
+		// prints as-is; `api functions` renders no pipeline and takes no
+		// --silent, so select the plain frontend through DAGGER_SILENT.
+		cmd := hostDaggerCommand(ctx, t, workdir, "api", "functions", "-m", ".")
+		cmd.Env = append(cmd.Env, "DAGGER_SILENT=true")
+		out, err := cmd.CombinedOutput()
 		require.Error(t, err)
+		err = fmt.Errorf("%s: %w", string(out), err)
 		requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces")
 	})
 

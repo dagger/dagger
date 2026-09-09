@@ -34,7 +34,7 @@ func TestModuleLoading(t *testing.T) {
 
 func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 			Expect:                        dagger.ReturnTypeFailure,
 		})
@@ -62,7 +62,7 @@ func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
 
 func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -85,6 +85,36 @@ func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithConta
 			Expect:                        dagger.ReturnTypeFailure,
 		})
 	}
+}
+
+// TestFatModuleManifestUsesLegacyRuntime verifies that the current engine can
+// load a fat TOML manifest through its legacy runtime. The entrypoint source is
+// intentionally invalid because this engine does not support entrypoints yet.
+func (ModuleLoadingSuite) TestFatModuleManifestUsesLegacyRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithNewFile("dagger-module.toml", `name = "fat"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"
+
+[entrypoint]
+  kind = "dang"
+  source = "./missing-entrypoint"
+`).
+		WithNewFile("main.dang", `
+type Fat {
+  pub message: String! {
+    "loaded through the legacy runtime"
+  }
+}
+`)
+
+	out, err := ctr.With(daggerCallAt(".", "message")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "loaded through the legacy runtime", strings.TrimSpace(out))
 }
 
 // TestModuleSourceResolution should pin down how module loading behaves before

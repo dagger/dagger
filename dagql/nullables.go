@@ -309,6 +309,42 @@ type Nullable[T Typed] struct {
 	Valid bool
 }
 
+// nullableDestination reports whether field is an addressable Nullable[T].
+//
+// Setter is source-side and only ever sees the bare selected value, so a
+// Nullable[T] destination has to be recognized here (dagger/dagger#13992).
+func nullableDestination(field reflect.Value) (nullableSetter, bool) {
+	if !field.CanAddr() {
+		return nil, false
+	}
+	dest, ok := field.Addr().Interface().(nullableSetter)
+	return dest, ok
+}
+
+type nullableSetter interface {
+	setFromValue(any) error
+}
+
+func (n *Nullable[T]) setFromValue(val any) error {
+	// A value carrying its own nullness decides it; anything else is present by
+	// virtue of having been returned at all.
+	if deref, ok := val.(Derefable); ok {
+		inner, valid := deref.Deref()
+		if !valid {
+			*n = Nullable[T]{}
+			return nil
+		}
+		val = inner
+	}
+	var elem T
+	if err := assign(reflect.ValueOf(&elem).Elem(), val); err != nil {
+		return err
+	}
+	n.Value = elem
+	n.Valid = true
+	return nil
+}
+
 func Null[T Typed]() Nullable[T] {
 	return Nullable[T]{}
 }

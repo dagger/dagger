@@ -33,7 +33,7 @@ func TestWorkspaceSelection(t *testing.T) {
 
 func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -286,6 +286,25 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		require.NoError(t, json.Unmarshal([]byte(out), &got))
 		requireEntry(t, got.CurrentWorkspace.Directory.Entries, "dagger.toml")
 		requireNoEntry(t, got.CurrentWorkspace.Directory.Entries, ".git")
+	})
+
+	t.Run("remote -W loads SDK settings for module help", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		workspaceDir := c.Directory().WithNewFile("dagger.toml", `[modules.go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[sdks.go]
+module = "go-sdk"
+`)
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
+
+		ctr := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty")
+
+		out, err := ctr.With(workspaceSelectionDaggerExec("-W", remoteRef, "module", "init", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Initialize a new module for development with an SDK")
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {

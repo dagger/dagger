@@ -48,13 +48,4 @@ class CurrentModuleAsSDKClient extends Client\AbstractObject implements Client\I
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (string)$this->queryLeaf($leafQueryBuilder, 'path');
     }
-
-    /**
-     * The pinned version of the bound module, if any.
-     */
-    public function pin(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pin');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'pin');
-    }
 }

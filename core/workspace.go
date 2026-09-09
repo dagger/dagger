@@ -132,6 +132,12 @@ type Workspace struct {
 	// personal values that must not surface through GraphQL or IDs.
 	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
 
+	// selectedEnv is the dagger.toml environment selected when this workspace
+	// was loaded. It travels with the workspace when the workspace is passed to
+	// an SDK, whose nested client does not inherit the parent client's ambient
+	// workspace selection.
+	selectedEnv string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -150,16 +156,6 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
-
-	// StagedGeneration records the workspace-root-relative paths of modules
-	// whose generated local dependency closure has been applied to this
-	// workspace, via the internal Workspace.__withGeneratedLocalDependencies
-	// field. Nested local-dependency generation for a
-	// recorded module short-circuits to an empty changeset — without this, a
-	// dependency's SDK generator re-stages its own dependency closure and
-	// generation fans out exponentially over the dependency DAG. Kept sorted
-	// and deduplicated; carried through Clone so derived workspaces keep it.
-	StagedGeneration []string
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -510,6 +506,17 @@ func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOve
 	ws.userConfigOverlay = overlay
 }
 
+func (ws *Workspace) SelectedEnv() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.selectedEnv
+}
+
+func (ws *Workspace) SetSelectedEnv(name string) {
+	ws.selectedEnv = name
+}
+
 // MountsDir returns the read-only directory tree holding mounted content,
 // keyed by workspace-root-relative mount path, or false when the workspace has
 // no mounts.
@@ -604,8 +611,7 @@ type persistedWorkspacePayload struct {
 	LockFile        string                        `json:"lockFile,omitempty"`
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
-
-	StagedGeneration []string `json:"stagedGeneration,omitempty"`
+	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -748,14 +754,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace:  ws.compatWorkspace,
-		Address:          ws.Address,
-		Cwd:              ws.Cwd,
-		ConfigFile:       ws.ConfigFile,
-		LockFile:         ws.LockFile,
-		ClientID:         ws.ClientID,
-		HostPath:         ws.hostPath,
-		StagedGeneration: ws.StagedGeneration,
+		CompatWorkspace: ws.compatWorkspace,
+		Address:         ws.Address,
+		Cwd:             ws.Cwd,
+		ConfigFile:      ws.ConfigFile,
+		LockFile:        ws.LockFile,
+		ClientID:        ws.ClientID,
+		HostPath:        ws.hostPath,
+		SelectedEnv:     ws.selectedEnv,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -832,17 +838,17 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:           rootfs,
-		mounts:           mounts,
-		mountPoints:      persisted.MountPoints,
-		compatWorkspace:  persisted.CompatWorkspace,
-		Address:          persisted.Address,
-		Cwd:              cwd,
-		ConfigFile:       configFile,
-		LockFile:         lockFile,
-		ClientID:         persisted.ClientID,
-		hostPath:         persisted.HostPath,
-		StagedGeneration: persisted.StagedGeneration,
+		rootfs:          rootfs,
+		mounts:          mounts,
+		mountPoints:     persisted.MountPoints,
+		compatWorkspace: persisted.CompatWorkspace,
+		Address:         persisted.Address,
+		Cwd:             cwd,
+		ConfigFile:      configFile,
+		LockFile:        lockFile,
+		ClientID:        persisted.ClientID,
+		hostPath:        persisted.HostPath,
+		selectedEnv:     persisted.SelectedEnv,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
