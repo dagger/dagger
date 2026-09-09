@@ -44,9 +44,9 @@ Run them:
 dagger check
 ```
 
-`go:test-all` runs `go test ./...` in every Go module it finds. Each Go test is reported as its own span, so a failure names the test that failed. `go:lint-all` runs a pinned `golangci-lint` and picks up the project's own `.golangci.*` config if it has one. `go:generate-all` is the drift check for the generator: it fails when `go generate` would change a committed file.
+`go:test-all` runs `go test ./...` in every Go module it finds. Each Go test is reported as its own span, so a failure names the test that failed. `go:lint-all` runs `golangci-lint` from a pinned image with its own Go toolchain, and picks up the project's own `.golangci.*` config if it has one. `go:generate-all` is the drift check for the generator: it fails when `go generate` would change a committed file.
 
-A test that skips itself because a service is unavailable is not a failure, so the Check passes and reports `skipped` alongside `passed`. If that count is not zero, the project needs the second half of this guide.
+A test that skips itself because a service is unavailable is not a failure. The Check passes, and the summary adds a `skipped` count next to `passed` whenever a test skipped. If that count appears, the project needs the second half of this guide.
 
 ## Configure the Go module
 
@@ -74,9 +74,12 @@ dagger module settings go version 1.26
 
 The settings that come up most often:
 
-- **`version`**: the Go toolchain every Go module in the workspace is tested and generated with.
-- **`includeExtraFiles`**: files the tests need that the Go module does not detect on its own, such as fixtures kept outside `testdata/` or assets embedded with `go:embed`.
+- **`version`**: the Go toolchain used to test and generate every Go module in the workspace. It selects the tag of the default `golang:<version>-alpine` image.
+- **`base`**: a container to use instead of that image. `version` and `base` are mutually exclusive, and the Go module fails to load when both are set. The second half of this guide sets `base`.
+- **`includeExtraFiles`**: files the tests need that the Go module does not mount on its own. By default each Go command sees the module's Go source files, its `go.mod`, `go.sum`, and `go.work`, every `testdata/` directory, the files named by `go:embed` directives, and local `replace` targets. Anything else a test opens by relative path, such as a fixture beside the source or a config file at the repository root, has to be listed here.
 - **`lint`, `test`, `generate`**: which Go modules each workflow covers, as path selectors. Use them in a monorepo to exclude a module from one workflow without excluding it from the others.
+
+Lint is the exception to `version` and `base`. `go:lint-all` always runs in the Go module's pinned `golangci-lint` image, so those two settings do not change the Go toolchain it lints with. A project whose `go.mod` requires a newer Go than that image ships fails lint until the Go module updates its pin. Exclude the module from lint with the `lint` selector in the meantime.
 
 Settings are stored in `dagger.toml`, so they apply to everyone who uses the repository:
 
@@ -115,7 +118,7 @@ The rest of this section provides the container that sets the variable.
 Install the Dang SDK into the workspace, then create a module to hold the services:
 
 ```shell
-dagger module install github.com/dagger/dang-sdk
+dagger module install dagger.io/sdk/dang
 dagger module init dang --name test-services
 ```
 
@@ -130,7 +133,7 @@ dagger module init dang --name test-services
 
 - **Only an image, a service binding, and an address.** No working directory, no source, no cache mounts. The Go module adds its own on top.
 - **The binding survives.** Every container the Go module derives from this base keeps the `db` service, so Postgres is running whenever `go test` runs.
-- **The image matches the Go module's default.** The base also builds the Go module's own helper binaries, which need Go 1.26.
+- **The image sets the Go version.** Once `base` is wired, the toolchain is whatever tag `goTestBase` uses, so use the same release you would otherwise put in `version`. Keep it at Go 1.26 or newer: the Go module builds its own helper binaries in this container, and they need at least 1.26.
 
 A Dang module has no generated code, so there is nothing to regenerate after editing. Call the function to see what the Go module will receive:
 
@@ -154,6 +157,12 @@ A setting can hold a module reference instead of a literal value. `test-services
 
 ```shell
 dagger module settings go base test-services:go-test-base
+```
+
+`version` and `base` are mutually exclusive. If the project set `version` earlier, remove it, since the Go version now comes from `goTestBase`:
+
+```shell
+dagger module settings -u go version
 ```
 
 `dagger.toml` now connects the two modules:
@@ -186,7 +195,7 @@ dagger check go:test-all
 
 The skipped count returns. Put the setting back before continuing.
 
-The same mechanism applies to any module with a wireable setting. The [Playwright module](../../reference/modules/playwright.mdx) takes a `service` setting for the app under test, which any function returning a `Service` can provide. [Module wiring](../../config/module-wiring.mdx) explains how references resolve and which types can be wired.
+The same mechanism applies to any module with a wireable setting. The [Playwright module](../../reference/modules/js/playwright.mdx) takes a `service` setting for the app under test, which any function returning a `Service` can provide. [Module wiring](../../config/module-wiring.mdx) explains how references resolve and which types can be wired.
 
 ## Run every Check
 
@@ -223,4 +232,4 @@ Nothing in this guide depends on where it runs. The same `dagger check` runs on 
 
 - [Go module reference](../../reference/modules/go.mdx) for every setting and Check
 - [Dang SDK reference](../../reference/sdks/dang.mdx) for writing more of your own functions
-- [Playwright](../../reference/modules/playwright.mdx) if the project also serves a web UI
+- [Playwright](../../reference/modules/js/playwright.mdx) if the project also serves a web UI
