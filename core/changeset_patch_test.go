@@ -147,7 +147,7 @@ func TestWriteGitDiffPatch_Integration(t *testing.T) {
 	writeFile(repo, "gone.txt", "will be removed\n")
 	writeFile(repo, "old-name.txt", "same content across the rename\n")
 
-	git := func(t *testing.T, args ...string) string {
+	git := func(t *testing.T, args ...string) {
 		t.Helper()
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = repo
@@ -157,7 +157,6 @@ func TestWriteGitDiffPatch_Integration(t *testing.T) {
 		)
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, "git %s: %s", strings.Join(args, " "), out)
-		return string(out)
 	}
 
 	git(t, "init", "-q")
