@@ -44,6 +44,7 @@ const containerFromQuery = `{
 
 const (
 	lockTestGitRepoURL      = "https://github.com/dagger/dagger.git"
+	lockTestGitRepoIdentity = "github.com/dagger/dagger"
 	lockTestGitBranchName   = "main"
 	lockTestGitBranchCommit = "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 	lockTestGitTagName      = "v0.18.2"
@@ -242,7 +243,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/heads/" + lockTestGitBranchName,
 	})
 	require.NotContains(t, string(lockBytes), lockTestGitBranchCommit)
@@ -276,11 +277,11 @@ func (LockfileSuite) TestDefaultDiscoversGitEntries(ctx context.Context, t *test
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/heads/" + lockTestGitBranchName,
 	})
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/tags/" + lockTestGitTagName,
 	})
 }
@@ -575,14 +576,14 @@ func (LockfileSuite) TestGitLatestVersionQueryCreatesPin(ctx context.Context, t 
 			continue
 		}
 		require.Equal(t, workspace.LookupInputs(
-			[]any{lockTestGitRepoURL},
+			[]any{lockTestGitRepoIdentity},
 			workspace.LookupOption{Name: "version", Value: "v0.18"},
 		), entry.Inputs)
 		selectedRef = entry.Value
 	}
 	require.True(t, strings.HasPrefix(selectedRef, "refs/tags/v0.18."), selectedRef)
 	require.Contains(t, string(out), selectedRef)
-	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoURL, selectedRef})
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoIdentity, selectedRef})
 }
 
 func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
@@ -813,7 +814,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 	require.NotEqual(t, originalLock, string(lockBytes))
 	assertGitLatestLockEntry(t, lockBytes)
 	assertGitLockEntryResult(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/tags/" + lockTestGitTagName,
 	}, lockTestGitTagCommit)
 	require.NotContains(t, string(lockBytes), staleCommit)
@@ -883,13 +884,13 @@ func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
 		if entry.Namespace != "" || entry.Operation != "git-latest" {
 			continue
 		}
-		require.Equal(t, []any{lockTestGitRepoURL}, entry.Inputs)
+		require.Equal(t, []any{lockTestGitRepoIdentity}, entry.Inputs)
 		selectedRef = entry.Value
 		require.True(t, strings.HasPrefix(selectedRef, "refs/tags/"), selectedRef)
 		break
 	}
 	require.NotEmpty(t, selectedRef, "expected git-latest entry in lockfile")
-	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoURL, selectedRef})
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoIdentity, selectedRef})
 }
 
 const ociLatestImageRefQuery = `{

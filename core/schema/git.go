@@ -1116,6 +1116,10 @@ func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 }
 
 func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
+	remote = workspace.NormalizeGitRemote(remote)
+	if remote == "" {
+		return false
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return false
@@ -1132,7 +1136,7 @@ func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
 			continue
 		}
 		entryRemote, ok := entry.Inputs[0].(string)
-		if ok && entryRemote == remote {
+		if ok && workspace.NormalizeGitRemote(entryRemote) == remote {
 			return true
 		}
 	}
