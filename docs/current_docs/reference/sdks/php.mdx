@@ -6,6 +6,10 @@ description: "Develop Dagger modules in PHP: create modules with the PHP SDK mod
 
 # PHP SDK
 
+:::note
+The PHP SDK module still uses the previous beta SDK interface. It needs an update before the current `dagger module init` and module client commands can use it. The module runtime is unchanged.
+:::
+
 The PHP SDK lets you write Dagger modules in PHP. You define plain PHP classes and methods, mark them with attributes, and the SDK turns them into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, fully typed PHP client, `dag()`, for the whole Dagger API. That covers containers, directories, files, secrets, services, and every module you depend on.
 
 This page is a standalone guide to the PHP SDK. It assumes you already understand the platform concepts covered in the [SDKs overview](./index.mdx):
@@ -19,7 +23,7 @@ The PHP SDK is itself a Dagger module, `github.com/dagger/php-sdk`. Install it i
 
 ```shell
 # Install the PHP SDK into your workspace (once)
-dagger module install php
+dagger module install github.com/dagger/php-sdk
 
 # Create a PHP module
 dagger module init php --name my-module
@@ -34,14 +38,14 @@ Run these commands from inside a Git repository. That's where the new module goe
 Install the PHP SDK into your workspace, then create a new module. The SDK argument is required. This example also sets the optional module name:
 
 ```shell
-dagger module install php
+dagger module install github.com/dagger/php-sdk
 dagger module init php --name my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
+`dagger module init` returns a [changeset](../../using/generating.mdx), a structured diff of the files it wants to create. Dagger shows you that diff to review before it writes anything to disk.
 
 :::tip
-If the repository does not have a `dagger.toml` yet, use `dagger module install --here php` to create it in the current directory.
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here github.com/dagger/php-sdk` to create it in the current directory.
 :::
 
 ### Where the module is created
@@ -56,7 +60,7 @@ it is editing:
 That is the workspace root unless the config lives in a subdirectory, as it does
 when several projects share one repository.
 
-Pass `--path` to choose a different location. The target must not already contain a Dagger module. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
+Pass `--path` to choose a different location. The path is relative to your current directory, like any other path you type, and a leading `/` means the workspace root.
 
 ```shell
 dagger module init php --name my-module --path ci     # ./ci
@@ -96,7 +100,7 @@ my-module/
 ```
 
 :::note
-`dagger module init` writes `dagger-module.toml`, `composer.json`, `entrypoint.php`, and `src/MyModule.php`, updates the workspace config, and runs the PHP SDK's generator for the new module. That is why `composer.lock`, `.gitattributes`, and `.gitignore` land in the same changeset. Pass `--no-generate` to scaffold without generating.
+`dagger module init` writes `dagger-module.toml`, `composer.json`, `entrypoint.php`, and `src/MyModule.php`, updates the workspace config, and runs the PHP SDK's generator for the new module. That is why `composer.lock`, `.gitattributes`, and `.gitignore` land in the same changeset.
 :::
 
 Unlike some other SDKs, you do not commit the generated PHP client in `sdk/`. The runtime regenerates it from the engine's schema every time it loads the module, so `.gitignore` excludes it along with `vendor/`. A fresh clone never carries a stale client, which is a nice property. The cost is that your editor is blind until you generate the client locally. See [Regenerate bindings](#regenerate-bindings-and-generated-files).
@@ -1011,9 +1015,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger module install php`, scaffold with `dagger module init php --name <name>`, and regenerate with `dagger generate`.
-
-**`dagger module install php` reports "no current workspace".** Add `--here` to create `dagger.toml` in the current directory: `dagger module install --here php`.
+**`dagger init` / `dagger develop` not found.** Install the PHP SDK with `dagger module install github.com/dagger/php-sdk`, scaffold with `dagger module init php --name <name>`, and regenerate with `dagger generate`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 
