@@ -1,5 +1,8 @@
 # Deferred opening of completed Directory and File snapshots, and stable identity for persisted lists
 
+<!-- Preserve tab indentation in exact Go source excerpts. -->
+<!-- markdownlint-configure-file {"MD010": {"code_blocks": false}} -->
+
 This document explains two local cache changes for Erik: restored `Directory` and `File` values keep their saved metadata usable until filesystem access is needed, and persisted lists keep their element identities across repeated restarts. Sections 1 to 5 explain the before and after. Sections 6 to 15 retain the approved design and implementation plan. Section 16 connects that plan to the implemented code and measured checks.
 
 **Design baseline:** `50016de4f8b03041fdcab7654277f2d68c2d8f6d`, the head of PR #14051 used for this change. In sections 1 to 15, “today” means that baseline and all code line references name that revision. **Implementation:** `dd5d0f8ad5116673fb49fb27e19d1562245a35c4`, on `sipsma/remote-cache-deferred-filesystem-restoration`. Section 16 uses that revision for its code references. **How claims were checked:** the baseline and implementation were read against source; the implementation was also checked with focused race tests, a physical snapshot store and successive real engines. Section 16 records the completed checks and their limits. Earlier defect reproductions used uncommitted overlay tests over successive SQLite cache instances with a fake snapshot manager. Those historical tests were neither daemon runs nor remote transfer tests. The historical guiding pages "Remote Cache, Guiding Requirements & Principles" and "Engine Foundations" (recovered from commit `d255a086c0`) were read as goals.
@@ -127,7 +130,7 @@ A pre-seeded path is not always final. `container.directory("/work/sub")` pre-se
 
 Run one. A client builds a directory with one file, selects the file, renames it, and reads it:
 
-```
+```text
 d = directory().withNewFile("a.txt", "hello")   // Directory, lazy op DirectoryWithNewFileLazy
 f = d.file("a.txt")                               // File; the resolver runs f's body at once
 g = f.withName("b.txt")                           // File, lazy op FileWithNameLazy
@@ -627,7 +630,7 @@ Unit tests in package `core`, in a new file `stored_snapshot_test.go`, using the
 
 Local unit commands run with the race detector where a Go toolchain is available; the engine commands run through the development module as the engine-debugging skill prescribes. The real-store test is selected by the first command and skips without mount privileges. The `-run` prefix matches the suite registration at `core/integration/engine_test.go:51-53`, with the subtests' spaces written as underscores:
 
-```
+```sh
 go test -race ./core -run 'Test(Directory|File)PersistedSnapshot|TestRestoredSnapshot|TestSourceFilePaths|TestContainerPersistedUnsupportedTarget|TestRecordStatus|TestSnapshotTransferTypedAdoptionAndRestart|TestPersistedObjectListSurvivesRepeatedRestore|TestWorkspaceRestoreOpensNothing|TestModuleObjectListFieldRestore' -count=1
 go test -race ./dagql -run 'TestPendingLazyComputationWholeGroupStoredOpen|TestPersisted(ScalarList|NestedList|ListPrepass|ListDefers)|TestPersistedSelfCodec' -count=1
 dagger api call engine-dev test --pkg ./core/integration --run='TestCachePersistence/TestDiskPersistenceAcrossRestart/directory_and_file_restore_without_opening'
@@ -736,7 +739,6 @@ Erik approved this proposal and implementation. No design decision remains open 
 | Telemetry status | `core/telemetry.go:180-190`, `core/telemetry.go:378-417`; `dagql/otelprof_lazy.go:142-229` |
 | Model | `dagql/tla/README.md`; `dagql/tla/CacheLifecycle_lazy_import.cfg`; `dagql/tla/CacheLifecycle_container_part_restart.cfg`; `dagql/tla/CacheLifecycle.tla:3029-3050` |
 | Related designs | `hack/designs/remote-cache/per-part-persistence.html`, `hack/designs/remote-cache/result-foundations.html`, `hack/designs/remote-cache/per-part-evaluation.html` |
-
 
 ## 16. Implementation and evidence
 
