@@ -2,14 +2,82 @@ package snapshots
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
+	cerrdefs "github.com/containerd/errdefs"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
+
+const snapshotTransferLeaseLabel = "dagger.io/snapshot-transfer"
+
+// resourcePin owns a transfer's resources until the returned ref or provider
+// is released. It is independent of a caller's ambient lease.
+type resourcePin struct {
+	cm   *snapshotManager
+	id   string
+	once sync.Once
+	err  error
+}
+
+func (cm *snapshotManager) newResourcePin(ctx context.Context) (*resourcePin, context.Context, error) {
+	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), MakeTemporary, func(l *leases.Lease) error {
+		l.Labels["containerd.io/gc.flat"] = time.Now().UTC().Format(time.RFC3339Nano)
+		l.Labels[snapshotTransferLeaseLabel] = "true"
+		return nil
+	})
+	if err != nil {
+		return nil, ctx, err
+	}
+	return &resourcePin{cm: cm, id: l.ID}, leases.WithLease(ctx, l.ID), nil
+}
+
+// ReleaseTransferLeasesAfterRestart must run only at startup, after durable
+// snapshot owners have been restored and before any transfers can start.
+// Retained typed refs are not released at clean shutdown. Their Go ownership
+// ends with that process, so only durable owners should survive its transfers.
+func ReleaseTransferLeasesAfterRestart(ctx context.Context, lm leases.Manager) error {
+	previous, err := lm.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list snapshot transfer leases: %w", err)
+	}
+	var rerr error
+	for _, lease := range previous {
+		if lease.Labels[snapshotTransferLeaseLabel] != "true" {
+			continue
+		}
+		if err := lm.Delete(ctx, lease); err != nil && !cerrdefs.IsNotFound(err) {
+			rerr = stderrors.Join(rerr, fmt.Errorf("release previous snapshot transfer lease %s: %w", lease.ID, err))
+		}
+	}
+	return rerr
+}
+
+func (p *resourcePin) release(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	p.once.Do(func() { p.err = p.cm.RemoveLease(context.WithoutCancel(ctx), p.id) })
+	return p.err
+}
+
+// pinContent checks presence after attachment. AddResource itself accepts
+// absent targets; containerd serializes its writes with the GC mark/sweep.
+func (cm *snapshotManager) pinContent(ctx context.Context, desc ocispecs.Descriptor) (bool, error) {
+	if err := cm.linkContentToContextLease(ctx, desc); err != nil {
+		return false, err
+	}
+	_, err := cm.ContentStore.Info(ctx, desc.Digest)
+	if cerrdefs.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
 
 type lazyLeaseScopeKey struct{}
 type withoutLazyLeaseScope struct{}

@@ -209,3 +209,111 @@ Earlier constrained simulations in `final-sweep-probes-summary.log` and
 `final-sweep-breaks-summary.log` did not reach their predicates. They are not
 positive evidence. Earlier broad-cost joint and sweep runs were stopped with
 queued states; they are incomplete cost measurements, not successful bounds.
+
+The independent `SnapshotChain.tla` component covers immutable chain import and
+export below DagQL. `snapshot_import` and `snapshot_export` are registered short
+names for `Some` and `One`. Existing short names still select `CacheLifecycle`.
+The cache spec and its existing configurations are unchanged.
+
+```sh
+dagger --env dev call tla-check some --configs=snapshot_import,snapshot_export
+dagger --env dev call tla-check one --config=snapshot_import
+```
+
+The component separates snapshot/index presence, handles, actual resources,
+source reads, and layer apply. It models partial ancestry attachment and a
+presence check after attachment. containerd's resource insertion validates no
+target presence; its metadata writes serialize with GC. A lost candidate may
+leave temporary references to absent resources, but cannot be returned as a hit.
+Selection evidence is recorded at the reuse decision, since another export can
+publish after an importer accepts a miss. Existing and generated export blobs
+remain pinned until provider consumption. Imported refs remain pinned through
+owner adoption. Snapshot IDs change on reapply, preserving actual parent keys.
+
+The two bounds allow two importers, two owners, prefix/suffix chains, failure,
+pruning, and later apply. The import shape allows three requests and three
+physical creations. The export shape starts with two local layers and allows
+two imports and one further creation. File bytes, metadata, compression,
+containerd resources, actual cleanup, and typed adoption/restart require Go
+checks. These bounds do not establish those facts.
+
+For the bounded snapshot implementation, run the existing quick set through the
+changed runner and the relevant snapshot shapes, probes, and deliberate breaks.
+The approved selected plan supersedes the full-suite instruction for this work.
+Every individual run has a 30-minute ceiling; measure before increasing bounds.
+Measured on 2026-09-05 with the runner's pinned TLC jar, Java 21, 8 GiB heap,
+and 16 workers: import reached 475,119 distinct states (1,295,189 generated)
+in 4.51 seconds; export reached 5,185,181 (17,628,508 generated) in 24.80 seconds.
+The existing quick set passed all 18 shapes through the changed runner in
+77.19 seconds including Dagger startup, using `dagger --env dev check tla-check:quick`.
+The two snapshot short names also passed through `Some` in 74.74 seconds.
+These runner checks preceded the final owner-content refinement; the counts
+above are the direct TLC runs of the final behavioral source. All 42 existing
+cache source/config files remain byte-identical to the private baseline.
+
+Private controls retain the selected snapshot handle but send it to byte work,
+omit terminal producer cleanup, remove exclusion, skip snapshot/blob selection,
+skip presence validation, omit blob/ancestor pins, omit export registration,
+omit the existing producer blob pin, and retain failed operation resources.
+All eleven violate their intended assertions. The first source checkpoint
+missed the first two controls; the revised evidence and cleanup assertions
+reject both. Nine basic reachability probes also reached their named states.
+Three earlier probes record ordered events for the same snapshot: reuse
+after prefix failure, consumer adoption after another owner releases, and
+provider consumption after another owner releases. These reached 3,653,
+15,236, and 246,413 distinct states in 1.22, 1.52, and 2.79 seconds, before
+the continuing-owner refinement below. Their source copies remain in the evidence.
+
+Commands, source/config hashes, logs, mutation copies, and traces are under
+`/tmp/snapshot-foundations-implementation-20260905/implementer`. Early malformed
+scratch probes are recorded as errors, not evidence. The model has a normalized
+root already; root omission and requested compression require Go controls.
+The local-build shape starts with one ordinary owner of the original
+snapshot ancestry. Its first export must attach new content to that continuing
+owner. Evidence records present content at adoption and extends that expectation
+on export registration. It does not demand missing historical bytes merely to
+reuse a usable snapshot.
+The continuing-owner witness reaches provider consumption and producer release
+with both new blobs still owned (40,429 states, 1.72 seconds). Omitting the
+owner content update violates `OwnerHasRecordedContent` (8,130 states, 1.53
+seconds). All prior eleven controls and nine basic probes were repeated on
+this source and reached their intended assertions.
+
+The single producer does not establish concurrent export cancellation. Focused
+Go race checks use real containerd metadata, native snapshots, content stores
+and leases for active/waiting export cancellation and waiting import cancellation.
+They consume the surviving provider after canceled-owner cleanup. Separate Go
+checks exercise mounted apply failure, source failure, actual GC, owner release,
+and usable snapshots whose historical blob disappears during attachment.
+The typed check clears manager rows before SQLite hydration and reimports the
+chain with the original snapshot ID and unchanged read/apply counts. This is a
+local cache/manager reopen witness, not a full engine restart run.
+
+The startup ownership boundary is also checked in Go. A retained imported ref
+leaves its private lease at clean cache close. After SQLite restores durable
+owners, startup removes only leases marked as snapshot transfers. An unrelated
+temporary lease survives; GC and reimport retain the original snapshot with no
+additional reads or applies. The test leaves the old ref unreleased, matching
+the process lifetime endpoint. The snapshot model does not include this startup
+sequence; `core-restart-race-20260905T085338` records the physical witness.
+
+`CacheLifecycle` explicitly omits arbitrary-cache initialization. Its existing
+operation accounting contract is checked in Go: a canceled arbitrary initializer
+that returns late retains a cache operation through callback cleanup, so Close
+waits for the initializer and its release. Deterministic tests include blocked
+release, cleanup errors, other live waiters and replacement entries. A real
+prepared image lease check covers the provider consumer. These checks do not
+expand the old model's state spaces or prove its omitted implementation paths.
+
+Private production controls remove export reuse registration and, separately,
+restore an omitted root as the reuse parent. The same-manager observations
+reject both with one unexpected apply; scratch and known-empty roots both reject
+the second control. Omitting startup transfer deletion also fails the expected
+surviving-lease count in `restart-cleanup-control-20260905T085558`.
+Controls remain outside production source. The evidence root
+contains `production-controls.json`, per-run command manifests, source copies and
+logs. Focused race evidence is in `snapshot-race-20260905T084725`,
+`core-race-20260905T084859` and `dagql-race-20260905T083624`. Provider race checks
+are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
+`final-evidence.md` reconciles source revisions, commands, counts and limitations.
+No full TLA or Go suite was run for this implementation.

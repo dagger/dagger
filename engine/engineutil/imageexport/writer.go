@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"maps"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/platforms"
 	cache "github.com/dagger/dagger/engine/snapshots"
@@ -57,6 +60,7 @@ type ExportRequest struct {
 type WriterOpt struct {
 	Snapshotter  cache.Snapshotter
 	ContentStore content.Store
+	LeaseManager leases.Manager
 	Applier      diff.Applier
 	Differ       diff.Comparer
 }
@@ -76,6 +80,15 @@ type ExportedImage struct {
 	Provider  content.InfoReaderProvider
 
 	SourceAnnotations map[digest.Digest]map[string]string
+	release           func(context.Context) error
+}
+
+// Release ends consumption of every provider in the assembled image.
+func (img *ExportedImage) Release(ctx context.Context) error {
+	if img == nil || img.release == nil {
+		return nil
+	}
+	return img.release(ctx)
 }
 
 type ExportedPlatform struct {
@@ -96,16 +109,43 @@ func (w *Writer) Assemble(
 	ctx context.Context,
 	req *ExportRequest,
 	opts CommitOpts,
-) (*ExportedImage, error) {
+) (_ *ExportedImage, rerr error) {
 	if len(req.Platforms) == 0 {
 		return nil, fmt.Errorf("image export request has no platforms")
 	}
+
+	if w.opt.LeaseManager == nil {
+		return nil, fmt.Errorf("image export requires a lease manager")
+	}
+	lease, err := w.opt.LeaseManager.Create(ctx, leases.WithRandomID(), cache.MakeTemporary)
+	if err != nil {
+		return nil, err
+	}
+	ctx = leases.WithLease(ctx, lease.ID)
+	var chains []cache.ExportChain
+	var releaseOnce sync.Once
+	var releaseErr error
+	release := func(ctx context.Context) error {
+		releaseOnce.Do(func() {
+			ctx = context.WithoutCancel(ctx)
+			for _, chain := range chains {
+				releaseErr = stderrors.Join(releaseErr, chain.Release(ctx))
+			}
+			releaseErr = stderrors.Join(releaseErr, w.opt.LeaseManager.Delete(ctx, lease))
+		})
+		return releaseErr
+	}
+	defer func() {
+		if rerr != nil {
+			_ = release(ctx)
+		}
+	}()
 
 	refs := make([]cache.ImmutableRef, 0, len(req.Platforms))
 	for _, input := range req.Platforms {
 		refs = append(refs, input.Ref)
 	}
-	chains, err := w.exportLayers(ctx, opts.RefCfg, refs...)
+	chains, err = w.exportLayers(ctx, opts.RefCfg, refs...)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +184,7 @@ func (w *Writer) Assemble(
 			Platforms:         exportedPlatforms,
 			Provider:          provider,
 			SourceAnnotations: sourceAnnotations,
+			release:           release,
 		}, nil
 	}
 
@@ -211,6 +252,7 @@ func (w *Writer) Assemble(
 		Platforms:         exportedPlatforms,
 		Provider:          provider,
 		SourceAnnotations: sourceAnnotations,
+		release:           release,
 	}, nil
 }
 
@@ -370,6 +412,7 @@ func (w *Writer) rewriteExportChainWithEpoch(ctx context.Context, opts CommitOpt
 	}
 	cs := contentutil.NewStoreWithProvider(w.opt.ContentStore, chain.Provider)
 	eg, ctx := errgroup.WithContext(ctx)
+	defer eg.Wait()
 	done := progress.OneOff(ctx, fmt.Sprintf("rewriting layers with source-date-epoch %d (%s)", opts.Epoch.Unix(), opts.Epoch.String()))
 	var divergedFromBase bool
 

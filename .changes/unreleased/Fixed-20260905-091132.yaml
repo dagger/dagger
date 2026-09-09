@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Reuse locally exported snapshot layers during import. Keep exported providers
+  owned through consumption and clean up abandoned transfer resources on
+  cancellation and clean restart.
+time: 2026-09-05T09:11:32Z
+custom:
+  Author: sipsma
+  PR: 14051

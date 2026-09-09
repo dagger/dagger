@@ -131,6 +131,10 @@ func (m *cacheVolumeTestSnapshotManager) GetMutableBySnapshotID(ctx context.Cont
 	return ref, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) ImportChain(context.Context, *bkcache.ExportChain) (bkcache.ImmutableRef, error) {
+	panic("unexpected ImportChain call")
+}
+
 func (*cacheVolumeTestSnapshotManager) ImportImage(context.Context, *bkcache.ImportedImage, bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
 	panic("unexpected ImportImage call")
 }

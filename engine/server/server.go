@@ -426,6 +426,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		Platforms:        srv.enabledPlatforms,
 		NetworkProviders: srv.networkProviders,
 		Snapshotter:      workerSnapshotter,
+		LeaseManager:     srv.leaseManager,
 		ContentStore:     srv.contentStore,
 		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
 		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
@@ -621,6 +622,11 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	}
 	if resetReason := srv.engineCache.PersistenceResetReason(); resetReason != dagql.CachePersistenceResetNone {
 		return localCacheStateResetReason("dagql_" + string(resetReason)), nil
+	}
+	// NewCache has restored durable snapshot owners. Previous process transfer
+	// refs no longer exist, and this server has not admitted any new work yet.
+	if err := bkcache.ReleaseTransferLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous snapshot transfers: %w", err)
 	}
 
 	return localCacheStateResetNone, nil
