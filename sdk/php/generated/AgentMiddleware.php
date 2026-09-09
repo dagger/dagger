@@ -8,6 +8,11 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
+ * An agent middleware contributed by a module.
+ */
 class AgentMiddleware extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**

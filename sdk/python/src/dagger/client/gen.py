@@ -32,7 +32,8 @@ class Void(Scalar):
 
 
 class AgentMessageDelivery(Enum):
-    """How a message landed in an agent's evaluation."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  How a message
+    landed in an agent's evaluation."""
 
     QUEUED = "QUEUED"
     """The message is queued: the agent is paused or failed, and a resume will drain it."""
@@ -45,7 +46,8 @@ class AgentMessageDelivery(Enum):
 
 
 class AgentState(Enum):
-    """Computed lifecycle state of an agent."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  Computed lifecycle
+    state of an agent."""
 
     FAILED = "FAILED"
     """The loop failed; snapshot holds the completed prefix. Resume retries."""
@@ -214,7 +216,8 @@ class LLMContentBlockKind(Enum):
 
 
 class LLMMessageOriginKind(Enum):
-    """Who put a message on the conversation record."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  Who put a message
+    on the conversation record."""
 
     AGENT = "AGENT"
     """Another agent: the message was sent from within that agent's turn."""
@@ -430,7 +433,8 @@ class LLMContentBlockInput(Input):
 @typecheck
 @dataclass(slots=True)
 class LLMMessageOriginInput(Input):
-    """The provenance of a message delivered through an agent mailbox."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  The provenance of a
+    message delivered through an agent mailbox."""
 
     kind: LLMMessageOriginKind
     """Who put this message on the record."""
@@ -780,15 +784,19 @@ class Address(Type):
 
 @typecheck
 class Agent(Type):
-    """A conversation loop running as an addressable, long-lived entity
-    within the session. The conversation itself remains observable at any
-    time as an immutable LLM value."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  A conversation loop
+    running as an addressable, long-lived entity within the session. The
+    conversation itself remains observable at any time as an immutable LLM
+    value."""
 
     async def error(self) -> str:
         """Why the loop failed, for a FAILED agent; empty otherwise.
 
         The snapshot holds the completed prefix — send or resume retries from
         it.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -815,6 +823,9 @@ class Agent(Type):
         dagger.io/agent.id, so a client can correlate the agent with what it
         discovers in the trace. Two spawns of an identical composition have
         different handles; a display name is shared freely.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -872,6 +883,9 @@ class Agent(Type):
         On an idle, never-started, or failed agent this is equivalent to
         pause. Interrupting a stopped agent fails.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -892,6 +906,9 @@ class Agent(Type):
         Fails if the agent has no runtime entry in this session, or no record
         of the given handle.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Parameters
         ----------
         handle:
@@ -905,6 +922,9 @@ class Agent(Type):
 
     async def name(self) -> str:
         """Display label for the agent; carries no identity.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -945,6 +965,9 @@ class Agent(Type):
 
         Idempotent per subscriber; re-subscribing replaces the state set.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Parameters
         ----------
         subscriber:
@@ -982,6 +1005,9 @@ class Agent(Type):
         pausing a failed agent is allowed (resume decides the retry); pausing
         a stopped agent fails.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -1013,6 +1039,9 @@ class Agent(Type):
         Fails if the instance already has a runtime entry in this session: re-
         hydration must happen before anything else addresses the instance,
         since by then it may have stepped.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Parameters
         ----------
@@ -1063,6 +1092,9 @@ class Agent(Type):
         spawned or re-hydrated instance holds a conversation to replace), if a
         step is in flight, or if the agent is stopped.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Parameters
         ----------
         conversation:
@@ -1089,6 +1121,9 @@ class Agent(Type):
         agent relaunches the same instance from its last committed snapshot.
 
         No-op on a running or idle agent.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Raises
         ------
@@ -1121,6 +1156,9 @@ class Agent(Type):
         committed snapshot. Sending to a paused or failed agent enqueues with
         QUEUED delivery, to be drained by a resume.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Parameters
         ----------
         message:
@@ -1152,6 +1190,9 @@ class Agent(Type):
         The seed conversation if the agent never stepped.
 
         Branching from it does not affect the agent.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
         """
         _args: list[Arg] = []
         _ctx = self._select("snapshot", _args)
@@ -1163,6 +1204,9 @@ class Agent(Type):
         The loop runs detached from the calling request: it steps the
         conversation while input is pending, then idles awaiting further
         lifecycle operations.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Raises
         ------
@@ -1180,10 +1224,14 @@ class Agent(Type):
         An agent that was never started reports IDLE: its mailbox is empty and
         no turn is open.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         AgentState
-            Computed lifecycle state of an agent.
+            EXPERIMENTAL: Agent APIs are likely to change.  Computed lifecycle
+            state of an agent.
 
         Raises
         ------
@@ -1199,6 +1247,9 @@ class Agent(Type):
     async def stop(self, *, kill: bool | None = False) -> Self:
         """Release the agent's runtime. The tombstone (state, snapshot) stays
         readable for the rest of the session.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Parameters
         ----------
@@ -1226,6 +1277,9 @@ class Agent(Type):
         Unlike waiting for one exact state, this cannot hang merely because
         the agent settled in a different outcome.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -1239,7 +1293,8 @@ class Agent(Type):
 
 @typecheck
 class AgentMessage(Type):
-    """A message delivered to an agent's mailbox."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  A message delivered
+    to an agent's mailbox."""
 
     async def delivery(self) -> AgentMessageDelivery:
         """How the message conclusively landed: opened a new turn (STARTED), was
@@ -1249,10 +1304,14 @@ class AgentMessage(Type):
         Blocks until provider or native lifecycle evidence is conclusive. Once
         recorded, the result or cancellation error is immutable.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         AgentMessageDelivery
-            How a message landed in an agent's evaluation.
+            EXPERIMENTAL: Agent APIs are likely to change.  How a message
+            landed in an agent's evaluation.
 
         Raises
         ------
@@ -1301,6 +1360,9 @@ class AgentMessage(Type):
         shows and a reply's replyTo names — quote it when telling the
         recipient what to answer.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         str
@@ -1336,6 +1398,9 @@ class AgentMessage(Type):
         deadlock: turns should not block on other agents — send without
         awaiting, and the reply arrives as a message.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         str
@@ -1357,8 +1422,14 @@ class AgentMessage(Type):
 
 @typecheck
 class AgentMiddleware(Type):
+    """EXPERIMENTAL: Agent APIs are likely to change.  An agent middleware
+    contributed by a module."""
+
     async def description(self) -> str:
         """The description of the agent
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -1410,6 +1481,9 @@ class AgentMiddleware(Type):
         """Return the command name of the agent. Entrypoint targets omit the
         module prefix.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         str
@@ -1429,13 +1503,20 @@ class AgentMiddleware(Type):
         return await _ctx.execute(str)
 
     def original_module(self) -> "Module":
-        """The original module in which the agent has been defined"""
+        """The original module in which the agent has been defined
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
         _args: list[Arg] = []
         _ctx = self._select("originalModule", _args)
         return Module(_ctx)
 
     async def path(self) -> list[str]:
         """The path of the agent within its module
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -1458,9 +1539,15 @@ class AgentMiddleware(Type):
 
 @typecheck
 class AgentMiddlewareGroup(Type):
+    """EXPERIMENTAL: Agent APIs are likely to change.  A group of agent
+    middlewares composable onto a base LLM."""
+
     def compose(self, *, base: "LLM | None" = None) -> "LLM":
         """Compose all selected agent middlewares onto a base LLM, in
         alphabetical module:fn order, and return the composed LLM.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Parameters
         ----------
@@ -1503,7 +1590,11 @@ class AgentMiddlewareGroup(Type):
         return await _ctx.execute(str)
 
     async def list_(self) -> list[AgentMiddleware]:
-        """Return a list of individual agents and their details"""
+        """Return a list of individual agents and their details
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
         _args: list[Arg] = []
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(AgentMiddleware)
@@ -7557,7 +7648,11 @@ class Function(Type):
         return await _ctx.execute(str)
 
     def with_agent(self) -> Self:
-        """Returns the function with a flag indicating it is an agent middleware."""
+        """Returns the function with a flag indicating it is an agent middleware.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
         _args: list[Arg] = []
         _ctx = self._select("withAgent", _args)
         return Function(_ctx)
@@ -10461,6 +10556,9 @@ class LLM(Type):
         returned handle's ID is an honest, replayable chain denoting the one
         instance the spawn minted. It never creates an instance itself.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Parameters
         ----------
         handle:
@@ -10768,6 +10866,9 @@ class LLM(Type):
         spawn. The result is pinned to the instance (via the agent lookup
         field), so re-loading its ID re-addresses the same agent from any
         request in the session.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Parameters
         ----------
@@ -11375,6 +11476,9 @@ class LLMMessage(Type):
 
         Null for the user's own prompts and for everything the model or tools
         produced.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
         """
         _args: list[Arg] = []
         _ctx = self._select("origin", _args)
@@ -11410,12 +11514,15 @@ class LLMMessage(Type):
 
 @typecheck
 class LLMMessageOrigin(Type):
-    """The recorded provenance of a message that arrived through an agent
-    mailbox."""
+    """EXPERIMENTAL: Agent APIs are likely to change.  The recorded
+    provenance of a message that arrived through an agent mailbox."""
 
     async def agent_handle(self) -> str:
         """The sending agent's runtime handle (for AGENT origins) or the observed
         agent's runtime handle (for EVENT origins).
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -11437,6 +11544,9 @@ class LLMMessageOrigin(Type):
 
     async def agent_name(self) -> str:
         """The display name of the agent behind agentHandle.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -11487,10 +11597,14 @@ class LLMMessageOrigin(Type):
     async def kind(self) -> LLMMessageOriginKind:
         """Who put this message on the record.
 
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
         Returns
         -------
         LLMMessageOriginKind
-            Who put a message on the conversation record.
+            EXPERIMENTAL: Agent APIs are likely to change.  Who put a message
+            on the conversation record.
 
         Raises
         ------
@@ -11507,6 +11621,9 @@ class LLMMessageOrigin(Type):
         """The message's short ref within the receiving agent's runtime, e.g.
         "#3": the deterministic token replies name (send's replyTo). Distinct
         from the opaque message handle.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -11529,6 +11646,9 @@ class LLMMessageOrigin(Type):
     async def reply_to(self) -> str:
         """The ref of the message this one answers, in the sender's own runtime,
         if any.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Returns
         -------
@@ -16110,6 +16230,9 @@ class Workspace(Type):
         exclude: list[str] | None = None,
     ) -> AgentMiddlewareGroup:
         """Return all agent middlewares from modules loaded in the workspace.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
 
         Parameters
         ----------

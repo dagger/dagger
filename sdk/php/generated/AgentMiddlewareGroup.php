@@ -8,6 +8,11 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
+ * A group of agent middlewares composable onto a base LLM.
+ */
 class AgentMiddlewareGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**

@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * The recorded provenance of a message that arrived through an agent mailbox.
  */
 class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, Node

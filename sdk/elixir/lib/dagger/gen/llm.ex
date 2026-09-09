@@ -19,6 +19,10 @@ defmodule Dagger.LLM do
   Reconstruct a spawned agent from its runtime handle.
 
   This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
   """
   @spec agent(t(), String.t(), String.t()) :: Dagger.Agent.t()
   def agent(%__MODULE__{} = llm, handle, name) do
@@ -236,6 +240,10 @@ defmodule Dagger.LLM do
   Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
 
   Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
   """
   @spec spawn(t(), [{:name, String.t() | nil}]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
   def spawn(%__MODULE__{} = llm, optional_args \\ []) do

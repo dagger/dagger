@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * How a message landed in an agent's evaluation.
  */
 enum AgentMessageDelivery: string

@@ -26,6 +26,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Agent]{
 		dagql.Func("name", s.name).
+			Experimental("Agent APIs are likely to change.").
 			Doc(`Display label for the agent; carries no identity.`),
 
 		// The runtime handle is already public: it rides every loop span as
@@ -35,31 +36,37 @@ func (s agentSchema) Install(srv *dagql.Server) {
 		// the correlation focus needs — and it grants nothing extra: you
 		// still need the handle to ask, so §3.3's capability model holds.
 		dagql.Func("handle", s.handle).
+			Experimental("Agent APIs are likely to change.").
 			Doc(`The opaque runtime handle minted by the spawn that created this agent.`,
 				`It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.`),
 
 		dagql.NodeFunc("state", s.state).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Projects live runtime state.").
 			Doc(`Computed lifecycle state; never stored.`,
 				`An agent that was never started reports IDLE: its mailbox is empty and no turn is open.`),
 
 		dagql.NodeFunc("error", s.loopError).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Projects live runtime state.").
 			Doc(`Why the loop failed, for a FAILED agent; empty otherwise.`,
 				`The snapshot holds the completed prefix — send or resume retries from it.`),
 
 		dagql.NodeFunc("snapshot", s.snapshot).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Reflects the loop's last committed step, which advances as the agent runs.").
 			Doc(`The conversation as of the last committed step: immutable, branchable, persistable.`,
 				`The seed conversation if the agent never stepped.`,
 				`Branching from it does not affect the agent.`),
 
 		dagql.NodeFunc("start", s.start).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Start the agent's evaluation loop. No-op if it is already running.`,
 				`The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.`),
 
 		dagql.NodeFunc("send", s.send).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Every send enqueues a distinct message into live runtime state.").
 			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
 				`Never blocks, never drops; concurrent sends queue in order.`,
@@ -81,6 +88,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 		// re-exec pinning cheap: re-loading a pinned ID replays
 		// …agent(handle:…)!message(…) and lands on the same cached instance.
 		dagql.NodeFunc("message", s.message).
+			Experimental("Agent APIs are likely to change.").
 			Doc(`Look up a previously sent message by its opaque handle.`,
 				`This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).`,
 				`Fails if the agent has no runtime entry in this session, or no record of the given handle.`).
@@ -89,29 +97,34 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("interrupt", s.interrupt).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Preempt the in-flight step, keeping all completed steps, and pause.`,
 				`The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.`,
 				`On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.`),
 
 		dagql.NodeFunc("pause", s.pause).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Stop draining the mailbox once the in-flight step completes.`,
 				`Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.`,
 				`Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.`),
 
 		dagql.NodeFunc("resume", s.resume).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.`,
 				`Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.`,
 				`No-op on a running or idle agent.`),
 
 		dagql.NodeFunc("wait", s.wait).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.`,
 				`Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.`),
 
 		dagql.NodeFunc("notify", s.notify).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.`,
 				`This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.`,
@@ -123,6 +136,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("stop", s.stop).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.`).
 			Args(
@@ -130,6 +144,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("reseed", s.reseed).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.`,
 				`This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.`,
@@ -140,6 +155,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("rehydrate", s.rehydrate).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively creates runtime state.").
 			Doc(`Recreate this instance's runtime entry from a persisted conversation, without starting its loop.`,
 				`The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.`,
@@ -154,15 +170,18 @@ func (s agentSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.AgentMessage]{
 		dagql.Func("delivery", s.messageDelivery).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Blocks on pending delivery evidence in live runtime state.").
 			Doc(`How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).`,
 				`Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.`),
 
 		dagql.Func("ref", s.messageRef).
+			Experimental("Agent APIs are likely to change.").
 			Doc(`The message's short ref within the receiving agent's runtime, e.g. "#3".`,
 				`This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.`),
 
 		dagql.Func("response", s.messageResponse).
+			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.`,
 				`Idempotent: cancel and request the response again freely; concurrent waiters share the result.`,

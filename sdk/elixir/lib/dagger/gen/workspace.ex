@@ -28,6 +28,10 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return all agent middlewares from modules loaded in the workspace.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
   """
   @spec agents(t(), [{:include, [String.t()]}, {:exclude, [String.t()]}]) ::
           Dagger.AgentMiddlewareGroup.t()

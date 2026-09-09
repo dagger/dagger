@@ -19,9 +19,11 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.AgentMiddlewareGroup]{
 		dagql.Func("list", s.list).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Return a list of individual agents and their details"),
 
 		dagql.Func("compose", s.compose).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.").
 			Args(
 				dagql.Arg("base").Doc("The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."),
@@ -30,12 +32,16 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.AgentMiddleware]{
 		dagql.Func("name", s.name).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Return the command name of the agent. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The description of the agent"),
 		dagql.Func("path", s.path).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The path of the agent within its module"),
 		dagql.Func("originalModule", s.originalModule).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The original module in which the agent has been defined"),
 	}.Install(srv)
 }

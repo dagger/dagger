@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
+ * EXPERIMENTAL: Agent APIs are likely to change.
+ *
  * A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
  */
 class Agent extends Client\AbstractObject implements Client\IdAble, Node

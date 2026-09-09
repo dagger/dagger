@@ -477,6 +477,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include terminal targets matching the specified patterns"),
 			),
 		dagql.NodeFunc("agents", s.agents).
+			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(

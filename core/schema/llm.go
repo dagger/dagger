@@ -86,6 +86,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
 				dagql.Arg("origin").
+					Experimental("Agent APIs are likely to change.").
 					View(AfterVersion("v1.0.0-0")).
 					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
@@ -209,6 +210,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("spawn", s.spawn).
+			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Every spawn mints a distinct agent instance.").
 			Doc(`Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.`,
@@ -223,6 +225,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		// spawned agent's ID replays …llm!agent(handle:…) and lands on the same
 		// value, never re-minting an instance.
 		dagql.NodeFunc("agent", s.agent).
+			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Reconstruct a spawned agent from its runtime handle.`,
 				`This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.`).
@@ -265,6 +268,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		// absent (the user's own prompts, model output, tool results) is the
 		// common case, and a struct-derived pointer field renders non-null.
 		dagql.Func("origin", s.messageOrigin).
+			Experimental("Agent APIs are likely to change.").
 			Doc(`Who put this message on the record, when it arrived through an agent mailbox.`,
 				`Null for the user's own prompts and for everything the model or tools produced.`),
 	}.Install(srv)
