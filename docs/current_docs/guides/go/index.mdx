@@ -159,23 +159,33 @@ A setting can hold a module reference instead of a literal value. `test-services
 dagger module settings go base test-services:go-test-base
 ```
 
-`version` and `base` are mutually exclusive. If the project set `version` earlier, remove it, since the Go version now comes from `goTestBase`:
+`version` and `base` are mutually exclusive. With both set, every Check fails with `version and base are mutually exclusive`. If the project set `version` earlier, remove it, since the Go version now comes from `goTestBase`:
 
 ```shell
 dagger module settings -u go version
 ```
 
-`dagger.toml` now connects the two modules:
+`dagger.toml` now connects the two modules. In full, with the SDK entry and the `[sdks.dang]` tables that `dagger module init` wrote:
 
 ```toml
 [modules.go]
 source = "dagger.io/go"
+
+[modules.dang-sdk]
+source = "dagger.io/sdk/dang"
 
 [modules.test-services]
 source = ".dagger/modules/test-services"
 
 [modules.go.settings]
 base = "test-services:go-test-base"
+
+[sdks.dang]
+module = "dang-sdk"
+
+[sdks.dang.scopes.".dagger/modules/test-services"]
+is-module = true
+name = "test-services"
 ```
 
 Run the tests again:
@@ -204,22 +214,26 @@ dagger check
 ```
 
 ```text
-== CHECKS ==  ✔ 4 passed
-✔ dagger-dang-sdk:generate 0.3s OK
-✔ go:generate-all 3.6s OK
-✔ go:lint-all 3.6s OK
-✔ go:test-all 3.6s OK
+== CHECKS ==  ✔ 3 passed
+✔ go:generate-all 40.0s OK
+✔ go:lint-all 40.0s OK
+✔ go:test-all 40.0s OK
+    ✔ example.com/greetings  1 passed
+    ✔ example.com/greetings/store  2 passed
+    ✔ 3 passed
 
 == SERVICES ==
-✔ ...dagger.local exec docker-entrypoint.sh postgres 3.4s EXITED
+✔ ...dagger.local exec docker-entrypoint.sh postgres 26.6s EXITED
 ```
 
-Commit the configuration and the module. Dagger needs both to load the workspace:
+Commit the configuration, the lock file, and the module. Dagger needs all three to load the workspace the same way everywhere:
 
 ```shell
 git add dagger.toml dagger.lock .dagger
 git commit -m "Daggerize"
 ```
+
+`dagger.lock` pins every image and Git ref the workspace resolved, including the `golang` tag behind `version` and the Postgres image from the test services module. Any Dagger command may add to it, and entries for images the workspace no longer uses, such as a previous `version`, stay in the file. Those stale pins are expected and harmless. `dagger workspace update` refreshes the pinned versions.
 
 ## Run it on every push
 
