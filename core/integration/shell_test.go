@@ -42,8 +42,7 @@ func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
-			Stdin:                         script,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: script,
 		})
 	}
 }
@@ -51,8 +50,7 @@ func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec([]string{"dagger", "shell", "-M"}, dagger.ContainerWithExecOpts{
-			Stdin:                         script,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: script,
 		})
 	}
 }
@@ -161,9 +159,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			WithNewFile("script.sh", ".echo foobar").
-			WithExec([]string{"dagger", "script.sh"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"dagger", "script.sh"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar\n", out)
@@ -173,9 +169,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			WithNewFile("script.sh", ".echo foobar").
-			WithExec([]string{"dagger", "shell", "script.sh"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"dagger", "shell", "script.sh"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar\n", out)
@@ -188,9 +182,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
 				Permissions: 0750,
 			}).
-			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"./script.sh"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar\n", out)
@@ -203,9 +195,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
 				Permissions: 0750,
 			}).
-			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"./script.sh"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar\n", out)
@@ -214,9 +204,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 	t.Run("root error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "wokspace"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
+			WithExec([]string{"dagger", "wokspace"}).
 			Sync(ctx)
 		requireErrOut(t, err, `unknown command or file "wokspace" for "dagger"`)
 		requireErrOut(t, err, "Did you mean this?\n\tworkspace")

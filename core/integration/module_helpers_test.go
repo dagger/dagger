@@ -30,9 +30,7 @@ import (
 
 func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger"}, args...))
 	}
 }
 
@@ -48,8 +46,7 @@ func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContain
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: query,
 		})
 	}
 }
@@ -65,8 +62,7 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 }
@@ -76,9 +72,8 @@ func daggerCallFail(args ...string) dagger.WithContainerFunc {
 		return c.WithExec(
 			append([]string{"dagger", "--progress=report", "call"}, args...),
 			dagger.ContainerWithExecOpts{
-				UseEntrypoint:                 true,
-				ExperimentalPrivilegedNesting: true,
-				Expect:                        dagger.ReturnTypeFailure,
+				UseEntrypoint: true,
+				Expect:        dagger.ReturnTypeFailure,
 			},
 		)
 	}
@@ -86,9 +81,7 @@ func daggerCallFail(args ...string) dagger.WithContainerFunc {
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...))
 	}
 }
 

@@ -647,8 +647,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "shell", "-m", indirectModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
-				ExperimentalPrivilegedNesting: true,
+				Stdin: fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -657,8 +656,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "shell", "--allow-llm", directModuleSymbolic}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
-				ExperimentalPrivilegedNesting: true,
+				Stdin: fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)

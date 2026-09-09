@@ -146,7 +146,7 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asService">asService</a>(array|null $args = [], bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+                    <a href="#method_asService">asService</a>(array|null $args = [], bool|null $useEntrypoint = false, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         
                                             <p><p>Turn the container into a Service.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -476,7 +476,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_terminal">terminal</a>(array|null $cmd = [], bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
+                    <a href="#method_terminal">terminal</a>(array|null $cmd = [], bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false)
         
                                             <p><p>Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -486,7 +486,7 @@
                     void
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_up">up</a>(bool|null $random = false, array|null $ports = null, array|null $args = [], bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+                    <a href="#method_up">up</a>(bool|null $random = false, array|null $ports = null, array|null $args = [], bool|null $useEntrypoint = false, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         
                                             <p><p>Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -526,7 +526,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withDefaultTerminalCmd">withDefaultTerminalCmd</a>(array $args, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
+                    <a href="#method_withDefaultTerminalCmd">withDefaultTerminalCmd</a>(array $args, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false)
         
                                             <p><p>Set the default command to invoke for the container's terminal API.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -596,7 +596,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withExec">withExec</a>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+                    <a href="#method_withExec">withExec</a>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         
                                             <p><p>Execute a command in the container, and return a new snapshot of the container state after execution.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1080,7 +1080,7 @@
                     <h3 id="method_asService">
         <div class="location">at line 21</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>asService</strong>(array|null $args = [], bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+    <strong>asService</strong>(array|null $args = [], bool|null $useEntrypoint = false, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -1106,7 +1106,7 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$experimentalPrivilegedNesting</td>
+                <td>$disableNesting</td>
                 <td></td>
             </tr>
                     <tr>
@@ -2468,7 +2468,7 @@
                     <h3 id="method_terminal">
         <div class="location">at line 520</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>terminal</strong>(array|null $cmd = [], bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
+    <strong>terminal</strong>(array|null $cmd = [], bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false)
         </code>
     </h3>
     <div class="details">    
@@ -2489,7 +2489,7 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$experimentalPrivilegedNesting</td>
+                <td>$disableNesting</td>
                 <td></td>
             </tr>
                     <tr>
@@ -2520,7 +2520,7 @@
                     <h3 id="method_up">
         <div class="location">at line 543</div>
         <code>                    void
-    <strong>up</strong>(bool|null $random = false, array|null $ports = null, array|null $args = [], bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+    <strong>up</strong>(bool|null $random = false, array|null $ports = null, array|null $args = [], bool|null $useEntrypoint = false, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -2556,7 +2556,7 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$experimentalPrivilegedNesting</td>
+                <td>$disableNesting</td>
                 <td></td>
             </tr>
                     <tr>
@@ -2718,7 +2718,7 @@
                     <h3 id="method_withDefaultTerminalCmd">
         <div class="location">at line 614</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>withDefaultTerminalCmd</strong>(array $args, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
+    <strong>withDefaultTerminalCmd</strong>(array $args, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false)
         </code>
     </h3>
     <div class="details">    
@@ -2739,7 +2739,7 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$experimentalPrivilegedNesting</td>
+                <td>$disableNesting</td>
                 <td></td>
             </tr>
                     <tr>
@@ -3107,7 +3107,7 @@
                     <h3 id="method_withExec">
         <div class="location">at line 756</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>withExec</strong>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+    <strong>withExec</strong>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $disableNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -3158,7 +3158,7 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$experimentalPrivilegedNesting</td>
+                <td>$disableNesting</td>
                 <td></td>
             </tr>
                     <tr>

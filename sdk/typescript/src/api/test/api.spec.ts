@@ -103,12 +103,12 @@ describe("TypeScript SDK api", function () {
   it("Build a query with positionnal and optionals arguments", function () {
     const image = new Client().container().from("alpine:3.16.2")
     const pkg = image.withExec(["apk", "add", "curl"], {
-      experimentalPrivilegedNesting: true,
+      disableNesting: true,
     })
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) } } }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],disableNesting: true) } } }`,
     )
   })
 

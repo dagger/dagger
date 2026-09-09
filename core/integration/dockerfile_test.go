@@ -621,6 +621,15 @@ CMD ["cat", "/copied.txt"]
 		require.Equal(t, "non-sticky-bind", strings.TrimSpace(out))
 	})
 
+	t.Run("run-without-nesting", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN test -z "$DAGGER_SESSION_PORT" && test -z "$DAGGER_SESSION_TOKEN"
+`, alpineImage))
+
+		_, err := dir.DockerBuild().Sync(ctx)
+		require.NoError(t, err)
+	})
+
 	t.Run("run-network-none", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN --network=none sh -c 'echo network-none > /status'

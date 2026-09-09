@@ -429,7 +429,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "--nested-src", nestedSrcDir, "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

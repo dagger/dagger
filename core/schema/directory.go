@@ -305,7 +305,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
+				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
@@ -1777,6 +1778,9 @@ func (s *directorySchema) terminal(
 
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
+	}
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableNesting))
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]

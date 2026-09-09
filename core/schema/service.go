@@ -31,7 +31,8 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
+				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
@@ -74,7 +75,8 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
+				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
@@ -279,6 +281,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = !args.DisableNesting
+	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err
@@ -323,7 +328,11 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 			Value: dagql.Boolean(true),
 		})
 	}
-	if args.ExperimentalPrivilegedNesting {
+	if core.Supports(ctx, defaultNestingVersion) {
+		inputs = append(inputs, dagql.NamedInput{
+			Name: "disableNesting", Value: dagql.Boolean(args.DisableNesting),
+		})
+	} else if args.ExperimentalPrivilegedNesting {
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
 			Value: dagql.Boolean(true),

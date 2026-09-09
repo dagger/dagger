@@ -88,9 +88,8 @@ func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrok
 
 	t.Run("full schema query still loads every workspace module", func(ctx context.Context, t *testctx.T) {
 		fullSchema := base.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
-			Stdin:                         `{ __schema { queryType { name } } }`,
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Stdin:  `{ __schema { queryType { name } } }`,
+			Expect: dagger.ReturnTypeFailure,
 		})
 
 		errOut, err := fullSchema.Stderr(ctx)
