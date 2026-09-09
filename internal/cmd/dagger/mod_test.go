@@ -69,8 +69,11 @@ func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
 		}
 		return out
 	}
-	require.Contains(t, repos(all), "github.com/dagger/go")
-	require.Contains(t, repos(all), "github.com/dagger/go-sdk")
-	require.NotContains(t, repos(sdkOnly), "github.com/dagger/go")
-	require.Contains(t, repos(sdkOnly), "github.com/dagger/go-sdk")
+	require.Contains(t, repos(all), "dagger.io/go")
+	require.Contains(t, repos(all), "dagger.io/sdk/go")
+	require.NotContains(t, repos(sdkOnly), "dagger.io/go")
+	require.Contains(t, repos(sdkOnly), "dagger.io/sdk/go")
+	for _, repo := range repos(all) {
+		require.Regexp(t, `^dagger\.io/`, repo)
+	}
 }
