@@ -100,3 +100,17 @@ The short mental model is:
 - arrays of object results attach those children as real dependencies
 
 That is basically the cache-relevant part of the story.
+
+## Persisted list elements
+
+Nonzero saved child IDs load through the exact empty-session result loader.
+The list keeps the returned attached wrappers, so a later flush preserves IDs,
+shared lazy state and ownership. Zero-ID elements retain inline decoding and
+per-element call lineage. Startup without a server defers referenced lists,
+including scalar lists, before touching child rows.
+
+The type-name prepass skips referenced children. Each child resolves a missing
+class from its own authoritative call. A cold load with many children whose
+classes are absent from the caller schema can therefore reconstruct schema
+separately for each child. This follows from the source; it is not a measured
+performance result. No new schema cache is introduced here.

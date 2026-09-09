@@ -57,7 +57,7 @@ The key dagql entry points are:
 - `dagql.HasPendingLazyEvaluation`
   Reports whether an attached result still has deferred work, including opening a stored snapshot and unfinished bookkeeping. Schema child construction continues to use this operational predicate.
 - `dagql.HasPendingLazyComputation`
-  Reports remaining computation for cache-hit and partial-span reporting. Containers distinguish stored opens through the optional `HasLazyEvaluationReporting` contract; ordinary values retain their existing pending behavior.
+  Reports remaining computation for cache-hit and partial-span reporting. Container, Directory and File distinguish stored opens through the optional `HasLazyEvaluationReporting` contract; ordinary values retain their existing pending behavior.
 
 ## What `Cache.Evaluate` Guarantees
 
@@ -486,8 +486,12 @@ The Container retains immutable descriptors after its op clears. These support
 ownership, usage, re-encoding, and stable stored-open span purpose through
 bookkeeping retries. Stored-only hits report cached; remaining computation
 reports pending. A successful computation with unfinished cache bookkeeping
-continues to report pending. Standalone Directory/File dependency decode remains
-unchanged and may open input snapshots before a Container output is demanded.
+continues to report pending. Standalone Directory/File snapshot decode retains immutable identity and saved
+path without opening. Whole-result restore operations open on filesystem demand.
+Stored descriptors outlive the lazy pointer, including bookkeeping-only retries.
+`PathOrEval` reads saved paths on restored snapshot forms; on fresh values it
+still evaluates. `SourceFilePaths` evaluates fresh inputs together before reading
+paths, leaving saved inputs closed during the two `withFiles` name collections.
 
 Each lazy type that supports persistence implements `EncodePersisted`, and the corresponding object decoder reconstructs the right lazy type from an explicit persisted lazy kind.
 

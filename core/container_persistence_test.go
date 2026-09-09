@@ -169,7 +169,7 @@ func TestContainerPersistedUnsupportedTargetPreservesConsumedExecMeta(t *testing
 			require.True(t, ok)
 			require.Equal(t, "metadata", restored.storedParts[ContainerPartExecMeta].SnapshotID)
 			require.Zero(t, managerB.openCount("metadata"))
-			require.Equal(t, 1, managerB.openCount("input"), "standalone input Directory still opens eagerly")
+			require.Zero(t, managerB.openCount("input"), "standalone input Directory stays closed during decode")
 			require.EqualError(t, cacheB.EvaluateParts(ctxB, loaded, ContainerPartFS), fsErr.Error())
 			require.EqualError(t, cacheB.Evaluate(ctxB, loaded), wholeErr.Error())
 			require.Error(t, cacheB.EvaluateParts(ctxB, loaded, ContainerPartExecMeta), "ordinary post-body scan still reports the target error")

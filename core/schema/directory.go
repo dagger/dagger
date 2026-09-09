@@ -712,7 +712,7 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 }
 
 func (s *directorySchema) name(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{}) (dagql.String, error) {
-	dirPath, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	dirPath, err := parent.Self().PathOrEval(ctx, parent)
 	if err != nil {
 		return "", err
 	}
@@ -986,29 +986,19 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	cache, err := dagql.EngineCache(ctx)
+	paths, err := core.SourceFilePaths(ctx, files)
 	if err != nil {
-		return inst, err
-	}
-	evals := make([]dagql.AnyResult, len(files))
-	for i, file := range files {
-		evals[i] = file
-	}
-	if err := cache.Evaluate(ctx, evals...); err != nil {
 		return inst, err
 	}
 
 	inst = parent
-	for _, file := range files {
+	for i, file := range files {
 		fileID, err := file.ID()
 		if err != nil {
 			return inst, err
 		}
 
-		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
-		if err != nil {
-			return inst, err
-		}
+		filePath := paths[i]
 		withFileArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(filePath)))},
 			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
@@ -1153,7 +1143,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	parentDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	parentDir, err := parent.Self().PathOrEval(ctx, parent)
 	if err != nil {
 		return res, err
 	}
@@ -1182,7 +1172,7 @@ func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*c
 		return res, err
 	}
 
-	otherDirPath, err := otherDir.Self().Dir.GetOrEval(ctx, otherDir.Result)
+	otherDirPath, err := otherDir.Self().PathOrEval(ctx, otherDir)
 	if err != nil {
 		return res, err
 	}
