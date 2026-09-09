@@ -1028,6 +1028,11 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 // would otherwise be probed once per client. The probe sends no credentials,
 // so the URL alone identifies the answer — except behind a service binding,
 // where visibility depends on the service.
+//
+// A repository that turns private mid-session keeps its cached answer until the
+// command ends, and credentials stay unattached until then. RemoteGitRepository
+// .Remote caches the whole ls-remote advertisement on the same session key, so
+// that window already exists for the far larger answer.
 func cachedIsRemotePublic(
 	ctx context.Context,
 	remote *gitutil.GitURL,

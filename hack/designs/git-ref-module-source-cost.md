@@ -96,10 +96,11 @@ Measured `ls-remote` span: 0.72 s, 2.96 s and 3.39 s in different runs.
 
 The lock cannot supply the answer. Contributors share and commit `dagger.lock`,
 so it names the transport that another contributor could reach. That is not
-necessarily the transport this user can reach. One contributor pins over SSH,
-and the next has HTTPS access only. An earlier version of this branch selected
-the locked transport. A scheme-less source with SSH-only lock entries then
-failed outright:
+necessarily the transport this user can reach. A lock written by a contributor
+on HTTPS strands a colleague who has SSH only, and a lock written on SSH
+strands the opposite colleague. An earlier version of this branch selected the
+locked transport. A scheme-less source with SSH-only lock entries then failed
+outright:
 
 | Engine | Result for a scheme-less source, SSH-only lock entries |
 |---|---|

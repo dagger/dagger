@@ -680,6 +680,16 @@ func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx contex
 // cannot reach: one contributor pins over SSH, the next has HTTPS access only.
 // Selecting the locked transport strands the second contributor on a
 // repository they can otherwise read.
+//
+// The entry is written userless, as ssh://host/path, because that is the form
+// ParseCloneURL builds for a scheme-less ref and therefore the only form a
+// candidate can match. Dagger records a resolved SSH remote as
+// ssh://git@host/path, which matches no candidate, so rewriting the entry that
+// way would leave the test passing against the very selection it guards.
+//
+// This covers transport selection, not credentials. Proving the HTTPS-only
+// versus SSH-only case needs two credential environments, which the suite
+// cannot provide.
 func (LockfileSuite) TestSchemelessRemoteIgnoresLockedTransport(ctx context.Context, t *testctx.T) {
 	const schemelessRemote = "github.com/dagger/dagger-test-modules"
 	const sshRemote = "ssh://" + schemelessRemote

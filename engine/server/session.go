@@ -1058,9 +1058,14 @@ func (srv *Server) initializeDaggerClient(
 	return nil
 }
 
-// neverServesAttachables reports whether id is a synthetic nested client (e.g.
-// in-engine dang evaluation), which never registers attachables of its own.
-// Waiting on one is guaranteed to burn the whole getClientCaller timeout.
+// neverServesAttachables reports whether id is a synthetic nested client, which
+// never registers attachables of its own, so waiting for them always burns the
+// whole getClientCaller timeout.
+//
+// The gate is the creation-time fact, not the current lookup: only in-engine
+// dang evaluation passes hostServiceProxyToCaller, and a container-backed
+// nested client passes false and keeps the wait. The lookup is a safety net for
+// a misclassified client, so an attachable that does exist is still used.
 func (client *daggerClient) neverServesAttachables(id string) bool {
 	if id != client.clientID || client.hostServiceProxyClientID == "" {
 		return false
