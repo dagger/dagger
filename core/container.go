@@ -1357,8 +1357,7 @@ func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dag
 	return size, true, nil
 }
 
-//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
-func (container *Container) encodeContainerMetadata(ctx context.Context, cache dagql.PersistedObjectCache) (persistedContainerMetadataValue, error) {
+func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectCache) (persistedContainerMetadataValue, error) {
 	if container == nil {
 		return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container: nil container")
 	}
@@ -1444,7 +1443,6 @@ func (container *Container) encodeContainerMetadata(ctx context.Context, cache d
 	return payload, nil
 }
 
-//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var envelope persistedContainerPayload
 	if err := json.Unmarshal(payload, &envelope); err != nil {

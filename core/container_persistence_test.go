@@ -383,8 +383,9 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 func TestContainerPersistedPartsRejectMissingCompletedValue(t *testing.T) {
 	ctr := &Container{FS: new(LazyAccessor[*Directory, *Container])}
 	ctr.FS.setValue(&Directory{Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])})
-	_, _, _, err := ctr.encodeContainerParts(t.Context(), nil, nil)
+	pending, _, _, err := ctr.encodeContainerParts(t.Context(), nil, nil)
 	require.ErrorContains(t, err, "has no snapshot")
+	require.False(t, pending)
 
 	parts := map[dagql.PartKey]persistedContainerPart{
 		ContainerPartFS:       {Kind: containerPartDirectory, Role: "fs"},
@@ -429,10 +430,10 @@ func TestContainerRestoreReportingAndBookkeepingRetry(t *testing.T) {
 				stored[ContainerPartExecMeta] = containerStoredPart{Kind: containerPartAbsent}
 			}
 			ctr := containerPersistenceTestRestore(stored, recipe)
-			res := attachContainerPartsTestResult(t, producerCtx, cache, srv, "reporting", "restored-reporting", ctr)
+			attachContainerPartsTestResult(t, producerCtx, cache, srv, "reporting", "restored-reporting", ctr)
 			producer.End()
 			installCtx, install := tracer.Start(ctx, "return existing container")
-			res = attachContainerPartsTestResult(t, installCtx, cache, srv, "reporting", "restored-reporting", ctr)
+			res := attachContainerPartsTestResult(t, installCtx, cache, srv, "reporting", "restored-reporting", ctr)
 			install.End()
 			require.True(t, dagql.HasPendingLazyEvaluation(res))
 			require.Equal(t, pendingSibling, dagql.HasPendingLazyComputation(res))

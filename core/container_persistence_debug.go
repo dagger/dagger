@@ -20,16 +20,16 @@ type containerPartDiagnostics struct {
 	counts map[string]uint64
 }
 
-func (ctr *Container) recordPartDiagnostic(event string, part dagql.PartKey) {
+func (container *Container) recordPartDiagnostic(event string, part dagql.PartKey) {
 	if !containerPartDiagnosticsEnabled {
 		return
 	}
-	ctr.lazyOpMu.Lock()
-	if ctr.partDiagnostics == nil {
-		ctr.partDiagnostics = &containerPartDiagnostics{counts: map[string]uint64{}}
+	container.lazyOpMu.Lock()
+	if container.partDiagnostics == nil {
+		container.partDiagnostics = &containerPartDiagnostics{counts: map[string]uint64{}}
 	}
-	stats := ctr.partDiagnostics
-	ctr.lazyOpMu.Unlock()
+	stats := container.partDiagnostics
+	container.lazyOpMu.Unlock()
 	if part != "" {
 		event += ":" + string(part)
 	}
@@ -38,11 +38,11 @@ func (ctr *Container) recordPartDiagnostic(event string, part dagql.PartKey) {
 	stats.mu.Unlock()
 }
 
-func (ctr *Container) directoryCommitObserver() func() {
+func (container *Container) directoryCommitObserver() func() {
 	if !containerPartDiagnosticsEnabled {
 		return nil
 	}
-	return func() { ctr.recordPartDiagnostic("directoryCommit", "") }
+	return func() { container.recordPartDiagnostic("directoryCommit", "") }
 }
 
 type containerPartDebugValue struct {
@@ -56,13 +56,13 @@ type containerPartDebugValue struct {
 
 // CacheDebugValue reads synchronized body latches and accessors only. Metadata
 // must have completed before its settled mount list can be inspected.
-func (ctr *Container) CacheDebugValue() any {
-	if !containerPartDiagnosticsEnabled || ctr == nil {
+func (container *Container) CacheDebugValue() any {
+	if !containerPartDiagnosticsEnabled || container == nil {
 		return nil
 	}
-	ctr.lazyOpMu.Lock()
-	lazy, stats := ctr.Lazy, ctr.partDiagnostics
-	ctr.lazyOpMu.Unlock()
+	container.lazyOpMu.Lock()
+	lazy, stats := container.Lazy, container.partDiagnostics
+	container.lazyOpMu.Unlock()
 	counts := map[string]uint64{}
 	if stats != nil {
 		stats.mu.Lock()
@@ -71,24 +71,24 @@ func (ctr *Container) CacheDebugValue() any {
 	}
 	ctx := context.Background()
 	parts := []dagql.PartKey{ContainerPartMetadata}
-	if ctr.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
-		parts = append(parts, containerSnapshotParts(ctr)...)
+	if container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
+		parts = append(parts, containerSnapshotParts(container)...)
 	}
 	values := make(map[dagql.PartKey]containerPartDebugValue, len(parts))
 	for _, part := range parts {
-		stored := ctr.storedParts[part]
+		stored := container.storedParts[part]
 		value := containerPartDebugValue{
-			Computed: ctr.containerPartComputed(ctx, lazy, part),
+			Computed: container.containerPartComputed(ctx, lazy, part),
 			Consumed: lazy == nil, StoredKind: stored.Kind, StoredSnapshotID: stored.SnapshotID,
 		}
 		if op, ok := lazy.(LazyContainerParts); ok {
-			if groups, err := op.ContainerLazyGroups(ctx, ctr, []dagql.PartKey{part}); err == nil && len(groups) == 1 {
+			if groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part}); err == nil && len(groups) == 1 {
 				value.Group = groups[0]
 				value.Consumed = op.ContainerLazyState().GroupConsumed(groups[0])
 			}
 		}
 		if part != ContainerPartMetadata {
-			value.OpenSnapshotID = ctr.openContainerSnapshotID(part)
+			value.OpenSnapshotID = container.openContainerSnapshotID(part)
 		}
 		values[part] = value
 	}
@@ -98,25 +98,25 @@ func (ctr *Container) CacheDebugValue() any {
 	}{values, counts}
 }
 
-func (ctr *Container) openContainerSnapshotID(part dagql.PartKey) string {
+func (container *Container) openContainerSnapshotID(part dagql.PartKey) string {
 	var snapshot bkcache.ImmutableRef
 	var dir *Directory
 	var file *File
 	switch part {
 	case ContainerPartFS:
-		if ctr.FS != nil {
-			dir, _ = ctr.FS.Peek()
+		if container.FS != nil {
+			dir, _ = container.FS.Peek()
 		}
 	case ContainerPartExecMeta:
-		if ctr.MetaSnapshot != nil {
-			snapshot, _ = ctr.MetaSnapshot.Peek()
+		if container.MetaSnapshot != nil {
+			snapshot, _ = container.MetaSnapshot.Peek()
 		}
 	default:
 		target, ok := strings.CutPrefix(string(part), containerPartMountPrefix)
 		if !ok {
 			return ""
 		}
-		mnt := ctr.mountAt(target)
+		mnt := container.mountAt(target)
 		if mnt == nil {
 			return ""
 		}
