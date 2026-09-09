@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -47,9 +48,7 @@ type Store struct {
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
-	if os.Geteuid() != 0 {
-		t.Skip("real native snapshot transfer requires mount privileges")
-	}
+	requireNativeMount(t)
 	s := &Store{root: t.TempDir()}
 	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
 	require.NoError(t, err)
@@ -69,6 +68,27 @@ func NewStore(t testing.TB) *Store {
 		require.NoError(t, db.Close())
 	})
 	return s
+}
+
+func requireNativeMount(t testing.TB) {
+	t.Helper()
+	source := t.TempDir()
+	target, err := os.MkdirTemp("", "snapshot-transfer-mount")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.Remove(target)) }()
+
+	// A writable native bind can use its source directly. Probe the read-only
+	// mount used during export, including cleanup after a partial mount.
+	mountErr := mount.All([]mount.Mount{{Type: "bind", Source: source, Options: []string{"rbind", "ro"}}}, target)
+	unmountErr := mount.UnmountAll(target, 0)
+	if errors.Is(mountErr, os.ErrPermission) {
+		if !errors.Is(unmountErr, os.ErrPermission) {
+			require.NoError(t, unmountErr)
+		}
+		t.Skipf("real native snapshot transfer requires read-only bind mount privileges: %v", mountErr)
+	}
+	require.NoError(t, mountErr)
+	require.NoError(t, unmountErr)
 }
 
 func (s *Store) openManager(t testing.TB) {
