@@ -182,7 +182,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("shell script shebang", func(ctx context.Context, t *testctx.T) {
-		script := fmt.Sprintf("#!%s shell\n\n.echo foobar", testCLIBinPath)
+		script := fmt.Sprintf("#!%s script\n\n.echo foobar", testCLIBinPath)
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
