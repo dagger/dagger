@@ -131,6 +131,50 @@ func TestCaptureGitBuildsTwoRefBundleFromTemporaryObjects(t *testing.T) {
 	require.Empty(t, gitCmd(t, home, repo, "for-each-ref", "--format=%(refname)", "refs/dagger/checkpoint"))
 }
 
+func TestCaptureGitVerifiesMergeWithMultiplePrerequisites(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, remote := initCaptureRepo(t)
+	ancestor := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "branch", "side")
+	commitFile(t, repo, home, "main.txt", "main\n", "advance main")
+	gitCmd(t, home, repo, "push", "origin", "main")
+	base := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "checkout", "side")
+	commitFile(t, repo, home, "side.txt", "side\n", "advance side")
+	gitCmd(t, home, repo, "checkout", "main")
+	gitCmd(t, home, repo, "merge", "--no-ff", "side", "-m", "merge side")
+	head := gitCmd(t, home, repo, "rev-parse", "HEAD")
+
+	srv := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := srv.metadata(t)
+	require.Nil(t, meta.GetError())
+	require.Equal(t, base, meta.GetBaseSha())
+	bundle := srv.payload(CAPTURE_CHUNK_BUNDLE)
+	header, err := parseCaptureBundleHeader(bundle)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{base, ancestor}, header.prerequisites)
+
+	bundlePath := filepath.Join(t.TempDir(), "capture.bundle")
+	require.NoError(t, os.WriteFile(bundlePath, bundle, 0o600))
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", remote, clone)
+	gitCmd(t, home, clone, "bundle", "verify", bundlePath)
+	gitCmd(t, home, clone, "fetch", bundlePath, captureHeadRef+":"+captureHeadRef)
+	require.Equal(t, head, gitCmd(t, home, clone, "rev-parse", captureHeadRef))
+	require.Equal(t, "side", gitCmd(t, home, clone, "show", captureHeadRef+":side.txt"))
+
+	// An available commit outside the base's history must still be rejected,
+	// even though stock Git can verify that all prerequisites exist locally.
+	tree := gitCmd(t, home, repo, "rev-parse", head+"^{tree}")
+	unrelated := gitCmd(t, home, repo, "commit-tree", tree, "-p", ancestor, "-m", "unrelated")
+	invalid := bytes.Replace(bundle, []byte("\n-"+ancestor+" "), []byte("\n-"+unrelated+" "), 1)
+	require.NotEqual(t, bundle, invalid)
+	require.NoError(t, os.WriteFile(bundlePath, invalid, 0o600))
+	gitCmd(t, home, repo, "bundle", "verify", bundlePath)
+	err = verifyCaptureBundle(context.Background(), repo, "", t.TempDir(), bundlePath, meta.GetObjectFormat(), base, head, "")
+	require.ErrorContains(t, err, "is not an ancestor of base")
+}
+
 func TestCaptureGitVerifiesThinPackWithoutCountingPrerequisiteDeltaBases(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, _ := initCaptureRepo(t)

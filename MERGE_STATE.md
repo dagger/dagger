@@ -63,3 +63,11 @@ Tests ran through `dagger api call engine-dev test` in `/tmp/vitoland-validation
 The first CLI run exposed the detached-HEAD bundle incompatibility; the corrected save/reload test passes. `TestAgentDebugServerContextCancellation` reproduced the listener-close timing failure already recorded in the previous integration, including on rerun ([trace](https://dagger.cloud/dagger/traces/b9f169aee2775826ee898963b46c665b)). No unrelated debug-server change was made; the final focused CLI run explicitly skips that test.
 
 API stubs and CLI reference generation passed. PHP navigation syntax and inclusion of both source branches' types passed. All 32 module configurations match the old branch; TOML and lockfile entries parse, source branch ancestry checks pass, and diff whitespace checks exclude the PHP generator's existing whitespace style. The full repository and race suites were not run.
+
+## September 10 checkpoint prerequisite fix
+
+Merged `workspace-git` at `fc0cffdc66`, pushed to origin along with its existing SDL declaration-order commit. Capture now accepts additional bundle prerequisites when they are ancestors of the selected base, as Git can advertise these boundaries for local merges. The selected base is still required, and unrelated prerequisites remain rejected.
+
+Compared with freshly fetched `upstream/llm-workspace-dev-env` at `93a85205ee`: that branch still requires exactly one prerequisite, so this was not lost during the workspace-git rewrite. Its earlier thin-pack object-count fix (`0f5efb108a`) and sparse-pack traversal fix (`e84a716ecf`) were already preserved in workspace-git.
+
+All 23 `TestCaptureGit` tests passed through `engine-dev test --pkg ./engine/session/git` on both the integration checkout ([trace](https://dagger.cloud/dagger/traces/cd1110de294868063d1326a5400e2489)) and the final workspace-git patch ([trace](https://dagger.cloud/dagger/traces/905c893fc26c3312e1494565b7dc229a)). The final regression covers merge capture, importing into a remote clone, and rejecting an unrelated prerequisite. Tests used the development CLI and engine; the installed beta could not parse the workspace lockfile comments. Test-generated lockfile changes were discarded.

@@ -1099,8 +1099,19 @@ func verifyCaptureBundle(ctx context.Context, stagingRepo, sourceObjects, tmpDir
 	if header.version != "# v3 git bundle" || header.objectFormat != objectFormat {
 		return errors.New("checkpoint bundle version or object format is invalid")
 	}
-	if len(header.prerequisites) != 1 || header.prerequisites[0] != base {
+	if !slices.Contains(header.prerequisites, base) {
 		return errors.New("checkpoint bundle prerequisite is invalid")
+	}
+	// Git advertises the revision boundary, which can also include older
+	// ancestors of base when a local merge brings in a branch forked before it.
+	// All of these prerequisites are available from the selected base's history.
+	for _, prerequisite := range header.prerequisites {
+		if prerequisite == base {
+			continue
+		}
+		if _, err := runHostGit(ctx, stagingRepo, "merge-base", "--is-ancestor", prerequisite, base); err != nil {
+			return fmt.Errorf("checkpoint bundle prerequisite %s is not an ancestor of base %s", prerequisite, base)
+		}
 	}
 	expectedRefs := map[string]string{captureHeadRef: head}
 	if worktreeSHA != "" {
