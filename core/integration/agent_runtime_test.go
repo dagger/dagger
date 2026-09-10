@@ -1594,6 +1594,28 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 	return byName
 }
 
+// awaitRestorable is awaitAgents plus the property a restore actually needs:
+// every agent's resume anchor REBUILDS from the payloads the client holds.
+// The anchor record and its payload ride different pipelines — the record is
+// a log, the payload the span attribute of the portable-recipe call that
+// derived the digest — so the record routinely lands first, and a capture
+// taken in between serves a trace whose anchor names a conversation nothing
+// can rebuild (the "never reached this client" restore failure, seen as a CI
+// flake on the worker dismissed right after its turn).
+func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
+	t.Helper()
+	byName := sink.awaitAgents(t, count)
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			for name, node := range byName {
+				_, err := db.CallIDForDigest(node.SnapshotDigest)
+				assert.NoError(ct, err, "agent %q's anchor does not rebuild yet", name)
+			}
+		})
+	}, 60*time.Second, 100*time.Millisecond)
+	return byName
+}
+
 // awaitAgentState blocks until the trace shows the named agent in the given
 // lifecycle state. State records ride their own exports, so the roster can be
 // complete while an agent's latest transition is still in flight.
