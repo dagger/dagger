@@ -60,7 +60,10 @@ func planWorkspaceInstallConfig(
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
-		if existing.Source != sourcePath {
+		if !workspace.SameModuleRequest(existing.Source, ".", sourcePath, ".") {
+			if workspace.ModuleSourceIdentity(existing.Source, ".") == workspace.ModuleSourceIdentity(sourcePath, ".") {
+				return plan, fmt.Errorf("module %q is already installed from %q; use dagger mod update %s --version VERSION to change its version", name, existing.Source, name)
+			}
 			return plan, fmt.Errorf(
 				"module %q already exists in workspace config with source %q (new source %q)",
 				name,
@@ -161,10 +164,13 @@ func planWorkspaceEnvInstallConfig(
 	env := cfg.Env[envName]
 	entry := workspace.EnvModuleOverlay{Source: sourcePath}
 	if existing, ok := env.Modules[name]; ok {
-		if existing.Source == sourcePath {
+		if existing.Source != "" && workspace.SameModuleRequest(existing.Source, ".", sourcePath, ".") {
 			return plan, nil
 		}
 		if existing.Source != "" {
+			if workspace.ModuleSourceIdentity(existing.Source, ".") == workspace.ModuleSourceIdentity(sourcePath, ".") {
+				return plan, fmt.Errorf("module %q is already installed in env %q from %q; use dagger mod update %s --version VERSION to change its version", name, envName, existing.Source, name)
+			}
 			return plan, fmt.Errorf(
 				"module %q already exists in env %q with source %q (new source %q)",
 				name,

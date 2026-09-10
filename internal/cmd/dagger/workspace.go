@@ -559,6 +559,7 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 		}
 		comparisonRef = path.Clean(path.Join(strings.TrimPrefix(filepath.ToSlash(cwd), "/"), filepath.ToSlash(ref)))
 	}
+	installedSources := map[string]workspacepkg.ModuleEntry{}
 	for _, module := range modules {
 		source, err := module.Source(ctx)
 		if err != nil {
@@ -567,6 +568,14 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 		if filepath.ToSlash(source) == comparisonRef {
 			return module.Name(ctx)
 		}
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		installedSources[name] = workspacepkg.ModuleEntry{Source: source}
+	}
+	if selection, err := workspacepkg.SelectModule(installedSources, ".", ".", comparisonRef, true); err == nil {
+		return selection.Name, nil
 	}
 	refWithoutVersion, _, _ := strings.Cut(ref, "@")
 	name := path.Base(filepath.ToSlash(refWithoutVersion))

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"sort"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -289,6 +288,33 @@ func (s *workspaceSchema) withModuleInstall(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	// Check existing requests before fetching the source. Reinstalling does not
+	// change versions, even when the requested new version cannot be fetched.
+	installed := staged.Config.Modules
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
+		installed = map[string]workspace.ModuleEntry{}
+		for name, entry := range staged.Config.Env[envName].Modules {
+			if entry.Source != "" {
+				installed[name] = workspace.ModuleEntry{Source: entry.Source, Pin: entry.Pin}
+			}
+		}
+	}
+	cwd := cleanWorkspaceRelPath(parent.Self().Cwd)
+	name := args.Name
+	if name == "" {
+		if selection, err := workspace.SelectModule(installed, staged.ConfigDir, cwd, args.Ref, true); err == nil {
+			name = selection.Name
+		}
+	}
+	if entry, ok := installed[name]; ok &&
+		workspace.ModuleSourceIdentity(entry.Source, staged.ConfigDir) == workspace.ModuleSourceIdentity(args.Ref, cwd) {
+		if !workspace.SameModuleRequest(entry.Source, staged.ConfigDir, args.Ref, cwd) {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is already installed from %q; use dagger mod update %s --version VERSION to change its version", name, entry.Source, name)
+		}
+		if !args.AsSdk {
+			return parent, nil
+		}
+	}
 	selected, overlayLock, err := s.prepareWorkspaceOverlayLock(ctx, parent.Self(), staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -379,6 +405,19 @@ func (s *workspaceSchema) withoutModule(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	modules := staged.Config.Modules
+	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
+		effective, err := workspace.ApplyEnvOverlay(staged.Config, envName)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		modules = effective.Modules
+	}
+	selection, err := workspace.SelectModule(modules, staged.ConfigDir, cleanWorkspaceRelPath(parent.Self().Cwd), args.Name, false)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	args.Name = selection.Name
 	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		if _, installed := staged.Config.Modules[args.Name]; installed {
 			if _, isSDK := workspace.SDKNameForModule(staged.Config, args.Name); isSDK {
@@ -603,7 +642,8 @@ func (s *workspaceSchema) withUpdatedLock(
 }
 
 type workspaceModuleUpdateArgs struct {
-	Names []string `default:"[]"`
+	Names   []string `default:"[]"`
+	Version string   `default:""`
 }
 
 func (s *workspaceSchema) withUpdatedModules(
@@ -625,13 +665,10 @@ func (s *workspaceSchema) withUpdatedModules(
 		}
 	}
 
-	names := append([]string(nil), args.Names...)
-	if len(names) == 0 {
-		for name := range effective.Modules {
-			names = append(names, name)
-		}
+	modules, err := workspace.SelectModuleUpdates(effective.Modules, staged.ConfigDir, cleanWorkspaceRelPath(ws.Cwd), args.Names, args.Version)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	sort.Strings(names)
 
 	operationCtx := ctx
 	if ws.ClientID != "" {
@@ -646,29 +683,56 @@ func (s *workspaceSchema) withUpdatedModules(
 	}
 	refreshed := workspace.NewLock()
 	refreshCtx := withWorkspaceLookupLockOverride(operationCtx, refreshed)
-	moduleSources := make([]string, 0, len(names))
-	for _, name := range names {
-		entry, ok := effective.Modules[name]
-		if !ok {
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is not installed in the workspace", name)
-		}
+	moduleSources := make([]string, 0, len(modules))
+	for _, module := range modules {
+		name, entry := module.Name, module.Entry
 		moduleSources = append(moduleSources, workspace.ResolveModuleEntrySource(staged.ConfigDir, entry.Source))
+		if module.Version != "" {
+			if _, envSelected := selectedWorkspaceEnv(ctx, ws); envSelected {
+				if _, isSDK := workspace.SDKNameForModule(staged.Config, name); isSDK {
+					return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; update SDK versions in the base workspace config")
+				}
+			}
+			entry.Source, err = workspace.ModuleSourceWithVersion(entry.Source, module.Version)
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			// A pin on the old request cannot constrain the replacement request.
+			entry.Pin = ""
+			if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
+				env := staged.Config.Env[envName]
+				if env.Modules == nil {
+					env.Modules = map[string]workspace.EnvModuleOverlay{}
+				}
+				overlay := env.Modules[name]
+				overlay.Source, overlay.Pin = entry.Source, ""
+				env.Modules[name] = overlay
+				staged.Config.Env[envName] = env
+			} else {
+				staged.Config.Modules[name] = entry
+			}
+			moduleSources = append(moduleSources, workspace.ResolveModuleEntrySource(staged.ConfigDir, entry.Source))
+		}
 		if workspace.IsLocalRef(entry.Source, entry.Pin) {
 			continue
 		}
-		if _, _, err := s.resolveWorkspaceInstallSource(refreshCtx, selected, entry.Source, staged.ConfigDir); err != nil {
+		source, _, err := s.resolveWorkspaceInstallSource(refreshCtx, selected, entry.Source, staged.ConfigDir)
+		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: %w", name, err)
+		}
+		if !source.Self().ConfigExists {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: ref %q does not point to an initialized module", name, entry.Source)
 		}
 	}
 	if err := overlayLock.Lock.Merge(refreshed); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("merge refreshed module lock entries: %w", err)
 	}
 
-	changes, err := s.workspaceLockChangeset(operationCtx, selected, overlayLock.Lock)
+	configBytes, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	updated, err := s.workspaceWithChangeset(operationCtx, parent, changes)
+	updated, err := s.stageWorkspaceConfigAndLock(operationCtx, parent, staged, configBytes, overlayLock)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

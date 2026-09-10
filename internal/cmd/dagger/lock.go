@@ -6,15 +6,45 @@ import (
 	"io"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
 
 func runModuleUpdate(cmd *cobra.Command, names []string) error {
+	version, err := cmd.Flags().GetString("version")
+	if err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("version") && version == "" {
+		return fmt.Errorf("--version must not be empty")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		dag := engineClient.Dagger()
+		modules, cwd, err := installedModulesForSelection(ctx, dag)
+		if err != nil {
+			return err
+		}
+		selections, err := workspace.SelectModuleUpdates(modules, ".", cwd, names, version)
+		if err != nil {
+			return err
+		}
+		for _, selection := range selections {
+			if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
+				return err
+			}
+			if selection.Version != "" {
+				_, previous, hasVersion, _ := workspace.SplitModuleVersion(selection.Entry.Source)
+				if !hasVersion {
+					previous = "(default)"
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updating %q: %s -> %s.\n", selection.Name, previous, selection.Version); err != nil {
+					return err
+				}
+			}
+		}
 		var result struct {
 			CurrentWorkspace struct {
 				Result struct {
@@ -23,12 +53,12 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 			}
 		}
 		if err := dag.Do(ctx, &dagger.Request{
-			Query: `query ModuleUpdate($names: [String!]!) {
+			Query: `query ModuleUpdate($names: [String!]!, $version: String) {
   currentWorkspace {
-    result: withUpdatedModules(names: $names) { id }
+    result: withUpdatedModules(names: $names, version: $version) { id }
   }
 }`,
-			Variables: map[string]any{"names": names},
+			Variables: map[string]any{"names": names, "version": version},
 		}, &dagger.Response{Data: &result}); err != nil {
 			return err
 		}

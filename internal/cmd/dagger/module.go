@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
@@ -91,6 +92,7 @@ func init() {
 		moduleDepUninstallCmd,
 		installedCmd,
 		moduleUpdateCmd,
+		moduleVersionCmd,
 		searchCmd,
 		moduleRecommendCmd,
 		settingsCmd,
@@ -122,6 +124,7 @@ func init() {
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd)
+	setWorkspaceFlagPolicy(updateAliasCmd)
 	setWorkspaceFlagPolicy(moduleRecommendCmd)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd)
 	setWorkspaceFlagPolicy(installAliasCmd)
@@ -129,17 +132,28 @@ func init() {
 	setWorkspaceFlagPolicy(uninstallAliasCmd)
 }
 
-var moduleUpdateCmd = &cobra.Command{
-	Use:   "update [module...]",
-	Short: "Refresh lockfile state for installed modules",
-	Long: `Refresh lockfile state for installed modules.
+var moduleUpdateCmd = newModuleUpdateCmd()
+var updateAliasCmd = newModuleUpdateCmd()
 
-With no module names, this refreshes all installed modules. It does not refresh
+func newModuleUpdateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update [NAME|SOURCE...]",
+		Short: "Update installed module versions and lockfile state",
+		Long: `Update an installed module by name or source.
+
+Use --version VERSION or append @VERSION to set a new version request.
+Source matching ignores the version and must select exactly one installation.
+Without a new version, refresh the existing request.
+
+With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
 the command regenerates that scope. Use dagger workspace update to refresh all
 entries in dagger.lock.`,
-	Args: cobra.ArbitraryArgs,
-	RunE: runModuleUpdate,
+		Args: cobra.ArbitraryArgs,
+		RunE: runModuleUpdate,
+	}
+	cmd.Flags().String("version", "", "New version request for one installed module")
+	return cmd
 }
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
@@ -188,10 +202,13 @@ var uninstallAliasCmd = newWorkspaceUninstallCmd(false, nil)
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
-		Use:     "uninstall [options] <module>",
+		Use:     "uninstall [options] NAME|SOURCE",
 		Aliases: aliases,
 		Short:   "Uninstall a module from your workspace",
-		Long:    `Uninstall a module from the current workspace, removing it from dagger.toml.`,
+		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
+
+Match an installed name first, then a source without a version.
+The source must match exactly one installation. Version selectors are not accepted.`,
 		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
@@ -211,7 +228,19 @@ func runWorkspaceUninstall(cmd *cobra.Command, extraArgs []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), engineClient.Dagger(), extraArgs[0], workspaceHere)
+		dag := engineClient.Dagger()
+		modules, cwd, err := installedModulesForSelection(ctx, dag)
+		if err != nil {
+			return err
+		}
+		selection, err := workspace.SelectModule(modules, ".", cwd, extraArgs[0], false)
+		if err != nil {
+			return err
+		}
+		if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
+			return err
+		}
+		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), dag, selection.Name, workspaceHere)
 	})
 }
 
