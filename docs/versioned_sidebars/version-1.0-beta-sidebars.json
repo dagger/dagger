@@ -43,6 +43,7 @@
       "items": [
         "config/environments",
         "config/user",
+        "config/proxy",
         "config/module-wiring",
         "config/migrate-dagger-json",
         {
