@@ -305,6 +305,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"settings",
 		"setup",
 		"uninstall",
+		"update",
 		"up",
 		"version",
 		"api",
@@ -336,7 +337,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"session",
 		"installed",
 		"search",
-		"update",
 		"activity",
 	} {
 		require.NotContains(t, names, name)

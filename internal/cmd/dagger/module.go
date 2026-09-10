@@ -142,6 +142,7 @@ func newModuleUpdateCmd() *cobra.Command {
 		Long: `Update an installed module by name or source.
 
 Use --version VERSION or append @VERSION to set a new version request.
+Match an installed name first.
 Source matching ignores the version and must select exactly one installation.
 Without a new version, refresh the existing request.
 
@@ -183,10 +184,12 @@ var installAliasCmd = newWorkspaceInstallCmd(false, nil)
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
-		Use:     "install [options] <module>",
+		Use:     "install [options] SOURCE",
 		Aliases: aliases,
 		Short:   "Install a module into your workspace",
-		Long: `Install a module into the current workspace.
+		Long: `Install a module from a local path or Git source into the current workspace.
+
+To change an installed version, use dagger mod update.
 
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.`,

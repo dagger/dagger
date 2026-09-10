@@ -11,6 +11,7 @@ import (
 func TestInstalledModuleVersion(t *testing.T) {
 	for _, tc := range []struct{ source, version, err string }{
 		{"github.com/acme/repo@v1", "v1", ""},
+		{"github.com/acme/repo@feature@backup", "feature@backup", ""},
 		{"https://github.com/acme/repo.git#main:tools", "main", ""},
 		{"git@github.com:acme/repo.git@v2", "v2", ""},
 		{"./local", "", "has a local source"},

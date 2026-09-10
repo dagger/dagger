@@ -299,16 +299,16 @@ func (s *workspaceSchema) withModuleInstall(
 			}
 		}
 	}
-	cwd := cleanWorkspaceRelPath(parent.Self().Cwd)
+	configDir, cwd := moduleSelectionDirectories(parent.Self(), staged.ConfigDir)
 	name := args.Name
 	if name == "" {
-		if selection, err := workspace.SelectModule(installed, staged.ConfigDir, cwd, args.Ref, true); err == nil {
+		if selection, err := workspace.SelectModule(installed, configDir, cwd, args.Ref, true); err == nil {
 			name = selection.Name
 		}
 	}
 	if entry, ok := installed[name]; ok &&
-		workspace.ModuleSourceIdentity(entry.Source, staged.ConfigDir) == workspace.ModuleSourceIdentity(args.Ref, cwd) {
-		if !workspace.SameModuleRequest(entry.Source, staged.ConfigDir, args.Ref, cwd) {
+		workspace.ModuleSourceIdentity(entry.Source, configDir) == workspace.ModuleSourceIdentity(args.Ref, cwd) {
+		if !workspace.SameModuleRequest(entry.Source, configDir, args.Ref, cwd) {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module %q is already installed from %q; use dagger mod update %s --version VERSION to change its version", name, entry.Source, name)
 		}
 		if !args.AsSdk {
@@ -413,7 +413,8 @@ func (s *workspaceSchema) withoutModule(
 		}
 		modules = effective.Modules
 	}
-	selection, err := workspace.SelectModule(modules, staged.ConfigDir, cleanWorkspaceRelPath(parent.Self().Cwd), args.Name, false)
+	configDir, cwd := moduleSelectionDirectories(parent.Self(), staged.ConfigDir)
+	selection, err := workspace.SelectModule(modules, configDir, cwd, args.Name, false)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -646,6 +647,14 @@ type workspaceModuleUpdateArgs struct {
 	Version string   `default:""`
 }
 
+func moduleSelectionDirectories(ws *core.Workspace, configDir string) (string, string) {
+	cwd := cleanWorkspaceRelPath(ws.Cwd)
+	if root, local := ws.LocalSourceHostPath(); local {
+		return filepath.ToSlash(filepath.Join(root, configDir)), filepath.ToSlash(filepath.Join(root, cwd))
+	}
+	return configDir, cwd
+}
+
 func (s *workspaceSchema) withUpdatedModules(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -665,7 +674,8 @@ func (s *workspaceSchema) withUpdatedModules(
 		}
 	}
 
-	modules, err := workspace.SelectModuleUpdates(effective.Modules, staged.ConfigDir, cleanWorkspaceRelPath(ws.Cwd), args.Names, args.Version)
+	configDir, cwd := moduleSelectionDirectories(ws, staged.ConfigDir)
+	modules, err := workspace.SelectModuleUpdates(effective.Modules, configDir, cwd, args.Names, args.Version)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

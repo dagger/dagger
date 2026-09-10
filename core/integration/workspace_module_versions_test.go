@@ -102,6 +102,14 @@ source = 'github.com/does/notexist/tools@v2'
 		require.Error(t, err)
 		require.Contains(t, string(out), `source "github.com/does/notexist/tools" matches installed modules "older", "tools"; use an installed name`)
 	})
+	t.Run("absolute and relative local sources select the same installation", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceConfigWorkdir(ctx, t, config)
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "mod", "uninstall", filepath.Join(workdir, "local"))
+		require.NoError(t, err)
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "local")
+		require.Contains(t, cfg.Modules, "tools")
+	})
 }
 
 func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Context, t *testctx.T) {

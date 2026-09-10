@@ -21,10 +21,21 @@ type ModuleSelection struct {
 
 // SelectModule matches an installed name first, then a source without its
 // version. Config sources are relative to configDir; selectors are relative to
-// cwd. Both directories are relative to the workspace root.
+// cwd. Both directories must use the same workspace root.
 func SelectModule(modules map[string]ModuleEntry, configDir, cwd, selector string, allowVersion bool) (ModuleSelection, error) {
 	if entry, ok := modules[selector]; ok {
 		return ModuleSelection{Name: selector, Entry: entry}, nil
+	}
+	if name, version, hasVersion := strings.Cut(selector, "@"); hasVersion && !strings.Contains(version, ":") {
+		if entry, installed := modules[name]; installed {
+			if !allowVersion {
+				return ModuleSelection{}, fmt.Errorf("version selector is not allowed here; use an installed name or a source without a version")
+			}
+			if version == "" {
+				return ModuleSelection{}, fmt.Errorf("version must not be empty in %q", selector)
+			}
+			return ModuleSelection{Name: name, Entry: entry, Version: version}, nil
+		}
 	}
 	source, version, hasVersion, err := SplitModuleVersion(selector)
 	if err != nil {
@@ -78,17 +89,24 @@ func SplitModuleVersion(ref string) (source, version string, hasVersion bool, er
 	}
 	// The first @ before the host's path is SSH/URL user information.
 	start := 0
+	separators := "/:"
 	if scheme := strings.Index(ref, "://"); scheme >= 0 {
 		start = scheme + 3
+		separators = "/"
 	}
-	at := strings.LastIndexByte(ref, '@')
+	at := strings.IndexByte(ref, '@')
 	if at < 0 {
 		return ref, "", false, nil
 	}
-	authorityEnd := strings.IndexAny(ref[start:], "/:")
+	authorityEnd := strings.IndexAny(ref[start:], separators)
 	if authorityEnd >= 0 && at < start+authorityEnd &&
 		(start > 0 || strings.Contains(ref[at+1:start+authorityEnd], ".") || ref[start+authorityEnd] == ':') {
-		return ref, "", false, nil
+		start += authorityEnd
+		at = strings.IndexByte(ref[start:], '@')
+		if at < 0 {
+			return ref, "", false, nil
+		}
+		at += start
 	}
 	if at == len(ref)-1 {
 		return "", "", false, fmt.Errorf("version must not be empty in %q", ref)
@@ -166,6 +184,9 @@ func moduleSourceWithoutTransport(source string) string {
 		if colon := strings.IndexByte(source, ':'); colon >= 0 && !strings.Contains(source[:colon], "/") {
 			source = source[:colon] + "/" + source[colon+1:]
 		}
+		if host, rest, ok := strings.Cut(source, "/"); ok {
+			source = strings.ToLower(host) + "/" + rest
+		}
 	}
 	return path.Clean(source)
 }
@@ -173,7 +194,7 @@ func moduleSourceWithoutTransport(source string) string {
 // ModuleSourceWithVersion replaces a version request, keeping an explicit Git
 // URL's literal-ref semantics and its module subdirectory.
 func ModuleSourceWithVersion(source, version string) (string, error) {
-	if version == "" || strings.ContainsAny(version, "@#:\r\n\t ") {
+	if version == "" || strings.ContainsAny(version, "#:\r\n\t ") {
 		return "", fmt.Errorf("invalid module version %q", version)
 	}
 	if IsLocalRef(source, "") {

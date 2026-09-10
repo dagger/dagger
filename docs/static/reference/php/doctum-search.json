@@ -7716,7 +7716,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withUpdatedModules",
 			"p": "Dagger/Workspace.html#method_withUpdatedModules",
-			"d": "<p>Return this workspace with refreshed lockfile state for installed modules.</p>"
+			"d": "<p>Return this workspace with updated module versions and lockfile state.</p>"
 		},
 		{
 			"t": "M",

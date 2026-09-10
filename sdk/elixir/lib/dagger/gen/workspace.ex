@@ -823,16 +823,18 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with refreshed lockfile state for installed modules.
+  Return this workspace with updated module versions and lockfile state.
 
   An SDK client scope is regenerated when it targets an updated module.
   """
-  @spec with_updated_modules(t(), [{:names, [String.t()]}]) :: Dagger.Workspace.t()
+  @spec with_updated_modules(t(), [{:names, [String.t()]}, {:version, String.t() | nil}]) ::
+          Dagger.Workspace.t()
   def with_updated_modules(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withUpdatedModules")
       |> QB.maybe_put_arg("names", optional_args[:names])
+      |> QB.maybe_put_arg("version", optional_args[:version])
 
     %Dagger.Workspace{
       query_builder: query_builder,

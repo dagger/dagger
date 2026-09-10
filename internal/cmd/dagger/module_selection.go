@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -16,19 +17,34 @@ func installedModulesForSelection(ctx context.Context, dag *dagger.Client) (map[
 	var result struct {
 		CurrentWorkspace struct {
 			Cwd     string
+			Address string
 			Modules []struct{ Name, Source string }
 		}
 	}
 	if err := dag.Do(ctx, &dagger.Request{
-		Query: `query InstalledModuleSources { currentWorkspace { cwd modules { name source } } }`,
+		Query: `query InstalledModuleSources { currentWorkspace { cwd address modules { name source } } }`,
 	}, &dagger.Response{Data: &result}); err != nil {
 		return nil, "", err
 	}
 	modules := make(map[string]workspace.ModuleEntry, len(result.CurrentWorkspace.Modules))
-	for _, module := range result.CurrentWorkspace.Modules {
-		modules[module.Name] = workspace.ModuleEntry{Source: module.Source}
+	cwd := strings.TrimPrefix(result.CurrentWorkspace.Cwd, "/")
+	root := "."
+	if strings.HasPrefix(result.CurrentWorkspace.Address, "file:") {
+		addressPath, err := localWorkspaceAddressPath(result.CurrentWorkspace.Address)
+		if err != nil {
+			return nil, "", err
+		}
+		root, err = workspaceRootFromCwd(addressPath, cwd)
+		if err != nil {
+			return nil, "", err
+		}
+		cwd = filepath.ToSlash(filepath.Join(root, cwd))
 	}
-	return modules, strings.TrimPrefix(result.CurrentWorkspace.Cwd, "/"), nil
+	for _, module := range result.CurrentWorkspace.Modules {
+		source := workspace.ResolveModuleEntrySource(root, module.Source)
+		modules[module.Name] = workspace.ModuleEntry{Source: filepath.ToSlash(source)}
+	}
+	return modules, cwd, nil
 }
 
 func writeModuleSourceMatch(out io.Writer, selection workspace.ModuleSelection) error {

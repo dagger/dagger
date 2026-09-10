@@ -17349,11 +17349,13 @@ func (r *Workspace) WithUpdatedLock(opts ...WorkspaceWithUpdatedLockOpts) *Works
 
 // WorkspaceWithUpdatedModulesOpts contains options for Workspace.WithUpdatedModules
 type WorkspaceWithUpdatedModulesOpts struct {
-	// Installed module names to refresh. An empty list refreshes all installed modules.
+	// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
 	Names []string
+	// New version request for exactly one selected module. Cannot be combined with a version suffix.
+	Version string
 }
 
-// Return this workspace with refreshed lockfile state for installed modules.
+// Return this workspace with updated module versions and lockfile state.
 //
 // An SDK client scope is regenerated when it targets an updated module.
 func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
@@ -17362,6 +17364,10 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 		// `names` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Names) {
 			q = q.Arg("names", opts[i].Names)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 
