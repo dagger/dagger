@@ -178,10 +178,19 @@ func TestRemoteGitMaintenanceFinishesBeforeFetchReturns(t *testing.T) {
 	script := fmt.Sprintf(`#!/bin/sh
 if [ "$1" = repack ]; then
  touch %q
- while [ ! -e %q ]; do sleep .01; done
+ attempts=0
+ while [ ! -e %q ]; do
+  # An early test failure can remove the fixture before release is observed.
+  if [ ! -d %q ] || [ "$attempts" -ge 500 ]; then
+   echo "repack release was not observed" >&2
+   exit 1
+  fi
+  attempts=$((attempts + 1))
+  sleep .01
+ done
 fi
 exec %q "$@"
-`, ready, release, realGit)
+`, ready, release, root, realGit)
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0700))
 	t.Cleanup(func() { require.NoError(t, os.WriteFile(release, nil, 0600)) })
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: t.Name()})
