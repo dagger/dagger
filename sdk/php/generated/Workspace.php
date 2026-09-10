@@ -531,6 +531,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         string $sdk,
         ?string $name = '',
         ?string $path = '',
+        ?bool $install = null,
+        ?bool $entrypoint = null,
         ?Json $settings = null,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitModule');
@@ -540,6 +542,12 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $path) {
         $innerQueryBuilder->setArgument('path', $path);
+        }
+        if (null !== $install) {
+        $innerQueryBuilder->setArgument('install', $install);
+        }
+        if (null !== $entrypoint) {
+        $innerQueryBuilder->setArgument('entrypoint', $entrypoint);
         }
         if (null !== $settings) {
         $innerQueryBuilder->setArgument('settings', $settings);

@@ -15536,6 +15536,12 @@ pub struct WorkspaceWithFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
+    /// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+    #[builder(setter(into, strip_option), default)]
+    pub entrypoint: Option<bool>,
+    /// Install the module. When omitted, install only if path is omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub install: Option<bool>,
     /// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
@@ -16579,6 +16585,12 @@ impl Workspace {
         }
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        if let Some(install) = opts.install {
+            query = query.arg("install", install);
+        }
+        if let Some(entrypoint) = opts.entrypoint {
+            query = query.arg("entrypoint", entrypoint);
         }
         if let Some(settings) = opts.settings {
             query = query.arg("settings", settings);

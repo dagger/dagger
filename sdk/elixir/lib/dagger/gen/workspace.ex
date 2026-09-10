@@ -663,6 +663,8 @@ defmodule Dagger.Workspace do
   @spec with_init_module(t(), String.t(), [
           {:name, String.t() | nil},
           {:path, String.t() | nil},
+          {:install, boolean() | nil},
+          {:entrypoint, boolean() | nil},
           {:settings, Dagger.JSON.t() | nil}
         ]) :: Dagger.Workspace.t()
   def with_init_module(%__MODULE__{} = workspace, sdk, optional_args \\ []) do
@@ -672,6 +674,8 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("sdk", sdk)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("path", optional_args[:path])
+      |> QB.maybe_put_arg("install", optional_args[:install])
+      |> QB.maybe_put_arg("entrypoint", optional_args[:entrypoint])
       |> QB.maybe_put_arg("settings", optional_args[:settings])
 
     %Dagger.Workspace{

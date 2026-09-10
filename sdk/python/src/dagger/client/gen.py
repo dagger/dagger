@@ -16073,6 +16073,8 @@ class Workspace(Type):
         *,
         name: str | None = "",
         path: str | None = "",
+        install: bool | None = None,
+        entrypoint: bool | None = None,
         settings: JSON | None = None,
     ) -> Self:
         """Return this workspace with a location initialized as a module scope.
@@ -16091,6 +16093,12 @@ class Workspace(Type):
             Module path relative to the workspace cwd, or an absolute
             workspace path. Defaults to .dagger/modules/<name> beside the
             active workspace config.
+        install:
+            Install the module. When omitted, install only if path is omitted.
+        entrypoint:
+            Select this module as the entrypoint and install it. False
+            prevents automatic selection. When omitted, select only if both
+            path and name are omitted and the module is installed.
         settings:
             Explicit SDK-module constructor setting overrides for this scope.
         """
@@ -16098,6 +16106,8 @@ class Workspace(Type):
             Arg("sdk", sdk),
             Arg("name", name, ""),
             Arg("path", path, ""),
+            Arg("install", install, None),
+            Arg("entrypoint", entrypoint, None),
             Arg("settings", settings, None),
         ]
         _ctx = self._select("withInitModule", _args)

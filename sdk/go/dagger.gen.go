@@ -17165,6 +17165,10 @@ type WorkspaceWithInitModuleOpts struct {
 	Name string
 	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
 	Path string
+	// Install the module. When omitted, install only if path is omitted.
+	Install bool
+	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
 }
@@ -17182,6 +17186,14 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
+		}
+		// `install` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Install) {
+			q = q.Arg("install", opts[i].Install)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
 		}
 		// `settings` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Settings) {

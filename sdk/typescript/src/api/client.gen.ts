@@ -3374,6 +3374,16 @@ export type WorkspaceWithInitModuleOpts = {
   path?: string
 
   /**
+   * Install the module. When omitted, install only if path is omitted.
+   */
+  install?: boolean
+
+  /**
+   * Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   */
+  entrypoint?: boolean
+
+  /**
    * Explicit SDK-module constructor setting overrides for this scope.
    */
   settings?: JSON
@@ -15812,6 +15822,8 @@ export class Workspace extends BaseClient {
    * @param sdk Workspace SDK name or module entry name to use. Required.
    * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
    * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
+   * @param opts.install Install the module. When omitted, install only if path is omitted.
+   * @param opts.entrypoint Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
