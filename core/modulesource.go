@@ -437,16 +437,17 @@ func (src *ModuleSource) AttachDependencyResults(
 }
 
 type persistedGitModuleSourcePayload struct {
-	CloneRef     string              `json:"cloneRef,omitempty"`
-	Symbolic     string              `json:"symbolic,omitempty"`
-	HTMLRepoURL  string              `json:"htmlRepoURL,omitempty"`
-	HTMLURL      string              `json:"htmlURL,omitempty"`
-	RepoRootPath string              `json:"repoRootPath,omitempty"`
-	Version      string              `json:"version,omitempty"`
-	VersionQuery string              `json:"versionQuery,omitempty"`
-	Selector     gitref.SelectorType `json:"selector,omitempty"`
-	Commit       string              `json:"commit,omitempty"`
-	Ref          string              `json:"ref,omitempty"`
+	CloneRef         string              `json:"cloneRef,omitempty"`
+	ResolvedCloneRef string              `json:"resolvedCloneRef,omitempty"`
+	Symbolic         string              `json:"symbolic,omitempty"`
+	HTMLRepoURL      string              `json:"htmlRepoURL,omitempty"`
+	HTMLURL          string              `json:"htmlURL,omitempty"`
+	RepoRootPath     string              `json:"repoRootPath,omitempty"`
+	Version          string              `json:"version,omitempty"`
+	VersionQuery     string              `json:"versionQuery,omitempty"`
+	Selector         gitref.SelectorType `json:"selector,omitempty"`
+	Commit           string              `json:"commit,omitempty"`
+	Ref              string              `json:"ref,omitempty"`
 }
 
 type persistedDirModuleSourcePayload struct {
@@ -882,16 +883,17 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	}
 	if src.Git != nil {
 		payload.Git = &persistedGitModuleSourcePayload{
-			CloneRef:     src.Git.CloneRef,
-			Symbolic:     src.Git.Symbolic,
-			HTMLRepoURL:  src.Git.HTMLRepoURL,
-			HTMLURL:      src.Git.HTMLURL,
-			RepoRootPath: src.Git.RepoRootPath,
-			Version:      src.Git.Version,
-			VersionQuery: src.Git.VersionQuery,
-			Selector:     src.Git.Selector,
-			Commit:       src.Git.Commit,
-			Ref:          src.Git.Ref,
+			CloneRef:         src.Git.CloneRef,
+			ResolvedCloneRef: src.Git.ResolvedCloneRef,
+			Symbolic:         src.Git.Symbolic,
+			HTMLRepoURL:      src.Git.HTMLRepoURL,
+			HTMLURL:          src.Git.HTMLURL,
+			RepoRootPath:     src.Git.RepoRootPath,
+			Version:          src.Git.Version,
+			VersionQuery:     src.Git.VersionQuery,
+			Selector:         src.Git.Selector,
+			Commit:           src.Git.Commit,
+			Ref:              src.Git.Ref,
 		}
 		if src.Git.UnfilteredContextDir.Self() != nil {
 			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
@@ -979,16 +981,17 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	}
 	if persisted.Git != nil {
 		src.Git = &GitModuleSource{
-			CloneRef:     persisted.Git.CloneRef,
-			Symbolic:     persisted.Git.Symbolic,
-			HTMLRepoURL:  persisted.Git.HTMLRepoURL,
-			HTMLURL:      persisted.Git.HTMLURL,
-			RepoRootPath: persisted.Git.RepoRootPath,
-			Version:      persisted.Git.Version,
-			VersionQuery: persisted.Git.VersionQuery,
-			Selector:     persisted.Git.Selector,
-			Commit:       persisted.Git.Commit,
-			Ref:          persisted.Git.Ref,
+			CloneRef:         persisted.Git.CloneRef,
+			ResolvedCloneRef: persisted.Git.ResolvedCloneRef,
+			Symbolic:         persisted.Git.Symbolic,
+			HTMLRepoURL:      persisted.Git.HTMLRepoURL,
+			HTMLURL:          persisted.Git.HTMLURL,
+			RepoRootPath:     persisted.Git.RepoRootPath,
+			Version:          persisted.Git.Version,
+			VersionQuery:     persisted.Git.VersionQuery,
+			Selector:         persisted.Git.Selector,
+			Commit:           persisted.Git.Commit,
+			Ref:              persisted.Git.Ref,
 		}
 		if persisted.GitUnfilteredContextDirResultID != 0 {
 			unfilteredContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.GitUnfilteredContextDirResultID, "module source git unfiltered context directory")
@@ -2036,6 +2039,10 @@ func (src LocalModuleSource) Clone() *LocalModuleSource {
 type GitModuleSource struct {
 	// The ref to clone the root of the git repo from
 	CloneRef string
+
+	// The URL after Git transport selection. Kept separately from the user's
+	// spelling so reports do not need another lookup or invent a protocol.
+	ResolvedCloneRef string
 
 	// Symbolic is the CloneRef plus the SourceRootSubpath (no version)
 	Symbolic string

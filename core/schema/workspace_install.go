@@ -259,6 +259,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 		if err := srv.Select(ctx, srv.Root(), &src, workspaceInstallModuleSourceSelector(ref)); err != nil {
 			return src, "", fmt.Errorf("load module source: %w", err)
 		}
+		reportWorkspaceModuleResolution(ctx, ref, src.Self())
 		return src, ref, nil
 	}
 
