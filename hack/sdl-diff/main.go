@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/pmezard/go-difflib/difflib"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 	"github.com/vektah/gqlparser/v2/parser"
@@ -16,24 +15,23 @@ import (
 
 func main() {
 	descriptions := flag.Bool("descriptions", false, "include SDL descriptions in the diff")
-	context := flag.Int("context", 3, "number of unchanged lines around each change")
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Usage: sdl-diff [flags] OLD NEW\n\nInputs are SDL files or Git revision:path objects.")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if flag.NArg() != 2 || *context < 0 {
+	if flag.NArg() != 2 {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), flag.Arg(1), *descriptions, *context); err != nil {
+	if err := run(flag.Arg(0), flag.Arg(1), *descriptions); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(old, new string, descriptions bool, context int) error {
-	var normalized [2]string
+func run(old, new string, descriptions bool) error {
+	var documents [2]*ast.SchemaDocument
 	for i, name := range []string{old, new} {
 		data, err := os.ReadFile(name)
 		if os.IsNotExist(err) && strings.Contains(name, ":") {
@@ -44,26 +42,27 @@ func run(old, new string, descriptions bool, context int) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
 		}
-		normalized[i], err = normalize(name, string(data), descriptions)
+		documents[i], err = parseDocument(name, string(data), descriptions)
 		if err != nil {
 			return err
 		}
 	}
-	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A: difflib.SplitLines(normalized[0]), B: difflib.SplitLines(normalized[1]),
-		FromFile: old, ToFile: new, Context: context,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprint(os.Stdout, diff)
+	_, err := fmt.Fprint(os.Stdout, semanticDiff(documents[0], documents[1]))
 	return err
 }
 
 func normalize(name, input string, descriptions bool) (string, error) {
-	doc, err := parser.ParseSchema(&ast.Source{Name: name, Input: input})
+	doc, err := parseDocument(name, input, descriptions)
 	if err != nil {
 		return "", err
+	}
+	return format(doc), nil
+}
+
+func parseDocument(name, input string, descriptions bool) (*ast.SchemaDocument, error) {
+	doc, err := parser.ParseSchema(&ast.Source{Name: name, Input: input})
+	if err != nil {
+		return nil, err
 	}
 	if !descriptions {
 		// Clear descriptions before formatting: argument descriptions also affect
@@ -90,10 +89,14 @@ func normalize(name, input string, descriptions bool) (string, error) {
 			}
 		}
 	}
+	return doc, nil
+}
+
+func format(doc *ast.SchemaDocument) string {
 	var out strings.Builder
 	// Include every explicitly declared field, including internal __ fields.
 	formatter.NewFormatter(&out, formatter.WithIndent("  "), formatter.WithBuiltin()).FormatSchemaDocument(doc)
-	return out.String(), nil
+	return out.String()
 }
 
 func clearArgumentDescriptions(args ast.ArgumentDefinitionList) {
