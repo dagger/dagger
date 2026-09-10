@@ -15,7 +15,7 @@ dagger [options] [subcommand | file...]
 ### Options
 
 ```
-  -c, --command string   Execute a dagger shell command
+  -c, --command string   Execute a Dagger script
   -v, --verbose count    Increase verbosity (use -vv or -vvv for more)
 ```
 
@@ -32,7 +32,7 @@ dagger [options] [subcommand | file...]
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
-* [dagger terminal](#dagger-terminal)	 - Open a terminal for a container or directory in your project
+* [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger version](#dagger-version)	 - Print dagger version
@@ -2016,7 +2016,7 @@ dagger setup
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
-## dagger terminal
+## dagger shell
 
 Open a terminal for a container or directory in your project
 
@@ -2025,19 +2025,19 @@ Open a terminal for a container or directory in your project
 Open a terminal for a container or directory in your project.
 
 Examples:
-  dagger terminal -l                 # List all available terminal targets
-  dagger terminal go:dev             # Open the go:dev terminal target
-  dagger tty go:dev                  # Use the short command alias
+  dagger shell -l                   # List all available shells
+  dagger shell go:dev               # Open the go:dev shell
+  dagger sh go:dev                  # Use the short command alias
 
 
 ```
-dagger terminal [options] [pattern]
+dagger shell [options] [pattern]
 ```
 
 ### Options
 
 ```
-  -l, --list   List available terminal targets
+  -l, --list   List available shells
 ```
 
 ### Options inherited from parent commands

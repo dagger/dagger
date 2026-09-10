@@ -114,8 +114,8 @@ no engine, selects no workspace, reads no workspace configuration, and renders
 no pipeline, so the front-door usage message stays free of those flags. It is
 left with `-c`, `--command` and `--verbose`. Shell-style root invocations still
 do all of that:
-`dagger FILE` and `dagger -c COMMAND` run `dagger shell`, so the CLI checks
-their flags against the capabilities of `dagger shell`. Thus,
+`dagger FILE` and `dagger -c COMMAND` run `dagger script`, so the CLI checks
+their flags against the capabilities of `dagger script`. Thus,
 `dagger --engine=cloud FILE` remains valid, and `dagger --engine=cloud` alone
 is an error.
 

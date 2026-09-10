@@ -54,8 +54,9 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "terminal", "-l")
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l")
 		require.NoError(t, err)
+		require.Contains(t, string(out), "# select with 'dagger shell <NAME>'\n")
 		require.Contains(t, string(out), "test:ctr")
 
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -66,7 +67,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 20})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "tty", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -450,8 +451,9 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "terminal", "-l")
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l")
 		require.NoError(t, err)
+		require.Contains(t, string(out), "# select with 'dagger shell <NAME>'\n")
 		require.Contains(t, string(out), "test:dir")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -467,7 +469,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "tty", "dir")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "sh", "dir")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

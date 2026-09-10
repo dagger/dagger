@@ -58,7 +58,7 @@ func TestRunRootNoArgsShowsUsage(t *testing.T) {
 	}
 }
 
-func TestRunRootNoArgsWithLegacyRootShellFlagDispatchesShell(t *testing.T) {
+func TestRunRootNoArgsWithLegacyRootShellFlagDispatchesScript(t *testing.T) {
 	called := false
 	cmd := &cobra.Command{
 		Use:  rootCmd.Use,
@@ -67,7 +67,7 @@ func TestRunRootNoArgsWithLegacyRootShellFlagDispatchesShell(t *testing.T) {
 	cmd.Flags().String("command", "", "")
 	cmd.SetArgs([]string{"--command", "container"})
 	cmd.AddCommand(&cobra.Command{
-		Use:    "shell",
+		Use:    "script",
 		Hidden: true,
 		Run: func(*cobra.Command, []string) {
 			called = true
@@ -78,7 +78,7 @@ func TestRunRootNoArgsWithLegacyRootShellFlagDispatchesShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !called {
-		t.Fatal("expected shell command to run")
+		t.Fatal("expected script command to run")
 	}
 }
 
@@ -95,7 +95,7 @@ func TestRunRootNoArgsWithPersistentFlagShowsUsage(t *testing.T) {
 	cmd.PersistentFlags().Bool("debug", false, "")
 	cmd.SetArgs([]string{"--debug"})
 	cmd.AddCommand(&cobra.Command{
-		Use:    "shell",
+		Use:    "script",
 		Hidden: true,
 		Run: func(*cobra.Command, []string) {
 			called = true
@@ -106,7 +106,7 @@ func TestRunRootNoArgsWithPersistentFlagShowsUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if called {
-		t.Fatal("did not expect shell command to run")
+		t.Fatal("did not expect script command to run")
 	}
 	if !strings.Contains(out.String(), "USAGE") {
 		t.Fatalf("usage output missing USAGE:\n%s", out.String())

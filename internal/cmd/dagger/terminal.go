@@ -20,30 +20,45 @@ var terminalListMode bool
 var loadTerminalsQuery string
 
 func init() {
-	terminalCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available terminal targets")
+	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
+	shellCmd.Flags().StringP("command", "c", "", "Use 'dagger -c' to run Dagger scripts")
+	legacyCommand := shellCmd.Flags().Lookup("command")
+	legacyCommand.Hidden = true
+	// Accept a bare -c so it also gets the migration message.
+	legacyCommand.NoOptDefVal = "legacy"
 }
 
-var terminalCmd = &cobra.Command{
-	Use:     "terminal [options] [pattern]",
-	Aliases: []string{"tty"},
+var shellCmd = &cobra.Command{
+	Use:     "shell [options] [pattern]",
+	Aliases: []string{"sh"},
 	Annotations: map[string]string{
-		visibleAliasesAnnotation: "tty",
+		visibleAliasesAnnotation: "sh",
 	},
 	Short: "Open a terminal for a container or directory in your project",
 	Long: `Open a terminal for a container or directory in your project.
 
 Examples:
-  dagger terminal -l                 # List all available terminal targets
-  dagger terminal go:dev             # Open the go:dev terminal target
-  dagger tty go:dev                  # Use the short command alias
+  dagger shell -l                   # List all available shells
+  dagger shell go:dev               # Open the go:dev shell
+  dagger sh go:dev                  # Use the short command alias
 `,
-	Args: cobra.MaximumNArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("command") {
+			cmd.SilenceUsage = true
+			return fmt.Errorf("'dagger shell -c' is no longer supported; use 'dagger -c' to run Dagger scripts")
+		}
+		return cobra.MaximumNArgs(1)(cmd, args)
+	},
 	RunE: runTerminalCommand,
 }
 
 func runTerminalCommand(cmd *cobra.Command, args []string) error {
 	if !terminalListMode && len(args) == 0 {
-		return fmt.Errorf("terminal target required; use 'dagger terminal -l' to list available targets")
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), `Choose a shell to open.
+
+  dagger shell -l       List available shells
+  dagger shell <NAME>   Open a shell from that list`)
+		return err
 	}
 
 	return withEngine(
@@ -76,7 +91,11 @@ func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dag
 			Comment: firstDescriptionLine(terminal.Description),
 		})
 	}
-	return writeCommandList(cmd.OutOrStdout(), items)
+	out := cmd.OutOrStdout()
+	if _, err := fmt.Fprintln(out, "# select with 'dagger shell <NAME>'"); err != nil {
+		return err
+	}
+	return writeCommandList(out, items)
 }
 
 var terminalMu sync.Mutex

@@ -197,6 +197,7 @@ func TestEngineFlagHelp(t *testing.T) {
 	root := testRootCommand()
 	for name, cmd := range map[string]*cobra.Command{
 		"api call": apiCallCmd.Command(),
+		"script":   scriptCmd,
 		"shell":    shellCmd,
 	} {
 		help := renderHelp(t, cmd)
@@ -278,8 +279,8 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger session",
 		"dagger settings",
 		"dagger setup",
+		"dagger script",
 		"dagger shell",
-		"dagger terminal",
 		"dagger uninstall",
 		"dagger up",
 		"dagger workspace",
@@ -315,7 +316,7 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 	require.EqualError(t, validateFlagCapabilities(root, []string{"version", "--engine=cloud"}),
 		`flag --engine is not supported by command "dagger version"`)
 
-	// Shell-style root invocations run `dagger shell`, which calls the engine.
+	// Shell-style root invocations run `dagger script`, which calls the engine.
 	require.NoError(t, validateFlagCapabilities(root, []string{"--engine=cloud", "-c", "container"}))
 	require.NoError(t, validateFlagCapabilities(root, []string{"-i", "-c", "container"}))
 
@@ -323,7 +324,7 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 	require.NoError(t, os.WriteFile(script, []byte("container\n"), 0o600))
 	require.NoError(t, validateFlagCapabilities(root, []string{"--engine=cloud", script}))
 
-	require.NoError(t, validateFlagCapabilities(root, []string{"shell", "--engine=cloud"}))
+	require.NoError(t, validateFlagCapabilities(root, []string{"script", "--engine=cloud"}))
 }
 
 func TestMaySelectWorkspaceCommands(t *testing.T) {
@@ -378,7 +379,7 @@ func TestModuleFlagsRequireMayCallEngine(t *testing.T) {
 		require.NotNil(t, flag, name)
 		require.Equal(t, []string{string(mayCallEngine)}, flag.Annotations[flagCapabilitiesAnnotation], name)
 		require.False(t, FlagAvailableForCommand(rootCmd, flag), name)
-		require.True(t, FlagAvailableForCommand(shellCmd, flag), name)
+		require.True(t, FlagAvailableForCommand(scriptCmd, flag), name)
 		require.True(t, FlagAvailableForCommand(checksCmd, flag), name)
 	}
 
@@ -394,7 +395,7 @@ func TestModuleFlagsRequireMayCallEngine(t *testing.T) {
 		require.NotContains(t, rootHelp, "--"+name, name)
 	}
 	require.Contains(t, rootHelp, "-c, --command")
-	require.Contains(t, renderHelp(t, shellCmd), "--model")
+	require.Contains(t, renderHelp(t, scriptCmd), "--model")
 	require.Contains(t, renderHelp(t, checksCmd), "--allow-llm")
 }
 
@@ -558,8 +559,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger sdk scope sdk",
 		"dagger session",
 		"dagger settings",
+		"dagger script",
 		"dagger shell",
-		"dagger terminal",
 		"dagger uninstall",
 		"dagger up",
 		"dagger workspace",
@@ -621,8 +622,8 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger query",
 		"dagger run",
 		"dagger session",
+		"dagger script",
 		"dagger shell",
-		"dagger terminal",
 		"dagger trace",
 		"dagger up",
 	}
