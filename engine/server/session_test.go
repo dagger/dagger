@@ -3931,43 +3931,28 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	require.Same(t, otherCaller, caller)
 }
 
-func TestNeverServesAttachables(t *testing.T) {
+// Synthetic proxy routing and already registered callers are covered above.
+// A normal nested client must still wait for its own attachables, even when a
+// parent is available; otherwise startup races can route to the wrong host.
+func TestResolveHostServiceCallerWaitsForOwnAttachables(t *testing.T) {
 	t.Parallel()
-
-	newClient := func(proxyID string, registered bool) *daggerClient {
-		attachables := newSessionAttachableManager()
-		if registered {
-			attachables.callers["child"] = &sessionAttachableCaller{
-				ctx:       context.Background(),
-				supported: map[string]struct{}{},
-			}
-		}
-		return &daggerClient{
-			clientID:                 "child",
-			hostServiceProxyClientID: proxyID,
-			daggerSession:            &daggerSession{attachables: attachables},
-		}
+	parent := &clientRecord{clientID: "parent"}
+	child := &clientRecord{clientID: "child", parentClientIDs: []string{"parent"}}
+	sess := &daggerSession{
+		attachables:   newSessionAttachableManager(),
+		clientRecords: map[string]*clientRecord{"parent": parent, "child": child},
 	}
-
-	t.Run("synthetic nested client without attachables", func(t *testing.T) {
-		t.Parallel()
-		require.True(t, newClient("parent", false).neverServesAttachables("child"))
-	})
-
-	t.Run("synthetic nested client that registered attachables", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("parent", true).neverServesAttachables("child"))
-	})
-
-	t.Run("client with its own session waits", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("", false).neverServesAttachables("child"))
-	})
-
-	t.Run("another client still waits", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("parent", false).neverServesAttachables("other"))
-	})
+	sess.attachables.callers["parent"] = &sessionAttachableCaller{
+		ctx: context.Background(), supported: map[string]struct{}{},
+	}
+	childCaller := &fakeSessionCaller{id: "child"}
+	sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
+		require.Equal(t, "child", id)
+		return childCaller, nil
+	}
+	caller, err := sess.resolveHostServiceCaller(context.Background(), "child")
+	require.NoError(t, err)
+	require.Same(t, childCaller, caller)
 }
 
 func TestWorkspaceBindingMode(t *testing.T) {
