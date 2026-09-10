@@ -333,6 +333,7 @@ func init() {
 		workspaceRootCmd,
 		workspaceCwdCmd,
 		workspaceLsCmd,
+		workspaceCatCmd,
 		workspaceConfigFileCmd,
 		workspaceRemotesCmd,
 		setupCmd,

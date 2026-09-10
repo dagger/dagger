@@ -1,0 +1,6 @@
+kind: Added
+body: Add `dagger workspace ls [PATH...]` and `dagger workspace cat PATH [PATH...]` to list paths and read files from the selected local or remote Git workspace. Both commands also work through the `ws` alias.
+time: 2026-09-10T11:21:10.927905-07:00
+custom:
+    Author: shykes
+    PR: "0"

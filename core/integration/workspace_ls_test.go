@@ -29,9 +29,9 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 			ctr := base
 			var workspace string
 			if kind == "local" {
-				ctr = ctr.WithDirectory("/selected", source).
-					WithNewDirectory("/selected/.git").
-					WithNewDirectory("/selected/empty")
+				ctr = ctr.WithDirectory("/selected", source.
+					WithNewDirectory(".git").
+					WithNewDirectory("empty"))
 				workspace = "/selected/items"
 			} else {
 				ref := workspaceSelectionRemoteRef(ctx, t, c, source)
@@ -53,6 +53,9 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 				{"file with spaces", []string{"file with spaces.txt"}, "file with spaces.txt\n"},
 				{"parent relative file", []string{"../root.txt"}, "../root.txt\n"},
 				{"root relative file", []string{"/root.txt"}, "/root.txt\n"},
+				{"multiple directories", []string{"sub", "/items"}, "sub:\ndeep/\n\n/items:\n" + entries},
+				{"multiple files", []string{"z.txt", "a.txt"}, "z.txt\n\na.txt\n"},
+				{"mixed targets", []string{"a.txt", "sub", "/root.txt"}, "a.txt\n\nsub:\ndeep/\n\n/root.txt\n"},
 			} {
 				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 					args := append([]string{"-W", workspace, "workspace", "ls"}, tc.args...)
@@ -82,7 +85,20 @@ func (WorkspaceSuite) TestLsCLI(ctx context.Context, t *testctx.T) {
 				require.Empty(t, out)
 				stderr, err := result.Stderr(ctx)
 				require.NoError(t, err)
-				require.Contains(t, stderr, `list workspace path "missing"`)
+				require.Contains(t, stderr, "no such file or directory")
+			})
+
+			t.Run("continue after missing path", func(ctx context.Context, t *testctx.T) {
+				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "ls", "missing", "a.txt", "sub"}, dagger.ContainerWithExecOpts{
+					ExperimentalPrivilegedNesting: true,
+					Expect:                        dagger.ReturnTypeFailure,
+				})
+				out, err := result.Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "a.txt\n\nsub:\ndeep/\n", out)
+				stderr, err := result.Stderr(ctx)
+				require.NoError(t, err)
+				require.Contains(t, stderr, "no such file or directory")
 			})
 
 			if kind == "local" {
