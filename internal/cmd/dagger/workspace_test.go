@@ -76,6 +76,18 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.Equal(t, []string{"i"}, args)
 }
 
+func TestWorkspaceLsCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "ls"})
+		require.NoError(t, err)
+		require.Same(t, workspaceLsCmd, cmd)
+		require.NoError(t, cmd.ValidateArgs(nil))
+		require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+		require.Error(t, cmd.ValidateArgs([]string{"src", "other"}))
+	}
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "ls", "-W", "github.com/dagger/dagger"}))
+}
+
 func TestCosmeticCommandAliases(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"api", "call"})
 	require.NoError(t, err)

@@ -332,6 +332,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		workspaceRootCmd,
 		workspaceCwdCmd,
+		workspaceLsCmd,
 		workspaceConfigFileCmd,
 		workspaceRemotesCmd,
 		setupCmd,

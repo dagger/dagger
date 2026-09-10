@@ -90,6 +90,48 @@ var workspaceCwdCmd = &cobra.Command{
 	},
 }
 
+var workspaceLsCmd = &cobra.Command{
+	Use:   "ls [PATH]",
+	Short: "List a directory or file in the selected workspace",
+	Long: `List a directory or file in the selected workspace, one entry per line.
+
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Directory listings include hidden entries and end directory names with /.
+For a file, print the supplied path.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		target := "."
+		if len(args) > 0 {
+			target = args[0]
+		}
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			entries, err := ws.Directory(target, dagger.WorkspaceDirectoryOpts{
+				Include: []string{"*"},
+				Exclude: []string{"*/*"},
+			}).Entries(ctx)
+			if err != nil {
+				// A file cannot be listed as a directory. Validate it before
+				// printing its path, retaining the directory error if both fail.
+				if _, fileErr := ws.File(target).Sync(ctx); fileErr != nil {
+					return fmt.Errorf("list workspace path %q: %w", target, err)
+				}
+				entries = []string{target}
+			}
+			for _, entry := range entries {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), entry); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	},
+}
+
 var workspaceConfigFileCmd = &cobra.Command{
 	Use:   "config-file",
 	Short: "Print the selected workspace config file",
@@ -172,6 +214,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
+	workspaceCmd.AddCommand(workspaceLsCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
