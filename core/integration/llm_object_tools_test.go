@@ -358,6 +358,36 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 	})
 }
 
+// TestWorkspaceToolMountsSummarizeCompactly locks in that a tool-returned
+// Workspace whose difference is a mount does not flood the model's context:
+// the mounted files are excluded from the rebind's patch summary, replaced by
+// one compact line per mount point, while ordinary edits still show.
+func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("mount the vendored deps").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "mountVendored"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "mount the vendored deps" | loop | transcript`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Mounted (read-only): mnt/vendored")
+	require.NotContains(t, out, "vendored-one.txt")
+	require.NotContains(t, out, "vendored-two.txt")
+	require.NotContains(t, out, "vendored-three.txt")
+	require.Contains(t, out, "NOTE.txt")
+}
+
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
@@ -441,7 +471,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (15 tools).",
+			"Toolset unchanged (16 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().
