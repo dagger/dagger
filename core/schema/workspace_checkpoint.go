@@ -22,28 +22,38 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type workspaceCheckpointArgs struct {
-	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
-
-	MaxUntrackedFileBytes  dagql.Optional[dagql.Int]
-	MaxUntrackedTotalBytes dagql.Optional[dagql.Int]
-	MaxUntrackedFiles      dagql.Optional[dagql.Int]
-}
-
 type capturedCheckpointChunk struct {
 	kind gitsession.CaptureGitChunk_Kind
 	data []byte
 }
 
-func (s *workspaceSchema) checkpoint(
+// sync captures a live workspace and returns the reconstructed value's ID.
+// Returning this ID (rather than the receiver's) makes subsequent SDK calls use
+// the stable source. Syncing a value never refreshes the original checkout.
+func (s *workspaceSchema) sync(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
+	Recipe bool `default:"false" internal:"true"`
+}) (dagql.Result[dagql.ID[*core.Workspace]], error) {
+	frozen, err := s.freeze(ctx, parent)
+	if err != nil {
+		return dagql.Result[dagql.ID[*core.Workspace]]{}, err
+	}
+	id, err := frozen.ID()
+	if args.Recipe {
+		id, err = frozen.RecipeID(ctx)
+	}
+	if err != nil {
+		return dagql.Result[dagql.ID[*core.Workspace]]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewID[*core.Workspace](id))
+}
+
+func (s *workspaceSchema) freeze(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceCheckpointArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	ws := parent.Self()
 	if ws == nil {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint requires a workspace")
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace sync requires a workspace")
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -53,7 +63,7 @@ func (s *workspaceSchema) checkpoint(
 
 	switch src := ws.Source().(type) {
 	case *core.WorkspaceSourceClientLocal:
-		return s.checkpointClientLocal(ctx, srv, parent, args)
+		return s.checkpointClientLocal(ctx, srv, parent)
 	case *core.WorkspaceSourceRootlessLocal:
 		return s.checkpointRootless(ctx, srv, parent)
 	case *core.WorkspaceSourceDirectory:
@@ -69,7 +79,7 @@ func (s *workspaceSchema) checkpoint(
 		case *core.WorkspaceSourceGitRef:
 			return s.checkpointGitRef(ctx, srv, parent, base, src)
 		case *core.WorkspaceSourceClientLocal:
-			frozen, err := s.checkpointClientLocal(ctx, srv, parent, args)
+			frozen, err := s.checkpointClientLocal(ctx, srv, parent)
 			if err != nil {
 				return frozen, err
 			}
@@ -77,12 +87,12 @@ func (s *workspaceSchema) checkpoint(
 		case *core.WorkspaceSourceRootlessLocal:
 			return s.checkpointRootless(ctx, srv, parent)
 		default:
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint cannot normalize overlay base %T", src.Base)
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace sync cannot normalize overlay base %T", src.Base)
 		}
 	case nil:
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint has no reconstructible source")
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace sync has no reconstructible source")
 	default:
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace checkpoint does not support source %T", src)
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace sync does not support source %T", src)
 	}
 }
 
@@ -101,19 +111,19 @@ func (s *workspaceSchema) checkpointRootless(
 
 	root, err := s.workspaceOverlayRootfs(ctx, ws)
 	if err != nil {
-		return inst, fmt.Errorf("resolve rootless workspace checkpoint tree: %w", err)
+		return inst, fmt.Errorf("resolve rootless workspace sync tree: %w", err)
 	}
 	if err := srv.Select(ctx, root, &inst, dagql.Selector{
 		Field: "asWorkspace",
 		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(ws.Cwd)}},
 	}); err != nil {
-		return inst, fmt.Errorf("construct rootless workspace checkpoint: %w", err)
+		return inst, fmt.Errorf("construct rootless workspace sync: %w", err)
 	}
 
 	workspaceEnv, _ := selectedWorkspaceEnv(ctx, ws)
 	inst, err = checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
 	if err != nil {
-		return inst, fmt.Errorf("compose rootless workspace checkpoint metadata: %w", err)
+		return inst, fmt.Errorf("compose rootless workspace sync metadata: %w", err)
 	}
 	return inst, nil
 }
@@ -122,19 +132,18 @@ func (s *workspaceSchema) checkpointClientLocal(
 	ctx context.Context,
 	srv *dagql.Server,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceCheckpointArgs,
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
 	ws := parent.Self()
 	if ws.HostPath() == "" {
-		return inst, fmt.Errorf("workspace checkpoint requires a local Git workspace")
+		return inst, fmt.Errorf("workspace sync requires a local Git workspace")
 	}
 
 	caller, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("workspace checkpoint caller metadata: %w", err)
+		return inst, fmt.Errorf("workspace sync caller metadata: %w", err)
 	}
 	if ws.ClientID == "" || caller.ClientID != ws.ClientID {
-		return inst, fmt.Errorf("workspace checkpoint capture is only available to the workspace's owning client")
+		return inst, fmt.Errorf("workspace sync capture is only available to the workspace's owning client")
 	}
 
 	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
@@ -147,17 +156,12 @@ func (s *workspaceSchema) checkpointClientLocal(
 	}
 	bk, err := query.Engine(clientCtx)
 	if err != nil {
-		return inst, fmt.Errorf("workspace checkpoint engine client: %w", err)
+		return inst, fmt.Errorf("workspace sync engine client: %w", err)
 	}
 
-	policy := &gitsession.CaptureGitPolicy{
-		Include:                checkpointPatterns(args.Include),
-		Exclude:                checkpointPatterns(args.Exclude),
-		MaxUntrackedFileBytes:  checkpointOptionalInt(args.MaxUntrackedFileBytes),
-		MaxUntrackedTotalBytes: checkpointOptionalInt(args.MaxUntrackedTotalBytes),
-		MaxUntrackedFiles:      int32(checkpointOptionalInt(args.MaxUntrackedFiles)),
-		MaxTotalBytes:          256 << 20,
-	}
+	// Zero limits use the capture service defaults (16 MiB per untracked file,
+	// 64 MiB total, 4096 files). Untracked paths are approved interactively.
+	policy := &gitsession.CaptureGitPolicy{MaxTotalBytes: 256 << 20}
 
 	var chunks []capturedCheckpointChunk
 	capture := func() (*gitsession.CaptureGitMetadata, error) {
@@ -178,19 +182,19 @@ func (s *workspaceSchema) checkpointClientLocal(
 			return inst, fmt.Errorf("client did not honor dropping untracked files; upgrade the dagger CLI")
 		}
 		if len(approvalErr.Candidates) == 0 {
-			return inst, fmt.Errorf("workspace checkpoint approval required without selected paths")
+			return inst, fmt.Errorf("workspace sync approval required without selected paths")
 		}
 		summary := checkpointApprovalSummary(approvalErr.Candidates)
 		choice, promptErr := checkpointPrompt(clientCtx, bk, summary)
 		if promptErr != nil {
-			return inst, fmt.Errorf("workspace checkpoint requires approval; pass include patterns in noninteractive use: %s: %w", summary, promptErr)
+			return inst, fmt.Errorf("workspace sync requires interactive approval for untracked files: %s: %w", summary, promptErr)
 		}
 		if err := applyCheckpointDecision(policy, approvalErr.Candidates, choice); err != nil {
 			return inst, err
 		}
 	}
 	if err != nil {
-		return inst, fmt.Errorf("capture workspace checkpoint: %w", err)
+		return inst, fmt.Errorf("capture workspace sync: %w", err)
 	}
 	if policy.DropUntracked && metadata.UntrackedFiles != 0 {
 		return inst, fmt.Errorf("client included untracked files despite Drop; upgrade the dagger CLI")
@@ -198,12 +202,12 @@ func (s *workspaceSchema) checkpointClientLocal(
 
 	bundle := slices.Concat(checkpointBundleChunks(chunks)...)
 	if int64(len(bundle)) != metadata.BundleBytes {
-		return inst, fmt.Errorf("workspace checkpoint bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
+		return inst, fmt.Errorf("workspace sync bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
 	}
 	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx, ws)
 	inst, err = s.checkpointCapturedGitComposition(clientCtx, srv, ws, metadata, bundle, workspaceEnv)
 	if err != nil {
-		return inst, fmt.Errorf("construct portable workspace checkpoint: %w", err)
+		return inst, fmt.Errorf("construct portable workspace sync: %w", err)
 	}
 
 	return inst, nil
@@ -219,7 +223,7 @@ func (s *workspaceSchema) checkpointGitRef(
 	ws := parent.Self()
 	ref := source.Ref.Self()
 	if ref == nil || ref.Ref == nil || ref.Ref.SHA == "" || ref.Repo.Self() == nil {
-		return inst, fmt.Errorf("workspace checkpoint Git source has no resolved commit")
+		return inst, fmt.Errorf("workspace sync Git source has no resolved commit")
 	}
 
 	var pinned dagql.ObjectResult[*core.GitRef]
@@ -257,7 +261,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	workspaceEnv string,
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
 	if metadata == nil {
-		return inst, fmt.Errorf("workspace checkpoint capture metadata is missing")
+		return inst, fmt.Errorf("workspace sync capture metadata is missing")
 	}
 
 	var repo dagql.ObjectResult[*core.GitRepository]
@@ -286,7 +290,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		Field: "git",
 		Args:  []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}},
 	}); err != nil {
-		return inst, fmt.Errorf("load workspace checkpoint remote: %w", err)
+		return inst, fmt.Errorf("load workspace sync remote: %w", err)
 	}
 
 	if len(bundleBytes) > 0 {
@@ -299,15 +303,15 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 				{Name: "permissions", Value: dagql.NewInt(0o600)},
 			},
 		}); err != nil {
-			return inst, fmt.Errorf("embed workspace checkpoint bundle: %w", err)
+			return inst, fmt.Errorf("embed workspace sync bundle: %w", err)
 		}
 		var bundle dagql.ObjectResult[*core.GitBundle]
 		if err := srv.Select(ctx, file, &bundle, dagql.Selector{Field: "asGitBundle"}); err != nil {
-			return inst, fmt.Errorf("parse workspace checkpoint bundle: %w", err)
+			return inst, fmt.Errorf("parse workspace sync bundle: %w", err)
 		}
 		bundleID, err := bundle.ID()
 		if err != nil {
-			return inst, fmt.Errorf("workspace checkpoint bundle identity: %w", err)
+			return inst, fmt.Errorf("workspace sync bundle identity: %w", err)
 		}
 		var imported dagql.ObjectResult[*core.GitRepository]
 		if err := srv.Select(ctx, repo, &imported, dagql.Selector{
@@ -317,7 +321,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 				{Name: "prerequisiteRef", Value: dagql.NewString(prerequisiteRef)},
 			},
 		}); err != nil {
-			return inst, fmt.Errorf("import workspace checkpoint bundle: %w", err)
+			return inst, fmt.Errorf("import workspace sync bundle: %w", err)
 		}
 		repo = imported
 	}
@@ -336,13 +340,13 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		Field: "ref",
 		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.HeadSha)}},
 	}); err != nil {
-		return inst, fmt.Errorf("select workspace checkpoint HEAD %s: %w", metadata.HeadSha, err)
+		return inst, fmt.Errorf("select workspace sync HEAD %s: %w", metadata.HeadSha, err)
 	}
 	if err := srv.Select(ctx, head, &inst, dagql.Selector{
 		Field: "asWorkspace",
 		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(captured.Cwd)}},
 	}); err != nil {
-		return inst, fmt.Errorf("construct workspace checkpoint from HEAD: %w", err)
+		return inst, fmt.Errorf("construct workspace sync from HEAD: %w", err)
 	}
 
 	if metadata.WorktreeSha != "" {
@@ -353,40 +357,40 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		}
 		var headTree dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, head, &headTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
-			return inst, fmt.Errorf("workspace checkpoint HEAD tree: %w", err)
+			return inst, fmt.Errorf("workspace sync HEAD tree: %w", err)
 		}
 		var worktree dagql.ObjectResult[*core.GitRef]
 		if err := srv.Select(ctx, repo, &worktree, dagql.Selector{
 			Field: "ref",
 			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(metadata.WorktreeSha)}},
 		}); err != nil {
-			return inst, fmt.Errorf("select workspace checkpoint worktree %s: %w", metadata.WorktreeSha, err)
+			return inst, fmt.Errorf("select workspace sync worktree %s: %w", metadata.WorktreeSha, err)
 		}
 		var worktreeTree dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, worktree, &worktreeTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
-			return inst, fmt.Errorf("workspace checkpoint worktree tree: %w", err)
+			return inst, fmt.Errorf("workspace sync worktree tree: %w", err)
 		}
 		headTreeID, err := headTree.ID()
 		if err != nil {
-			return inst, fmt.Errorf("workspace checkpoint HEAD tree identity: %w", err)
+			return inst, fmt.Errorf("workspace sync HEAD tree identity: %w", err)
 		}
 		var changes dagql.ObjectResult[*core.Changeset]
 		if err := srv.Select(ctx, worktreeTree, &changes, dagql.Selector{
 			Field: "changes",
 			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](headTreeID)}},
 		}); err != nil {
-			return inst, fmt.Errorf("workspace checkpoint worktree changes: %w", err)
+			return inst, fmt.Errorf("workspace sync worktree changes: %w", err)
 		}
 		changesID, err := changes.ID()
 		if err != nil {
-			return inst, fmt.Errorf("workspace checkpoint changes identity: %w", err)
+			return inst, fmt.Errorf("workspace sync changes identity: %w", err)
 		}
 		var withChanges dagql.ObjectResult[*core.Workspace]
 		if err := srv.Select(ctx, inst, &withChanges, dagql.Selector{
 			Field: "withChanges",
 			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
 		}); err != nil {
-			return inst, fmt.Errorf("apply workspace checkpoint worktree: %w", err)
+			return inst, fmt.Errorf("apply workspace sync worktree: %w", err)
 		}
 		inst = withChanges
 	}
@@ -478,17 +482,6 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 		summary.WriteString(")")
 	}
 	return summary.String()
-}
-
-func checkpointPatterns(arg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
-	if !arg.Valid {
-		return nil
-	}
-	patterns := make([]string, len(arg.Value))
-	for i, pattern := range arg.Value {
-		patterns[i] = pattern.String()
-	}
-	return patterns
 }
 
 // checkpointOverlay records only the already-approved engine edits as a patch.
@@ -611,13 +604,6 @@ func checkpointOverlayDirectories(ctx context.Context, srv *dagql.Server, after 
 	return after, nil
 }
 
-func checkpointOptionalInt(arg dagql.Optional[dagql.Int]) int64 {
-	if !arg.Valid {
-		return 0
-	}
-	return int64(arg.Value)
-}
-
 func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {
 	const traceChunkBytes = 256 << 10
 	for _, chunk := range chunks {
@@ -714,14 +700,14 @@ func applyCheckpointDecision(policy *gitsession.CaptureGitPolicy, candidates []*
 	case checkpointInclude:
 		for _, candidate := range candidates {
 			if candidate.ApprovalToken == "" {
-				return fmt.Errorf("workspace checkpoint approval candidate %s has no state token", strconv.Quote(candidate.Path))
+				return fmt.Errorf("workspace sync approval candidate %s has no state token", strconv.Quote(candidate.Path))
 			}
 			policy.ApprovalTokens = append(policy.ApprovalTokens, candidate.ApprovalToken)
 		}
 	case checkpointCancel:
-		return fmt.Errorf("workspace checkpoint rejected selected dirty paths")
+		return fmt.Errorf("workspace sync rejected selected dirty paths")
 	default:
-		return fmt.Errorf("invalid workspace checkpoint choice")
+		return fmt.Errorf("invalid workspace sync choice")
 	}
 	return nil
 }
@@ -755,7 +741,7 @@ func checkpointPromptClient(ctx context.Context, client prompt.PromptClient, sup
 			case checkpointInclude, checkpointDrop, checkpointCancel:
 				return response.Choice, nil
 			default:
-				return "", fmt.Errorf("invalid workspace checkpoint choice")
+				return "", fmt.Errorf("invalid workspace sync choice")
 			}
 		}
 		// A new proxy can advertise the RPC while its upstream client is old.

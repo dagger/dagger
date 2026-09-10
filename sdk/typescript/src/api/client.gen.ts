@@ -3245,33 +3245,6 @@ export type WorkspaceChangesOpts = {
   from?: Workspace
 }
 
-export type WorkspaceCheckpointOpts = {
-  /**
-   * Include and approve matching nonignored untracked paths, relative to the workspace root.
-   */
-  include?: string[]
-
-  /**
-   * Exclude matching paths from capture.
-   */
-  exclude?: string[]
-
-  /**
-   * Maximum size of an untracked file, in bytes.
-   */
-  maxUntrackedFileBytes?: number
-
-  /**
-   * Maximum total size of untracked files, in bytes.
-   */
-  maxUntrackedTotalBytes?: number
-
-  /**
-   * Maximum number of untracked files.
-   */
-  maxUntrackedFiles?: number
-}
-
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -15683,6 +15656,7 @@ export class Workspace extends BaseClient {
   private readonly _detectScope?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -15697,6 +15671,7 @@ export class Workspace extends BaseClient {
     _detectScope?: string,
     _export?: Void,
     _findUp?: string,
+    _sync?: ID,
   ) {
     super(ctx)
 
@@ -15708,6 +15683,7 @@ export class Workspace extends BaseClient {
     this._detectScope = _detectScope
     this._export = _export
     this._findUp = _findUp
+    this._sync = _sync
   }
 
   /**
@@ -15761,21 +15737,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace as a frozen value.
-   *
-   * Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-   * @param opts.include Include and approve matching nonignored untracked paths, relative to the workspace root.
-   * @param opts.exclude Exclude matching paths from capture.
-   * @param opts.maxUntrackedFileBytes Maximum size of an untracked file, in bytes.
-   * @param opts.maxUntrackedTotalBytes Maximum total size of untracked files, in bytes.
-   * @param opts.maxUntrackedFiles Maximum number of untracked files.
-   */
-  checkpoint = (opts?: WorkspaceCheckpointOpts): Workspace => {
-    const ctx = this._ctx.select("checkpoint", { ...opts })
-    return new Workspace(ctx)
-  }
-
-  /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    * @param opts.skip Skip checks matching the specified patterns
@@ -15788,7 +15749,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+   * Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
    *
    * Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
    * @param source Frozen source workspace.
@@ -16072,14 +16033,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-   */
-  reloaded = (): Workspace => {
-    const ctx = this._ctx.select("reloaded")
-    return new Workspace(ctx)
-  }
-
-  /**
    * An installed SDK, by name.
    * @param name SDK name to look up.
    */
@@ -16147,6 +16100,23 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Capture this workspace as a stable value and return its ID.
+   *
+   * Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+   *
+   * Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+   *
+   * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+   */
+  sync = async (): Promise<Workspace> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Workspace(ctx.copy().selectNode(response, "Workspace"))
+  }
+
+  /**
    * Return all terminal targets from modules loaded in the workspace.
    * @param opts.include Only include terminal targets matching the specified patterns
    */
@@ -16198,7 +16168,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+   * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
    *
    * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
    *

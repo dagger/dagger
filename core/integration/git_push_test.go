@@ -261,7 +261,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"git", "config", "remote.origin.pushurl", pushURL})
 	// The capture's owner exits before this recipe is restored by the outer
 	// client. Routing data must survive without carrying any authorization.
-	recipe, err := checkout.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | checkpoint) | portable-id`)).Stdout(ctx)
+	recipe, err := checkout.With(daggerShell(`llm | with-workspace --workspace $(node $(current-workspace | sync)) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
 	frozen := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
 	head, err := frozen.Git().Head().CommitSHA(ctx)
@@ -269,7 +269,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	require.Equal(t, fetchSHA, head, "push URL must not change the fetch source")
 	// Exercise propagation through both commit and pull repository rebuilds.
 	committed := frozen.WithNewFile("new", "committed").WithCommit("commit before push", workspaceCommitDate)
-	updated := frozen.WithCommitsFrom(committed).Checkpoint()
+	updated := syncWorkspace(ctx, t, frozen.WithCommitsFrom(committed))
 	sha, err := updated.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	_, err = pushGitRef(ctx, c, updated.Git().Head(), nil, "main", nil)
@@ -289,7 +289,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	// Capturing multiple pushurls must not silently turn one API call into a
 	// fan-out push or choose just the first URL. An explicit to remains usable.
 	multiRecipe, err := checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}).
-		With(daggerShell(`llm | with-workspace --workspace $(current-workspace | checkpoint) | portable-id`)).Stdout(ctx)
+		With(daggerShell(`llm | with-workspace --workspace $(node $(current-workspace | sync)) | portable-id`)).Stdout(ctx)
 	require.NoError(t, err)
 	multi := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(multiRecipe))).Workspace()
 	_, err = pushGitRef(ctx, c, multi.Git().Head(), nil, "multiple", nil)

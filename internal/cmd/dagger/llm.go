@@ -517,7 +517,7 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 		return err
 	}
 	// Capture once, then bind by ID so future reads do not repeat host capture.
-	baseline, err := checkpointWorkspace(ctx, s.dag)
+	baseline, err := syncWorkspace(ctx, s.dag)
 	if err != nil {
 		return fmt.Errorf("saved to checkout, but could not refresh checkpoint: %w", err)
 	}
@@ -541,7 +541,7 @@ func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	baseline, err := checkpointWorkspace(ctx, s.dag)
+	baseline, err := syncWorkspace(ctx, s.dag)
 	if err != nil {
 		return err
 	}

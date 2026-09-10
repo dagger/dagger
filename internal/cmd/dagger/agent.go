@@ -16,7 +16,6 @@ import (
 
 var agentListMode bool
 var agentResume agentSessionFlag
-var agentCheckpointOpts dagger.WorkspaceCheckpointOpts
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -102,11 +101,6 @@ func (f agentSessionFlag) SessionID() string {
 }
 
 func init() {
-	agentCmd.Flags().StringArrayVar(&agentCheckpointOpts.Include, "checkpoint-include", nil, "Approve nonignored untracked paths for checkpoints (repeatable)")
-	agentCmd.Flags().StringArrayVar(&agentCheckpointOpts.Exclude, "checkpoint-exclude", nil, "Exclude paths from checkpoints (repeatable)")
-	agentCmd.Flags().IntVar(&agentCheckpointOpts.MaxUntrackedFileBytes, "checkpoint-max-untracked-file-bytes", 0, "Maximum bytes per untracked checkpoint file (default 16 MiB)")
-	agentCmd.Flags().IntVar(&agentCheckpointOpts.MaxUntrackedTotalBytes, "checkpoint-max-untracked-total-bytes", 0, "Maximum total untracked checkpoint bytes (default 64 MiB)")
-	agentCmd.Flags().IntVar(&agentCheckpointOpts.MaxUntrackedFiles, "checkpoint-max-untracked-files", 0, "Maximum untracked checkpoint files (default 4096)")
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
 	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
 	// A bare -r (no value) resolves to the picker keyword, opening the
@@ -136,7 +130,7 @@ const composeAgentsQuery = `query ComposeAgents($include: [String!], $workspace:
 }`
 
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
-	workspace, err := checkpointWorkspace(ctx, dag)
+	workspace, err := syncWorkspace(ctx, dag)
 	if err != nil {
 		return "", err
 	}
@@ -170,12 +164,12 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 
 // Materialize the effectful capture once before binding or composing tools.
 // Save and reload use the same approval policy as the initial agent bind.
-func checkpointWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
-	id, err := dag.CurrentWorkspace().Reloaded().Checkpoint(agentCheckpointOpts).ID(ctx)
+func syncWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
+	workspace, err := dag.CurrentWorkspace().Sync(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("checkpoint workspace: %w", err)
+		return nil, fmt.Errorf("sync workspace: %w", err)
 	}
-	return dagger.Ref[*dagger.Workspace](dag, id), nil
+	return workspace, nil
 }
 
 const listAgentsQuery = `query ListAgents($include: [String!]) {

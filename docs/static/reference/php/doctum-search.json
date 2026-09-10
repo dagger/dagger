@@ -7536,12 +7536,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::checkpoint",
-			"p": "Dagger/Workspace.html#method_checkpoint",
-			"d": "<p>Return this workspace as a frozen value.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::checks",
 			"p": "Dagger/Workspace.html#method_checks",
 			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
@@ -7550,7 +7544,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::commitsFrom",
 			"p": "Dagger/Workspace.html#method_commitsFrom",
-			"d": "<p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.</p>"
+			"d": "<p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.</p>"
 		},
 		{
 			"t": "M",
@@ -7662,12 +7656,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::reloaded",
-			"p": "Dagger/Workspace.html#method_reloaded",
-			"d": "<p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::sdk",
 			"p": "Dagger/Workspace.html#method_sdk",
 			"d": "<p>An installed SDK, by name.</p>"
@@ -7689,6 +7677,12 @@
 			"n": "Dagger\\Workspace::services",
 			"p": "Dagger/Workspace.html#method_services",
 			"d": "<p>Return all services from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::sync",
+			"p": "Dagger/Workspace.html#method_sync",
+			"d": "<p>Capture this workspace as a stable value and return its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -7718,7 +7712,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withCommitsFrom",
 			"p": "Dagger/Workspace.html#method_withCommitsFrom",
-			"d": "<p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.</p>"
+			"d": "<p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.</p>"
 		},
 		{
 			"t": "M",

@@ -68,7 +68,7 @@ func (args workspaceWithCommitArgs) selectors() []dagql.NamedInput {
 
 // withCommit crosses the host approval boundary once, then returns a composition
 // over a frozen receiver. The cached helper never captures host state, and no
-// effectful withCommit/checkpoint call is retained in the resulting recipe.
+// effectful withCommit/sync call is retained in the resulting recipe.
 func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
 	if _, err := args.opts(parent.Self()); err != nil {
 		return inst, err
@@ -94,7 +94,7 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 
-	frozen, err := s.checkpoint(ctx, parent, workspaceCheckpointArgs{})
+	frozen, err := s.freeze(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -155,7 +155,7 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 // source repository's keepGitDir option. This pure helper owns the snapshot.
 func (s *workspaceSchema) commitBase(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
 	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("commit base requires a frozen workspace; call checkpoint first")
+		return inst, fmt.Errorf("commit base requires a frozen workspace; call sync first")
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -174,7 +174,7 @@ func (s *workspaceSchema) commitBase(ctx context.Context, parent dagql.ObjectRes
 
 func (s *workspaceSchema) commitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("commit requires a frozen workspace; call checkpoint first")
+		return inst, fmt.Errorf("commit requires a frozen workspace; call sync first")
 	}
 	opts, err := args.opts(parent.Self())
 	if err != nil {

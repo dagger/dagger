@@ -50,7 +50,7 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	frozen, err := s.checkpoint(ctx, parent, workspaceCheckpointArgs{})
+	frozen, err := s.freeze(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -112,7 +112,7 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 
 func (s *workspaceSchema) resetDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceResetArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("reset requires a frozen workspace; call checkpoint first")
+		return inst, fmt.Errorf("reset requires a frozen workspace; call sync first")
 	}
 	if err := args.validate(); err != nil {
 		return inst, err

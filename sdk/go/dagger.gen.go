@@ -16472,6 +16472,7 @@ type Workspace struct {
 	export      *Void
 	findUp      *string
 	id          *ID
+	sync        *ID
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16545,53 +16546,6 @@ func (r *Workspace) Changes(opts ...WorkspaceChangesOpts) *Changeset {
 	}
 }
 
-// WorkspaceCheckpointOpts contains options for Workspace.Checkpoint
-type WorkspaceCheckpointOpts struct {
-	// Include and approve matching nonignored untracked paths, relative to the workspace root.
-	Include []string
-	// Exclude matching paths from capture.
-	Exclude []string
-	// Maximum size of an untracked file, in bytes.
-	MaxUntrackedFileBytes int
-	// Maximum total size of untracked files, in bytes.
-	MaxUntrackedTotalBytes int
-	// Maximum number of untracked files.
-	MaxUntrackedFiles int
-}
-
-// Return this workspace as a frozen value.
-//
-// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-func (r *Workspace) Checkpoint(opts ...WorkspaceCheckpointOpts) *Workspace {
-	q := r.query.Select("checkpoint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-		// `maxUntrackedFileBytes` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedFileBytes) {
-			q = q.Arg("maxUntrackedFileBytes", opts[i].MaxUntrackedFileBytes)
-		}
-		// `maxUntrackedTotalBytes` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedTotalBytes) {
-			q = q.Arg("maxUntrackedTotalBytes", opts[i].MaxUntrackedTotalBytes)
-		}
-		// `maxUntrackedFiles` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxUntrackedFiles) {
-			q = q.Arg("maxUntrackedFiles", opts[i].MaxUntrackedFiles)
-		}
-	}
-
-	return &Workspace{
-		query: q,
-	}
-}
-
 // WorkspaceChecksOpts contains options for Workspace.Checks
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
@@ -16641,7 +16595,7 @@ type WorkspaceCommitsFromOpts struct {
 	MaxCommits int
 }
 
-// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
 //
 // Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
 func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCommitsFromOpts) ([]WorkspaceCommitPick, error) {
@@ -17059,15 +17013,6 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
-// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-func (r *Workspace) Reloaded() *Workspace {
-	q := r.query.Select("reloaded")
-
-	return &Workspace{
-		query: q,
-	}
-}
-
 // An installed SDK, by name.
 func (r *Workspace) SDK(name string) *WorkspaceSDK {
 	q := r.query.Select("sdk")
@@ -17236,6 +17181,25 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 }
 
+// Capture this workspace as a stable value and return its ID.
+//
+// Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+//
+// Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+//
+// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+func (r *Workspace) Sync(ctx context.Context) (*Workspace, error) {
+	q := r.query.Select("sync")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Workspace{
+		query: selectNode(q.Root(), id, "Workspace"),
+	}, nil
+}
+
 // WorkspaceTerminalsOpts contains options for Workspace.Terminals
 type WorkspaceTerminalsOpts struct {
 	// Only include terminal targets matching the specified patterns
@@ -17347,7 +17311,7 @@ type WorkspaceWithCommitsFromOpts struct {
 	MaxCommits int
 }
 
-// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
 //
 // Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
 //
@@ -17916,6 +17880,14 @@ func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Wo
 // This is a local type conversion — no GraphQL call.
 func (r *Workspace) AsNode() Node {
 	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Workspace as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Workspace) AsSyncer() Syncer {
+	return &SyncerClient{
 		query: r.query,
 	}
 }
@@ -19029,6 +19001,8 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return &Service{query: selectNode(r.query.Root(), id, "Service")}, nil
 	case "Terminal":
 		return &Terminal{query: selectNode(r.query.Root(), id, "Terminal")}, nil
+	case "Workspace":
+		return &Workspace{query: selectNode(r.query.Root(), id, "Workspace")}, nil
 	default:
 		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}

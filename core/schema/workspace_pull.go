@@ -59,9 +59,9 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 		return receiver, resolved, err
 	}
 	if !source.Self().IsValueWorkspace() {
-		return receiver, resolved, fmt.Errorf("pulling requires a frozen source workspace; call checkpoint on the source first")
+		return receiver, resolved, fmt.Errorf("pulling requires a frozen source workspace; call sync on the source first")
 	}
-	receiver, err = s.checkpoint(ctx, receiver, workspaceCheckpointArgs{})
+	receiver, err = s.freeze(ctx, receiver)
 	if err != nil {
 		return receiver, resolved, err
 	}
@@ -72,7 +72,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	if err := validateWorkspaceGitAuthor(resolved.CommitterName, resolved.CommitterEmail); err != nil {
 		return receiver, resolved, err
 	}
-	source, err = s.checkpoint(ctx, source, workspaceCheckpointArgs{})
+	source, err = s.freeze(ctx, source)
 	if err != nil {
 		return receiver, resolved, err
 	}
@@ -191,7 +191,7 @@ func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql
 		return nil, nil, head, err
 	}
 	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
-		return nil, nil, head, fmt.Errorf("pulling requires frozen workspaces; call checkpoint first")
+		return nil, nil, head, fmt.Errorf("pulling requires frozen workspaces; call sync first")
 	}
 	var base dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, parent, &base, dagql.Selector{Field: "__commitBase"}); err != nil {

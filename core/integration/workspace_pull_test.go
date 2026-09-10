@@ -66,7 +66,7 @@ func applyWorkspacePull(ctx context.Context, c *dagger.Client, receiver, source 
 func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace().Checkpoint()
+	base := syncWorkspace(ctx, t, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
 	source := base.WithNewFile("source.txt", "source").WithCommit("source commit", workspaceCommitDate).WithNewFile("ignored.txt", "source WIP")
 	receiver := base.WithNewFile("pending.txt", "receiver WIP").
 		WithMountedDirectory("mount", c.Directory().WithNewFile("mounted.txt", "mount"))
@@ -125,13 +125,13 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	git("config", "user.name", "Source")
 	git("config", "user.email", "source@example.com")
 	sourceClient := connect(ctx, t, dagger.WithWorkdir(checkout))
-	sourceID, err := sourceClient.CurrentWorkspace().Checkpoint().WithNewFile("from-source.txt", "source").WithCommit("source", workspaceCommitDate).ID(ctx)
+	sourceID, err := syncWorkspace(ctx, t, sourceClient.CurrentWorkspace()).WithNewFile("from-source.txt", "source").WithCommit("source", workspaceCommitDate).ID(ctx)
 	require.NoError(t, err)
 
 	git("config", "user.name", "Receiver")
 	git("config", "user.email", "receiver@example.com")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	base := c.CurrentWorkspace().Checkpoint()
+	base := syncWorkspace(ctx, t, c.CurrentWorkspace())
 	source := dagger.Ref[*dagger.Workspace](c, sourceID)
 	receiver := base.WithNewFile("local.txt", "local").WithCommit("local", workspaceCommitDate)
 	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
@@ -183,7 +183,7 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	base := c.CurrentWorkspace().Checkpoint()
+	base := syncWorkspace(ctx, t, c.CurrentWorkspace())
 	source := base.WithNewFile("base.txt", "source").WithCommit("conflicting", workspaceCommitDate).
 		WithNewFile("independent.txt", "independent").WithCommit("independent", workspaceCommitDate)
 	for _, dirty := range []bool{true, false} {
@@ -238,7 +238,7 @@ func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Contex
 func (WorkspaceSuite) TestWorkspacePullSelectionAndLimits(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	base := c.CurrentWorkspace().Checkpoint()
+	base := syncWorkspace(ctx, t, c.CurrentWorkspace())
 	source := base.WithNewFile("a", "a").WithCommit("a", workspaceCommitDate)
 	a, err := source.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func (WorkspaceSuite) TestWorkspacePullSelectionAndLimits(ctx context.Context, t
 	_, err = planWorkspacePull(ctx, c, c.CurrentWorkspace(), source, nil, 100)
 	require.NoError(t, err)
 	_, err = applyWorkspacePull(ctx, c, base, c.CurrentWorkspace(), nil, 100)
-	require.ErrorContains(t, err, "call checkpoint")
+	require.ErrorContains(t, err, "call sync")
 	// Public GitRef.log still rejects zero: pulling doesn't require unlimited history.
 	// The SDK omits zero-valued optional ints, so use a direct query.
 	baseID, err := base.ID(ctx)

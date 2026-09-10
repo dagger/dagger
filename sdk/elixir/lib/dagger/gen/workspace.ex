@@ -10,7 +10,7 @@ defmodule Dagger.Workspace do
   alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
-
+  @derive Dagger.Sync
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
@@ -64,34 +64,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace as a frozen value.
-
-  Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-  """
-  @spec checkpoint(t(), [
-          {:include, [String.t()]},
-          {:exclude, [String.t()]},
-          {:max_untracked_file_bytes, integer() | nil},
-          {:max_untracked_total_bytes, integer() | nil},
-          {:max_untracked_files, integer() | nil}
-        ]) :: Dagger.Workspace.t()
-  def checkpoint(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("checkpoint")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
-      |> QB.maybe_put_arg("maxUntrackedFileBytes", optional_args[:max_untracked_file_bytes])
-      |> QB.maybe_put_arg("maxUntrackedTotalBytes", optional_args[:max_untracked_total_bytes])
-      |> QB.maybe_put_arg("maxUntrackedFiles", optional_args[:max_untracked_files])
-
-    %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   Return all checks from modules loaded in the workspace.
   """
   @spec checks(t(), [
@@ -116,7 +88,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+  Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
 
   Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
   """
@@ -445,20 +417,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-  """
-  @spec reloaded(t()) :: Dagger.Workspace.t()
-  def reloaded(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("reloaded")
-
-    %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   An installed SDK, by name.
   """
   @spec sdk(t(), String.t()) :: Dagger.WorkspaceSDK.t()
@@ -563,6 +521,33 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Capture this workspace as a stable value and return its ID.
+
+  Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+
+  Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+
+  The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+  """
+  @spec sync(t()) :: {:ok, Dagger.Workspace.t()} | {:error, term()}
+  def sync(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("sync")
+
+    with {:ok, id} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       %Dagger.Workspace{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Workspace"),
+         client: workspace.client
+       }}
+    end
+  end
+
+  @doc """
   Return all terminal targets from modules loaded in the workspace.
   """
   @spec terminals(t(), [{:include, [String.t()]}]) :: Dagger.TerminalGroup.t()
@@ -646,7 +631,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+  Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
 
   Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
 

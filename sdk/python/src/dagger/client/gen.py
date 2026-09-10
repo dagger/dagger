@@ -15483,46 +15483,6 @@ class Workspace(Type):
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
-    def checkpoint(
-        self,
-        *,
-        include: list[str] | None = None,
-        exclude: list[str] | None = None,
-        max_untracked_file_bytes: int | None = None,
-        max_untracked_total_bytes: int | None = None,
-        max_untracked_files: int | None = None,
-    ) -> Self:
-        """Return this workspace as a frozen value.
-
-        Tracked changes are captured automatically; untracked paths require
-        approval. Git refs are pinned. The recipe is portable when a remote
-        can serve its base, otherwise the checkpoint is frozen for this
-        session only.
-
-        Parameters
-        ----------
-        include:
-            Include and approve matching nonignored untracked paths, relative
-            to the workspace root.
-        exclude:
-            Exclude matching paths from capture.
-        max_untracked_file_bytes:
-            Maximum size of an untracked file, in bytes.
-        max_untracked_total_bytes:
-            Maximum total size of untracked files, in bytes.
-        max_untracked_files:
-            Maximum number of untracked files.
-        """
-        _args = [
-            Arg("include", include, None),
-            Arg("exclude", exclude, None),
-            Arg("maxUntrackedFileBytes", max_untracked_file_bytes, None),
-            Arg("maxUntrackedTotalBytes", max_untracked_total_bytes, None),
-            Arg("maxUntrackedFiles", max_untracked_files, None),
-        ]
-        _ctx = self._select("checkpoint", _args)
-        return Workspace(_ctx)
-
     def checks(
         self,
         *,
@@ -15563,7 +15523,7 @@ class Workspace(Type):
         max_commits: int | None = 100,
     ) -> list["WorkspaceCommitPick"]:
         """Classify frozen source commits oldest first, as if earlier pickable
-        commits had been applied. Local receivers are checkpointed first.
+        commits had been applied. Local receivers are frozen first.
 
         Planning is bounded and fails rather than truncating. Source
         uncommitted changes are ignored. Divergent merge commits require
@@ -16041,15 +16001,6 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
-    def reloaded(self) -> Self:
-        """Return this workspace with its cached host reads invalidated, so
-        subsequent file and directory reads re-read the live host instead of a
-        snapshot cached earlier in the session.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("reloaded", _args)
-        return Workspace(_ctx)
-
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.
 
@@ -16152,6 +16103,32 @@ class Workspace(Type):
         ]
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
+
+    async def sync(self) -> Self:
+        """Capture this workspace as a stable value and return its ID.
+
+        Use the returned workspace for subsequent operations. Tracked changes
+        are captured automatically; untracked paths require interactive
+        approval. Git refs are pinned.
+
+        Syncing a stable value preserves its baseline. Sync currentWorkspace
+        again to capture later checkout changes.
+
+        The recipe is portable when a remote can serve its base; otherwise it
+        is frozen for this session only.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
 
     def terminals(
         self,
@@ -16274,9 +16251,9 @@ class Workspace(Type):
         max_commits: int | None = 100,
     ) -> Self:
         """Pull commits from a frozen workspace, preserving this workspace's
-        uncommitted changes and metadata. A local receiver is checkpointed
-        first and retains its checkout destination for export; the checkout is
-        not modified until export.
+        uncommitted changes and metadata. A local receiver is frozen first and
+        retains its checkout destination for export; the checkout is not
+        modified until export.
 
         Fast-forward when the selected commits include all new ancestors of
         their tip; otherwise cherry-pick in order with origin trailers,

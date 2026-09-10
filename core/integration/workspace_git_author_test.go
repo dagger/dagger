@@ -48,8 +48,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitConfigIdentity(ctx context.Conte
 			if tc.outside {
 				configured = configured.WithWorkdir("/tmp")
 			}
-			selection := `currentWorkspace { checkpoint { %s } }`
-			resultPath := "currentWorkspace.checkpoint"
+			selection := `currentWorkspace { %s }`
+			resultPath := "currentWorkspace"
 			if tc.value {
 				selection = fmt.Sprintf(`git(url: %q) { head { asWorkspace { %%s } } }`, repoURL)
 				resultPath = "git.head.asWorkspace"

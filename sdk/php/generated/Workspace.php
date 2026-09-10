@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
-class Workspace extends Client\AbstractObject implements Client\IdAble, Node
+class Workspace extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
@@ -49,37 +49,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace as a frozen value.
-     *
-     * Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-     */
-    public function checkpoint(
-        ?array $include = null,
-        ?array $exclude = null,
-        ?int $maxUntrackedFileBytes = null,
-        ?int $maxUntrackedTotalBytes = null,
-        ?int $maxUntrackedFiles = null,
-    ): Workspace {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checkpoint');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $exclude) {
-        $innerQueryBuilder->setArgument('exclude', $exclude);
-        }
-        if (null !== $maxUntrackedFileBytes) {
-        $innerQueryBuilder->setArgument('maxUntrackedFileBytes', $maxUntrackedFileBytes);
-        }
-        if (null !== $maxUntrackedTotalBytes) {
-        $innerQueryBuilder->setArgument('maxUntrackedTotalBytes', $maxUntrackedTotalBytes);
-        }
-        if (null !== $maxUntrackedFiles) {
-        $innerQueryBuilder->setArgument('maxUntrackedFiles', $maxUntrackedFiles);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Return all checks from modules loaded in the workspace.
      */
     public function checks(
@@ -105,7 +74,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+     * Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
      *
      * Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
      */
@@ -361,15 +330,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-     */
-    public function reloaded(): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reloaded');
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * An installed SDK, by name.
      */
     public function sdk(string $name): WorkspaceSDK
@@ -456,6 +416,22 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Capture this workspace as a stable value and return its ID.
+     *
+     * Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+     *
+     * Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+     *
+     * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+     */
+    public function sync(): Workspace
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
+    }
+
+    /**
      * Return all terminal targets from modules loaded in the workspace.
      */
     public function terminals(?array $include = null): TerminalGroup
@@ -525,7 +501,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+     * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
      *
      * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
      *

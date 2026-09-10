@@ -462,13 +462,11 @@
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::column</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The column number within the line.</p></dd><dt><a href="Dagger/Workspace.html#method_changes">
 <abbr title="Dagger\Workspace">Workspace</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace's changes, with paths relative to its working directory.</p></dd><dt><a href="Dagger/Workspace.html#method_checkpoint">
-<abbr title="Dagger\Workspace">Workspace</abbr>::checkpoint</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace as a frozen value.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
+                    <dd><p>Return this workspace's changes, with paths relative to its working directory.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_commitsFrom">
 <abbr title="Dagger\Workspace">Workspace</abbr>::commitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace cwd, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -1477,9 +1475,7 @@
 <abbr title="Dagger\Up">Up</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>Execute the service function</p></dd><dt><a href="Dagger/UpGroup.html#method_run">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/Workspace.html#method_reloaded">
-<abbr title="Dagger\Workspace">Workspace</abbr>::reloaded</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_reason">
+                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_reason">
 <abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::reason</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
                     <dd><p>Why the commit conflicts, or NONE.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
@@ -1650,7 +1646,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::search</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Searches for content matching the given regular expression or literal string.</p></dd><dt><a href="Dagger/Workspace.html#method_services">
 <abbr title="Dagger\Workspace">Workspace</abbr>::services</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_status">
+                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_sync">
+<abbr title="Dagger\Workspace">Workspace</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Capture this workspace as a stable value and return its ID.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_status">
 <abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::status</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
                     <dd><p>Whether this commit can be applied.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_steps">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::steps</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -2264,7 +2262,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withCommit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommitsFrom">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withCommitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
+                    <dd><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnvironment">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnvironment</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

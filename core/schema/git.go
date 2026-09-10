@@ -1765,7 +1765,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 
 	// Trees without .git are content-addressed independently of the ref name.
 	// Record a pinned recipe before publishing that equivalence: otherwise a
-	// later SHA-based selection (such as Workspace.checkpoint) can reuse the
+	// later SHA-based selection (such as Workspace.sync) can reuse the
 	// first writer's mutable branch recipe. Keep named refs for trees with .git,
 	// where the ref name is part of the checkout metadata and content identity.
 	ref := parent.Self()

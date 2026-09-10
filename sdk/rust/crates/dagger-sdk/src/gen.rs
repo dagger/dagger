@@ -15511,24 +15511,6 @@ pub struct WorkspaceChangesOpts {
     pub from: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceCheckpointOpts<'a> {
-    /// Exclude matching paths from capture.
-    #[builder(setter(into, strip_option), default)]
-    pub exclude: Option<Vec<&'a str>>,
-    /// Include and approve matching nonignored untracked paths, relative to the workspace root.
-    #[builder(setter(into, strip_option), default)]
-    pub include: Option<Vec<&'a str>>,
-    /// Maximum size of an untracked file, in bytes.
-    #[builder(setter(into, strip_option), default)]
-    pub max_untracked_file_bytes: Option<isize>,
-    /// Maximum number of untracked files.
-    #[builder(setter(into, strip_option), default)]
-    pub max_untracked_files: Option<isize>,
-    /// Maximum total size of untracked files, in bytes.
-    #[builder(setter(into, strip_option), default)]
-    pub max_untracked_total_bytes: Option<isize>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -15875,49 +15857,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace as a frozen value.
-    /// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn checkpoint(&self) -> Workspace {
-        let query = self.selection.select("checkpoint");
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return this workspace as a frozen value.
-    /// Tracked changes are captured automatically; untracked paths require approval. Git refs are pinned. The recipe is portable when a remote can serve its base, otherwise the checkpoint is frozen for this session only.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn checkpoint_opts<'a>(&self, opts: WorkspaceCheckpointOpts<'a>) -> Workspace {
-        let mut query = self.selection.select("checkpoint");
-        if let Some(include) = opts.include {
-            query = query.arg("include", include);
-        }
-        if let Some(exclude) = opts.exclude {
-            query = query.arg("exclude", exclude);
-        }
-        if let Some(max_untracked_file_bytes) = opts.max_untracked_file_bytes {
-            query = query.arg("maxUntrackedFileBytes", max_untracked_file_bytes);
-        }
-        if let Some(max_untracked_total_bytes) = opts.max_untracked_total_bytes {
-            query = query.arg("maxUntrackedTotalBytes", max_untracked_total_bytes);
-        }
-        if let Some(max_untracked_files) = opts.max_untracked_files {
-            query = query.arg("maxUntrackedFiles", max_untracked_files);
-        }
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Return all checks from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -15956,7 +15895,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
     /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
     ///
     /// # Arguments
@@ -15989,7 +15928,7 @@ impl Workspace {
             })
             .collect())
     }
-    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are checkpointed first.
+    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
     /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
     ///
     /// # Arguments
@@ -16352,15 +16291,6 @@ impl Workspace {
             })
             .collect())
     }
-    /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-    pub fn reloaded(&self) -> Workspace {
-        let query = self.selection.select("reloaded");
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// An installed SDK, by name.
     ///
     /// # Arguments
@@ -16508,6 +16438,23 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Capture this workspace as a stable value and return its ID.
+    /// Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+    /// Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+    /// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+    pub async fn sync(&self) -> Result<Workspace, DaggerError> {
+        let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Workspace {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Workspace"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
     /// Return all terminal targets from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -16651,7 +16598,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///
@@ -16674,7 +16621,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.
+    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
     ///
@@ -17542,6 +17489,18 @@ impl Workspace {
 impl Node for Workspace {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for Workspace {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }

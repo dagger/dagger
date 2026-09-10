@@ -69,7 +69,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	dag, err := dagger.Connect(ctx, dagger.WithWorkdir(checkout))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
-	baseline, err := checkpointWorkspace(ctx, dag)
+	baseline, err := syncWorkspace(ctx, dag)
 	require.NoError(t, err)
 	start := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline)
 	var changes idtui.SidebarSection
