@@ -518,6 +518,7 @@ defmodule Dagger.Client do
   Create a new module source instance from a source ref string
   """
   @spec module_source(t(), String.t(), [
+          {:version, String.t() | nil},
           {:ref_pin, String.t() | nil},
           {:disable_find_up, boolean() | nil},
           {:allow_not_exists, boolean() | nil},
@@ -528,6 +529,7 @@ defmodule Dagger.Client do
       client.query_builder
       |> QB.select("moduleSource")
       |> QB.put_arg("refString", ref_string)
+      |> QB.maybe_put_arg("version", optional_args[:version])
       |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
       |> QB.maybe_put_arg("disableFindUp", optional_args[:disable_find_up])
       |> QB.maybe_put_arg("allowNotExists", optional_args[:allow_not_exists])

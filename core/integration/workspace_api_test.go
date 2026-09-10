@@ -701,13 +701,13 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		initGitRepo(ctx, t, workdir)
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		out, err := hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | file .refs/deps/vendored.txt | contents`)
 		require.NoError(t, err)
 		require.Contains(t, string(out), "vendored")
 
 		// The .refs parent exists only through the mount, never on the host.
-		out, err = hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		out, err = hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | directory .refs | entries`)
 		require.NoError(t, err)
 		require.Contains(t, string(out), "deps")
@@ -720,7 +720,7 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		initGitRepo(ctx, t, workdir)
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		_, err := hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | with-new-file staged.txt "staged" | export`)
 		require.NoError(t, err)
 
@@ -781,6 +781,77 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		require.NoError(t, err)
 		paths := searchFilePaths(ctx, t, results)
 		require.Equal(t, []string{"shadowed/mounted.txt"}, paths)
+	})
+
+	t.Run("value workspace search scoped to a path existing only through a mount", func(ctx context.Context, t *testctx.T) {
+		// Regression test: .refs/deps exists in no source tree, only in the
+		// mounts tree. Passing it to ripgrep as a path operand against the
+		// source rootfs hard-errored the whole search.
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{".refs/deps"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+	})
+
+	t.Run("value workspace search scoped to source and mount paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{"src", ".refs/deps"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt", "src/hay.txt"}, paths)
+	})
+
+	t.Run("value workspace search scoped to a mount point ancestor", func(ctx context.Context, t *testctx.T) {
+		// .refs exists in the workspace view only because the mount at
+		// .refs/deps materializes its parents; scoping to it must not error.
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{".refs"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+	})
+
+	t.Run("value workspace search keeps source content under a mount ancestor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).
+			WithNewFile(".refs/local.txt", "needle in source\n").
+			Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+				Literal: true,
+				Paths:   []string{".refs"},
+			})
+		require.NoError(t, err)
+		require.Equal(t, []string{".refs/deps/vendored.txt", ".refs/local.txt"}, searchFilePaths(ctx, t, results))
+	})
+
+	t.Run("value workspace search scoped to a mounted file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := c.Directory().AsWorkspace().
+			WithMountedFile("refs/note.txt", c.Directory().WithNewFile("note.txt", "needle in mount\n").File("note.txt")).
+			Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+				Literal: true,
+				Paths:   []string{"refs/note.txt"},
+			})
+		require.NoError(t, err)
+		require.Equal(t, []string{"refs/note.txt"}, searchFilePaths(ctx, t, results))
+	})
+
+	t.Run("value workspace search still rejects nonexistent paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{"no/such/dir"},
+		})
+		require.Error(t, err, "a path missing from both the source and the mounts must still error")
 	})
 
 	t.Run("value workspace glob", func(ctx context.Context, t *testctx.T) {
@@ -869,6 +940,36 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 			require.Contains(t, paths, ".refs/deps/vendored.txt")
 			require.Contains(t, paths, "shadowed/mounted.txt")
 			require.NotContains(t, paths, "shadowed/real.txt")
+		})
+
+		t.Run("search scoped to a path existing only through a mount", func(ctx context.Context, t *testctx.T) {
+			// Regression test: .refs/deps exists only in the mounts tree, never
+			// on the host. Passing it to the client-side ripgrep as a path
+			// operand hard-errored the whole search.
+			got := mountedQuery(t, `search(pattern: "needle", literal: true, paths: [".refs/deps"]) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+		})
+
+		t.Run("search scoped to a mount point ancestor", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `search(pattern: "needle", literal: true, paths: [".refs"]) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Equal(t, []string{".refs/deps/vendored.txt"}, paths)
+		})
+
+		t.Run("search scoped to host and mount paths", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `search(pattern: "needle", literal: true, paths: ["hay.txt", ".refs/deps"]) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Equal(t, []string{".refs/deps/vendored.txt", "hay.txt"}, paths)
 		})
 
 		t.Run("glob sees mounts and shadows the host", func(ctx context.Context, t *testctx.T) {
@@ -1096,13 +1197,13 @@ source = "./demo"
 func (WorkspaceAPISuite) TestSyntheticWorkspaceModuleBuildersUseWorkspaceSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	workspaceID, err := c.Directory().
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		AsWorkspace().
 		ID(ctx)
 	require.NoError(t, err)
@@ -1177,13 +1278,13 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 
 	ws := c.CurrentWorkspace()
 	updated := ws.
-		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`).
+		WithNewFile("modules/demo/dagger.json", `{
+  "name": "demo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
+		WithNewFile("modules/demo/main.go", "package main\n\ntype Demo struct{}\n").
 		WithModule(filepath.Join(workdir, "modules", "demo"))
 
 	name, err := updated.Module("demo").Name(ctx)
@@ -1191,9 +1292,9 @@ source = "go"
 	require.Equal(t, "demo", name)
 	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger-module.toml"}, added)
+	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger.json", "modules/demo/main.go"}, added)
 
-	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger-module.toml"))
+	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger.json"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
@@ -1331,6 +1432,39 @@ engineVersion = "latest"
 	name, err := remaining[0].ModuleOriginalName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dep-b", name)
+}
+
+// A workspace-backed module records its local dependencies relative to its own
+// source root, which makes the resolved path workspace-root relative. It must
+// resolve as such even when the workspace cwd sits below the root, as it does
+// while an SDK generates a module scope.
+func (WorkspaceAPISuite) TestModuleSourceResolvesDependenciesFromWorkspaceRoot(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	for path, contents := range map[string]string{
+		"dagger.toml": "\n",
+		"a/b/app/dagger-module.toml": `name = "app"
+engineVersion = "latest"
+
+[[dependencies]]
+name = "dep"
+source = "../../../clients/dep"
+`,
+		"clients/dep/dagger-module.toml": `name = "dep"
+engineVersion = "latest"
+`,
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workdir, path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o600))
+	}
+
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "a", "b", "app")))
+	deps, err := c.CurrentWorkspace().ModuleSource(".").Dependencies(ctx)
+	require.NoError(t, err)
+	require.Len(t, deps, 1)
+	name, err := deps[0].ModuleOriginalName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dep", name)
 }
 
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesKind(ctx context.Context, t *testctx.T) {
@@ -1551,7 +1685,7 @@ source = "go"
 	require.NoError(t, err)
 	query := `query SDKReaders($from: ID!) {
   currentWorkspace {
-    withSDK(ref: "./sdk", name: "go-sdk", asSdkName: "go") {
+    withSDK(ref: "./sdk", name: "go-sdk") {
       changes(from: $from) {
         addedPaths
       }
@@ -1610,8 +1744,8 @@ source = "go"
 	require.Equal(t, []string{"dagger.toml"}, staged.Changes.AddedPaths)
 	require.Contains(t, staged.File.Contents, `[modules.go-sdk]`)
 	require.Contains(t, staged.File.Contents, `source = "sdk"`)
-	require.Contains(t, staged.File.Contents, `[modules.go-sdk.as-sdk]`)
-	require.Contains(t, staged.File.Contents, `name = "go"`)
+	require.Contains(t, staged.File.Contents, `[sdks.go]`)
+	require.Contains(t, staged.File.Contents, `module = "go-sdk"`)
 	require.Len(t, staged.SDKs, 1)
 	require.Equal(t, "go", staged.SDKs[0].Name)
 	require.Equal(t, "sdk", staged.SDKs[0].Ref)
@@ -1624,35 +1758,49 @@ source = "go"
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func (WorkspaceAPISuite) TestWorkspaceWithoutSDKUsesSDKName(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[sdks.go]
+module = "dagger-go-sdk"
+`), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	_, err := c.CurrentWorkspace().WithoutSDK("go").ID(ctx)
+	require.NoError(t, err)
+}
+
 func (WorkspaceAPISuite) TestWorkspaceSDKsHaveDistinctIdentity(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.alpha]
 source = "sdk-alpha"
 
-[modules.alpha.as-sdk]
-name = "alpha-sdk"
-
-[[modules.alpha.as-sdk.modules]]
-path = "modules/alpha"
-
-[[modules.alpha.as-sdk.clients]]
-path = "clients/alpha"
-module = "github.com/example/alpha"
-pin = "deadbeef"
-
 [modules.beta]
 source = "sdk-beta"
 
-[modules.beta.as-sdk]
-name = "beta-sdk"
+[sdks.alpha-sdk]
+module = "alpha"
 
-[[modules.beta.as-sdk.modules]]
-path = "modules/beta"
+[sdks.alpha-sdk.scopes."modules/alpha"]
+is-module = true
+name = "alpha"
 
-[[modules.beta.as-sdk.clients]]
-path = "clients/beta"
-module = "github.com/example/beta"
+[sdks.alpha-sdk.scopes."clients/alpha"]
+clients = ["github.com/example/alpha@deadbeef"]
+
+[sdks.beta-sdk]
+module = "beta"
+
+[sdks.beta-sdk.scopes."modules/beta"]
+is-module = true
+name = "beta"
+
+[sdks.beta-sdk.scopes."clients/beta"]
+clients = ["github.com/example/beta"]
 `), 0o644))
 
 	queryPath := writeQueryDoc(t, workdir, "sdk-identities.graphql", `{

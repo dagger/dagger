@@ -93,9 +93,12 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
      */
-    public function latest(): GitRef
+    public function latest(?string $version = ''): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

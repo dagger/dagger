@@ -7,6 +7,9 @@ import (
 )
 
 func TestCommandProgressDefault(t *testing.T) {
+	oldOrg := cloudOrgFlag
+	t.Cleanup(func() { cloudOrgFlag = oldOrg })
+	cloudOrgFlag = "unchanged"
 	// The session command keeps streaming plain progress for its SDK
 	// consumers, however it's spelled: bare, with global flags before the
 	// subcommand, or through the `api` group.
@@ -18,6 +21,7 @@ func TestCommandProgressDefault(t *testing.T) {
 	// the regular defaults.
 	require.Empty(t, commandProgressDefault([]string{"call"}))
 	require.Empty(t, commandProgressDefault(nil))
+	require.Equal(t, "unchanged", cloudOrgFlag, "looking up a command must not apply its flags")
 }
 
 func TestCloudOrgFlagHidden(t *testing.T) {

@@ -8,12 +8,10 @@ description: "Check shell scripts with ShellCheck."
 
 The ShellCheck module finds shell scripts in your workspace and checks them with ShellCheck, catching quoting, portability, and safety issues in CI and Dagger Cloud. Reach for it when scripts are part of the project and should be treated like code, not as untested glue. Deployment scripts, local dev scripts, and CI helpers all benefit.
 
-Official module: [dagger/shellcheck](https://github.com/dagger/shellcheck)
-
 ## Add it to your workspace
 
 ```bash
-dagger install github.com/dagger/shellcheck
+dagger module install dagger.io/shellcheck
 ```
 
 ## Run the check
@@ -27,7 +25,7 @@ dagger check shellcheck:check # run ShellCheck on discovered shell scripts
 
 ## Configure it
 
-List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
+List the current settings and their values with `dagger module settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
 
 - `exclude` (default: none) is a list of script paths to skip. Use it for vendored or generated scripts the repo does not own.
 
@@ -41,3 +39,5 @@ Keep the exclude list narrow so new scripts are checked automatically.
 ## Working with other modules
 
 This module is small and high value. It is a good default check for repos that contain deployment scripts, local dev scripts, or CI helper scripts.
+
+[source code](https://github.com/dagger/shellcheck)

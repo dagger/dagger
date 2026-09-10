@@ -487,7 +487,12 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 
 		// Even if just for --help, parsing flags is needed to clean up the
 		// args while traversing sub-commands.
-		if err := c.ParseFlags(a); err != nil {
+		parse := c.ParseFlags
+		if c == fc.cmd {
+			// PreRunE already parsed the global flags on this command.
+			parse = func(args []string) error { return parseCommandFlagsWithoutGlobals(c, args) }
+		}
+		if err := parse(a); err != nil {
 			return c.FlagErrorFunc()(c, err)
 		}
 
@@ -942,7 +947,10 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) error {
-	_, err := handleChangesetResponseAt(ctx, dag, response, changesetDispositionForAutoApply(autoApply), ".", nil)
+	_, err := handleChangesetResponseWithApply(ctx, dag, response, changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, changeset *dagger.Changeset) error {
+		_, err := changeset.Export(ctx, ".")
+		return err
+	})
 	return err
 }
 
@@ -961,33 +969,18 @@ func changesetDispositionForAutoApply(autoApply bool) changesetDisposition {
 	return changesetDispositionPrompt
 }
 
-func handleChangesetResponseWithDisposition(
-	ctx context.Context,
-	dag *dagger.Client,
-	response any,
-	disposition changesetDisposition,
-	previewOut io.Writer,
-) error {
-	_, err := handleChangesetResponseAt(ctx, dag, response, disposition, ".", previewOut)
-	return err
-}
-
-// handleChangesetResponseAt reports whether it actually applied the changeset,
-// so callers can print follow-up guidance only when files were written (not on
-// a no-op or a declined preview).
-func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, disposition changesetDisposition, exportPath string, previewOut io.Writer) (applied bool, rerr error) {
-	return handleChangesetResponseWithApply(ctx, dag, response, disposition, previewOut, func(ctx context.Context, changeset *dagger.Changeset) error {
-		_, err := changeset.Export(ctx, exportPath)
-		return err
-	})
-}
-
 func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, autoApply bool) (bool, error) {
+	return handleWorkspaceResponseWithDisposition(ctx, dag, before, workspace, changesetDispositionForAutoApply(autoApply), nil)
+}
+
+func handleWorkspaceResponseWithDisposition(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, disposition changesetDisposition, previewOut io.Writer) (bool, error) {
 	workspace, err := materializeWorkspace(ctx, dag, workspace)
 	if err != nil {
 		return false, err
 	}
-	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: before}), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
+	// Preview root-relative paths, including writes above the command directory.
+	// Export keeps the Workspace's client and host-root information.
+	return handleChangesetResponseWithApply(ctx, dag, workspace.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: before}), disposition, previewOut, func(ctx context.Context, _ *dagger.Changeset) error {
 		return workspace.Export(ctx)
 	})
 }

@@ -38,83 +38,11 @@ a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
-applies a named overlay; dagger.toml is the source of truth.
-
-Run with no subcommand to print a digest of workspace state (cwd, root,
-current remote, installed modules summary).`,
+applies a named overlay; dagger.toml is the source of truth.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
 	Args: cobra.NoArgs,
-	RunE: runWorkspaceDigest,
-}
-
-// runWorkspaceDigest prints a one-shot summary of the current workspace:
-// cwd, root, selected remote, all selectable remotes, and a brief list of
-// installed modules. Bound to bare `dagger workspace` invocation; replaces
-// the briefly-considered `dagger status` verb.
-func runWorkspaceDigest(cmd *cobra.Command, _ []string) error {
-	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
-	}, func(ctx context.Context, engineClient *client.Client) error {
-		dag := engineClient.Dagger()
-		ws := dag.CurrentWorkspace()
-		out := cmd.OutOrStdout()
-
-		cwd, err := ws.Cwd(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace cwd: %w", err)
-		}
-		address, err := ws.Address(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace address: %w", err)
-		}
-		root, err := workspaceRootFromAddress(address, cwd)
-		if err != nil {
-			return err
-		}
-		configFile, err := ws.ConfigFile(ctx)
-		if err != nil {
-			return fmt.Errorf("load workspace config file: %w", err)
-		}
-		if configFile == "" {
-			configFile = "none"
-		}
-
-		fmt.Fprintf(out, "cwd:     %s\n", cwd)
-		fmt.Fprintf(out, "root:    %s\n", root)
-		fmt.Fprintf(out, "config:  %s\n", configFile)
-
-		// Remote info — best-effort; an unconfigured remote is normal.
-		if _, remote, err := selectedRemoteWorkspaceAddress(ctx, "workspace"); err == nil && remote != "" {
-			fmt.Fprintf(out, "remote:  %s\n", remote)
-		}
-
-		// Modules summary.
-		var res struct {
-			CurrentWorkspace struct {
-				Modules []struct {
-					Name   string
-					Source string
-				}
-			}
-		}
-		if err := dag.Do(ctx, &dagger.Request{
-			Query: `query { currentWorkspace { modules { name source } } }`,
-		}, &dagger.Response{Data: &res}); err != nil {
-			return fmt.Errorf("list installed modules: %w", err)
-		}
-		mods := res.CurrentWorkspace.Modules
-		if len(mods) == 0 {
-			fmt.Fprintln(out, "modules: (none installed)")
-			return nil
-		}
-		fmt.Fprintln(out, "modules:")
-		for _, m := range mods {
-			fmt.Fprintf(out, "  %s (%s)\n", m.Name, m.Source)
-		}
-		return nil
-	})
 }
 
 var workspaceRootCmd = &cobra.Command{
@@ -235,6 +163,13 @@ func init() {
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
 
+	workspaceUpdateCmd := newWorkspaceUpdateCmd(false)
+	workspaceUpdateCmd.Short = "Refresh all workspace lockfile state"
+	workspaceUpdateCmd.Long = "Refresh all installed-module, client-target, and runtime entries in dagger.lock. Regenerate SDK client scopes unless --no-generate is set."
+	workspaceUpdateCmd.Example = `"dagger workspace update"`
+
+	workspaceCmd.AddCommand(activityCmd)
+	workspaceCmd.AddCommand(workspaceUpdateCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
@@ -560,22 +495,6 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		return err
 	}
 	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
-	return err
-}
-
-func uninstallWorkspaceSDK(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
-	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutSDK(name, dagger.WorkspaceWithoutSDKOpts{Here: here}))
-	if err != nil {
-		return err
-	}
-	configPath, err := workspaceConfigHostPath(ctx, updated)
-	if err != nil {
-		return err
-	}
-	if err := updated.Export(ctx); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(out, "Uninstalled SDK %q from %s\n", name, configPath)
 	return err
 }
 

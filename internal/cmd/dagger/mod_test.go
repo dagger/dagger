@@ -55,3 +55,25 @@ func TestEmbeddedModuleRegistryParses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, mods)
 }
+
+func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
+	all, err := loadSearchRegistry(false)
+	require.NoError(t, err)
+	sdkOnly, err := loadSearchRegistry(true)
+	require.NoError(t, err)
+
+	repos := func(entries []registryModule) []string {
+		out := make([]string, len(entries))
+		for i, entry := range entries {
+			out[i] = entry.Repo
+		}
+		return out
+	}
+	require.Contains(t, repos(all), "dagger.io/go")
+	require.Contains(t, repos(all), "dagger.io/sdk/go")
+	require.NotContains(t, repos(sdkOnly), "dagger.io/go")
+	require.Contains(t, repos(sdkOnly), "dagger.io/sdk/go")
+	for _, repo := range repos(all) {
+		require.Regexp(t, `^dagger\.io/`, repo)
+	}
+}

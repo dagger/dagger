@@ -49,6 +49,17 @@ defmodule Dagger.WorkspaceModuleSetting do
   end
 
   @doc """
+  Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+  """
+  @spec object?(t()) :: {:ok, boolean()} | {:error, term()}
+  def object?(%__MODULE__{} = workspace_module_setting) do
+    query_builder =
+      workspace_module_setting.query_builder |> QB.select("isObject")
+
+    Client.execute(workspace_module_setting.client, query_builder)
+  end
+
+  @doc """
   The setting key.
   """
   @spec key(t()) :: {:ok, String.t()} | {:error, term()}

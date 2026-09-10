@@ -394,7 +394,7 @@ func namespacedTypes(toolsets []bindingToolset) map[string]bool {
 // the report lets callers surface the renaming when composing several agents'
 // toolsets onto one LLM (hack/designs/workspace-agents.md §3).
 func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, error) {
-	srv, err := m.Server(ctx)
+	srv, err := m.baseServer(ctx)
 	if err != nil {
 		return nil, err
 	}

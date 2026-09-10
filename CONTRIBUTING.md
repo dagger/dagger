@@ -62,7 +62,7 @@ Use your local dev environment to iterate until you're ready for review.
 To run an interactive playground with all Dagger components built and integrated:
 
 ```shell
-dagger call engine-dev playground terminal
+dagger api call engine-dev playground terminal
 ```
 
 This will:
@@ -75,25 +75,25 @@ This will:
 
 #### Integration testing
 
-- Run all core tests: `dagger checks test-split:*`
-- Run available core tests: `dagger call engine-dev tests`
-- Run a specific core test (eg. `TestNamespacing` in the `TestModule` suite): `dagger call engine-dev test --pkg="./core/integration" --run="^TestModule/TestNamespacing$"`
+- Run all core tests: `dagger check test-split:*`
+- Run available core tests: `dagger api call engine-dev tests`
+- Run a specific core test (eg. `TestNamespacing` in the `TestModule` suite): `dagger api call engine-dev test --pkg="./core/integration" --run="^TestModule/TestNamespacing$"`
 - Run SDK tests: `dagger check *sdk:*test*`
 
 #### Linting
 
-To run all linters: `dagger checks *:lint`
+To run all linters: `dagger check *:lint`
 
 #### Local docs server
 
-To run a local docs server: `dagger call docs server up`
+To run a local docs server: `dagger api call docs server up`
 
 ### 4. Prepare your pull request
 
 Before submitting your pull request, follow this checklist.
 
 - Generate API docs, client bindings, and other generated files with `dagger generate`, and include the output in your git commit.
-- Call all linters: `dagger checks *:lint`
+- Call all linters: `dagger check *:lint`
 - If your change is user-facing, add a release note: run `changie new` then follow instructions. Add produced files to your commit.
 - Understand the license. All contributions are made under the Apache License 2.0 (Apache-2.0). Make sure you are willing and able to honor the terms of the license.
 - Make sure all your commits are accompanied by a [Developer Certificate of Origin (DCO)](https://developercertificate.org). You can do this with `git commit -s`. The `Signed-off-by` line must match the author's real name.

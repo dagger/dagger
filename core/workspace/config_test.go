@@ -10,6 +10,106 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConventionalSDKName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		moduleName string
+		want       string
+	}{
+		{moduleName: "dagger-go-sdk", want: "go"},
+		{moduleName: "dagger-python", want: "python"},
+		{moduleName: "typescript-sdk", want: "typescript"},
+		{moduleName: "custom", want: "custom"},
+		{moduleName: "daggersdk", want: "dagger"},
+		{moduleName: "dagger-sdk", want: "dagger-sdk"},
+		{moduleName: "daggerverse", want: "daggerverse"},
+		{moduleName: "daggerhub", want: "daggerhub"},
+	} {
+		require.Equal(t, tc.want, ConventionalSDKName(tc.moduleName), tc.moduleName)
+	}
+}
+
+func TestValidateSDKs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid providers", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk":         {Source: "github.com/dagger/go-sdk"},
+			"dagger-typescript-sdk": {Source: "github.com/dagger/typescript-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"go":         {Module: "dagger-go-sdk"},
+			"typescript": {Module: "dagger-typescript-sdk"},
+		}}
+		require.NoError(t, ValidateSDKs(cfg))
+	})
+
+	t.Run("provider must be installed", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"python": {Module: "dagger-python-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK "python" references module "dagger-python-sdk", which is not installed`)
+	})
+
+	t.Run("one SDK per provider", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"go":     {Module: "dagger-go-sdk"},
+			"golang": {Module: "dagger-go-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `module "dagger-go-sdk" provides multiple SDKs: "go" and "golang"`)
+	})
+
+	t.Run("SDK names do not collide with provider lookup names", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+			"other-sdk":     {Source: "github.com/acme/other-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"go":            {Module: "dagger-go-sdk"},
+			"dagger-go-sdk": {Module: "other-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK lookup name "dagger-go-sdk" is ambiguous: SDKs "dagger-go-sdk" and "go" both resolve it`)
+	})
+
+	t.Run("SDK name must be a single command token", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"my sdk": {Module: "dagger-go-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK name "my sdk" must be a single command token`)
+	})
+
+	t.Run("SDK name must not look like a flag", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+		}, SDKs: map[string]SDKEntry{
+			"--go": {Module: "dagger-go-sdk"},
+		}}
+		err := ValidateSDKs(cfg)
+		require.EqualError(t, err, `SDK name "--go" must not start with '-'`)
+	})
+}
+
+func TestUpdateConfigBytesRejectsMultipleSDKsPerProvider(t *testing.T) {
+	t.Parallel()
+
+	_, err := UpdateConfigBytes(nil, &Config{Modules: map[string]ModuleEntry{
+		"dagger-go-sdk": {Source: "github.com/dagger/go-sdk"},
+	}, SDKs: map[string]SDKEntry{
+		"go":     {Module: "dagger-go-sdk"},
+		"golang": {Module: "dagger-go-sdk"},
+	}})
+	require.EqualError(t, err, `module "dagger-go-sdk" provides multiple SDKs: "go" and "golang"`)
+}
+
 func TestParseConfig(t *testing.T) {
 	t.Parallel()
 
@@ -20,9 +120,6 @@ defaults_from_dotenv = true
 source = "modules/greeter"
 entrypoint = true
 legacy-default-path = true
-
-[modules.greeter.as-sdk]
-name = "go"
 
 [modules.greeter.settings]
 greeting = "hello"
@@ -40,12 +137,12 @@ greeting = "hola"
 		Source:            "modules/greeter",
 		Entrypoint:        true,
 		LegacyDefaultPath: true,
-		AsSDK:             &ModuleAsSDK{Name: "go"},
 		Settings: map[string]any{
 			"enabled":  true,
 			"greeting": "hello",
 		},
 	}, cfg.Modules["greeter"])
+	require.Empty(t, cfg.SDKs)
 	require.Equal(t, EnvOverlay{
 		Modules: map[string]EnvModuleOverlay{
 			"greeter": {
@@ -73,13 +170,15 @@ func TestSerializeConfig(t *testing.T) {
 				Source:            "modules/greeter",
 				Entrypoint:        true,
 				LegacyDefaultPath: true,
-				AsSDK:             &ModuleAsSDK{Name: "go"},
 				Settings: map[string]any{
 					"tags":     []string{"main", "develop"},
 					"greeting": "hello",
 					"enabled":  true,
 				},
 			},
+		},
+		SDKs: map[string]SDKEntry{
+			"go": {Module: "greeter"},
 		},
 		Env: map[string]EnvOverlay{
 			"local": {},
@@ -110,11 +209,11 @@ enabled = true
 greeting = "hello"
 tags = ["main", "develop"]
 
-[modules.greeter.as-sdk]
-name = "go"
-
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
+
+[sdks.go]
+module = "greeter"
 
 [env.ci.modules.greeter.settings]
 enabled = false
@@ -528,9 +627,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.up.skip", "redis, infra:database")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.as-sdk.name", "go")
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "env.dev.modules.greeter.as-sdk.name", "go-dev")
+		data, err = WriteConfigValue(data, "sdks.go.module", "greeter")
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
@@ -538,8 +635,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
 		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
-		require.Equal(t, &ModuleAsSDK{Name: "go"}, cfg.Modules["greeter"].AsSDK)
-		require.Equal(t, &ModuleAsSDK{Name: "go-dev"}, cfg.Env["dev"].Modules["greeter"].AsSDK)
+		require.Equal(t, SDKEntry{Module: "greeter"}, cfg.SDKs["go"])
 	})
 
 	t.Run("writes quoted path segments", func(t *testing.T) {
@@ -573,13 +669,13 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: as-sdk, check, entrypoint, generate, legacy-default-path, pin, settings, source, up")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, pin, settings, source, up")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
 
 		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: as-sdk, pin, settings, source")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: pin, settings, source")
 	})
 
 	t.Run("preserves comments and section layout", func(t *testing.T) {
@@ -917,39 +1013,6 @@ func TestApplyEnvOverlay(t *testing.T) {
 			Settings: map[string]any{"theme": "dark"},
 		}, applied.Modules["editor"])
 	})
-
-	t.Run("env SDK role replaces the base role", func(t *testing.T) {
-		t.Parallel()
-
-		base := &Config{
-			Modules: map[string]ModuleEntry{
-				"go-sdk": {
-					Source: "github.com/dagger/go-sdk",
-					AsSDK: &ModuleAsSDK{
-						Name:    "go",
-						Modules: []SDKManagedModule{{Path: ".dagger/modules/base"}},
-					},
-				},
-			},
-			Env: map[string]EnvOverlay{
-				"dev": {
-					Modules: map[string]EnvModuleOverlay{
-						"go-sdk": {
-							AsSDK: &ModuleAsSDK{
-								Name:    "go",
-								Modules: []SDKManagedModule{{Path: ".dagger/modules/dev"}},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		applied, err := ApplyEnvOverlay(base, "dev")
-		require.NoError(t, err)
-		require.Equal(t, []SDKManagedModule{{Path: ".dagger/modules/dev"}}, applied.Modules["go-sdk"].AsSDK.Modules)
-		require.Equal(t, []SDKManagedModule{{Path: ".dagger/modules/base"}}, base.Modules["go-sdk"].AsSDK.Modules)
-	})
 }
 
 func TestResolveModuleEntrySource(t *testing.T) {
@@ -1009,7 +1072,7 @@ func TestSDKManagedPaths(t *testing.T) {
 	t.Run("treats every entry as a path, never a ref", func(t *testing.T) {
 		t.Parallel()
 		// ResolveModuleEntrySource would hand this back untouched, reading the
-		// dot as a domain; as-sdk entries are always paths.
+		// dot as a domain; SDK scope entries are always paths.
 		require.Equal(t, "apps/demo/modules/v1.2", mustResolve(t, "apps/demo", "modules/v1.2"))
 	})
 
@@ -1029,51 +1092,6 @@ func TestSDKManagedPaths(t *testing.T) {
 				"round trip through %q", tc.configDir)
 		}
 	})
-}
-
-// A hand-written root-anchored as-sdk entry is legal config; editing the file
-// around it must not restate it in the engine's own spelling.
-func TestRootAnchoredAsSDKPathRoundTrip(t *testing.T) {
-	data := []byte(`[modules.init-fixture]
-source = "sdk/init-fixture"
-
-[modules.init-fixture.as-sdk]
-name = "fixture"
-
-[[modules.init-fixture.as-sdk.modules]]
-path = "/tools/mod"
-
-[[modules.init-fixture.as-sdk.clients]]
-path = "/clients/one"
-module = "/sdk/init-fixture"
-`)
-	cfg, err := ParseConfig(data)
-	require.NoError(t, err)
-
-	entry := cfg.Modules["init-fixture"]
-	require.Equal(t, "/tools/mod", entry.AsSDK.Modules[0].Path)
-
-	// resolution, from a config in a subdirectory
-	got, err := ResolveSDKManagedPath("common", entry.AsSDK.Modules[0].Path)
-	require.NoError(t, err)
-	require.Equal(t, "tools/mod", got)
-	got, err = ResolveSDKManagedPath("common", entry.AsSDK.Clients[0].Path)
-	require.NoError(t, err)
-	require.Equal(t, "clients/one", got)
-
-	// now let the engine add an entry and rewrite the file
-	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: ".dagger/modules/new"})
-	cfg.Modules["init-fixture"] = entry
-	out, err := UpdateConfigBytes(data, cfg)
-	require.NoError(t, err)
-	t.Logf("rewritten config:\n%s", out)
-
-	reparsed, err := ParseConfig(out)
-	require.NoError(t, err)
-	re := reparsed.Modules["init-fixture"]
-	require.Equal(t, "/tools/mod", re.AsSDK.Modules[0].Path, "hand-written spelling must survive")
-	require.Equal(t, "/clients/one", re.AsSDK.Clients[0].Path)
-	require.Equal(t, "/sdk/init-fixture", re.AsSDK.Clients[0].Module)
 }
 
 func TestDeleteConfigValue(t *testing.T) {
@@ -1232,7 +1250,7 @@ entrypoint = false
 		require.ErrorContains(t, err, "cannot unset modules.greeter.source")
 
 		_, err = DeleteConfigValue(data, "modules.greeter")
-		require.ErrorContains(t, err, `cannot unset "modules.greeter" directly; use dagger uninstall to remove a module`)
+		require.ErrorContains(t, err, `cannot unset "modules.greeter" directly; use dagger module uninstall to remove a module`)
 
 		_, err = DeleteConfigValue(data, "modules.greeter.settings")
 		require.ErrorContains(t, err, `cannot unset "modules.greeter.settings" directly`)
@@ -1240,8 +1258,8 @@ entrypoint = false
 		_, err = DeleteConfigValue(data, "modules.greeter.badfield")
 		require.ErrorContains(t, err, "unknown config key")
 
-		_, err = DeleteConfigValue(data, "modules.greeter.as-sdk.name")
-		require.ErrorContains(t, err, "SDK state is managed by dagger install")
+		_, err = DeleteConfigValue(data, "sdks.go.module")
+		require.ErrorContains(t, err, "unset the containing SDK entry")
 
 		portsData := []byte("[ports.3000]\nbackendService = \"web\"\nbackendPort = 8080\n")
 		_, err = DeleteConfigValue(portsData, "ports.3000.backendService")

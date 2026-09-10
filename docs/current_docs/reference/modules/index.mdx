@@ -10,10 +10,10 @@ These guides walk through setting up the official Dagger modules in your project
 
 Reach for a module when you want a real tool that runs the same way locally, in CI, and in Dagger Cloud. Most expose checks, generators, or repair workflows, so the work stays consistent everywhere it runs.
 
-Add any module to your project with `dagger install`:
+Add any module to your project with `dagger module install`:
 
 ```bash
-dagger install github.com/dagger/go
+dagger module install dagger.io/go
 ```
 
 Each guide explains what the module is for, which checks or generators to reach for first, the settings that tune it, and how it fits into your project.
@@ -21,14 +21,14 @@ Each guide explains what the module is for, which checks or generators to reach 
 | Guide | What it covers |
 | --- | --- |
 | [Go](./go.mdx) | Test, lint, and run generators across every Go module in a workspace. |
-| [Deno](./deno.mdx) | Test, lint, format, and type-check every Deno project in a workspace. |
-| [Pytest](./pytest.mdx) | Run Python tests with Pytest. |
-| [Jest](./jest.mdx) | Run Jest tests for JavaScript and TypeScript. |
-| [Vitest](./vitest.mdx) | Run Vitest tests for JavaScript and TypeScript. |
-| [Playwright](./playwright.mdx) | Run Playwright browser tests, wired to the service under test. |
-| [ESLint](./eslint.mdx) | Lint JavaScript and TypeScript source. |
-| [Prettier](./prettier.mdx) | Check and rewrite source formatting. |
-| [Biome](./biomejs.mdx) | Lint and format JavaScript and TypeScript with one tool. |
+| [Deno](./js/deno.mdx) | Test, lint, format, and type-check every Deno project in a workspace. |
+| [Jest](./js/jest.mdx) | Run Jest tests for JavaScript and TypeScript. |
+| [Vitest](./js/vitest.mdx) | Run Vitest tests for JavaScript and TypeScript. |
+| [Playwright](./js/playwright.mdx) | Run Playwright browser tests, wired to the service under test. |
+| [ESLint](./js/eslint.mdx) | Lint JavaScript and TypeScript source. |
+| [Prettier](./js/prettier.mdx) | Check and rewrite source formatting. |
+| [Biome](./js/biome.mdx) | Lint and format JavaScript and TypeScript with one tool. |
+| [Pytest](./python/pytest.mdx) | Run Python tests with Pytest. |
 | [ShellCheck](./shellcheck.mdx) | Check shell scripts. |
-| [PSScriptAnalyzer](./psscriptanalyzer.mdx) | Check PowerShell scripts. |
-| [Helm](./helm.mdx) | Lint Helm charts and check rendered templates. |
+| [PSScriptAnalyzer](./dotnet/PsScriptAnalyzer.mdx) | Check PowerShell scripts. |
+| [Helm](./kubernetes/helm.mdx) | Lint Helm charts and check rendered templates. |

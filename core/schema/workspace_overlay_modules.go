@@ -22,6 +22,33 @@ type overlayModule struct {
 	mod  dagql.ObjectResult[*core.Module]
 }
 
+// workspacePrimaryModules loads frozen workspaces from their own tree. A
+// value has no client module registry and must not borrow the caller's modules.
+func (s *workspaceSchema) workspacePrimaryModules(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	include []string,
+	bestEffort bool,
+) ([]dagql.ObjectResult[*core.Module], []core.ModuleLoadFailure, error) {
+	if parent.Self().IsValueWorkspace() {
+		loaded, failures, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, bestEffort)
+		if err != nil {
+			return nil, nil, err
+		}
+		mods := make([]dagql.ObjectResult[*core.Module], len(loaded))
+		for i, mod := range loaded {
+			mods[i] = mod.mod
+		}
+		return mods, failures, nil
+	}
+	failures, err := ensureWorkspaceModulesLoaded(ctx, include, bestEffort)
+	if err != nil {
+		return nil, nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	return mods, failures, err
+}
+
 // workspaceOverlayModules loads the workspace modules that the workspace's
 // pending overlay affects, resolving their source through the overlay instead
 // of the host checkout.
@@ -40,50 +67,63 @@ type overlayModule struct {
 // Only entries the overlay actually touches are re-resolved; everything else
 // keeps using the served module, so a clean workspace (or one whose edits are
 // unrelated to any module) behaves exactly as before.
+// Frozen value workspaces have no served modules: all their entries are loaded
+// from their own tree, even without an overlay.
 //
-// Known limitations, deliberate for now:
+// Known limitations of the live overlay path, deliberate for now:
 //   - an entry REMOVED from dagger.toml in the overlay still resolves through
 //     the served module: this only ever adds or replaces.
-//   - legacy +defaultPath entries (entry.LegacyDefaultPath) are left to the
-//     served path, whose host-ref based context resolution has no overlay
-//     equivalent.
+//   - for live workspaces, legacy +defaultPath entries (entry.LegacyDefaultPath)
+//     are left to the served path, whose host-ref based context resolution has
+//     no overlay equivalent. Value workspaces load them here, with their own
+//     tree as the +defaultPath context (see workspaceOverlayContextSource).
 func (s *workspaceSchema) workspaceOverlayModules(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]overlayModule, error) {
+	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, false)
+	return loaded, err
+}
+
+func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	include []string,
+	bestEffort bool,
+) ([]overlayModule, []core.ModuleLoadFailure, error) {
 	ws := parent.Self()
 	if ws == nil || ws.ConfigFile == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
-	if _, ok := ws.OverlayChanges(); !ok {
-		return nil, nil
+	if _, ok := ws.OverlayChanges(); !ok && !ws.IsValueWorkspace() {
+		return nil, nil, nil
 	}
 
 	configFile, err := workspaceConfigFile(ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// A config edit can add, remove or repoint any entry, so every entry is
 	// suspect; otherwise only the entries whose source tree was edited are.
-	configTouched := ws.OverlayPathTouched(configFile)
+	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
 		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(cfg.Modules) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	names := make([]string, 0, len(cfg.Modules))
@@ -92,13 +132,21 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	}
 	slices.Sort(names)
 	wanted := overlayIncludedModuleNames(names, include)
+	sdkProviders := make(map[string]bool, len(cfg.SDKs))
+	for _, sdk := range cfg.SDKs {
+		sdkProviders[sdk.Module] = true
+	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var loaded []overlayModule
+	var failures []core.ModuleLoadFailure
+	// The +defaultPath context for legacy entries, resolved lazily so
+	// workspaces with no such entries never materialize their root tree.
+	var legacyContextSource dagql.Optional[core.ModuleSourceID]
 	for _, name := range names {
 		if wanted != nil {
 			if _, ok := wanted[canonicalOverlayModuleName(name)]; !ok {
@@ -106,44 +154,125 @@ func (s *workspaceSchema) workspaceOverlayModules(
 			}
 		}
 		entry := cfg.Modules[name]
-		// A built-in SDK install entry carries [as-sdk] authoring metadata, not
-		// a loadable module ref (see workspaceConfigPendingModules).
-		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+		// A built-in SDK provider has a runtime name as its source, not a
+		// loadable module ref (see workspaceConfigPendingModules).
+		if sdkProviders[name] && coresdk.IsBuiltinSDKName(entry.Source) {
 			continue
 		}
-		if entry.LegacyDefaultPath {
+		// Legacy +defaultPath entries resolve their context from the
+		// workspace root. A live workspace leaves them to the served path,
+		// whose host-ref based context resolution has no overlay equivalent;
+		// a value workspace has no served path at all, so its own tree is
+		// supplied as the context instead.
+		if entry.LegacyDefaultPath && !ws.IsValueWorkspace() {
 			continue
 		}
 
-		src, relevant, err := s.workspaceOverlayModuleSource(ctx, srv, parent, entry, configDir, configTouched)
+		mod, relevant, err := func() (mod dagql.ObjectResult[*core.Module], _ bool, _ error) {
+			src, relevant, err := s.workspaceOverlayModuleSource(ctx, srv, parent, entry, configDir, configTouched)
+			if err != nil {
+				return mod, false, fmt.Errorf("module %q: %w", name, err)
+			}
+			if !relevant {
+				return mod, false, nil
+			}
+
+			mod, err = s.workspaceOverlayAsModule(ctx, srv, parent, src, name, entry, cfg.DefaultsFromDotEnv, &legacyContextSource)
+			return mod, true, err
+		}()
 		if err != nil {
-			return nil, fmt.Errorf("module %q: %w", name, err)
+			if !bestEffort {
+				return nil, nil, err
+			}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err)}
+			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
+			}
+			failures = append(failures, failure)
+			continue
 		}
 		if !relevant {
 			continue
 		}
-
-		asModuleArgs, err := BuildLegacyAsModuleArgs(
-			name,
-			false, // legacy +defaultPath entries are skipped above
-			"", "",
-			entry.Settings,
-			cfg.DefaultsFromDotEnv,
-			nil,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("module %q: %w", name, err)
-		}
-
-		var mod dagql.ObjectResult[*core.Module]
-		if err := srv.Select(ctx, src, &mod,
-			dagql.Selector{Field: "asModule", Args: asModuleArgs},
-		); err != nil {
-			return nil, fmt.Errorf("module %q: load from workspace overlay: %w", name, err)
-		}
 		loaded = append(loaded, overlayModule{name: name, mod: mod})
 	}
-	return loaded, nil
+	return loaded, failures, nil
+}
+
+// workspaceOverlayAsModule applies workspace settings and the shared legacy
+// context before instantiating a module from its resolved source.
+func (s *workspaceSchema) workspaceOverlayAsModule(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	src dagql.ObjectResult[*core.ModuleSource],
+	name string,
+	entry workspace.ModuleEntry,
+	defaultsFromDotEnv bool,
+	legacyContextSource *dagql.Optional[core.ModuleSourceID],
+) (mod dagql.ObjectResult[*core.Module], _ error) {
+	asModuleArgs, err := BuildLegacyAsModuleArgs(
+		name,
+		entry.LegacyDefaultPath,
+		"", "",
+		entry.Settings,
+		defaultsFromDotEnv,
+		nil,
+	)
+	if err != nil {
+		return mod, fmt.Errorf("module %q: %w", name, err)
+	}
+	if entry.LegacyDefaultPath {
+		if !legacyContextSource.Valid {
+			*legacyContextSource, err = s.workspaceOverlayContextSource(ctx, srv, parent)
+			if err != nil {
+				return mod, fmt.Errorf("module %q: workspace +defaultPath context: %w", name, err)
+			}
+		}
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "defaultPathContextSource", Value: *legacyContextSource,
+		})
+	}
+
+	if err := srv.Select(ctx, src, &mod,
+		dagql.Selector{Field: "asModule", Args: asModuleArgs},
+	); err != nil {
+		return mod, fmt.Errorf("module %q: load from workspace overlay: %w", name, err)
+	}
+	return mod, nil
+}
+
+// workspaceOverlayContextSource resolves the workspace root tree — overlay
+// included — as a context-only module source for legacy +defaultPath entries.
+// The root holds a Workspace config (dagger.toml), not a Module config, so the
+// source tolerates the missing dagger config file. Resolving from the tree
+// rather than a ref string keeps engine-side commits and pending overlay edits
+// in the context: a frozen workspace's history may exist nowhere a ref string
+// could fetch from.
+func (s *workspaceSchema) workspaceOverlayContextSource(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+) (none dagql.Optional[core.ModuleSourceID], _ error) {
+	root, err := s.workspaceOverlayRootfs(ctx, parent.Self())
+	if err != nil {
+		return none, err
+	}
+	var src dagql.ObjectResult[*core.ModuleSource]
+	if err := srv.Select(ctx, root, &src, dagql.Selector{
+		Field: "asModuleSource",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(".")},
+			{Name: "allowNotExists", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return none, err
+	}
+	id, err := src.ID()
+	if err != nil {
+		return none, err
+	}
+	return dagql.Opt(dagql.NewID[*core.ModuleSource](id)), nil
 }
 
 // workspaceOverlayModuleSource resolves one config entry's module source, and
@@ -181,6 +310,9 @@ func (s *workspaceSchema) workspaceOverlayModuleSource(
 		}
 		if !configTouched {
 			return src, false, nil
+		}
+		if ws.IsValueWorkspace() {
+			return src, false, fmt.Errorf("module source %q is outside the frozen workspace", resolved)
 		}
 		return s.rootModuleSource(ctx, srv, resolved)
 	}

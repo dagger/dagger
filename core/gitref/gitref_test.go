@@ -54,6 +54,78 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			urlStr: "https://github.com/dagger/python#v1.2:ruff",
+			want: Parsed{
+				ModPath:        "github.com/dagger/python",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/dagger/python", Repo: "https://github.com/dagger/python"},
+				RepoRootSubdir: "ruff",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr: "https://github.com/dagger/python#v1.2",
+			want: Parsed{
+				ModPath:        "github.com/dagger/python",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/dagger/python", Repo: "https://github.com/dagger/python"},
+				RepoRootSubdir: "/",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr: "https://github.com/dagger/python#v1.2:.",
+			want: Parsed{
+				ModPath:        "github.com/dagger/python",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "github.com/dagger/python", Repo: "https://github.com/dagger/python"},
+				RepoRootSubdir: ".",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr:          "https://github.com/dagger/python#",
+			wantErrContains: "requires a ref after #",
+		},
+		{
+			urlStr:          "https://github.com/dagger/python#main:",
+			wantErrContains: "empty subpath",
+		},
+		{
+			urlStr: "https://git.example.com/team/repo#main:src",
+			want: Parsed{
+				ModPath:        "git.example.com/team/repo",
+				ModVersion:     "main",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "git.example.com/team/repo", Repo: "https://git.example.com/team/repo"},
+				RepoRootSubdir: "src",
+				Scheme:         SchemeHTTPS,
+			},
+		},
+		{
+			urlStr: "git://git.example.com/team/repo#main:src",
+			want: Parsed{
+				ModPath:        "git.example.com/team/repo",
+				ModVersion:     "main",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "git.example.com/team/repo", Repo: "https://git.example.com/team/repo"},
+				RepoRootSubdir: "src",
+				Scheme:         SchemeGit,
+			},
+		},
+		{
+			urlStr:          "https://github.com/dagger/python/ruff#main:docs",
+			wantErrContains: "repository root is \"github.com/dagger/python\"",
+		},
+		{
 			urlStr: "http://github.com/shykes/daggerverse.git/ci",
 			want: Parsed{
 				ModPath:        "github.com/shykes/daggerverse.git/ci",
@@ -112,6 +184,8 @@ func TestParse(t *testing.T) {
 				Scheme:         SchemeSSH,
 				SourceUser:     "user",
 				ModVersion:     "version",
+				HasVersion:     true,
+				Selector:       ModuleVersionSelector,
 			},
 		},
 		{
@@ -123,6 +197,8 @@ func TestParse(t *testing.T) {
 				Scheme:         SchemeSSH,
 				SourceUser:     "",
 				ModVersion:     "version",
+				HasVersion:     true,
+				Selector:       ModuleVersionSelector,
 			},
 		},
 
@@ -212,6 +288,7 @@ func TestParse(t *testing.T) {
 				RepoRootSubdir: "ci",
 				HasVersion:     true,
 				ModVersion:     "version",
+				Selector:       ModuleVersionSelector,
 			},
 		},
 		{
@@ -223,6 +300,7 @@ func TestParse(t *testing.T) {
 				RepoRootSubdir: "ci",
 				HasVersion:     true,
 				ModVersion:     "version",
+				Selector:       ModuleVersionSelector,
 			},
 		},
 		// Azure ref parsing
@@ -278,6 +356,9 @@ func TestParse(t *testing.T) {
 			require.Equal(t, tc.want.RepoRootSubdir, parsed.RepoRootSubdir)
 			require.Equal(t, tc.want.Scheme, parsed.Scheme)
 			require.Equal(t, tc.want.SourceUser, parsed.SourceUser)
+			require.Equal(t, tc.want.ModVersion, parsed.ModVersion)
+			require.Equal(t, tc.want.HasVersion, parsed.HasVersion)
+			require.Equal(t, tc.want.Selector, parsed.Selector)
 
 			if tc.want.SourceCloneRef != "" {
 				require.Equal(t, tc.want.SourceCloneRef, parsed.SourceCloneRef)

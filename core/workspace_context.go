@@ -138,14 +138,11 @@ func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.Input
 	return val, true
 }
 
-// workspaceClientContext switches ctx to the Workspace's owning client so that
-// client-scoped resolvers — CurrentServedDeps, EnsureWorkspaceModules — resolve
-// against the workspace's own served modules rather than whichever client is
-// currently executing. Synthetic/value workspaces have no owning client, so ctx
-// is returned unchanged and resolution falls back to the current client.
+// workspaceClientContext switches ctx to a live Workspace's owning client so
+// client-scoped resolvers use that client's served modules. Callers handle
+// value workspaces separately because they have no owning client.
 //
-// This mirrors core/schema's withWorkspaceClientContext, reimplemented here so
-// the LLM's schema derivation ([WorkspaceServedSchema]) needs no core→schema
+// This mirrors core/schema's withWorkspaceClientContext without a core→schema
 // import.
 func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
@@ -162,33 +159,10 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
-// WorkspaceServedSchema returns the stable served GraphQL schema for a
-// Workspace. Pending overlays are resolved only by explicit agent
-// recomposition; bound object tools retain the schema that defined them.
-func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*dagql.Server, error) {
-	wsCtx, err := WorkspaceServedContext(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	deps, err := query.CurrentServedDeps(wsCtx)
-	if err != nil {
-		return nil, fmt.Errorf("workspace served deps: %w", err)
-	}
-	return deps.Schema(wsCtx)
-}
-
-// WorkspaceServedContext switches ctx to the Workspace's owning client and
-// forces its served modules to load, returning the switched context. Under this
-// context the client-scoped resolvers (CurrentServedDeps, currentTypeDefs,
-// currentModule) see the workspace's OWN served schema — the same switch
-// [WorkspaceServedSchema] makes for the schema server, exposed separately so
-// callers that resolve those root fields directly (e.g. the LLM's inspect tool
-// enumerating module entrypoints) resolve them against the same workspace.
-func WorkspaceServedContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
+// loadWorkspaceOwnerContext switches to a live Workspace's owning client and
+// loads its served modules. MCP.baseServer calls this only for live workspaces;
+// value workspaces use core directly and never load the caller's modules.
+func loadWorkspaceOwnerContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
 	wsCtx, err := workspaceClientContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err

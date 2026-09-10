@@ -12,12 +12,13 @@ working docs for the individual pieces (the LLM object-tools proposal, the
 The LLM operates on the same `core.Workspace` a CLI user sees — not a separate
 I/O construct:
 
-- `LLM.withWorkspace` / `LLM.workspace` bind the workspace; `Query.llm` seeds
-  the client's current workspace by default, so every LLM starts bound.
-- The **schema the model sees derives from the bound workspace**
-  (`WorkspaceServedSchema`, `core/workspace_context.go`): the workspace's served
-  modules, exactly what the Dagger CLI would serve for that workspace — not the
-  outer client's schema.
+- `LLM.withWorkspace` / `LLM.workspace` bind the workspace explicitly.
+  `Query.llm` starts unbound; the CLI and agent composition select a workspace.
+- `MCP.baseServer` (`core/mcp.go`) selects the **base schema for core tools and
+  dispatch**: the current client's served modules when unbound, the owning
+  client's served modules for a live workspace, or just core for a value
+  workspace. Value-workspace modules load from their trees during explicit
+  agent composition. Bound object tools retain their own defining schemas.
 - The LLM's edits stage into the workspace's in-memory **overlay**
   (`Workspace.withChanges` etc., from the workspace overlay & export branch); a
   single `Workspace.export` writes the accumulated diff to the local checkout.

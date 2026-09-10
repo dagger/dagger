@@ -216,7 +216,7 @@
                     <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_latest">latest</a>()
+                    <a href="#method_latest">latest</a>(string|null $version = &#039;&#039;)
         
                                             <p><p>Return the latest stable release tag, falling back to HEAD when no release exists.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -659,7 +659,7 @@
                     <h3 id="method_latest">
         <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
-    <strong>latest</strong>()
+    <strong>latest</strong>(string|null $version = &#039;&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -670,6 +670,16 @@
                             <p><p>Return the latest stable release tag, falling back to HEAD when no release exists.</p></p>                <p><p>Release selection accepts an optional &quot;v&quot; prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.</p></p>        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$version</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -689,7 +699,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 105</div>
+        <div class="location">at line 108</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>ref</strong>(string $name)
         </code>
@@ -731,7 +741,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tag">
-        <div class="location">at line 115</div>
+        <div class="location">at line 118</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>tag</strong>(string $name)
         </code>
@@ -773,7 +783,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tags">
-        <div class="location">at line 125</div>
+        <div class="location">at line 128</div>
         <code>                    array
     <strong>tags</strong>(array|null $patterns = null)
         </code>
@@ -815,7 +825,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uncommitted">
-        <div class="location">at line 137</div>
+        <div class="location">at line 140</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>uncommitted</strong>()
         </code>
@@ -847,7 +857,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_url">
-        <div class="location">at line 146</div>
+        <div class="location">at line 149</div>
         <code>                    string
     <strong>url</strong>()
         </code>
@@ -879,7 +889,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withBundle">
-        <div class="location">at line 155</div>
+        <div class="location">at line 158</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>withBundle</strong>(<a href="../Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> $bundle, string|null $prerequisiteRef = &#039;&#039;)
         </code>

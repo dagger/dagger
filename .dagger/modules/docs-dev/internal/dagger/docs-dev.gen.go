@@ -211,10 +211,10 @@ func (r *DocsDev) RenameVersion(from string, to string) *Changeset {
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Container {
+func (r *DocsDev) Server() *Service {
 	q := r.query.Select("server")
 
-	return &Container{
+	return &Service{
 		query: q,
 	}
 }

@@ -1,0 +1,7 @@
+{
+  "name": "module-max-workspace-writer",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}

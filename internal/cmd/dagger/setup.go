@@ -428,9 +428,10 @@ const emptyWorkspaceSetupHint = `No workspace loaded here yet — nothing to mig
 
 To get started:
 
-- Install a published module as a dependency: dagger install <module>
-- Install an SDK to author your own: dagger sdk search
-- Create a new module after installing an SDK: dagger module init <sdk> <name>
+- Install a published module as a dependency: dagger module install <module>
+- Find an SDK module: dagger module search <sdk>
+- Install the SDK module: dagger module install <sdk-module>
+- Create a new module: dagger module init <sdk>
 `
 
 // setupStepMigrate reports whether a migration was applied (which routes setup
@@ -596,13 +597,18 @@ func setupResolveMigratedSDKs(ctx context.Context, dag *dagger.Client, migratedC
 
 	fixes := planMigratedSDKFixups(cfg)
 	if len(fixes) > 0 {
-		updated := ws
-		for _, fix := range fixes {
-			updated = updated.
-				WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref).
-				WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
+		if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+			return err
 		}
-		if err := updated.Export(ctx); err != nil {
+		updatedConfig, err := workspace.UpdateConfigBytes([]byte(raw), cfg)
+		if err != nil {
+			return err
+		}
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return err
+		}
+		if err := ws.WithNewFile(configFile, string(updatedConfig)).Export(ctx); err != nil {
 			return err
 		}
 		for _, fix := range fixes {
@@ -645,14 +651,8 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	if len(fixes) == 0 {
 		return nil
 	}
-	for _, fix := range fixes {
-		entry := cfg.Modules[fix.ModuleName]
-		entry.Source = fix.Ref
-		if entry.AsSDK == nil {
-			entry.AsSDK = &workspace.ModuleAsSDK{}
-		}
-		entry.AsSDK.Name = fix.SDKName
-		cfg.Modules[fix.ModuleName] = entry
+	if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
+		return err
 	}
 	updated, err := workspace.UpdateConfigBytes(data, cfg)
 	if err != nil {
@@ -663,6 +663,25 @@ func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
 	}
 	for _, fix := range fixes {
 		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
+	}
+	return nil
+}
+
+func applyMigratedSDKFixups(cfg *workspace.Config, fixes []migratedSDKFixup) error {
+	for _, fix := range fixes {
+		entry := cfg.Modules[fix.ModuleName]
+		entry.Source = fix.Ref
+		cfg.Modules[fix.ModuleName] = entry
+
+		if fix.CurrentSDKName == fix.SDKName {
+			continue
+		}
+		if _, exists := cfg.SDKs[fix.SDKName]; exists {
+			return fmt.Errorf("cannot rename SDK %q to %q: name already exists", fix.CurrentSDKName, fix.SDKName)
+		}
+		sdk := cfg.SDKs[fix.CurrentSDKName]
+		delete(cfg.SDKs, fix.CurrentSDKName)
+		cfg.SDKs[fix.SDKName] = sdk
 	}
 	return nil
 }
@@ -712,7 +731,7 @@ func planRecommend(ctx context.Context, dag *dagger.Client, ui *setupUI) (recs [
 func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommendation, ui *setupUI) error {
 	for _, r := range recs {
 		err := func() (rerr error) {
-			installCtx, span := Tracer().Start(ctx, "dagger install "+r.Module.Repo,
+			installCtx, span := Tracer().Start(ctx, "dagger module install "+r.Module.Repo,
 				telemetry.Reveal(), telemetry.Encapsulate())
 			ui.addInstall(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 			defer telemetry.EndWithCause(span, &rerr)

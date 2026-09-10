@@ -28,6 +28,84 @@ func TestLookupSetGet(t *testing.T) {
 	require.Equal(t, "sha256:deadbeef", result)
 }
 
+func TestGitLookupNormalizesTransport(t *testing.T) {
+	t.Parallel()
+
+	lock := NewLock()
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	reference := []any{"https://GitHub.com/acme/api.git", "refs/heads/main"}
+	require.NoError(t, lock.SetLookup("", LockOperationGitSHA, reference, commit))
+
+	for _, remote := range []string{
+		"github.com/acme/api",
+		"https://github.com/acme/api.git",
+		"ssh://git@github.com/acme/api.git",
+		"git@github.com:acme/api.git",
+	} {
+		value, ok := lock.GetLookup("", LockOperationGitSHA, []any{remote, "refs/heads/main"})
+		require.True(t, ok, remote)
+		require.Equal(t, commit, value)
+	}
+
+	entries := lock.Entries()
+	require.Len(t, entries, 1)
+	require.Equal(t, []any{"github.com/acme/api", "refs/heads/main"}, entries[0].Inputs)
+}
+
+func TestParseGitLookupNormalizesLegacyTransport(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`[["version","2"]]`,
+		`["","git-latest",["https://github.com/acme/api.git"],"refs/heads/main"]`,
+		`["","git-sha",["git@github.com:acme/api.git","refs/heads/main"],"0123456789abcdef0123456789abcdef01234567"]`,
+	}, "\n")
+
+	lock, err := ParseLock([]byte(input))
+	require.NoError(t, err)
+	value, ok := lock.GetLookup("", LockOperationGitLatest, []any{"ssh://git@github.com/acme/api"})
+	require.True(t, ok)
+	require.Equal(t, "refs/heads/main", value)
+	value, ok = lock.GetLookup("", LockOperationGitSHA, []any{"https://github.com/acme/api", "refs/heads/main"})
+	require.True(t, ok)
+	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", value)
+
+	output, err := lock.Marshal()
+	require.NoError(t, err)
+	require.Contains(t, string(output), `"github.com/acme/api"`)
+	require.NotContains(t, string(output), `https://github.com/acme/api.git`)
+	require.NotContains(t, string(output), `git@github.com:acme/api.git`)
+}
+
+func TestParseGitLookupCollapsesEquivalentLegacyEntries(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`[["version","2"]]`,
+		`["","git-latest",["https://github.com/acme/api.git"],"refs/heads/main"]`,
+		`["","git-latest",["ssh://git@github.com/acme/api"],"refs/heads/main"]`,
+	}, "\n")
+
+	lock, err := ParseLock([]byte(input))
+	require.NoError(t, err)
+	require.Len(t, lock.Entries(), 1)
+}
+
+func TestParseGitLookupRejectsConflictingEquivalentEntries(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`[["version","2"]]`,
+		`["","git-latest",["https://github.com/acme/api.git"],"refs/heads/main"]`,
+		`["","git-latest",["ssh://git@github.com/acme/api"],"refs/heads/release"]`,
+	}, "\n")
+
+	_, err := ParseLock([]byte(input))
+	require.ErrorIs(t, err, ErrGitLockIdentityConflict)
+	require.ErrorContains(t, err, "different values for git-latest inputs")
+	require.ErrorContains(t, LockfileMergeConflictError(err), "workspace lockfile contains conflicting pins for the same Git repository")
+}
+
 func TestLookupConcurrentWrites(t *testing.T) {
 	t.Parallel()
 
@@ -65,6 +143,26 @@ func TestParseLockRejectsV1(t *testing.T) {
 
 	_, err := ParseLock([]byte(input))
 	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
+}
+
+func TestFutureLockfileVersionError(t *testing.T) {
+	_, err := ParseLock([]byte(`[["version","3"]]`))
+	require.EqualError(t, FutureLockfileVersionError(err),
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	_, err = ParseLock([]byte(`[["version","1"]]`))
+	require.NoError(t, FutureLockfileVersionError(err))
+}
+
+func TestLockfileMergeConflictError(t *testing.T) {
+	_, err := ParseLock([]byte("<<<<<<< HEAD\n=======\n>>>>>>> branch\n"))
+	require.EqualError(t, LockfileMergeConflictError(err),
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	_, err = ParseLock([]byte(`[["version","2"]]`))
+	require.NoError(t, LockfileMergeConflictError(err))
 }
 
 func TestEntries(t *testing.T) {

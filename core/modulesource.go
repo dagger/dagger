@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -436,14 +437,16 @@ func (src *ModuleSource) AttachDependencyResults(
 }
 
 type persistedGitModuleSourcePayload struct {
-	CloneRef     string `json:"cloneRef,omitempty"`
-	Symbolic     string `json:"symbolic,omitempty"`
-	HTMLRepoURL  string `json:"htmlRepoURL,omitempty"`
-	HTMLURL      string `json:"htmlURL,omitempty"`
-	RepoRootPath string `json:"repoRootPath,omitempty"`
-	Version      string `json:"version,omitempty"`
-	Commit       string `json:"commit,omitempty"`
-	Ref          string `json:"ref,omitempty"`
+	CloneRef     string              `json:"cloneRef,omitempty"`
+	Symbolic     string              `json:"symbolic,omitempty"`
+	HTMLRepoURL  string              `json:"htmlRepoURL,omitempty"`
+	HTMLURL      string              `json:"htmlURL,omitempty"`
+	RepoRootPath string              `json:"repoRootPath,omitempty"`
+	Version      string              `json:"version,omitempty"`
+	VersionQuery string              `json:"versionQuery,omitempty"`
+	Selector     gitref.SelectorType `json:"selector,omitempty"`
+	Commit       string              `json:"commit,omitempty"`
+	Ref          string              `json:"ref,omitempty"`
 }
 
 type persistedDirModuleSourcePayload struct {
@@ -885,6 +888,8 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			HTMLURL:      src.Git.HTMLURL,
 			RepoRootPath: src.Git.RepoRootPath,
 			Version:      src.Git.Version,
+			VersionQuery: src.Git.VersionQuery,
+			Selector:     src.Git.Selector,
 			Commit:       src.Git.Commit,
 			Ref:          src.Git.Ref,
 		}
@@ -980,6 +985,8 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			HTMLURL:      persisted.Git.HTMLURL,
 			RepoRootPath: persisted.Git.RepoRootPath,
 			Version:      persisted.Git.Version,
+			VersionQuery: persisted.Git.VersionQuery,
+			Selector:     persisted.Git.Selector,
 			Commit:       persisted.Git.Commit,
 			Ref:          persisted.Git.Ref,
 		}
@@ -1022,7 +1029,14 @@ func (src *ModuleSource) AsString() string {
 		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, src.Git.Version)
+		version := src.Git.VersionQuery
+		if version == "" {
+			version = src.Git.Version
+		}
+		if src.Git.Selector == gitref.GitRefSelector {
+			return gitref.GitURLRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
+		}
+		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
 
 	default:
 		return ""
@@ -2038,6 +2052,13 @@ type GitModuleSource struct {
 	// The version of the source; may be a branch, tag, or commit hash
 	Version string
 
+	// The version query used to select Version.
+	VersionQuery string
+
+	// Selector preserves whether the source used @ version-query semantics or
+	// literal #ref:subpath Git URL semantics.
+	Selector gitref.SelectorType
+
 	// The resolved commit hash of the source
 	Commit string
 	// The fully resolved git ref string of the source
@@ -2151,8 +2172,11 @@ func ResolveDepToSource(
 			}
 			selectors := []dagql.Selector{{
 				Field: "moduleSource",
+				// depPath is workspace-root relative, so anchor it: a relative
+				// path would resolve against the workspace cwd, which sits at
+				// the module's scope while an SDK generates that scope.
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(filepath.ToSlash(depPath))},
+					{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", depPath)))},
 				},
 			}}
 			if depName != "" {

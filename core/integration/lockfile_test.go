@@ -44,6 +44,7 @@ const containerFromQuery = `{
 
 const (
 	lockTestGitRepoURL      = "https://github.com/dagger/dagger.git"
+	lockTestGitRepoIdentity = "github.com/dagger/dagger"
 	lockTestGitBranchName   = "main"
 	lockTestGitBranchCommit = "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 	lockTestGitTagName      = "v0.18.2"
@@ -83,20 +84,106 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestDefaultRejectsV1Lockfile(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *testctx.T) {
+	tests := map[string]string{
+		"v1": strings.Join([]string{
+			`[["version","1"]]`,
+			`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+		}, "\n"),
+		"malformed v2": strings.Join([]string{
+			`[["version","2"]]`,
+			`["","oci-sha"]`,
+		}, "\n"),
+	}
+
+	for name, lockContents := range tests {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			hostGitInit(t, workdir)
+			writeEmptyWorkspaceConfig(t, workdir)
+			queryPath := writeContainerFromQuery(t, workdir)
+			lockPath := filepath.Join(workdir, workspace.LockFileName)
+			require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+			require.NoError(t, err, string(out))
+			require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+			lockBytes, err := os.ReadFile(lockPath)
+			require.NoError(t, err)
+			require.NotEqual(t, lockContents, string(lockBytes))
+			assertOCISHALockEntry(t, lockBytes)
+		})
+	}
+}
+
+func (LockfileSuite) TestDefaultMigratesInvalidLegacyLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	legacyLockPath := filepath.Join(workdir, workspace.LegacyLockFilePath)
+	legacyLockContents := []byte(`[["version","1"]]`)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyLockPath), 0o755))
+	require.NoError(t, os.WriteFile(legacyLockPath, legacyLockContents, 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	assertOCISHALockEntry(t, lockBytes)
+
+	legacyLockBytes, err := os.ReadFile(legacyLockPath)
+	require.NoError(t, err)
+	require.Equal(t, legacyLockContents, legacyLockBytes)
+}
+
+func (LockfileSuite) TestDefaultRejectsFutureLockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := `[["version","3"]]`
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err,
+		`lockfile version "3" is newer than supported version "2"; upgrade Dagger to continue`,
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
+}
+
+func (LockfileSuite) TestDefaultRejectsConflictedLockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	lockContents := strings.Join([]string{
-		`[["version","1"]]`,
-		`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+		`<<<<<<< HEAD`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"old"]`,
+		`=======`,
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"new"]`,
+		`>>>>>>> branch`,
 	}, "\n")
 	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
+	require.ErrorContains(t, err,
+		"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+	)
+
+	lockBytes, readErr := os.ReadFile(lockPath)
+	require.NoError(t, readErr)
+	require.Equal(t, lockContents, string(lockBytes))
 }
 
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
@@ -119,7 +206,7 @@ func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T)
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -133,7 +220,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingEntry(ctx context.Context, t *te
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeOCISHALock(t, workdir, "sha256:"+strings.Repeat("0", 64))
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "update")
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -148,15 +235,15 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "workspace", "update")
 	require.NoError(t, err)
-	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
+	require.Equal(t, "Updated workspace", strings.TrimSpace(string(out)))
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/heads/" + lockTestGitBranchName,
 	})
 	require.NotContains(t, string(lockBytes), lockTestGitBranchCommit)
@@ -190,11 +277,11 @@ func (LockfileSuite) TestDefaultDiscoversGitEntries(ctx context.Context, t *test
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/heads/" + lockTestGitBranchName,
 	})
 	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/tags/" + lockTestGitTagName,
 	})
 }
@@ -243,14 +330,14 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 		c := connect(ctx, t)
 		ctr := nativeWorkspaceBase(t, c)
 
-		ctr = ctr.With(daggerExecRaw("update"))
+		ctr = ctr.With(daggerExecRaw("workspace", "update"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Updated dagger.lock", strings.TrimSpace(out))
+		require.Equal(t, "Updated workspace", strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		out, err = ctr.With(daggerExecRaw("workspace", "update")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+		require.Equal(t, "Workspace already up to date", strings.TrimSpace(out))
 
 		lockContents, err := ctr.File("dagger.lock").Contents(ctx)
 		require.NoError(t, err)
@@ -462,6 +549,43 @@ func (LockfileSuite) TestGitLatestCreatesPin(ctx context.Context, t *testctx.T) 
 	assertGitLatestLockEntry(t, lockBytes)
 }
 
+func (LockfileSuite) TestGitLatestVersionQueryCreatesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-version.graphql", `{
+  git(url: "`+lockTestGitRepoURL+`") {
+    latest(version: "v0.18") {
+      ref
+      commit
+    }
+  }
+}`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var selectedRef string
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != workspace.LockOperationGitLatest {
+			continue
+		}
+		require.Equal(t, workspace.LookupInputs(
+			[]any{lockTestGitRepoIdentity},
+			workspace.LookupOption{Name: "version", Value: "v0.18"},
+		), entry.Inputs)
+		selectedRef = entry.Value
+	}
+	require.True(t, strings.HasPrefix(selectedRef, "refs/tags/v0.18."), selectedRef)
+	require.Contains(t, string(out), selectedRef)
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoIdentity, selectedRef})
+}
+
 func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -552,6 +676,54 @@ func (LockfileSuite) TestGitLatestPinnedHTTPSUnavailableRemoteUsesPin(ctx contex
 	require.Contains(t, string(out), pinnedCommit)
 }
 
+// A scheme-less source must keep its own transport fallback. The workspace
+// lock is shared and committed, so it can name a transport that this user
+// cannot reach: one contributor pins over SSH, the next has HTTPS access only.
+// Selecting the locked transport strands the second contributor on a
+// repository they can otherwise read.
+//
+// The entry is written userless, as ssh://host/path, because that is the form
+// ParseCloneURL builds for a scheme-less ref and therefore the only form a
+// candidate can match. Dagger records a resolved SSH remote as
+// ssh://git@host/path, which matches no candidate, so rewriting the entry that
+// way would leave the test passing against the very selection it guards.
+//
+// This covers transport selection, not credentials. Proving the HTTPS-only
+// versus SSH-only case needs two credential environments, which the suite
+// cannot provide.
+func (LockfileSuite) TestSchemelessRemoteIgnoresLockedTransport(ctx context.Context, t *testctx.T) {
+	const schemelessRemote = "github.com/dagger/dagger-test-modules"
+	const sshRemote = "ssh://" + schemelessRemote
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-url.graphql", `{
+  git(url: "`+schemelessRemote+`") {
+    url
+  }
+}
+`)
+	writeGitLatestLockForRemote(
+		t,
+		workdir,
+		sshRemote,
+		"refs/heads/main@4232918aa11c5347758ce657659e92f43610f0ff",
+	)
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "https://"+schemelessRemote)
+}
+
 func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -580,7 +752,7 @@ func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t
 	require.ErrorContains(t, err, `invalid git-latest ref "refs/pull/1/head"`)
 }
 
-// dagger update must refresh git-latest entries for private repositories: the
+// dagger workspace update must refresh git-latest entries for private repositories: the
 // lock stores only the remote URL, so the update path has to recover the same
 // credential-helper access that created the pin.
 func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Context, t *testctx.T) {
@@ -601,7 +773,7 @@ func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Contex
 	gitConfigPath := filepath.Join(workdir, ".gitconfig")
 	require.NoError(t, os.WriteFile(gitConfigPath, []byte(makeGitCredentials("github.com", "x-token-auth", token)), 0o600))
 
-	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--silent", "update")
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "workspace", "update")
 	cmd.Env = append(cmd.Env,
 		"GIT_CONFIG_GLOBAL="+gitConfigPath,
 		"GIT_CONFIG_SYSTEM=/dev/null",
@@ -628,17 +800,21 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 		"refs/tags/"+lockTestGitTagName+"@"+staleCommit,
 	)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "update")
-	require.NoError(t, err)
+	// `dagger workspace update` renders no pipeline, so the engine warning it emits is only
+	// visible through the plain frontend, selected via DAGGER_PROGRESS.
+	updateCmd := hostDaggerCommand(ctx, t, workdir, "workspace", "update")
+	updateCmd.Env = append(updateCmd.Env, "DAGGER_PROGRESS=plain")
+	out, err := updateCmd.CombinedOutput()
+	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "git tag points to a different commit")
-	require.Contains(t, string(out), "Updated dagger.lock")
+	require.Contains(t, string(out), "Updated workspace")
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
 	assertGitLatestLockEntry(t, lockBytes)
 	assertGitLockEntryResult(t, lockBytes, []any{
-		lockTestGitRepoURL,
+		lockTestGitRepoIdentity,
 		"refs/tags/" + lockTestGitTagName,
 	}, lockTestGitTagCommit)
 	require.NotContains(t, string(lockBytes), staleCommit)
@@ -708,13 +884,13 @@ func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
 		if entry.Namespace != "" || entry.Operation != "git-latest" {
 			continue
 		}
-		require.Equal(t, []any{lockTestGitRepoURL}, entry.Inputs)
+		require.Equal(t, []any{lockTestGitRepoIdentity}, entry.Inputs)
 		selectedRef = entry.Value
 		require.True(t, strings.HasPrefix(selectedRef, "refs/tags/"), selectedRef)
 		break
 	}
 	require.NotEmpty(t, selectedRef, "expected git-latest entry in lockfile")
-	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoURL, selectedRef})
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoIdentity, selectedRef})
 }
 
 const ociLatestImageRefQuery = `{
@@ -755,7 +931,7 @@ func (LockfileSuite) TestOCILatestLockLifecycle(ctx context.Context, t *testctx.
 	staleLatestDigest := "sha256:" + strings.Repeat("1", 64)
 	writeOCILatestLock(t, workdir, stalePin, staleLatestDigest)
 
-	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	_, err = hostDaggerExec(ctx, t, workdir, "workspace", "update")
 	require.NoError(t, err)
 
 	updatedLockBytes, err := os.ReadFile(lockPath)
@@ -772,6 +948,57 @@ func (LockfileSuite) TestOCILatestLockLifecycle(ctx context.Context, t *testctx.
 		staleLatestDigest,
 		requireOCISHALockValue(t, updatedLockBytes, "docker.io/library/alpine:latest"),
 	)
+}
+
+func (LockfileSuite) TestOCIVersionQueryCreatesPin(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "oci-version.graphql", `{
+  container {
+    from(address: "alpine", version: "3.20") {
+      imageRef
+    }
+  }
+}`)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err)
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var selectedTag string
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != workspace.LockOperationOCILatest {
+			continue
+		}
+		require.Equal(t, workspace.LookupInputs(
+			[]any{"docker.io/library/alpine"},
+			workspace.LookupOption{Name: "version", Value: "3.20"},
+		), entry.Inputs)
+		selectedTag = entry.Value
+	}
+	require.True(t, strings.HasPrefix(selectedTag, "3.20."), selectedTag)
+	require.NotEmpty(t, requireOCISHALockValue(t, lockBytes, "docker.io/library/alpine:"+selectedTag))
+}
+
+func (LockfileSuite) TestOCIVersionQueryRejectsTaggedAddress(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "oci-version-tag.graphql", `{
+  container {
+    from(address: "alpine:3.20", version: "3.20") {
+      imageRef
+    }
+  }
+}`)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.ErrorContains(t, err, `version query "3.20" cannot be used with image address "alpine:3.20" because it contains a tag or digest`)
 }
 
 func writeOCILatestLock(

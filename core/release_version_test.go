@@ -29,6 +29,47 @@ func TestSelectLatestReleaseTagReportsOriginalTags(t *testing.T) {
 	require.ErrorContains(t, err, `equivalent tags ["24.04" "v24.4.0"]`)
 }
 
+func TestSelectReleaseTagWithVersionQuery(t *testing.T) {
+	t.Parallel()
+
+	candidates := []releaseTagCandidate{
+		{Name: "v1.2", Version: "v1.2"},
+		{Name: "v1.2.3", Version: "v1.2.3"},
+		{Name: "v1.2.4-beta.1", Version: "v1.2.4-beta.1"},
+		{Name: "v1.2.4-beta.2", Version: "v1.2.4-beta.2"},
+		{Name: "v1.2.4-rc.1", Version: "v1.2.4-rc.1"},
+		{Name: "v1.3.0", Version: "v1.3.0"},
+		{Name: "v2.0.0", Version: "v2.0.0"},
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		{query: "v1", want: "v1.3.0"},
+		{query: "1.2", want: "v1.2.3"},
+		{query: "v1.2.3", want: "v1.2.3"},
+		{query: "v1.2-beta", want: "v1.2.4-beta.2"},
+		{query: "v1.2.4-beta", want: "v1.2.4-beta.2"},
+		{query: "v1.2.4-rc", want: "v1.2.4-rc.1"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			t.Parallel()
+			selected, found, err := selectReleaseTag(candidates, tc.query)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, tc.want, selected.Name)
+		})
+	}
+}
+
+func TestSelectReleaseTagRejectsInvalidVersionQuery(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := selectReleaseTag(nil, "v1.x")
+	require.ErrorContains(t, err, `invalid version query "v1.x"`)
+}
+
 func TestParseReleaseTagPreservesPrefixedName(t *testing.T) {
 	t.Parallel()
 

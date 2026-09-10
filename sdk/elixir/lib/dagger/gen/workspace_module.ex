@@ -27,6 +27,17 @@ defmodule Dagger.WorkspaceModule do
   end
 
   @doc """
+  List the functions of this module's main object, in GraphQL field form.
+  """
+  @spec functions(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def functions(%__MODULE__{} = workspace_module) do
+    query_builder =
+      workspace_module.query_builder |> QB.select("functions")
+
+    Client.execute(workspace_module.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this WorkspaceModule.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

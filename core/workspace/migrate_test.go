@@ -162,7 +162,7 @@ func TestPlanMigrationConvertsModuleConfigInPlace(t *testing.T) {
 }
 
 // TestPlanMigrationModuleRepoSkipsSDKInstall verifies the "repo is just a
-// dagger module" shape (source at the project root) records no as-sdk install
+// dagger module" shape (source at the project root) records no SDK registration
 // for the root module: the runtime pin is a plain install added by the
 // migration caller, and the module gets no entrypoint.
 func TestPlanMigrationModuleRepoSkipsSDKInstall(t *testing.T) {
@@ -180,7 +180,9 @@ func TestPlanMigrationModuleRepoSkipsSDKInstall(t *testing.T) {
 	require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath)
 	configData := string(plan.WorkspaceConfigData)
 	require.NotContains(t, configData, "[modules.myapp]")
-	require.NotContains(t, configData, "as-sdk")
+	cfg, err := ParseConfig(plan.WorkspaceConfigData)
+	require.NoError(t, err)
+	require.Empty(t, cfg.SDKs)
 	require.Contains(t, configData, "[modules.tools]")
 }
 
@@ -305,12 +307,12 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	require.Less(t, mainIdx, toolchainIdx)
 }
 
-// TestPlanMigrationWritesAsSDK verifies that the legacy `sdk` field on
+// TestPlanMigrationWritesSDK verifies that the legacy `sdk` field on
 // dagger.json is surfaced as a workspace module installed as an SDK, keyed by
 // a "dagger-"-prefixed canonical basename (go -> dagger-go-sdk) so it cannot
 // collide with an unrelated module named "go", with the migrated module
-// recorded under [[modules.<name>.as-sdk.modules]].
-func TestPlanMigrationWritesAsSDK(t *testing.T) {
+// recorded as an SDK scope.
+func TestPlanMigrationWritesSDK(t *testing.T) {
 	t.Parallel()
 
 	plan := testMigrationPlan(t, "repo", `{
@@ -325,8 +327,11 @@ func TestPlanMigrationWritesAsSDK(t *testing.T) {
 	configData := string(plan.WorkspaceConfigData)
 	require.Contains(t, configData, "[modules.dagger-go-sdk]")
 	require.Contains(t, configData, `source = "go"`)
-	require.Contains(t, configData, "[[modules.dagger-go-sdk.as-sdk.modules]]")
-	require.Contains(t, configData, `path = "."`)
+	require.Contains(t, configData, "[sdks.go]")
+	require.Contains(t, configData, `module = "dagger-go-sdk"`)
+	require.Contains(t, configData, "[sdks.go.scopes.\".\"]")
+	require.Contains(t, configData, `is-module = true`)
+	require.Contains(t, configData, `name = "myapp"`)
 }
 
 func TestMigrationSDKInstallName(t *testing.T) {
@@ -369,12 +374,11 @@ func TestPlanMigrationKeepsUnrelatedModuleNamedLikeSDK(t *testing.T) {
 	unrelated, ok := cfg.Modules["dagger-go-sdk"]
 	require.True(t, ok)
 	require.Equal(t, "github.com/acme/go-sdk", unrelated.Source)
-	require.Nil(t, unrelated.AsSDK, "unrelated module must not be marked as an SDK")
 
 	sdk, ok := cfg.Modules["dagger-go-sdk-2"]
 	require.True(t, ok)
 	require.Equal(t, "go", sdk.Source)
-	require.NotNil(t, sdk.AsSDK)
+	require.Equal(t, "dagger-go-sdk-2", cfg.SDKs["go"].Module)
 }
 
 // TestPlanMigrationKeepsModuleSharingBuiltinSDKSource covers the subtle case
@@ -396,13 +400,12 @@ func TestPlanMigrationKeepsModuleSharingBuiltinSDKSource(t *testing.T) {
 	cfg, err := ParseConfig(plan.WorkspaceConfigData)
 	require.NoError(t, err)
 
-	unrelated, ok := cfg.Modules["dagger-go-sdk"]
+	_, ok := cfg.Modules["dagger-go-sdk"]
 	require.True(t, ok)
-	require.Nil(t, unrelated.AsSDK, "unrelated module must not be marked as an SDK")
 
-	sdk, ok := cfg.Modules["dagger-go-sdk-2"]
+	_, ok = cfg.Modules["dagger-go-sdk-2"]
 	require.True(t, ok)
-	require.NotNil(t, sdk.AsSDK)
+	require.Equal(t, "dagger-go-sdk-2", cfg.SDKs["go"].Module)
 }
 
 // TestPlanMigrationExternalSDKShortName verifies the SDK short name is

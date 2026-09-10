@@ -19,7 +19,7 @@ type CurrentModuleConfig struct {
 	Name string `json:"name" toml:"name"`
 
 	// The version of the engine this module was last updated with.
-	EngineVersion string `json:"engineVersion" toml:"engineVersion"`
+	EngineVersion string `json:"engineVersion,omitempty" toml:"engineVersion,omitempty"`
 
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty" toml:"include,omitempty"`

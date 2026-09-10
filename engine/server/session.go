@@ -836,6 +836,9 @@ func (srv *Server) initializeDaggerClient(
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		if client.neverServesAttachables(id) {
+			return nil, fmt.Errorf("client %q serves no session attachables", id)
+		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
@@ -1053,6 +1056,22 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+// neverServesAttachables reports whether id is a synthetic nested client, which
+// never registers attachables of its own, so waiting for them always burns the
+// whole getClientCaller timeout.
+//
+// The gate is the creation-time fact, not the current lookup: only in-engine
+// dang evaluation passes hostServiceProxyToCaller, and a container-backed
+// nested client passes false and keeps the wait. The lookup is a safety net for
+// a misclassified client, so an attachable that does exist is still used.
+func (client *daggerClient) neverServesAttachables(id string) bool {
+	if id != client.clientID || client.hostServiceProxyClientID == "" {
+		return false
+	}
+	_, registered := client.daggerSession.attachables.Lookup(id)
+	return !registered
 }
 
 func (client *daggerClient) resolveHostServiceCaller(
@@ -2387,6 +2406,7 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	if err != nil {
 		return nil, err
 	}
+	readPath := lockPath
 
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
@@ -2402,6 +2422,7 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 				}
 				return nil, fmt.Errorf("reading legacy lock: %w", err)
 			}
+			readPath = legacyPath
 		} else {
 			return nil, fmt.Errorf("reading lock: %w", err)
 		}
@@ -2409,7 +2430,15 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing lock: %w", err)
+		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+			return nil, versionErr
+		}
+		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
+		console(ctx, "Warning: resetting invalid workspace lockfile.")
+		slog.WarnContext(ctx, "invalid workspace lockfile; using an empty lock", "path", readPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }
@@ -2468,7 +2497,15 @@ func readWorkspaceLockFromRootfs(
 	}
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing lock: %w", err)
+		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
+			return nil, versionErr
+		}
+		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
+		console(ctx, "Warning: ignoring invalid workspace lockfile.")
+		slog.WarnContext(ctx, "invalid workspace lockfile in immutable Git workspace; ignoring it", "path", lockPath, "error", err)
+		return workspace.NewLock(), nil
 	}
 	return lock, nil
 }

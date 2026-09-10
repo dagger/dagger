@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -22,8 +23,13 @@ const (
 	LockOperationGitSHA    = "git-sha"
 	LockOperationVanityURL = "vanity-url"
 
-	LatestReleaseVersion = "v1.0.0-beta.11"
+	LatestReleaseVersion  = "v1.0.0-beta.11"
+	VersionQueriesVersion = "v1.0.0-beta.12"
 )
+
+// ErrGitLockIdentityConflict indicates that transport-specific entries for the
+// same Git repository contain different values and cannot be normalized safely.
+var ErrGitLockIdentityConflict = errors.New("conflicting Git lock identities")
 
 // CanonicalLockFilePath maps the legacy .dagger/lock path to its dagger.lock
 // sibling. Other paths are already canonical.
@@ -122,7 +128,56 @@ func ParseLock(data []byte) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Lock{file: file}, nil
+
+	// Git transports are local access details, not part of a repository's
+	// identity. Rebuild parsed locks so legacy transport-qualified entries remain
+	// readable and the next lockfile write uses the canonical scheme-less key.
+	normalized := lockfile.New()
+	for _, entry := range file.Entries() {
+		inputs := normalizeLookupInputs(entry.Operation, entry.Inputs)
+		if existing, ok := normalized.Get(entry.Namespace, entry.Operation, inputs); ok && existing != entry.Value {
+			return nil, fmt.Errorf(
+				"%w: different values for %s inputs %v: %q and %q",
+				ErrGitLockIdentityConflict,
+				entry.Operation,
+				inputs,
+				existing,
+				entry.Value,
+			)
+		}
+		if err := normalized.Set(entry.Namespace, entry.Operation, inputs, entry.Value); err != nil {
+			return nil, err
+		}
+	}
+	return &Lock{file: normalized}, nil
+}
+
+// FutureLockfileVersionError turns an unsupported future lockfile version into
+// actionable engine upgrade guidance. It returns nil for all other parse errors.
+func FutureLockfileVersionError(err error) error {
+	var versionErr *lockfile.UnsupportedVersionError
+	if !errors.As(err, &versionErr) || !versionErr.IsNewer() {
+		return nil
+	}
+	return fmt.Errorf(
+		"lockfile version %q is newer than supported version %q; upgrade Dagger to continue",
+		versionErr.Version,
+		versionErr.Supported,
+	)
+}
+
+// LockfileMergeConflictError turns lockfile conflict markers into actionable
+// guidance. It returns nil for all other parse errors.
+func LockfileMergeConflictError(err error) error {
+	if errors.Is(err, lockfile.ErrMergeConflict) {
+		return fmt.Errorf(
+			"workspace lockfile contains merge conflict markers; resolve the conflict before running Dagger",
+		)
+	}
+	if errors.Is(err, ErrGitLockIdentityConflict) {
+		return fmt.Errorf("workspace lockfile contains conflicting pins for the same Git repository; resolve the conflict before running Dagger: %w", err)
+	}
+	return nil
 }
 
 // NewLock returns an empty workspace lock.
@@ -188,7 +243,7 @@ func (l *Lock) GetLookup(namespace, operation string, inputs []any) (string, boo
 	if l.file == nil {
 		return "", false
 	}
-	value, ok := l.file.Get(namespace, operation, inputs)
+	value, ok := l.file.Get(namespace, operation, normalizeLookupInputs(operation, inputs))
 	if !ok {
 		return "", false
 	}
@@ -212,7 +267,27 @@ func (l *Lock) setLookup(namespace, operation string, inputs []any, value string
 	if l.file == nil {
 		return fmt.Errorf("nil lock")
 	}
-	return l.file.Set(namespace, operation, inputs, value)
+	return l.file.Set(namespace, operation, normalizeLookupInputs(operation, inputs), value)
+}
+
+func normalizeLookupInputs(operation string, inputs []any) []any {
+	if operation != LockOperationGitLatest && operation != LockOperationGitSHA {
+		return inputs
+	}
+	if len(inputs) == 0 {
+		return inputs
+	}
+	remote, ok := inputs[0].(string)
+	if !ok {
+		return inputs
+	}
+	remote = NormalizeGitRemote(remote)
+	if remote == "" {
+		return inputs
+	}
+	normalized := append([]any(nil), inputs...)
+	normalized[0] = remote
+	return normalized
 }
 
 // Entries returns a deterministic snapshot of all lookup entries.

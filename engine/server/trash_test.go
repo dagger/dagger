@@ -143,7 +143,9 @@ func TestStartLocalCacheTrashSweeperBlocksUnderDiskPressure(t *testing.T) {
 		rootDir:     rootDir,
 		shutdownCtx: context.Background(),
 		workerGCPolicies: []dagqlCachePrunePolicy{
-			{MinFreeSpace: dstat.Available + 1},
+			// More than the filesystem can provide, so concurrent disk activity
+			// cannot make the pressure condition false between disk stat calls.
+			{MinFreeSpace: dstat.Total + 1},
 		},
 	}
 

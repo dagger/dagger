@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/mod/semver"
 
@@ -116,6 +117,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				`Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.`,
 			).
 			Args(
+				dagql.Arg("version").
+					Doc(`Version query used to select the greatest matching release ref.`).
+					View(AfterVersion(workspace.VersionQueriesVersion)),
 				dagql.Arg("tagPrefix").
 					Doc(`Restrict release tags to a monorepo subpath.`).
 					Internal(),
@@ -811,7 +815,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 
-			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
+			public, err := cachedIsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote, len(gitServices) > 0)
 			if err != nil {
 				// A workspace pin may let child fields resolve without contacting
 				// this repository. Don't fail the parent visibility probe when a
@@ -1019,6 +1023,51 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 	return hashutil.HashStrings(dgstInputs...), nil
 }
 
+// cachedIsRemotePublic shares one probe per session: git is per-client input,
+// so a remote reached from both the CLI and a module's dependency resolution
+// would otherwise be probed once per client. The probe sends no credentials,
+// so the URL alone identifies the answer — except behind a service binding,
+// where visibility depends on the service.
+//
+// A repository that turns private mid-session keeps its cached answer until the
+// command ends, and credentials stay unattached until then. RemoteGitRepository
+// .Remote caches the whole ls-remote advertisement on the same session key, so
+// that window already exists for the far larger answer.
+func cachedIsRemotePublic(
+	ctx context.Context,
+	remote *gitutil.GitURL,
+	serviceBound bool,
+) (_ bool, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "git remote visibility", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	if serviceBound {
+		return IsRemotePublic(ctx, remote)
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return IsRemotePublic(ctx, remote)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("git remote visibility session metadata: %w", err)
+	}
+
+	cacheKey := hashutil.HashStrings("gitRemoteVisibility", clientMetadata.SessionID, remote.Remote()).String()
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
+		return IsRemotePublic(ctx, remote)
+	})
+	if err != nil {
+		return false, err
+	}
+	public, ok := cacheRes.Value().(bool)
+	if !ok {
+		return false, fmt.Errorf("unexpected git remote visibility cache value type %T", cacheRes.Value())
+	}
+	return public, nil
+}
+
 func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
@@ -1067,6 +1116,10 @@ func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 }
 
 func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
+	remote = workspace.NormalizeGitRemote(remote)
+	if remote == "" {
+		return false
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return false
@@ -1083,7 +1136,7 @@ func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
 			continue
 		}
 		entryRemote, ok := entry.Inputs[0].(string)
-		if ok && entryRemote == remote {
+		if ok && workspace.NormalizeGitRemote(entryRemote) == remote {
 			return true
 		}
 	}
@@ -2294,6 +2347,7 @@ func (s *gitSchema) log(
 }
 
 type latestArgs struct {
+	Version   string `default:""`
 	TagPrefix string `name:"tagPrefix" default:""`
 }
 
@@ -2309,9 +2363,10 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRefWithTagPrefix(
+		ref, err := core.SelectGitRefWithVersionQuery(
 			remote,
 			args.TagPrefix,
+			args.Version,
 		)
 		if err != nil {
 			return inst, err
@@ -2324,6 +2379,12 @@ func (s *gitSchema) latest(
 		lockOptions = append(lockOptions, workspace.LookupOption{
 			Name:  "tagPrefix",
 			Value: args.TagPrefix,
+		})
+	}
+	if args.Version != "" {
+		lockOptions = append(lockOptions, workspace.LookupOption{
+			Name:  "version",
+			Value: args.Version,
 		})
 	}
 	lockInputs := workspace.LookupInputs(
@@ -2348,9 +2409,10 @@ func (s *gitSchema) latest(
 	var selectedRef string
 	if lockResolution.Pin != "" {
 		selectedRef = lockResolution.Pin
-		if err := core.ValidateGitLatestRef(
+		if err := core.ValidateGitVersionRef(
 			selectedRef,
 			args.TagPrefix,
+			args.Version,
 		); err != nil {
 			return inst, fmt.Errorf("%s lock value: %w", workspace.LockOperationGitLatest, err)
 		}
@@ -2359,9 +2421,10 @@ func (s *gitSchema) latest(
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRefWithTagPrefix(
+		ref, err := core.SelectGitRefWithVersionQuery(
 			remote,
 			args.TagPrefix,
+			args.Version,
 		)
 		if err != nil {
 			return inst, err

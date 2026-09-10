@@ -86,7 +86,7 @@ type GitRefBackend interface {
 // normalizing optional v prefixes, incomplete versions, and zero-padded numeric
 // components. It falls back to HEAD when no eligible release tag exists.
 func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
-	return SelectLatestGitRefWithTagPrefix(remote, "")
+	return SelectGitRefWithVersionQuery(remote, "", "")
 }
 
 // SelectLatestGitRefWithTagPrefix selects the greatest normalized stable
@@ -96,8 +96,19 @@ func SelectLatestGitRefWithTagPrefix(
 	remote *gitutil.Remote,
 	tagPrefix string,
 ) (*gitutil.Ref, error) {
+	return SelectGitRefWithVersionQuery(remote, tagPrefix, "")
+}
+
+// SelectGitRefWithVersionQuery selects the greatest release ref that matches
+// versionQuery. Tags take priority over branches. An empty query selects the
+// latest stable tag and falls back to HEAD when no release exists.
+func SelectGitRefWithVersionQuery(
+	remote *gitutil.Remote,
+	tagPrefix string,
+	versionQuery string,
+) (*gitutil.Ref, error) {
 	if remote == nil {
-		return nil, fmt.Errorf("select latest git ref: nil remote")
+		return nil, fmt.Errorf("select git ref: nil remote")
 	}
 
 	tagPrefix = strings.Trim(tagPrefix, "/")
@@ -105,18 +116,33 @@ func SelectLatestGitRefWithTagPrefix(
 		tagPrefix += "/"
 	}
 
-	bestRef, err := selectLatestGitRelease(remote, tagPrefix)
+	bestRef, err := selectGitRelease(remote.Tags(), tagPrefix, versionQuery)
 	if err != nil {
 		return nil, err
 	}
 	if bestRef == "" && tagPrefix != "" {
-		bestRef, err = selectLatestGitRelease(remote, "")
+		bestRef, err = selectGitRelease(remote.Tags(), "", versionQuery)
 		if err != nil {
 			return nil, err
 		}
 	}
+	if bestRef == "" && versionQuery != "" {
+		bestRef, err = selectGitRelease(remote.Branches(), tagPrefix, versionQuery)
+		if err != nil {
+			return nil, err
+		}
+		if bestRef == "" && tagPrefix != "" {
+			bestRef, err = selectGitRelease(remote.Branches(), "", versionQuery)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	if bestRef == "" {
+		if versionQuery != "" {
+			return nil, fmt.Errorf("no Git ref matches version query %q", versionQuery)
+		}
 		ref, err := remote.Lookup("HEAD")
 		if err != nil {
 			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
@@ -131,13 +157,14 @@ func SelectLatestGitRefWithTagPrefix(
 	return ref, nil
 }
 
-func selectLatestGitRelease(
+func selectGitRelease(
 	remote *gitutil.Remote,
 	tagPrefix string,
+	versionQuery string,
 ) (string, error) {
-	candidates := make([]releaseTagCandidate, 0, len(remote.Tags().Refs))
+	candidates := make([]releaseTagCandidate, 0, len(remote.Refs))
 	refs := map[string]string{}
-	for _, ref := range remote.Tags().Refs {
+	for _, ref := range remote.Refs {
 		version := ref.ShortName()
 		if tagPrefix != "" {
 			var ok bool
@@ -154,7 +181,7 @@ func selectLatestGitRelease(
 		})
 		refs[original] = ref.Name
 	}
-	selected, found, err := selectLatestReleaseTag(candidates)
+	selected, found, err := selectReleaseTag(candidates, versionQuery)
 	if err != nil {
 		return "", err
 	}
@@ -166,29 +193,45 @@ func selectLatestGitRelease(
 
 // ValidateGitLatestRef validates a ref selected by git-latest.
 func ValidateGitLatestRef(refName string, tagPrefix string) error {
+	return ValidateGitVersionRef(refName, tagPrefix, "")
+}
+
+// ValidateGitVersionRef validates a ref selected for versionQuery.
+func ValidateGitVersionRef(refName string, tagPrefix string, versionQuery string) error {
 	if tag, ok := strings.CutPrefix(refName, "refs/tags/"); ok {
-		version := tag
-		tagPrefix = strings.Trim(tagPrefix, "/")
-		if tagPrefix != "" {
-			version, _ = strings.CutPrefix(version, tagPrefix+"/")
-		}
-		parsed, ok := parseReleaseTag(releaseTagCandidate{
-			Name:    tag,
-			Version: version,
-		})
-		if !ok {
-			return fmt.Errorf("invalid git-latest tag %q: not a semantic version", tag)
-		}
-		if parsed.Semver.Prerelease != "" {
-			return fmt.Errorf("invalid git-latest tag %q: prerelease tags are not supported", tag)
-		}
-		return nil
+		return validateGitVersionName("tag", tag, tagPrefix, versionQuery)
 	}
 
 	if branch, ok := strings.CutPrefix(refName, "refs/heads/"); ok && branch != "" {
-		return nil
+		if versionQuery == "" {
+			return nil
+		}
+		return validateGitVersionName("branch", branch, tagPrefix, versionQuery)
 	}
 	return fmt.Errorf("invalid git-latest ref %q", refName)
+}
+
+func validateGitVersionName(kind, name, tagPrefix, versionQuery string) error {
+	version := name
+	tagPrefix = strings.Trim(tagPrefix, "/")
+	if tagPrefix != "" {
+		version, _ = strings.CutPrefix(version, tagPrefix+"/")
+	}
+	parsed, ok := parseReleaseTag(releaseTagCandidate{Name: name, Version: version})
+	if !ok {
+		return fmt.Errorf("invalid git-latest %s %q: not a semantic version", kind, name)
+	}
+	query, err := parseReleaseVersionQuery(versionQuery)
+	if err != nil {
+		return err
+	}
+	if versionQuery == "" && parsed.Semver.Prerelease != "" {
+		return fmt.Errorf("invalid git-latest %s %q: prerelease tags are not supported", kind, name)
+	}
+	if !query.matches(parsed) {
+		return fmt.Errorf("invalid git-latest %s %q: does not match version query %q", kind, name, versionQuery)
+	}
+	return nil
 }
 
 var _ dagql.PersistedObject = (*GitRepository)(nil)

@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1563,6 +1564,8 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 			fullref, err := g.Name(ctx)
 			require.NoError(t, err)
 			require.Contains(t, fullref, version)
+			resolvedCommit, err := g.CommitSHA(ctx)
+			require.NoError(t, err)
 
 			fixture := map[string]string{
 				"":            "go/path-context-git-remote-dep-default",
@@ -1574,6 +1577,24 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(withModuleFixture(t, c, "/work", fixture)).
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+			if version == "v1.2.3" {
+				out, err := modGen.
+					With(daggerCallFail("test-ref-local")).
+					CombinedOutput(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, fmt.Sprintf(
+					"version query %q resolved to Git ref %q at commit %q",
+					version,
+					fullref,
+					resolvedCommit,
+				))
+				require.Contains(t, out, fmt.Sprintf(
+					"but the requested pin is %q",
+					commit,
+				))
+				return
+			}
 
 			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)

@@ -115,3 +115,37 @@ func TestValidateContainerLatestTag(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectContainerTagWithVersionQuery(t *testing.T) {
+	t.Parallel()
+
+	tags := []string{
+		"1.2.3",
+		"1.2.4-beta.1",
+		"1.2.4-beta.2",
+		"1.2.4-rc.1",
+		"1.3.0",
+		"2.0.0",
+	}
+
+	selected, err := SelectContainerTag(tags, "1.2")
+	require.NoError(t, err)
+	require.Equal(t, "1.2.3", selected)
+
+	selected, err = SelectContainerTag(tags, "v1.2-beta")
+	require.NoError(t, err)
+	require.Equal(t, "1.2.4-beta.2", selected)
+
+	_, err = SelectContainerTag(tags, "v3")
+	require.ErrorContains(t, err, `no image tag matches version query "v3"`)
+}
+
+func TestValidateContainerTagWithVersionQuery(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, ValidateContainerTag("1.2.4-beta.2", "v1.2-beta"))
+	require.ErrorContains(t,
+		ValidateContainerTag("1.2.4-rc.1", "v1.2-beta"),
+		`does not match version query "v1.2-beta"`,
+	)
+}

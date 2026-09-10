@@ -12,23 +12,47 @@ There are two ways to get one.
 
 ## Generated clients
 
-A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in your workspace, `dagger.toml` records it, and `dagger generate` regenerates it along with everything else.
+A generated client is a typed binding to one module's API, including the core API and every module it depends on. It lives in an SDK scope. `dagger.toml` records the scope and target module, and `dagger generate` regenerates it with the other generated files.
 
-Install the SDK for the language you want the client in, then initialize a client at a path, bound to a module:
+Install the SDK for the required language. For Go, run the client command from a project with a `go.mod` file, then add the target module:
 
 ```shell
-dagger sdk install typescript
-dagger api client init typescript ./lib/client .dagger/modules/api
+dagger module install dagger.io/sdk/go
+dagger module client add ./.dagger/modules/api --sdk=go
 ```
 
-`<path>` is where the client goes, relative to the current directory. A leading `/` means the workspace root. `<module>` is a workspace-relative path or a module ref. The engine records the client under the SDK in `dagger.toml` and the SDK's generators write the bindings. Pass `--no-generate` to record the client without generating yet. SDKs can add flags of their own; `dagger api client init <sdk> --help` lists them.
+The module argument must be an explicit local path, such as `./api` or `../api`, or a module address.
+Installed module names and unmarked local paths are not supported. A bare `api` never means `./api`.
+Saved local targets are relative to the directory containing `dagger.toml`. They keep an explicit path marker.
+For each SDK, the engine compares the deepest registered scope that contains the current directory with the detected client root.
+It uses the deeper path.
+Without `--sdk`, the engine selects the unique deepest scope across installed SDKs.
+If several SDKs have that scope, the command fails and asks you to select one with `--sdk`.
+The `--sdk` help text lists installed SDKs.
+The command accepts no SDK settings flags. Generation uses saved settings.
+The engine records the target in one scope in `dagger.toml`, and the SDK writes the bindings.
 
 ```shell
-dagger api client list          # clients recorded in this workspace
+dagger module client list       # clients in scopes that contain the current directory
+dagger module client list --all # clients in every scope
 dagger generate                 # regenerate bindings after the bound module changes
 ```
 
-Only SDKs that implement the client contract can generate clients. Today that is [Go](../sdks/go.mdx), [TypeScript](../sdks/typescript.mdx), and [PHP](../sdks/php.mdx). The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
+The list shows `SCOPE`, `SDK`, and the complete `TARGET` removal key.
+Scope paths are relative to the workspace root.
+To remove a specific row, run this from its listed scope:
+
+```shell
+dagger module client rm <TARGET> --sdk=<SDK>
+```
+
+Removal uses recorded client targets and selects the deepest matching scope.
+It fails if several SDKs match at that scope. Use `--sdk` to select one.
+List also shows invalid old targets. Remove them with their exact listed target.
+If invalid targets remain, removal succeeds and generation is skipped with a warning.
+Correct or remove those targets to resume generation.
+
+The current [Go SDK](../sdks/go.mdx) supports clients in ordinary Go projects. Python, Dang, and Java currently require a Dagger module in the scope. TypeScript and PHP still need an update to the new SDK interface. The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
 
 ## Standalone client libraries
 

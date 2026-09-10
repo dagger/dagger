@@ -7,7 +7,7 @@ description: How the Dagger pretty TUI surfaces deep spans (checks, tests, LLM c
 
 "Surfacing" is how the pretty frontend promotes spans buried deep in the trace
 tree up to the **top level** — so `dagger trace` on a CI run leads with its
-checks (sub-checks and tests rolled up beneath), and `dagger shell --model`
+checks (sub-checks and tests rolled up beneath), and `dagger script --model`
 leads with the LLM conversation, instead of the raw connect/load/exec tree.
 
 There are **two independent layers**. Get this distinction first — most
@@ -121,7 +121,7 @@ Checks reach `RevealedSpans` via `reveal` bubbling; the conversation does not se
 `reveal`, so `promoteConversationLocked` first calls `DB.PromoteConversationTo`
 to wire the reveal-independent `SurfacedConversation` tree into `RevealedSpans`
 (top-level turns under the host, a sub-agent's turns under the tool call that
-spawned them). This is the mechanism that replaced `dagger shell`'s old manual
+spawned them). This is the mechanism that replaced `dagger script`'s old manual
 `SetPrimary` zoom. `zoomKind` (`dagql/idtui/frontend_trace_policy.go`)
 distinguishes zoomRoot/zoomCheck/zoomTest/zoomSpan for the zoomed views.
 

@@ -147,6 +147,139 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.True(t, empty)
 }
 
+func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const gitAgentDoc = "Agent loaded from the GitRef workspace tree."
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.git-agent]\nsource = \"./modules/git-agent\"\n").
+		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/git-agent/main.dang", `type GitAgent {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  """`+gitAgentDoc+`"""
+  fromGit(): String! {
+    "git"
+  }
+
+  verify: Void @check {
+    null
+  }
+
+  generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile("generated.txt", "generated").changes(workdir)
+  }
+
+  web: Service! @up {
+    container.from("nginx:alpine").asService
+  }
+
+  sandbox: Container! {
+    container.from("alpine")
+  }
+}
+`)
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	for _, tc := range []struct {
+		name string
+		ws   *dagger.Workspace
+	}{
+		{"directory", source.AsWorkspace()},
+		{"git", c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ws := tc.ws
+			modules, err := ws.Modules(ctx)
+			require.NoError(t, err)
+			require.Len(t, modules, 1)
+			name, err := modules[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "git-agent", name)
+
+			tools, err := ws.Agents().Compose().Tools(ctx)
+			require.NoError(t, err)
+			require.Contains(t, tools, "## fromGit")
+			require.Contains(t, tools, gitAgentDoc)
+
+			checks, err := ws.Checks(dagger.WorkspaceChecksOpts{NoGenerate: true}).List(ctx)
+			require.NoError(t, err)
+			require.Len(t, checks, 1)
+			checkName, err := checks[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "git-agent:verify", checkName)
+
+			generators, err := ws.Generators().List(ctx)
+			require.NoError(t, err)
+			require.Len(t, generators, 1)
+			generatorName, err := generators[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "git-agent:generate", generatorName)
+
+			services, err := ws.Services().List(ctx)
+			require.NoError(t, err)
+			require.Len(t, services, 1)
+			serviceName, err := services[0].Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "git-agent:web", serviceName)
+
+			terminals, err := ws.Terminals().List(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, terminals)
+
+			passed, err := checks[0].Run().Passed(ctx)
+			require.NoError(t, err)
+			require.True(t, passed)
+		})
+	}
+}
+
+func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceGeneratorLoadingIsBestEffort(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := c.Directory().
+		WithNewFile("dagger.toml", `[modules.good]
+source = "./modules/good"
+
+[modules.bad]
+source = "./modules/bad"
+`).
+		WithNewFile("modules/good/dagger.json", `{"name":"good","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/good/main.dang", `type Good {
+  generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile("generated.txt", "generated").changes(workdir)
+  }
+}
+`).
+		WithNewFile("modules/bad/dagger.json", `{"name":"bad","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/bad/main.dang", "this is not valid Dang")
+	gitDaemon, repoURL := gitService(ctx, t, c, source)
+	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Head().
+		AsWorkspace()
+
+	group := ws.Generators()
+	generators, err := group.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, generators, 1)
+	name, err := generators[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "good:generate", name)
+
+	loadFailures, err := group.LoadFailures(ctx)
+	require.NoError(t, err)
+	require.Len(t, loadFailures, 1)
+	require.Contains(t, loadFailures[0], `module "bad"`)
+
+	_, err = ws.Checks().List(ctx)
+	require.ErrorContains(t, err, `module "bad"`)
+
+	selected, err := ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"good"}}).List(ctx)
+	require.NoError(t, err)
+	require.Len(t, selected, 1)
+}
+
 // TestGitRefBackedSyntheticWorkspaceRoundTripsFromID asserts the simplest ID
 // contract for GitRef.asWorkspace: a workspace returned from a Git ref can be
 // saved as an ID, loaded again, and still reads files from that Git ref.

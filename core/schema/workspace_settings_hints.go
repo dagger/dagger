@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -16,6 +17,7 @@ type constructorArgHint struct {
 	Name         string
 	TypeLabel    string
 	IsList       bool
+	IsObject     bool
 	Description  string
 	ExampleValue string
 }
@@ -37,11 +39,11 @@ func workspaceSettingsHintIntrospectionContext(
 	return ctx, srv, nil
 }
 
-func introspectConstructorArgs(
+func introspectModule(
 	ctx context.Context,
 	srv *dagql.Server,
 	ref string,
-) ([]constructorArgHint, error) {
+) (*core.Module, error) {
 	var mod dagql.ObjectResult[*core.Module]
 	if err := srv.Select(ctx, srv.Root(), &mod,
 		dagql.Selector{
@@ -55,16 +57,15 @@ func introspectConstructorArgs(
 	); err != nil {
 		return nil, fmt.Errorf("loading module: %w", err)
 	}
-
-	return constructorHintsFromModule(mod.Self()), nil
+	return mod.Self(), nil
 }
 
-func introspectConstructorArgsFromDirectory(
+func introspectModuleFromDirectory(
 	ctx context.Context,
 	srv *dagql.Server,
 	dir dagql.ObjectResult[*core.Directory],
 	sourceRootPath string,
-) ([]constructorArgHint, error) {
+) (*core.Module, error) {
 	sourceRootPath = path.Clean(filepath.ToSlash(sourceRootPath))
 	if sourceRootPath == "" {
 		sourceRootPath = "."
@@ -79,8 +80,24 @@ func introspectConstructorArgsFromDirectory(
 	}); err != nil {
 		return nil, fmt.Errorf("loading module from directory: %w", err)
 	}
+	return mod.Self(), nil
+}
 
-	return constructorHintsFromModule(mod.Self()), nil
+// mainObjectFunctionNames lists the main object's functions in GraphQL field form, sorted.
+func mainObjectFunctionNames(mod *core.Module) []string {
+	if mod == nil {
+		return nil
+	}
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(mainObj.Functions))
+	for _, fn := range mainObj.Functions {
+		names = append(names, fn.Self().Name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func constructorHintsFromModule(mod *core.Module) []constructorArgHint {
@@ -139,6 +156,7 @@ func buildHintFromArg(arg *core.FunctionArg) (constructorArgHint, bool) {
 		Name:         arg.Name,
 		TypeLabel:    typeLabel,
 		IsList:       arg.TypeDef.Self().Kind == core.TypeDefKindList,
+		IsObject:     arg.TypeDef.Self().Kind == core.TypeDefKindObject,
 		Description:  arg.Description,
 		ExampleValue: exampleValue,
 	}, true

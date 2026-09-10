@@ -65,12 +65,17 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The original module in which the generator has been defined
+     * The module that defined the generator, or null for an engine-defined generator
      */
-    public function originalModule(): Module
+    public function originalModule(): ?Module
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Module::class, new \Dagger\Id((string)$id), 'Module');
     }
 
     /**

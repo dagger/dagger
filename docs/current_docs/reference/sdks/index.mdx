@@ -18,15 +18,15 @@ Install a module into a workspace (`dagger.toml`) to make it part of the command
 
 ## Developer workflow
 
-Dagger ships no language-specific module tooling in the CLI. Instead, each SDK is itself a Dagger module, such as `github.com/dagger/go-sdk` or `dang-sdk`, and you call its functions to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
+Each SDK is a Dagger module, such as `dagger.io/sdk/go` or `dagger.io/sdk/dang`. Install it with `dagger module install`, then use `dagger module init <SDK>` to create a module. See each [SDK page](#choose-your-sdk) for language options; the development loop is the same:
 
-1. **Scaffold** a new module. The SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../../using/generating.mdx) you apply.
+1. **Scaffold** a new module with `dagger module init <SDK>`. It records the module in `dagger.toml` and generates its source and bindings in one [changeset](../../using/generating.mdx).
 2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](../api/index.mdx).
-3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
-4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
+3. **Regenerate** the client bindings with `dagger generate` whenever the module's API changes.
+4. **Add dependencies** with `dagger module client add <ref> --sdk=<SDK>` from the module directory. It records the target in `dagger.toml` and regenerates the module.
 5. **Check and test** with the module's checks and your own tests.
 
-The verbs `dagger check` and `dagger generate` are the same across every SDK; the scaffold, regenerate, and dependency steps come from the SDK module.
+The CLI uses the same module commands across SDKs. Each SDK supplies the language-specific generation code.
 
 ## Designing a good API
 
@@ -53,7 +53,7 @@ Round these out with the rest of the platform: settings and environments for tea
 
 ## Quality
 
-A module is ready for other people when its public API is small and well-named, its functions and arguments are documented (so `dagger api call --help` is useful), its inputs and outputs are typed and composable, and its secrets, services, and side effects are explicit. Cover the main path and the important failure modes with tests. Treat the API as a contract: renaming a function or changing a default is a breaking change. Publish modules as versioned Git refs; consumers add them with `dagger install`.
+A module is ready for other people when its public API is small and well-named, its functions and arguments are documented (so `dagger api call --help` is useful), its inputs and outputs are typed and composable, and its secrets, services, and side effects are explicit. Cover the main path and the important failure modes with tests. Treat the API as a contract: renaming a function or changing a default is a breaking change. Publish modules as versioned Git refs; consumers add them with `dagger module install`.
 
 ## Choose your SDK
 

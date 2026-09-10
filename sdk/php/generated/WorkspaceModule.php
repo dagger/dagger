@@ -23,6 +23,15 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
+     * List the functions of this module's main object, in GraphQL field form.
+     */
+    public function functions(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('functions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
+    }
+
+    /**
      * A unique identifier for this WorkspaceModule.
      */
     public function id(): Id

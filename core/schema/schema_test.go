@@ -98,6 +98,45 @@ func schemaArgument(t *testing.T, field *codegenintrospection.Field, name string
 	return nil
 }
 
+func TestWorkspaceClientSDKSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "client-sdk-schema-client", SessionID: "client-sdk-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, view := range []call.View{baseSchemaView(), "v1.0.0"} {
+		dag, err := base.Fork(ctx, root, view)
+		require.NoError(t, err)
+		data, err := getSchemaJSON(nil, nil, view, dag)
+		require.NoError(t, err)
+		ws := decodeSchemaResponse(t, data).Schema.Types.Get("Workspace")
+		if view == baseSchemaView() {
+			if ws != nil {
+				require.Nil(t, schemaField(ws, "withClient"))
+				require.Nil(t, schemaField(ws, "withoutClient"))
+			}
+			continue
+		}
+		require.NotNil(t, ws)
+		for _, name := range []string{"withClient", "withoutClient"} {
+			field := schemaField(ws, name)
+			require.NotNil(t, field)
+			require.False(t, schemaArgument(t, field, "module").IsOptional())
+			sdk := schemaArgument(t, field, "sdk")
+			require.True(t, sdk.IsOptional())
+			require.NotNil(t, sdk.DefaultValue)
+			require.Equal(t, `""`, *sdk.DefaultValue)
+		}
+		require.True(t, schemaArgument(t, schemaField(ws, "withClient"), "settings").IsOptional())
+	}
+}
+
 func TestSchemaJSONScrubbing(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)

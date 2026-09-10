@@ -172,20 +172,16 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
-	terminalCmd.GroupID = "daily"
+	shellCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
-	activityCmd.GroupID = "daily"
 
-	moduleDepInstallCmd.GroupID = "workspace"
-	moduleDepUninstallCmd.GroupID = "workspace"
-	installedCmd.GroupID = "workspace"
-	moduleUpdateCmd.GroupID = "workspace"
-	searchCmd.GroupID = "workspace"
-	settingsCmd.GroupID = "workspace"
+	moduleCmd.GroupID = "workspace"
+	sdkCmd.GroupID = "workspace"
+	installAliasCmd.GroupID = "workspace"
+	uninstallAliasCmd.GroupID = "workspace"
+	settingsAliasCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
-	moduleCmd.GroupID = "toolbox"
-	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
@@ -201,27 +197,23 @@ func init() {
 		queryCmd,
 		apiCmd,
 		traceCmd,
-		settingsCmd,
 		checksCmd,
 		upCmd,
-		terminalCmd,
+		shellCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
-		moduleDepInstallCmd,
-		moduleDepUninstallCmd,
-		moduleUpdateCmd,
-		setupCmd,
-		searchCmd,
-		installedCmd,
-		activityCmd,
 		moduleCmd,
 		sdkCmd,
+		installAliasCmd,
+		uninstallAliasCmd,
+		settingsAliasCmd,
+		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		functionsAliasCmd,
 		sessionAliasCmd,
-		shellCmd,
+		scriptCmd,
 		mcpCmd,
 	)
 
@@ -237,6 +229,8 @@ func init() {
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
 	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
+	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
+	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -253,6 +247,9 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
+	// Parse each parent's flags before entering a child command. SDK settings
+	// can then use the same name as a module-init flag without replacing it.
+	TraverseChildren:      true,
 	Use:                   "dagger [options] [subcommand | file...]",
 	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
@@ -310,7 +307,7 @@ var rootCmd = &cobra.Command{
 		})
 
 		// Keep subscription OAuth tokens fresh for as long as this command
-		// runs: `dagger shell`/`agent` sessions outlive an hour-long access
+		// runs: `dagger script`/`agent` sessions outlive an hour-long access
 		// token, and refreshing ahead of expiry keeps the round-trip off the
 		// critical path. No-op unless a subscription provider is configured;
 		// the on-demand refresher hook stays the fallback.
@@ -332,17 +329,15 @@ var rootCmd = &cobra.Command{
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	// Historically, the root command fell back to the hidden shell command:
-	// `dagger`, `dagger -c ...`, and `dagger file.dsh` all executed shell.
-	// Bare `dagger` now prints regular CLI usage, but explicit shell-style root
-	// invocations still take the old fallback below.
+	// Bare `dagger` prints regular CLI usage. Explicit script invocations
+	// (`dagger -c ...` and `dagger file.dsh`) use the hidden script command.
 	if len(args) == 0 && !hasChangedRootShellFlag(cmd) {
 		return cmd.Usage()
 	}
 	if len(args) > 0 && !isFile(args[0]) {
 		return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
 	}
-	cmd.SetArgs(append([]string{"shell"}, args...))
+	cmd.SetArgs(append([]string{"script"}, args...))
 	return cmd.Execute()
 }
 
@@ -519,6 +514,9 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 }
 
 func execXRelease(ctx context.Context) error {
+	if xRelease == "" {
+		return nil
+	}
 	ref := strings.TrimSpace(xRelease)
 	downloadRef, engineRef, release := xReleaseReleaseRef(ref)
 	resolved := false
@@ -570,7 +568,7 @@ func execXRelease(ctx context.Context) error {
 	if err := execCLI(binPath, execArgs, env); err != nil {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
 	}
-	return nil
+	return errors.New("internal error: experimental release exec returned without replacing the current process")
 }
 
 func xReleaseReleaseRef(ref string) (downloadRef string, engineRef string, ok bool) {
@@ -666,10 +664,21 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags(root *cobra.Command, args []string) {
+func parseGlobalFlags(root *cobra.Command, args []string) []string {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if _, ok := flag.Value.(interface{ replay() }); ok || flag.Name == "help" {
+			return
+		}
+		value := &parsedGlobalFlagValue{Value: flag.Value}
+		if slice, ok := flag.Value.(pflag.SliceValue); ok {
+			flag.Value = &parsedGlobalSliceFlagValue{parsedGlobalFlagValue: value, SliceValue: slice}
+		} else {
+			flag.Value = value
+		}
+	})
 	cmd, commandArgs := resolveCommand(root, args)
 	if cmd == nil {
-		return
+		return args
 	}
 
 	flags := copyCommandFlags(cmd, "global")
@@ -699,6 +708,66 @@ func parseGlobalFlags(root *cobra.Command, args []string) {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
+	// Dynamic SDK command registration needs the command path as well as its
+	// positional arguments. resolveCommand removed that path before parsing.
+	return append(strings.Fields(commandName(cmd)), flags.Args()...)
+}
+
+// replayGlobalFlags skips the occurrences already applied during setup. Later
+// occurrences, such as a global flag after a dynamic function, still apply.
+func replayGlobalFlags(root *cobra.Command) {
+	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if value, ok := flag.Value.(interface{ replay() }); ok {
+			value.replay()
+		}
+	})
+}
+
+type parsedGlobalFlagValue struct {
+	pflag.Value
+	values    []string
+	replaying bool
+}
+
+func (value *parsedGlobalFlagValue) Set(arg string) error {
+	if value.replaying && len(value.values) > 0 && value.values[0] == arg {
+		value.values = value.values[1:]
+		return nil
+	}
+	if err := value.Value.Set(arg); err != nil {
+		return err
+	}
+	if !value.replaying {
+		value.values = append(value.values, arg)
+	}
+	return nil
+}
+
+func (value *parsedGlobalFlagValue) replay() {
+	value.replaying = true
+}
+
+type parsedGlobalSliceFlagValue struct {
+	*parsedGlobalFlagValue
+	pflag.SliceValue
+}
+
+// parseCommandFlagsWithoutGlobals adds module constructor flags to a dynamic
+// command. Its globals were already parsed before loading the module.
+func parseCommandFlagsWithoutGlobals(cmd *cobra.Command, args []string) error {
+	values := map[*pflag.Flag]pflag.Value{}
+	cmd.Root().PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			values[flag] = flag.Value
+			flag.Value = ignoredFlagValue{Value: flag.Value}
+		}
+	})
+	defer func() {
+		for flag, value := range values {
+			flag.Value = value
+		}
+	}()
+	return cmd.ParseFlags(args)
 }
 
 func xReleaseLogLine(msg string) string {
@@ -709,15 +778,11 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
-// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
-// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
-//
-//nolint:unparam
-func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+func setWorkspaceFlagPolicy(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = workspaceFlagPolicyLocalOnly
 }
 
 func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
@@ -769,7 +834,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
-	case "settings", "workspace settings":
+	case "settings", "workspace settings", "module settings":
 		return len(args) >= 3
 	default:
 		return false
@@ -859,7 +924,7 @@ func commandShowsFinalProgress(cmd *cobra.Command) bool {
 // `dagger api session`). Empty when unresolvable or unannotated; a resolution
 // error just means cobra will reject the command line later anyway.
 func commandProgressDefault(args []string) string {
-	cmd, _, err := rootCmd.Traverse(args)
+	cmd, _, err := rootCmd.Find(args)
 	if err != nil || cmd == nil {
 		return ""
 	}
@@ -899,7 +964,12 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
-	parseGlobalFlags(rootCmd, os.Args[1:])
+	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
+	invocationDir, err := pathutil.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
@@ -916,14 +986,20 @@ func Main() {
 		stop()
 		os.Exit(code)
 	}
-	if xRelease != "" {
-		if err := execXRelease(ctx); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
+	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	// A trailing inherited --x-release is known only after SDK discovery.
+	if err := execXRelease(ctx); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		exitWithCode(1)
+	}
+	replayGlobalFlags(rootCmd)
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
@@ -999,13 +1075,6 @@ func Main() {
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
-
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError
@@ -1126,6 +1195,23 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 
 const visibleAliasesAnnotation = "help:visibleAliases"
 const hiddenAliasesAnnotation = "help:hiddenAliases"
+const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
+const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+
+func availableSubcommandsTitle(cmd *cobra.Command) string {
+	title := "AVAILABLE COMMANDS"
+	if cmd.Annotations != nil && cmd.Annotations[availableSubcommandsTitleAnnotation] != "" {
+		title = cmd.Annotations[availableSubcommandsTitleAnnotation]
+	}
+	return termenv.String(title).Bold().String()
+}
+
+func noAvailableSubcommands(cmd *cobra.Command) string {
+	if cmd.HasAvailableSubCommands() || cmd.Annotations == nil {
+		return ""
+	}
+	return cmd.Annotations[noAvailableSubcommandsAnnotation]
+}
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -1467,9 +1553,14 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableSubCommands}}
 
-{{ "Available Commands" | toUpperBold }}
+{{ availableSubcommandsTitle . }}
 {{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if noAvailableSubcommands .}}
+
+{{ noAvailableSubcommands . }}
+{{- end}}
 
 {{- $localFlags := availableFlags . .LocalFlags}}
 {{- if $localFlags.HasAvailableFlags}}

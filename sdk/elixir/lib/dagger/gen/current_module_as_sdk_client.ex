@@ -61,17 +61,6 @@ defmodule Dagger.CurrentModuleAsSDKClient do
 
     Client.execute(current_module_as_sdk_client.client, query_builder)
   end
-
-  @doc """
-  The pinned version of the bound module, if any.
-  """
-  @spec pin(t()) :: {:ok, String.t()} | {:error, term()}
-  def pin(%__MODULE__{} = current_module_as_sdk_client) do
-    query_builder =
-      current_module_as_sdk_client.query_builder |> QB.select("pin")
-
-    Client.execute(current_module_as_sdk_client.client, query_builder)
-  end
 end
 
 defimpl Jason.Encoder, for: Dagger.CurrentModuleAsSDKClient do

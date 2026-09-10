@@ -156,6 +156,24 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *t
 	}
 }
 
+func (WorkspaceSuite) TestWorkspaceWithDirectoryExportPreservesExistingFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "target"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "target", "keep.txt"), []byte("keep"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	source := c.Directory().WithNewFile("new.txt", "new")
+	require.NoError(t, c.CurrentWorkspace().WithDirectory("target", source).Export(ctx))
+
+	keep, err := os.ReadFile(filepath.Join(workdir, "target", "keep.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "keep", string(keep))
+	added, err := os.ReadFile(filepath.Join(workdir, "target", "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "new", string(added))
+}
+
 // workspaceInitOverExistingFixture is an SDK module whose module-init scaffolds
 // through Workspace.withDirectory, which is what an SDK needs once its
 // destination may already hold something: the user's own files, and the module
@@ -170,8 +188,8 @@ func workspaceInitOverExistingFixture(t testing.TB, c *dagger.Client) *dagger.Co
 		WithNewFile("dagger.toml", `[modules.init-fixture]
 source = "sdk/init-fixture"
 
-[modules.init-fixture.as-sdk]
-name = "fixture"
+[sdks.fixture]
+module = "init-fixture"
 `).
 		WithNewFile("sdk/init-fixture/dagger.json", `{
   "name": "init-fixture",
@@ -182,18 +200,32 @@ name = "fixture"
 		WithNewFile("sdk/init-fixture/main.go", `package main
 
 import (
-	"context"
+	"encoding/json"
 
 	"dagger/init-fixture/internal/dagger"
 )
 
 type InitFixture struct{}
 
-// InitModule scaffolds the SDK-owned files for a new module, onto whatever the
-// destination already holds.
-func (m *InitFixture) InitModule(ctx context.Context, ws *dagger.Workspace, name string, path string) (*dagger.Changeset, error) {
+func (m *InitFixture) FindClientRoot(ws *dagger.Workspace) *string {
+	_ = ws
+	return nil
+}
+
+// GenerateScope scaffolds the SDK-owned files onto the module config that it
+// writes in the same workspace update.
+func (m *InitFixture) GenerateScope(ws *dagger.Workspace, isModule bool, name string, clients []*dagger.ModuleSource) *dagger.Workspace {
+	_ = clients
+	if !isModule {
+		return ws
+	}
+	nameJSON, _ := json.Marshal(name)
+	manifest := "name = " + string(nameJSON) + "\n" +
+		"engineVersion = \"latest\"\n\n" +
+		"[runtime]\n" +
+		"  source = \"go\"\n"
 	scaffold := dag.Directory().WithNewFile("scaffold.txt", name+"\n")
-	return ws.WithDirectory(path, scaffold).Changes(dagger.WorkspaceChangesOpts{From: ws}), nil
+	return ws.WithNewFile("dagger-module.toml", manifest).WithDirectory(".", scaffold)
 }
 `)
 }
@@ -207,7 +239,7 @@ func (WorkspaceSuite) TestModuleInitScaffoldsOverExistingContent(ctx context.Con
 
 	initialized := workspaceInitOverExistingFixture(t, c).
 		WithNewFile(".dagger/modules/newmod/keep.txt", "written before init\n").
-		With(daggerExec("module", "init", "fixture", "newmod", "--no-generate", "--auto-apply"))
+		With(daggerExec("module", "init", "fixture", "--name", "newmod", "--auto-apply"))
 
 	out, err := initialized.CombinedOutput(ctx)
 	require.NoError(t, err, out)

@@ -37,6 +37,11 @@ Examples:
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !upListMode {
+			previous := opts.RootFilter
+			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
+			defer func() { opts.RootFilter = previous }()
+		}
 		return withEngine(
 			cmd.Context(),
 			client.Params{
@@ -102,9 +107,10 @@ func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGro
 	return writeCommandList(cmd.OutOrStdout(), items)
 }
 
-func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) error {
+func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
-	defer zoomSpan.End()
+	// The report uses this span's failure to include the cause and its logs.
+	defer telemetry.EndWithCause(zoomSpan, &rerr)
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// Run blocks until context cancellation (Ctrl+C). Treat that as a clean

@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"dagger.io/dagger"
@@ -9,17 +10,53 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runWorkspaceUpdate(cmd *cobra.Command, _ []string) error {
+func runModuleUpdate(cmd *cobra.Command, names []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger())
+		dag := engineClient.Dagger()
+		var result struct {
+			CurrentWorkspace struct {
+				Result struct {
+					ID dagger.ID
+				}
+			}
+		}
+		if err := dag.Do(ctx, &dagger.Request{
+			Query: `query ModuleUpdate($names: [String!]!) {
+  currentWorkspace {
+    result: withUpdatedModules(names: $names) { id }
+  }
+}`,
+			Variables: map[string]any{"names": names},
+		}, &dagger.Response{Data: &result}); err != nil {
+			return err
+		}
+		if result.CurrentWorkspace.Result.ID == "" {
+			return fmt.Errorf("module update returned no workspace")
+		}
+		current := dag.CurrentWorkspace().WithWorkdir(".")
+		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID).WithWorkdir(".")
+		return updateMaterializedWorkspace(ctx, cmd.OutOrStdout(), dag, current, updated)
 	})
 }
 
-func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client) error {
+func runWorkspaceUpdate(cmd *cobra.Command, _ []string, noGenerate bool) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), noGenerate)
+	})
+}
+
+func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, noGenerate bool) error {
 	current := dag.CurrentWorkspace()
-	updated, err := materializeWorkspace(ctx, dag, current.WithUpdatedLock())
+	updated := current.WithUpdatedLock(dagger.WorkspaceWithUpdatedLockOpts{NoGenerate: noGenerate})
+	return updateMaterializedWorkspace(ctx, outWriter, dag, current, updated)
+}
+
+func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *dagger.Client, current, updated *dagger.Workspace) error {
+	updated, err := materializeWorkspace(ctx, dag, updated)
 	if err != nil {
 		return err
 	}
@@ -32,15 +69,15 @@ func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagg
 			return err
 		}
 	}
-	return writeWorkspaceLockUpdateResult(outWriter, isEmpty)
+	return writeWorkspaceUpdateResult(outWriter, isEmpty)
 }
 
-func writeWorkspaceLockUpdateResult(outWriter io.Writer, isEmpty bool) error {
+func writeWorkspaceUpdateResult(outWriter io.Writer, isEmpty bool) error {
 	if isEmpty {
-		_, err := outWriter.Write([]byte("Lockfile already up to date\n"))
+		_, err := outWriter.Write([]byte("Workspace already up to date\n"))
 		return err
 	}
 
-	_, err := outWriter.Write([]byte("Updated dagger.lock\n"))
+	_, err := outWriter.Write([]byte("Updated workspace\n"))
 	return err
 }

@@ -82,11 +82,11 @@ func NewLLMToolSet() *LLMToolSet {
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
-	// workspace is the Workspace the LLM is bound to, if any. It is the source of
-	// the LLM's schema (MCP.Server) and the target of workspace-mutating tool
-	// results (Changeset overlays); the binding also threads the workspace into
-	// tool dispatch so contextual (+defaultPath) and Workspace-typed args resolve
-	// against it.
+	// workspace is the Workspace the LLM is bound to, if any. It selects the
+	// base schema in baseServer and receives workspace-mutating tool results
+	// (Changeset overlays). The binding also threads the workspace into tool
+	// dispatch so contextual (+defaultPath) and Workspace-typed args resolve
+	// against it. Bound module tools retain their own defining schemas.
 	workspace dagql.ObjectResult[*Workspace]
 	// boundTools are the objects bound via LLM.withTools. Each eligible method of
 	// a bound object becomes a tool; a tool that returns the bound object's own
@@ -280,26 +280,30 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-// Server returns the stable GraphQL schema used for core builtins and tool
-// dispatch. When the LLM is bound to a Workspace (via LLM.withWorkspace), it
-// uses that workspace's served snapshot but deliberately does not compile
-// pending overlay module edits. Bound object tools use the defining schemas
-// captured at composition; explicit recomposition is what adopts an overlay.
-// Without a workspace binding it falls back to the current client's served deps.
-func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
-	if m.workspace.Self() != nil {
-		return WorkspaceServedSchema(ctx, m.workspace)
-	}
-	// No workspace bound (e.g. a synthetic context with no current workspace):
-	// fall back to the current client's served deps — the same schema the CLI
-	// serves.
+// baseServer provides the schema for core tools and dispatch. Bound module
+// tools retain their own defining schemas. Value workspaces use only core here;
+// their modules are loaded from their trees during explicit agent composition.
+func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	deps, err := query.CurrentServedDeps(ctx)
+
+	var deps *SchemaBuilder
+	switch {
+	case m.workspace.Self() == nil:
+		deps, err = query.CurrentServedDeps(ctx)
+	case m.workspace.Self().IsValueWorkspace():
+		deps, err = query.DefaultDeps(ctx)
+	default:
+		ctx, err = loadWorkspaceOwnerContext(ctx, m.workspace)
+		if err != nil {
+			return nil, err
+		}
+		deps, err = query.CurrentServedDeps(ctx)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load tool base schema dependencies: %w", err)
 	}
 	return deps.Schema(ctx)
 }
@@ -319,7 +323,7 @@ func (m *MCP) WithSkills(dir dagql.ObjectResult[*Directory]) *MCP {
 }
 
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
-	srv, err := m.Server(ctx)
+	srv, err := m.baseServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1436,7 +1440,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	if m.workspace.Self() == nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
-	srv, err := m.Server(ctx)
+	srv, err := m.baseServer(ctx)
 	if err != nil {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
@@ -1515,7 +1519,7 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	var mergeErr error
 	var conflictNote string
 	if len(changes) > 0 {
-		srv, err := m.Server(ctx)
+		srv, err := m.baseServer(ctx)
 		if err != nil {
 			mergeErr = err
 		} else if err := m.guardStateChange(); err != nil {

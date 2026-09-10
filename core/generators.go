@@ -20,9 +20,27 @@ import (
 // Generator represents a generator function
 type Generator struct {
 	Node      *ModTreeNode `json:"node"`
-	Completed bool         `field:"true" doc:"Whether the generator complete"`
+	Synthetic *SyntheticGeneratorSpec
+	Completed bool `field:"true" doc:"Whether the generator complete"`
 	Changes   dagql.ObjectResult[*Changeset]
+	// SDK generators keep their Workspace result until a Changeset is needed
+	// for a legacy query or a merge with regular generators.
+	WorkspaceBase   dagql.ObjectResult[*Workspace]
+	WorkspaceResult dagql.ObjectResult[*Workspace]
 }
+
+// SyntheticGeneratorSpec identifies one engine-owned generator. The schema
+// package interprets Kind and executes it. Data-only specifications remain
+// safe when a Generator is persisted and replayed.
+type SyntheticGeneratorSpec struct {
+	Name        string   `json:"name"`
+	Path        []string `json:"path"`
+	Description string   `json:"description,omitempty"`
+	Provider    string   `json:"provider"`
+	Kind        string   `json:"kind"`
+}
+
+type SyntheticGeneratorRunner func(context.Context, *SyntheticGeneratorSpec) (base, generated dagql.ObjectResult[*Workspace], err error)
 
 func (*Generator) Type() *ast.Type {
 	return &ast.Type{
@@ -32,39 +50,73 @@ func (*Generator) Type() *ast.Type {
 }
 
 func (g *Generator) Path() []string {
+	if g.Synthetic != nil {
+		return append([]string(nil), g.Synthetic.Path...)
+	}
 	return g.Node.Path()
 }
 
 func (g *Generator) Description() string {
+	if g.Synthetic != nil {
+		return g.Synthetic.Description
+	}
 	return g.Node.Description
 }
 
 func (g *Generator) Name() string {
+	if g.Synthetic != nil {
+		return g.Synthetic.Name
+	}
 	return g.Node.PathString()
 }
 
 func (g *Generator) OriginalModule() *Module {
+	if g.Node == nil {
+		return nil
+	}
 	return g.Node.OriginalModule.Self()
 }
 
 func (g *Generator) Clone() *Generator {
 	c := *g
-	c.Node = g.Node.Clone()
+	if g.Node != nil {
+		c.Node = g.Node.Clone()
+	}
+	if g.Synthetic != nil {
+		synthetic := *g.Synthetic
+		synthetic.Path = append([]string(nil), g.Synthetic.Path...)
+		c.Synthetic = &synthetic
+	}
 	return &c
 }
 
-func (g *Generator) Run(ctx context.Context) (*Generator, error) {
+func (g *Generator) Run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (*Generator, error) {
 	g = g.Clone()
 
-	cs, _ := g.Node.RunGenerator(ctx, nil, nil) // ignore error as already sent to the trace if needed
+	var cs dagql.ObjectResult[*Changeset]
+	if g.Synthetic != nil {
+		if syntheticRunner == nil {
+			return nil, fmt.Errorf("synthetic generator %q has no runner", g.Name())
+		}
+		var err error
+		g.WorkspaceBase, g.WorkspaceResult, err = syntheticRunner(ctx, g.Synthetic)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cs, _ = g.Node.RunGenerator(ctx, nil, nil) // ignore error as already sent to the trace if needed
+	}
 	g.Completed = true
 	g.Changes = cs
 	return g, nil
 }
 
-func (g *Generator) RequireChangesResult(field string) (dagql.ObjectResult[*Changeset], error) {
+func (g *Generator) RequireChangesResult(ctx context.Context, field string) (dagql.ObjectResult[*Changeset], error) {
 	if !g.Completed {
 		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("generator %q must be run before querying %s", g.Name(), field)
+	}
+	if g.WorkspaceResult.Self() != nil {
+		return generatorWorkspaceChanges(ctx, g.WorkspaceBase, g.WorkspaceResult)
 	}
 	if g.Changes.Self() == nil {
 		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("generator %q did not produce a changeset result", g.Name())
@@ -72,8 +124,8 @@ func (g *Generator) RequireChangesResult(field string) (dagql.ObjectResult[*Chan
 	return g.Changes, nil
 }
 
-func (g *Generator) RequireChanges(field string) (*Changeset, error) {
-	changes, err := g.RequireChangesResult(field)
+func (g *Generator) RequireChanges(ctx context.Context, field string) (*Changeset, error) {
+	changes, err := g.RequireChangesResult(ctx, field)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +191,12 @@ var _ dagql.PersistedObjectDecoder = (*GeneratorGroup)(nil)
 var _ dagql.HasDependencyResults = (*GeneratorGroup)(nil)
 
 type persistedGeneratorPayload struct {
-	NodeID          int    `json:"nodeID,omitempty"`
-	Completed       bool   `json:"completed,omitempty"`
-	ChangesResultID uint64 `json:"changesResultID,omitempty"`
+	NodeID                int                     `json:"nodeID,omitempty"`
+	Synthetic             *SyntheticGeneratorSpec `json:"synthetic,omitempty"`
+	Completed             bool                    `json:"completed,omitempty"`
+	ChangesResultID       uint64                  `json:"changesResultID,omitempty"`
+	WorkspaceBaseResultID uint64                  `json:"workspaceBaseResultID,omitempty"`
+	WorkspaceResultID     uint64                  `json:"workspaceResultID,omitempty"`
 }
 
 type persistedGeneratorObjectPayload struct {
@@ -191,7 +246,7 @@ func (gg *GeneratorGroup) List(ctx context.Context) []*Generator {
 }
 
 // Run all the generators in the group
-func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
+func (gg *GeneratorGroup) Run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (*GeneratorGroup, error) {
 	gg = gg.Clone()
 
 	// Run the generators against the workspace this group was rolled up from, so
@@ -207,8 +262,19 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 		// Reset output fields, in case we're re-running
 		generator.Completed = false
 		generator.Changes = dagql.ObjectResult[*Changeset]{}
+		generator.WorkspaceBase = dagql.ObjectResult[*Workspace]{}
+		generator.WorkspaceResult = dagql.ObjectResult[*Workspace]{}
 		jobs = jobs.WithJob(generator.Name(), func(ctx context.Context) error {
-			cs, err := generator.Node.RunGenerator(ctx, nil, nil)
+			var cs dagql.ObjectResult[*Changeset]
+			var err error
+			if generator.Synthetic != nil {
+				if syntheticRunner == nil {
+					return fmt.Errorf("synthetic generator %q has no runner", generator.Name())
+				}
+				generator.WorkspaceBase, generator.WorkspaceResult, err = syntheticRunner(ctx, generator.Synthetic)
+			} else {
+				cs, err = generator.Node.RunGenerator(ctx, nil, nil)
+			}
 			generator.Completed = true
 			generator.Changes = cs
 			return err
@@ -222,7 +288,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 
 func (gg *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	for _, g := range gg.Generators {
-		changes, err := g.RequireChanges("isEmpty")
+		changes, err := g.RequireChanges(ctx, "isEmpty")
 		if err != nil {
 			return false, err
 		}
@@ -235,32 +301,33 @@ func (gg *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChangesetsMergeConflict) (*Changeset, error) {
-	res, err := NewEmptyChangeset(ctx)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]dagql.ObjectResult[*Changeset], 0, len(gg.Generators))
-	cs := make([]*Changeset, 0, len(gg.Generators))
+func (gg *GeneratorGroup) ChangeResults(ctx context.Context) ([]dagql.ObjectResult[*Changeset], error) {
+	results := make([]dagql.ObjectResult[*Changeset], 0, len(gg.Generators)+1)
+	usedSDKGraph := false
 	for _, g := range gg.Generators {
-		changes, err := g.RequireChangesResult("changes")
+		if g.Synthetic != nil && usedSDKGraph {
+			continue // Every selected SDK handle contains the same graph result.
+		}
+		changes, err := g.RequireChangesResult(ctx, "changes")
 		if err != nil {
 			return nil, err
 		}
+		if g.Synthetic != nil {
+			usedSDKGraph = true
+		} else if gg.BoundWorkspace.Self() != nil {
+			// Regular generators return Changesets relative to the invocation
+			// directory. The Workspace merge uses workspace-root paths.
+			changes, err = generatorChangesAtWorkspaceRoot(ctx, changes, gg.BoundWorkspace.Self().Cwd)
+			if err != nil {
+				return nil, err
+			}
+		}
 		results = append(results, changes)
-		cs = append(cs, changes.Self())
 	}
-	merged, err := res.WithChangesets(ctx, cs, conflictStrategy)
-	if err != nil {
-		return nil, err
-	}
-	if err := gg.verifySkippedModules(ctx, results); err != nil {
-		return nil, err
-	}
-	return merged, nil
+	return results, nil
 }
 
-// verifySkippedModules settles the modules this group skipped at load time.
+// VerifySkippedModules settles the modules this group skipped at load time.
 // A module that failed to load because its generated files were missing or
 // stale is often repaired by the very run that skipped it — which can only be
 // told after generating, and only for sure by trying. For each skipped module
@@ -272,11 +339,9 @@ func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChan
 // has to fix. Untouched modules are left alone: nothing in this run could have
 // changed their outcome, so their load error stands.
 //
-// The changed paths and the overlay come from the per-generator changesets
-// rather than the merged one: those are attached results, while the merged
-// changeset is only attached once Changes returns. Their union is what the
-// merge contains anyway (a conflict would have failed the merge above).
-func (gg *GeneratorGroup) verifySkippedModules(ctx context.Context, changes []dagql.ObjectResult[*Changeset]) error {
+// The changed paths and the overlay come from the attached merge inputs.
+// The caller checks merge conflicts before it verifies skipped modules.
+func (gg *GeneratorGroup) VerifySkippedModules(ctx context.Context, changes []dagql.ObjectResult[*Changeset]) error {
 	if len(gg.LoadFailures) == 0 || gg.BoundWorkspace.Self() == nil {
 		return nil
 	}
@@ -413,7 +478,23 @@ func encodePersistedGeneratorPayload(
 	}
 	payload := persistedGeneratorPayload{
 		NodeID:    nodeID,
+		Synthetic: g.Synthetic,
 		Completed: g.Completed,
+	}
+	for _, ref := range []struct {
+		value dagql.ObjectResult[*Workspace]
+		id    *uint64
+	}{
+		{g.WorkspaceBase, &payload.WorkspaceBaseResultID},
+		{g.WorkspaceResult, &payload.WorkspaceResultID},
+	} {
+		if ref.value.Self() != nil {
+			id, err := encodePersistedObjectRef(cache, ref.value, "generator workspace")
+			if err != nil {
+				return persistedGeneratorPayload{}, err
+			}
+			*ref.id = id
+		}
 	}
 	if g.Completed && g.Changes.Self() != nil {
 		changesID, err := encodePersistedObjectRef(cache, g.Changes, "generator changes")
@@ -431,15 +512,19 @@ func decodePersistedGeneratorPayload(
 	nodes map[int]*ModTreeNode,
 	payload persistedGeneratorPayload,
 ) (*Generator, error) {
-	if payload.NodeID == 0 {
-		return nil, fmt.Errorf("decode persisted generator: missing node ID")
-	}
-	node, ok := nodes[payload.NodeID]
-	if !ok {
-		return nil, fmt.Errorf("decode persisted generator: unknown node ID %d", payload.NodeID)
+	var node *ModTreeNode
+	if payload.NodeID != 0 {
+		var ok bool
+		node, ok = nodes[payload.NodeID]
+		if !ok {
+			return nil, fmt.Errorf("decode persisted generator: unknown node ID %d", payload.NodeID)
+		}
+	} else if payload.Synthetic == nil {
+		return nil, fmt.Errorf("decode persisted generator: missing node or synthetic specification")
 	}
 	g := &Generator{
 		Node:      node,
+		Synthetic: payload.Synthetic,
 		Completed: payload.Completed,
 	}
 	if payload.ChangesResultID != 0 {
@@ -448,6 +533,21 @@ func decodePersistedGeneratorPayload(
 			return nil, err
 		}
 		g.Changes = changes
+	}
+	for _, ref := range []struct {
+		id    uint64
+		value *dagql.ObjectResult[*Workspace]
+	}{
+		{payload.WorkspaceBaseResultID, &g.WorkspaceBase},
+		{payload.WorkspaceResultID, &g.WorkspaceResult},
+	} {
+		if ref.id != 0 {
+			ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, ref.id, "generator workspace")
+			if err != nil {
+				return nil, err
+			}
+			*ref.value = ws
+		}
 	}
 	return g, nil
 }
@@ -496,9 +596,13 @@ func (g *Generator) AttachDependencyResults(
 	if g == nil {
 		return nil, nil
 	}
-	owned, err := attachModTreeNodeDependencyResults(g.Node, attach)
-	if err != nil {
-		return nil, err
+	var owned []dagql.AnyResult
+	if g.Node != nil {
+		var err error
+		owned, err = attachModTreeNodeDependencyResults(g.Node, attach)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if g.Changes.Self() != nil {
 		attached, err := attach(g.Changes)
@@ -510,6 +614,21 @@ func (g *Generator) AttachDependencyResults(
 			return nil, fmt.Errorf("attach generator changes: unexpected result %T", attached)
 		}
 		g.Changes = typed
+		owned = append(owned, typed)
+	}
+	for _, ref := range []*dagql.ObjectResult[*Workspace]{&g.WorkspaceBase, &g.WorkspaceResult} {
+		if ref.Self() == nil {
+			continue
+		}
+		attached, err := attach(*ref)
+		if err != nil {
+			return nil, fmt.Errorf("attach generator workspace: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach generator workspace: unexpected result %T", attached)
+		}
+		*ref = typed
 		owned = append(owned, typed)
 	}
 	return owned, nil
@@ -546,6 +665,7 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		}
 		groupPayload.BoundWorkspaceResultID = wsID
 	}
+
 	payload, err := json.Marshal(groupPayload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
@@ -596,6 +716,7 @@ func (*GeneratorGroup) DecodePersistedObject(
 		}
 		group.BoundWorkspace = ws
 	}
+
 	return group, nil
 }
 
@@ -633,5 +754,6 @@ func (gg *GeneratorGroup) AttachDependencyResults(
 		gg.BoundWorkspace = typed
 		owned = append(owned, typed)
 	}
+
 	return owned, nil
 }

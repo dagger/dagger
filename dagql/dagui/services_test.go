@@ -103,3 +103,49 @@ func TestSurfacedServicesName(t *testing.T) {
 		t.Fatalf("bare.Name() = %q, want span-name fallback", bare.Name())
 	}
 }
+
+// TestServiceDisplaySpans covers the live-dashboard anchor for `dagger up`:
+// per-service display spans (a service name WITHOUT the engine's
+// service-instance mark) surface in start order from the moment they exist,
+// wherever they sit beneath the root; instance and boundary-contained spans
+// stay out.
+func TestServiceDisplaySpans(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		runID
+		displayAID
+		displayBID
+		execAID
+		boundaryID
+		hiddenID
+	)
+	markDisplay := func(snap SpanSnapshot, name string) SpanSnapshot {
+		snap.ServiceName = name
+		return snap
+	}
+	db := NewDB()
+	boundary := serviceTestSnapshot(boundaryID, "fixture", spanID(rootID))
+	boundary.Boundary = true
+	// Import the later-starting display span first to prove the sort.
+	db.ImportSnapshots([]SpanSnapshot{
+		serviceTestSnapshot(rootID, "root", SpanID{}),
+		// the call machinery the display spans live under
+		serviceTestSnapshot(runID, "UpGroup.run", spanID(rootID)),
+		markDisplay(serviceTestSnapshot(displayBID, "b :81", spanID(runID)), "b"),
+		markDisplay(serviceTestSnapshot(displayAID, "a :80", spanID(runID)), "a"),
+		// the engine's service-instance span is NOT a display span
+		markService(serviceTestSnapshot(execAID, "exec a", spanID(displayAID)), "a.dagger.local"),
+		boundary,
+		// a display span contained behind a boundary (a test fixture) stays out
+		markDisplay(serviceTestSnapshot(hiddenID, "hidden :99", spanID(boundaryID)), "hidden"),
+	})
+
+	displays := db.ServiceDisplaySpans(db.RootSpan)
+	names := make([]string, len(displays))
+	for i, span := range displays {
+		names[i] = span.Name
+	}
+	if len(displays) != 2 || names[0] != "a :80" || names[1] != "b :81" {
+		t.Fatalf("displays = %v, want [a :80 b :81]", names)
+	}
+}

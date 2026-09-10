@@ -22,7 +22,7 @@ function that returns one. Connect them in `dagger.toml`:
 source = "./ci/myapp"
 
 [modules.playwright]
-source = "github.com/dagger/playwright"
+source = "dagger.io/js/playwright"
 
 [modules.playwright.settings]
 service = "myapp:serve"
@@ -60,6 +60,29 @@ assets = "frontend:assets"
 source = "source-prep:workspace"
 ```
 
+## Reference the workspace entrypoint
+
+The entrypoint module's functions are hoisted onto the workspace root, so a
+reference to one can drop the module name:
+
+```shell
+dagger settings playwright service serve
+```
+
+The config always stores the long form:
+
+```toml
+[modules.myapp]
+source = "./ci/myapp"
+entrypoint = true
+
+[modules.playwright.settings]
+service = "myapp:serve"
+```
+
+A bare name is only treated as a reference when the entrypoint has a function
+of that name; otherwise it keeps its ordinary address meaning.
+
 ## Use a reference on the command line
 
 A module reference is an ordinary address string, so it also works as a CLI
@@ -73,7 +96,8 @@ dagger api call playwright --service=myapp:serve test
 
 - The leading segment is a module's install name, the `[modules.X]` key in
   this `dagger.toml`. The second segment is a zero-arg function on it whose
-  return type matches the argument.
+  return type matches the argument. A bare `<function>` with no module segment
+  refers to the workspace entrypoint module.
 - If the first segment names an installed module, the string *is* a module
   reference. A missing function or mismatched type is then a hard error, never
   a silent fallback to an image or URL. If no install name matches, the string
@@ -102,5 +126,5 @@ If you author modules, wiring changes how you shape a constructor:
   than failing: skip the service binding, or fall back to a default image. The
   workspace may have nothing to wire yet.
 
-The [Playwright module](../reference/modules/playwright.mdx) is a worked example of all
+The [Playwright module](../reference/modules/js/playwright.mdx) is a worked example of all
 three.

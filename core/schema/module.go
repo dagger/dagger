@@ -434,38 +434,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
-
-		dagql.Func("asSDK", s.currentModuleAsSDK).
-			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Reads live workspace config to resolve the current module's SDK-role data.").
-			Doc(`Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.`,
-				`Errors if the current module is not installed as an SDK in this workspace.`).
-			Args(
-				dagql.Arg("workspace").Doc(
-					`The workspace to resolve SDK-role data against.`),
-			),
-	}.Install(dag)
-
-	// Gate the as-sdk object types to the cli-1.0+ view so they (and their
-	// auto-generated Binding.as* accessors) stay out of the base/older module
-	// schema, matching the gating on CurrentModule.asSDK above.
-	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDK](dag).View(AfterVersion("v1.0.0-0")))
-	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDKModule](dag).View(AfterVersion("v1.0.0-0")))
-	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDKClient](dag).View(AfterVersion("v1.0.0-0")))
-
-	dagql.Fields[*core.CurrentModuleAsSDK]{
-		dagql.Func("modules", s.currentModuleAsSDKModules).
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.`),
-		dagql.Func("clients", s.currentModuleAsSDKClients).
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The generated clients this SDK produces in the workspace.`),
-	}.Install(dag)
-	dagql.Fields[*core.CurrentModuleAsSDKModule]{}.Install(dag)
-	dagql.Fields[*core.CurrentModuleAsSDKClient]{
-		dagql.Func("moduleSource", s.currentModuleAsSDKClientModuleSource).
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The resolved module source this client is bound to, including its dependency closure and pinned version.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{

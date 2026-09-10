@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"iter"
+	"slices"
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -146,6 +147,12 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	} else {
 		spans = db.AllSpans()
 	}
+	if opts.RootFilter != nil && (!opts.ZoomedSpan.IsValid() || opts.ZoomedSpan == db.PrimarySpan) {
+		if roots := opts.RootFilter(db, view.Zoomed); len(roots) > 0 {
+			spans = slices.Values(roots)
+		}
+	}
+
 	db.WalkSpans(opts, spans, func(tree *TraceTree) {
 		if tree.Parent != nil {
 			tree.Parent.Children = append(tree.Parent.Children, tree)

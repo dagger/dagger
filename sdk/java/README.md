@@ -28,8 +28,8 @@ A [Dagger.io](https://dagger.io) SDK written in Java.
 ### Create a new module
 
 ```console
-$ dagger sdk install java
-$ dagger module init java my-java-module --path my-java-module
+$ dagger module install github.com/dagger/java-sdk
+$ dagger module init java --name my-java-module --path my-java-module
 
 $ tree my-java-module
 my-java-module

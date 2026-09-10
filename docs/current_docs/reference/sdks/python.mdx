@@ -12,33 +12,28 @@ This page is the standalone reference for developing modules with Python. For pl
 
 ## The Python SDK is a module
 
-Module development tooling lives in the **Python SDK module itself**: `github.com/dagger/python-sdk`, not the `dagger` CLI. You install it into your workspace once, then scaffold and maintain modules by calling its functions by name:
+The **Python SDK module**, `dagger.io/sdk/python`, supplies the generation code. Install it once, then use the CLI module commands:
 
 ```shell
 # Install the Python SDK into your workspace (once)
-dagger install github.com/dagger/python-sdk
+dagger module install dagger.io/sdk/python
 
-# Then call its functions
-dagger api call python-sdk <function> ...
+# Create a module
+dagger module init python --name my-module
 ```
 
 ```shell
-dagger api call python-sdk init --help
+dagger module init python --help
 ```
 
-The functions you use most often:
+The commands you use most often:
 
-| Function | What it does |
+| Command | What it does |
 |---|---|
-| `init` | Create a new Python SDK module. Returns a [changeset](../../using/generating.mdx) of files to write. |
-| `mod` | Resolve the module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `config`, `path`. |
-| `mod deps` | Manage Dagger dependencies in `dagger-module.toml` (`add`, `remove`, `update`, `list`). |
-| `mod generate` | Regenerate the module's SDK bindings. Returns a changeset. |
-| `mod engine` | Read or set the required Dagger engine version. |
-| `mod config` | Read or set Python build configuration in `pyproject.toml`. |
-| `generate-all` | Regenerate every discovered Python SDK module. |
-| `templates` | List the init templates this SDK ships. |
-| `modules` | List every Dagger module whose `runtime.source` is `"python"`. |
+| `dagger module init python` | Create a module and generate its bindings. |
+| `dagger module client add`, `rm`, `update`, `list` | Manage the module's clients from its directory. |
+| `dagger generate` | Regenerate registered modules and clients. |
+| `dagger sdk scope list --sdk=python --is-module` | List Python modules. |
 
 The examples below are run from a project working directory (the directory that contains, or will contain, your `.dagger` folder).
 
@@ -48,28 +43,27 @@ The examples below are run from a project working directory (the directory that 
 Run these commands from inside a Git repository. That's where the new module is created.
 :::
 
-Install the Python SDK into your workspace, then create a new module with its `init` function:
+Install the Python SDK into your workspace, then create a new module:
 
 ```shell
-dagger install github.com/dagger/python-sdk
-dagger api call python-sdk init --name=my-module
+dagger module install dagger.io/sdk/python
+dagger module init python --name=my-module
 ```
 
-`init` returns a [changeset](../../using/generating.mdx), a diff of the files to write. Dagger shows it to you to review before anything is written to disk.
+`dagger module init` returns a [changeset](../../using/generating.mdx), a diff of the files to write. Dagger shows it to you to review before anything is written to disk.
 
 `init` arguments:
 
 | Argument | Required | Description |
 |---|---|---|
-| `--name` | yes | Module name. |
-| `--path` | no | Where to create the module. Default: `<nearest .dagger>/modules/<name>`. The target must not already contain a module. |
-| `--template` | no | Materialize files from a named template (see `templates`). Empty uses the minimal default template. |
+| `--name` | no | Module name. Without `--name` or `--path`, inferred as `<project>-dev` and installed as the workspace entrypoint. |
+| `--path` | no | Where to create the module. Default: `<dagger.toml directory>/.dagger/modules/<name>`. A custom path is registered for generation but is not installed. |
+| `--template` | no | Select `default`, `empty`, or `legacy`. Defaults to `default`. |
 | `--python-version` | no | Pin the Python version written into `pyproject.toml`. |
 | `--use-uv` | no | Enable [uv](https://docs.astral.sh/uv/) for the generated project (default on). |
 | `--base-image` | no | Override the runtime base image in `pyproject.toml`. |
-| `--ignore-generated` | no | Add generated SDK paths to `.gitignore` instead of checking them in. |
 
-By default the new module is created under the nearest `.dagger` directory visible from the current workspace path, at `<.dagger>/modules/<name>`. By default the generated SDK files are checked into version control; pass `--ignore-generated` to gitignore them instead.
+By default the module is created at `<dagger.toml directory>/.dagger/modules/<name>`. Commit the generated SDK files with the module.
 
 ### What `init` produces
 
@@ -86,7 +80,7 @@ my-module/
 ```
 
 :::note
-`init` writes only your source (`dagger-module.toml`, `pyproject.toml`, `src/`). The generated `sdk/` client is produced by the first [binding regeneration](#regenerate-bindings), not by `init` itself, and is committed by default.
+`dagger module init` writes the source and generates the `sdk/` client in the same changeset. Commit the generated files with the module.
 :::
 
 `dagger-module.toml` declares the SDK source:
@@ -99,7 +93,7 @@ engineVersion = "v{{ version }}"
 source = "python"
 ```
 
-The starter module is a single `@object_type` whose constructor reads the current workspace into a `source` field (see [Workspace inputs](#workspace-inputs)):
+A module can use a single `@object_type` whose constructor reads the current workspace into a `source` field (see [Workspace inputs](#workspace-inputs)):
 
 ```python title="src/my_module/__init__.py"
 import dagger
@@ -114,7 +108,7 @@ class MyModule:
         self.source = ws.directory("/")
 ```
 
-The starter exposes no functions yet. You add `@function` methods to make it callable. The [next section](#define-objects-and-functions) shows how. Function and argument names are converted from `snake_case` (Python) to `kebab-case` on the CLI (and `camelCase` in the GraphQL API) automatically: a method `container_echo` becomes `container-echo`, and a parameter `string_arg` becomes `--string-arg`.
+This example exposes no functions yet. Add `@function` methods to make it callable. The [next section](#define-objects-and-functions) shows how. Function and argument names are converted from `snake_case` (Python) to `kebab-case` on the CLI (and `camelCase` in the GraphQL API) automatically: a method `container_echo` becomes `container-echo`, and a parameter `string_arg` becomes `--string-arg`.
 
 ## Define objects and functions
 
@@ -169,7 +163,7 @@ class MyModule:
 The set of fields that have a value at construction time forms the module's **constructor**. Callers pass them as top-level flags:
 
 ```shell
-dagger api call --greeting=Hi --name=Dagger message
+dagger api call my-module --greeting=Hi --name=Dagger message
 ```
 
 `@object_type` builds on dataclasses, so you can define an explicit `__init__` to derive state from the constructor arguments, and `field(init=False)` for computed fields:
@@ -313,8 +307,8 @@ def build(self, node_version: str = "20") -> dagger.Container: ...
 ```
 
 ```shell
-dagger api call build              # uses "20"
-dagger api call build --node-version=18
+dagger api call my-module build              # uses "20"
+dagger api call my-module build --node-version=18
 ```
 
 A parameter without a default is **required**. To make an argument nullable (accepts no value, defaulting to `None`), use `T | None`:
@@ -514,7 +508,7 @@ class MyModule:
 Callers supply secrets via providers (`env:`, `file:`, `cmd:`, `op://`, `vault://`, …):
 
 ```shell
-dagger api call github-api --token=env:GITHUB_TOKEN
+dagger api call my-module github-api --token=env:GITHUB_TOKEN
 ```
 
 ### Services
@@ -556,33 +550,21 @@ Services are content-addressed: the same definition always resolves to the same 
 
 ## Module dependencies
 
-Modules can depend on other modules. Manage dependencies in `dagger-module.toml` with `mod deps`. Run these from your project directory; `mod` finds the module at or above the current path (use `--find-up` / `--path` to control resolution).
-
-Add a dependency (returns a changeset of the `dagger-module.toml` edit to review and apply):
+Modules can depend on other modules. Manage their clients from the module directory:
 
 ```shell
-dagger api call python-sdk \
-  mod deps add --source=github.com/shykes/daggerverse/hello@v0.3.0
+cd .dagger/modules/my-module
+dagger module client add github.com/shykes/daggerverse/hello@v0.3.0 --sdk=python
+dagger module client list --sdk=python
+dagger module client update --sdk=python
+dagger module client rm github.com/shykes/daggerverse/hello@v0.3.0 --sdk=python
 ```
 
-`add` accepts `--source` (required, a module reference) and an optional `--name` to override the local name.
-
-List, update, and remove:
-
-```shell
-# List dependency names (or sources when unnamed)
-dagger api call python-sdk mod deps list
-
-# Update one dependency by name, or all remote deps if --name is omitted
-dagger api call python-sdk mod deps update --name=hello
-
-# Remove a dependency by name or source
-dagger api call python-sdk mod deps remove --name=hello
-```
+Client add and remove commands update targets in `dagger.toml`. Client update refreshes `dagger.lock`. All three regenerate the module. Review and apply the changeset. The SDK writes the runtime dependencies into `dagger-module.toml`.
 
 A module reference follows `[proto://]host/repo[/subpath][@version]`; `@version` may be a tag, branch, or commit. Local dependencies use a relative path source (e.g. `./path/to/module`).
 
-After adding a dependency, regenerate bindings (next section) so the dependency appears on `dag` as a typed function:
+Adding a client also regenerates bindings, so its module appears on `dag` as a typed function:
 
 ```python
 @object_type
@@ -595,41 +577,19 @@ class MyModule:
 
 ## Regenerate bindings
 
-The generated client (the `sdk/` directory and `dagger`/`dag` types) reflects the engine API plus your dependencies. Regenerate it after changing dependencies or the required engine version. `mod generate` returns a changeset:
+The generated client (the `sdk/` directory and `dagger`/`dag` types) reflects the engine API plus your dependencies. Regenerate it after changing dependencies or the required engine version. `dagger generate` returns a changeset:
 
 ```shell
-dagger api call python-sdk mod generate
+dagger generate
 ```
 
-To regenerate every Python SDK module discovered in the project at once:
+`dagger generate` runs registered SDK scopes and author-defined generators in the workspace, with one changeset for review.
 
-```shell
-dagger api call python-sdk generate-all
-```
-
-If a project also declares a generator binding, the platform-level `dagger generate` runs all generators (across SDKs) and presents a combined changeset for review. See [Checks, generators, and services](#checks-generators-and-services) below.
-
-**Commit vs. generate.** By default generated SDK files are checked into version control (`init` without `--ignore-generated`). This makes the module self-contained and gives IDEs working autocompletion without a generate step. Re-run `mod generate` and commit the result whenever you change dependencies or bump the engine version. If you scaffolded with `--ignore-generated`, the `sdk/` directory is gitignored and regenerated on demand. Generate locally before opening your IDE so completions work.
+Commit the generated SDK files. Run `dagger generate` and commit the result when you change the module API or engine version.
 
 ## Engine version
 
-`dagger-module.toml` records the Dagger engine version your module requires (`engineVersion`). Manage it with `mod engine`:
-
-```shell template
-# Read the current requirement (without leading "v")
-dagger api call python-sdk mod engine required
-
-# Require a specific version
-dagger api call python-sdk mod engine require --version=v{{ version }}
-
-# Pin to the engine you're running now
-dagger api call python-sdk mod engine require-current
-
-# Pin to the latest stable release
-dagger api call python-sdk mod engine require-latest
-```
-
-After changing the engine version, run `mod generate` to refresh the bindings against the new API.
+`dagger-module.toml` records the Dagger engine version your module requires (`engineVersion`). Edit that field to change the requirement. Then run `dagger generate` to refresh the bindings.
 
 ## Checks, generators, services, directives, and ignore
 
@@ -726,7 +686,7 @@ class MyModule:
 `dagger generate` runs all author-written `@generate` functions across the project and presents the unified changeset for review and apply.
 
 :::note
-A `@generate` function is your own generator (e.g. emitting API clients, scaffolding, or config from your source). This is distinct from `mod generate` (in [Regenerate bindings](#regenerate-bindings)), which regenerates the **Python SDK's own client bindings** in `sdk/`. The two are unrelated: `dagger generate` does not run `mod generate`.
+A `@generate` function is your own generator. `dagger generate` runs these functions and the registered SDK scopes that regenerate the Python client in `sdk/`. See [Regenerate bindings](#regenerate-bindings).
 :::
 
 A **service** returns a `dagger.Service` and is started by `dagger up`. Combine `@function` with `@up`:
@@ -778,7 +738,7 @@ The most direct test is to call your functions and assert on the output:
 
 ```shell
 # Smoke test: does it build?
-dagger api call build
+dagger api call my-module build
 
 # Run all checks
 dagger check
@@ -926,11 +886,11 @@ If `.venv` lives inside the module, add it to `.gitignore` **and** to `"include"
 
 ```shell
 # Read the current configuration
-dagger api call python-sdk mod config get
+dagger api call python-sdk mod --path .dagger/modules/my-module config get
 
 # Set values at once (returns a changeset)
 dagger api call python-sdk \
-  mod config set --python-version=3.12 --use-uv
+  mod --path .dagger/modules/my-module config set --python-version=3.12 --use-uv
 ```
 
 `mod config set` accepts `--python-version`, `--base-image`, and `--use-uv`. You can also pass `--python-version`, `--use-uv`, and `--base-image` at `init` time.
@@ -939,18 +899,17 @@ dagger api call python-sdk \
 
 Modules are distributed as Git repositories. There is no package registry step. Tag a release in your repo, and consumers reference the module by `host/repo[/subpath]@version`.
 
-Pin the engine version and commit generated bindings before tagging:
+Set `engineVersion` in `dagger-module.toml` and commit generated bindings before tagging:
 
 ```shell template
-dagger api call python-sdk mod engine require --version=v{{ version }}
-dagger api call python-sdk mod generate
+dagger generate
 git add -A && git commit -m "release" && git tag v0.1.0 && git push --tags
 ```
 
-Consumers install your module as a dependency with the workspace tooling:
+Consumers install your module into their workspace:
 
 ```shell
-dagger install github.com/you/your-module@v0.1.0
+dagger module install github.com/you/your-module@v0.1.0
 ```
 
 or call it ad hoc:
@@ -961,12 +920,11 @@ dagger -m github.com/you/your-module@v0.1.0 api call <function> ...
 
 ## Troubleshooting
 
-- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Install it with `dagger install github.com/dagger/python-sdk`, then use `dagger api call python-sdk init …` and `dagger api call python-sdk mod generate`.
+- **`dagger init` / `dagger develop` not found.** Install the Python SDK with `dagger module install dagger.io/sdk/python`, then use `dagger module init python` and `dagger generate`.
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it to write the files into your workspace.
-- **Target already contains a module.** `init` refuses to overwrite an existing module. Choose a different `--path` or `--name`.
-- **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `mod generate` (if gitignored) and `uv sync` / `uv pip install -e ./sdk -e .`.
-- **A dependency isn't showing up on `dag`.** Add it with `mod deps add …`, then regenerate bindings with `mod generate …`.
-- **Engine/API version mismatch errors after upgrading.** Update `engineVersion` with `mod engine require …`, then `mod generate` and commit.
+- **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `dagger generate` and `uv sync` / `uv pip install -e ./sdk -e .`.
+- **A dependency isn't showing up on `dag`.** Add it with `dagger module client add <ref> --sdk=python` from the module directory, then apply the changeset.
+- **Engine/API version mismatch errors after upgrading.** Edit `engineVersion` in `dagger-module.toml`, then run `dagger generate` and commit.
 - **Wrong Python version in the runtime.** Set it with `mod config set --python-version=…` (or `.python-version`) and confirm with `mod config get`.
 - **Secrets leaking or rejected.** Type credential arguments as `dagger.Secret`, not `str`, and pass them via a provider (`env:`, `file:`, …). Dagger scrubs `Secret` values from output.
 

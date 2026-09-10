@@ -36,7 +36,7 @@ A few behaviors worth knowing:
 
 ## Where your configuration lands
 
-**Toolchains are modules.** Install one with `dagger install github.com/foo/bar` and `dagger.toml` records it. Same functionality, one concept instead of two.
+**Toolchains are modules.** Install one with `dagger module install github.com/foo/bar` and `dagger.toml` records it. Same functionality, one concept instead of two.
 
 **Blueprints are an entrypoint flag.** A workspace module marked `entrypoint = true` plays the role a blueprint used to.
 
@@ -44,13 +44,13 @@ A few behaviors worth knowing:
 
 ```toml
 [modules.go]
-source = "github.com/dagger/go"
+source = "dagger.io/go"
 
 [modules.go.settings]
 goVersion = "1.22"
 ```
 
-**Modules are managed from the top level.** `dagger search` finds them; `dagger install` and `dagger uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Edit that file directly when authoring a module or adding code dependencies.
+**Modules are managed with `dagger module`.** `dagger module search` finds them; `dagger module install` and `dagger module uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Use `dagger module client add <ref> --sdk=<SDK>` from the module directory to add a code dependency. The SDK records it in the generated module configuration.
 
 ## Workspace arguments in generated Go bindings
 
@@ -87,8 +87,8 @@ This only surfaces at compile time what was already true at runtime: a workspace
 | Before | Now |
 |---|---|
 | `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
-| `dagger toolchain install <module>` | `dagger install <module>` |
-| `dagger install <dep>` (module code dependency) | Add the dependency to `[[dependencies]]` in `dagger-module.toml` |
+| `dagger toolchain install <module>` | `dagger module install <module>` |
+| `dagger install <dep>` (module code dependency) | `dagger module client add <ref> --sdk=<SDK>` from the module directory |
 | `toolchains` array in `dagger.json` | `[modules.*]` in `dagger.toml` |
 | `blueprint` in `dagger.json` | `entrypoint = true` in `dagger.toml` |
 | `customizations` in `dagger.json` | `[modules.*.settings]` in `dagger.toml` |

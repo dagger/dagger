@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +21,31 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
+	require.ErrorIs(t, err, errUnsupportedLockEntry)
+}
+
+func TestUpdateWorkspaceLockIgnoresUnsupportedEntries(t *testing.T) {
+	t.Parallel()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"acme",
+		"resolve",
+		[]any{"input"},
+		"result",
+	))
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitSHA,
+		workspace.LookupInputs(
+			[]any{"https://example.com/repo.git", "refs/heads/main"},
+			workspace.LookupOption{Name: "futureOption", Value: true},
+		),
+		"0123456789012345678901234567890123456789",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(context.Background(), nil, lock))
+	require.Len(t, lock.Entries(), 2)
 }
 
 func TestUpdateVanityURLLockEntry(t *testing.T) {
@@ -129,6 +155,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"https://example.com/repo.git"},
 					workspace.LookupOption{Name: "tagPrefix", Value: "sdk/go"},
+					workspace.LookupOption{Name: "version", Value: "v1.2"},
 				),
 			},
 			"refs/tags/sdk/go/v1.2.3",
@@ -150,6 +177,7 @@ func TestSelectedSHAEntry(t *testing.T) {
 				Inputs: workspace.LookupInputs(
 					[]any{"registry.example/acme/image"},
 					workspace.LookupOption{Name: "protocol", Value: "http"},
+					workspace.LookupOption{Name: "version", Value: "2"},
 				),
 			},
 			"2.0.0",
@@ -189,6 +217,14 @@ func TestUpdateGitLatestLockEntryValidatesInputs(t *testing.T) {
 				workspace.LookupOption{Name: "tagPrefix", Value: ""},
 			),
 			wantErr: "invalid git-latest tagPrefix",
+		},
+		{
+			name: "invalid version query",
+			inputs: workspace.LookupInputs(
+				[]any{"https://example.com/repo.git"},
+				workspace.LookupOption{Name: "version", Value: "v1.x"},
+			),
+			wantErr: `invalid git-latest version v1.x: invalid version query "v1.x"`,
 		},
 		{
 			name: "unknown option",
@@ -231,6 +267,7 @@ func TestParseGitLookupInputsRejectsUnknownOption(t *testing.T) {
 		`cannot update git-sha: unsupported option "depth"; `+
 			`upgrade Dagger or remove the option`,
 	)
+	require.True(t, errors.Is(err, errUnsupportedLockEntry))
 }
 
 func TestParseOCILockInputs(t *testing.T) {
@@ -326,6 +363,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		[]any{"docker.io/library/alpine"},
 		workspace.LookupOption{Name: "protocol", Value: "https"},
 		workspace.LookupOption{Name: "insecureSkipTLSVerify", Value: true},
+		workspace.LookupOption{Name: "version", Value: "v3.20"},
 	)
 	got, err := parseOCILockInputs(workspace.LockOperationOCILatest, inputs, true)
 	require.NoError(t, err)
@@ -333,6 +371,7 @@ func TestParseOCILatestLockInputs(t *testing.T) {
 		Protocol:              serverresolver.RegistryProtocolHTTPS,
 		InsecureSkipTLSVerify: true,
 	}, got.registryTransport)
+	require.Equal(t, "v3.20", got.version)
 
 	_, err = parseOCILockInputs(
 		workspace.LockOperationOCILatest,
