@@ -44,7 +44,7 @@ defmodule Dagger.AgentMiddleware do
   end
 
   @doc """
-  Return the fully qualified name of the agent
+  Return the command name of the agent. Entrypoint targets omit the module prefix.
 
   > #### Experimental {: .warning}
   >

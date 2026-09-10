@@ -34,7 +34,7 @@ class AgentMiddleware extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * Return the fully qualified name of the agent
+     * Return the command name of the agent. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {
