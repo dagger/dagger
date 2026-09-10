@@ -1,17 +1,15 @@
 package workspace
 
 import (
-	"bytes"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
-
-	"github.com/creachadair/tomledit"
-	"github.com/creachadair/tomledit/parser"
-	neontoml "github.com/neongreen/mono/lib/toml"
 )
 
-// UpdateConfigBytes rewrites config bytes while preserving existing comments
-// and formatting when a prior file exists.
+// UpdateConfigBytes applies the differences between the old and new typed
+// config to the original document. Fields absent from both typed configs are
+// left alone, including unknown fields and explicitly written defaults.
 func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if cfg == nil {
 		cfg = &Config{}
@@ -19,119 +17,105 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if err := ValidateSDKs(cfg); err != nil {
 		return nil, err
 	}
-
 	if len(existingData) == 0 {
 		return SerializeConfig(cfg), nil
 	}
-	if configRequiresQuotedPathSegments(cfg) {
-		return SerializeConfig(cfg), nil
-	}
-
-	doc, err := neontoml.Parse(existingData)
-	if err != nil {
-		return nil, fmt.Errorf("parse existing config: %w", err)
-	}
-
-	existingCfg, err := ParseConfig(existingData)
-	if err != nil {
-		return nil, fmt.Errorf("parse existing config state: %w", err)
-	}
-	if configRequiresQuotedPathSegments(existingCfg) {
-		return SerializeConfig(cfg), nil
-	}
-
-	desiredValues := configDocumentMap(cfg)
-	if err := deleteRemovedManagedConfigPaths(doc, configDocumentMap(existingCfg), desiredValues); err != nil {
-		return nil, err
-	}
-	if err := deleteRemovedConfigRoots(doc, existingCfg, cfg); err != nil {
-		return nil, err
-	}
-	if err := doc.ApplyMap(desiredValues); err != nil {
-		return nil, fmt.Errorf("rewrite config document: %w", err)
-	}
-	if err := ensureEmptyEnvSections(doc, cfg.Env); err != nil {
-		return nil, err
-	}
-
-	out, err := pruneUnwantedEmptySections(doc.Bytes(), keepEmptyConfigSectionHeaders(cfg))
+	existing, err := ParseConfig(existingData)
 	if err != nil {
 		return nil, err
 	}
-	out, err = rewriteSDKSections(out, cfg.SDKs)
+	updated, err := updateConfigTable(existingData, nil, configDocumentMap(existing), configDocumentMap(cfg))
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	if _, err := ParseConfig(updated); err != nil {
+		return nil, fmt.Errorf("validate edited config: %w", err)
+	}
+	return updated, nil
 }
 
-// deleteConfigDocumentPath removes the value at parts from the raw document,
-// preserving surrounding formatting and comments. collapsed is the topmost
-// table the removal empties (a prefix of parts, or parts itself).
+func updateConfigTable(data []byte, prefix []string, before, after map[string]any) ([]byte, error) {
+	keys := make([]string, 0, len(before)+len(after))
+	for key := range before {
+		keys = append(keys, key)
+	}
+	for key := range after {
+		if _, ok := before[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		old, had := before[key]
+		value, has := after[key]
+		if had == has && configValuesEqual(old, value) {
+			continue
+		}
+		parts := append(slices.Clone(prefix), key)
+		var err error
+		oldMap, oldTable := old.(map[string]any)
+		newMap, newTable := value.(map[string]any)
+		if oldTable && !has && !configEntryPath(parts) {
+			// Removing the last known field does not remove unknown siblings
+			// in the same table. Whole-entry removal is explicit below.
+			data, err = updateConfigTable(data, parts, oldMap, nil)
+		} else if newTable && (!had || oldTable) {
+			data, err = updateConfigTable(data, parts, oldMap, newMap)
+			if err == nil && len(newMap) == 0 {
+				var doc *configText
+				doc, err = parseConfigText(data)
+				if err == nil {
+					data, err = doc.ensureTable(parts)
+				}
+			}
+		} else {
+			var doc *configText
+			doc, err = parseConfigText(data)
+			if err == nil {
+				if !has {
+					data, err = doc.remove(parts)
+				} else {
+					data, err = doc.set(parts, value)
+				}
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("edit config %q: %w", JoinConfigPath(parts...), err)
+		}
+	}
+	return data, nil
+}
+
+func configEntryPath(parts []string) bool {
+	if len(parts) == 2 {
+		return parts[0] == "modules" || parts[0] == "sdks" || parts[0] == "env" || parts[0] == "ports"
+	}
+	return len(parts) == 4 && (parts[0] == "sdks" && parts[2] == "scopes" || parts[0] == "env" && parts[2] == "modules")
+}
+
 func deleteConfigDocumentPath(data []byte, parts, collapsed []string) ([]byte, error) {
-	del := parts
-	if len(collapsed) < len(parts) {
-		// The document can only drop leaf keys or whole section headers —
-		// deleting an implied intermediate table path is a silent no-op — so
-		// widen to the shortest emptied prefix that is an actual section.
-		// Any levels implied by that section's dotted header vanish with it.
-		sections, err := configSectionSet(data)
+	doc, err := parseConfigText(data)
+	if err != nil {
+		return nil, err
+	}
+	data, err = doc.remove(collapsed)
+	if err != nil {
+		return nil, err
+	}
+	if parts[0] == "env" {
+		doc, err = parseConfigText(data)
 		if err != nil {
 			return nil, err
 		}
-		for probe := collapsed; len(probe) < len(parts); probe = parts[:len(probe)+1] {
-			if sections[JoinConfigPath(probe...)] {
-				del = probe
-				break
-			}
-		}
-	}
-
-	doc, err := neontoml.Parse(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse existing config: %w", err)
-	}
-	path := JoinConfigPath(del...)
-	if err := doc.Delete(path); err != nil {
-		return nil, fmt.Errorf("delete config path %q: %w", path, err)
-	}
-
-	// Removing an env's last overlay may take its only section header with
-	// it; the env must stay defined so --env selection keeps working.
-	if parts[0] == "env" {
-		cfg, err := ParseConfig(doc.Bytes())
+		data, err = doc.ensureTable(parts[:2])
 		if err != nil {
-			return nil, fmt.Errorf("parse config after delete: %w", err)
-		}
-		if env, ok := cfg.Env[parts[1]]; !ok || len(env.Modules) == 0 {
-			if err := ensureEmptyEnvSections(doc, map[string]EnvOverlay{parts[1]: {}}); err != nil {
-				return nil, err
-			}
-			// The placeholder trick also creates an empty [env] parent
-			// header; deleting an exact section only drops that header.
-			if err := doc.Delete("env"); err != nil {
-				return nil, fmt.Errorf("drop empty env header: %w", err)
-			}
+			return nil, err
 		}
 	}
-
-	return doc.Bytes(), nil
-}
-
-// configSectionSet returns the dotted paths of the document's section headers.
-func configSectionSet(data []byte) (map[string]bool, error) {
-	doc, err := tomledit.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("parse config sections: %w", err)
+	if _, err := ParseConfig(data); err != nil {
+		return nil, fmt.Errorf("validate edited config: %w", err)
 	}
-	set := map[string]bool{}
-	for _, section := range doc.Sections {
-		if section.Heading == nil {
-			continue
-		}
-		set[JoinConfigPath(section.Heading.Name...)] = true
-	}
-	return set, nil
+	return data, nil
 }
 
 func configDocumentMap(cfg *Config) map[string]any {
@@ -151,6 +135,9 @@ func configDocumentMap(cfg *Config) map[string]any {
 		for name, entry := range cfg.Modules {
 			module := map[string]any{
 				"source": entry.Source,
+			}
+			if entry.Pin != "" {
+				module["pin"] = entry.Pin
 			}
 			if entry.Entrypoint {
 				module["entrypoint"] = true
@@ -209,268 +196,35 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
-	// SDK declarations are intentionally not included here. They are CLI-managed
-	// state with canonical inline-array formatting, so rewriteSDKSections owns
-	// both legacy removal and canonical rendering after other config formatting
-	// has been preserved.
-
+	if len(cfg.SDKs) > 0 {
+		sdks := make(map[string]any, len(cfg.SDKs))
+		for name, entry := range cfg.SDKs {
+			sdk := map[string]any{"module": entry.Module}
+			if len(entry.Scopes) > 0 {
+				scopes := make(map[string]any, len(entry.Scopes))
+				for name, entry := range entry.Scopes {
+					scope := map[string]any{}
+					if entry.IsModule {
+						scope["is-module"] = true
+					}
+					if entry.Name != "" {
+						scope["name"] = entry.Name
+					}
+					if len(entry.Clients) > 0 {
+						scope["clients"] = slices.Clone(entry.Clients)
+					}
+					if len(entry.Settings) > 0 {
+						scope["settings"] = cloneConfigMap(entry.Settings)
+					}
+					scopes[name] = scope
+				}
+				sdk["scopes"] = scopes
+			}
+			sdks[name] = sdk
+		}
+		values["sdks"] = sdks
+	}
 	return values
-}
-
-func configRequiresQuotedPathSegments(cfg *Config) bool {
-	if cfg == nil {
-		return false
-	}
-	for moduleName, module := range cfg.Modules {
-		if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
-			return true
-		}
-	}
-	for sdkName := range cfg.SDKs {
-		if pathSegmentUnsafeForDocumentUpdate(sdkName) {
-			return true
-		}
-	}
-	for envName, env := range cfg.Env {
-		if pathSegmentUnsafeForDocumentUpdate(envName) {
-			return true
-		}
-		for moduleName, module := range env.Modules {
-			if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
-				return true
-			}
-		}
-	}
-	for host := range cfg.Ports {
-		if pathSegmentUnsafeForDocumentUpdate(host) {
-			return true
-		}
-	}
-	return false
-}
-
-func configMapRequiresQuotedPathSegments(values map[string]any) bool {
-	for key := range values {
-		if pathSegmentUnsafeForDocumentUpdate(key) {
-			return true
-		}
-	}
-	return false
-}
-
-// pathSegmentUnsafeForDocumentUpdate reports whether segment cannot be used as a
-// dotted-path segment when updating an existing config document in place (via
-// neontoml's doc.Set/Delete/ApplyMap). Beyond non-bare characters, an all-digit
-// segment — e.g. a port host like "3000" — is unsafe because the dotted-path
-// parser reads it as a number ("invalid float"). Configs containing such a
-// segment fall back to a full re-serialization, which still writes the segment
-// unquoted as a TOML section header (e.g. [ports.3000]).
-func pathSegmentUnsafeForDocumentUpdate(segment string) bool {
-	return !isBareConfigPathSegment(segment) || isAllDigitConfigPathSegment(segment)
-}
-
-func isAllDigitConfigPathSegment(segment string) bool {
-	if segment == "" {
-		return false
-	}
-	for i := 0; i < len(segment); i++ {
-		if segment[i] < '0' || segment[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func deleteRemovedManagedConfigPaths(doc *neontoml.Document, existingValues, desiredValues map[string]any) error {
-	existingFlat := flattenConfigValues(existingValues)
-	desiredFlat := flattenConfigValues(desiredValues)
-
-	for path := range existingFlat {
-		if _, ok := desiredFlat[path]; ok {
-			continue
-		}
-		if err := doc.Delete(path); err != nil {
-			return fmt.Errorf("delete config path %q: %w", path, err)
-		}
-	}
-
-	return nil
-}
-
-func flattenConfigValues(values map[string]any) map[string]any {
-	flat := map[string]any{}
-	flattenConfigValuesInto(flat, "", values)
-	return flat
-}
-
-func flattenConfigValuesInto(flat map[string]any, prefix string, values map[string]any) {
-	for key, value := range values {
-		fullKey := formatConfigPathSegment(key)
-		if prefix != "" {
-			fullKey = prefix + "." + fullKey
-		}
-
-		nested, ok := value.(map[string]any)
-		if ok {
-			flattenConfigValuesInto(flat, fullKey, nested)
-			continue
-		}
-
-		flat[fullKey] = value
-	}
-}
-
-func deleteRemovedConfigRoots(doc *neontoml.Document, existingCfg, desiredCfg *Config) error {
-	for name := range existingCfg.Modules {
-		if _, ok := desiredCfg.Modules[name]; ok {
-			continue
-		}
-		if err := doc.Delete("modules." + formatConfigPathSegment(name)); err != nil {
-			return fmt.Errorf("delete module %q: %w", name, err)
-		}
-	}
-
-	for envName := range existingCfg.Env {
-		if _, ok := desiredCfg.Env[envName]; ok {
-			continue
-		}
-		if err := doc.Delete("env." + formatConfigPathSegment(envName)); err != nil {
-			return fmt.Errorf("delete env %q: %w", envName, err)
-		}
-	}
-
-	for host := range existingCfg.Ports {
-		if _, ok := desiredCfg.Ports[host]; ok {
-			continue
-		}
-		if err := doc.Delete("ports." + formatConfigPathSegment(host)); err != nil {
-			return fmt.Errorf("delete port %q: %w", host, err)
-		}
-	}
-
-	return nil
-}
-
-func ensureEmptyEnvSections(doc *neontoml.Document, envs map[string]EnvOverlay) error {
-	for envName, env := range envs {
-		if len(env.Modules) > 0 {
-			continue
-		}
-
-		placeholderPath := "env." + formatConfigPathSegment(envName) + ".__dagger_empty_section__"
-		if err := doc.Set(placeholderPath, true); err != nil {
-			return fmt.Errorf("create env %q section: %w", envName, err)
-		}
-		if err := doc.Delete(placeholderPath); err != nil {
-			return fmt.Errorf("finalize env %q section: %w", envName, err)
-		}
-	}
-
-	return nil
-}
-
-func keepEmptyConfigSectionHeaders(cfg *Config) map[string]bool {
-	keep := map[string]bool{}
-	for envName, env := range cfg.Env {
-		if len(env.Modules) > 0 {
-			continue
-		}
-		keep["[env."+formatConfigPathSegment(envName)+"]"] = true
-	}
-	return keep
-}
-
-// rewriteSDKSections removes both beta-era [modules.*.as-sdk] declarations and
-// current [sdks.*] declarations, then appends the canonical top-level SDK
-// registry. SDK state is CLI-managed; everything else retains its formatting
-// and comments.
-func rewriteSDKSections(data []byte, sdks map[string]SDKEntry) ([]byte, error) {
-	doc, err := tomledit.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("parse config for SDK rewrite: %w", err)
-	}
-
-	stripSDKConfigItems(doc.Global)
-	kept := doc.Sections[:0]
-	for _, section := range doc.Sections {
-		if section.Heading != nil && isSDKConfigHeading(section.Heading.Name) {
-			continue
-		}
-		stripSDKConfigItems(section)
-		kept = append(kept, section)
-	}
-	doc.Sections = kept
-
-	var buf bytes.Buffer
-	var formatter tomledit.Formatter
-	if err := formatter.Format(&buf, doc); err != nil {
-		return nil, fmt.Errorf("format config after SDK rewrite: %w", err)
-	}
-	if len(sdks) > 0 {
-		if buf.Len() > 0 {
-			trimmed := bytes.TrimRight(buf.Bytes(), "\n")
-			buf.Reset()
-			buf.Write(trimmed)
-			buf.WriteString("\n\n")
-		}
-		var rendered strings.Builder
-		writeSDKEntries(&rendered, sdks)
-		buf.WriteString(rendered.String())
-	}
-	return buf.Bytes(), nil
-}
-
-func stripSDKConfigItems(section *tomledit.Section) {
-	if section == nil {
-		return
-	}
-	base := section.TableName()
-	kept := section.Items[:0]
-	for _, item := range section.Items {
-		kv, ok := item.(*parser.KeyValue)
-		if ok {
-			full := make([]string, 0, len(base)+len(kv.Name))
-			full = append(full, base...)
-			full = append(full, kv.Name...)
-			if isSDKConfigHeading(full) {
-				continue
-			}
-		}
-		kept = append(kept, item)
-	}
-	section.Items = kept
-}
-
-// isSDKConfigHeading reports canonical [sdks.*] sections and legacy
-// [modules.*.as-sdk] sections.
-func isSDKConfigHeading(key []string) bool {
-	if len(key) >= 1 && key[0] == "sdks" {
-		return true
-	}
-	return len(key) >= 3 && key[0] == "modules" && key[2] == "as-sdk"
-}
-
-func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) ([]byte, error) {
-	doc, err := tomledit.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("parse rewritten config document: %w", err)
-	}
-
-	sections := doc.Sections[:0]
-	for _, section := range doc.Sections {
-		if len(section.Items) == 0 && !keepEmptySections[section.Heading.String()] {
-			continue
-		}
-		sections = append(sections, section)
-	}
-	doc.Sections = sections
-
-	var buf bytes.Buffer
-	var formatter tomledit.Formatter
-	if err := formatter.Format(&buf, doc); err != nil {
-		return nil, fmt.Errorf("format pruned config document: %w", err)
-	}
-	return buf.Bytes(), nil
 }
 
 // FormatConfigPathSegment formats one TOML dotted-key path segment.
