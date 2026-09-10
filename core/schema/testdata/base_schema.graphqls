@@ -57,6 +57,12 @@ object types. Address format depends on the type, and is validated at type
 selection.
 """
 type Address implements Node {
+  """A unique identifier for this Address."""
+  id: ID!
+
+  """The address value"""
+  value: String!
+
   """Load a container from the address."""
   container: Container!
 
@@ -72,9 +78,6 @@ type Address implements Node {
   """Load a git repository from the address."""
   gitRepository: GitRepository!
 
-  """A unique identifier for this Address."""
-  id: ID!
-
   """Load a secret from the address."""
   secret: Secret!
 
@@ -83,9 +86,6 @@ type Address implements Node {
 
   """Load a local socket from the address."""
   socket: Socket!
-
-  """The address value"""
-  value: String!
 }
 
 """A unique identifier for an object."""
@@ -127,22 +127,17 @@ scalar CacheVolumeID
 A comparison between two directories representing changes that can be applied.
 """
 type Changeset implements Exportable & Node & Syncer {
-  """Files and directories that were added in the newer directory."""
-  addedPaths: [String!]!
+  """A unique identifier for this Changeset."""
+  id: ID!
 
-  """The newer/upper snapshot."""
-  after: Directory!
+  """Force evaluation in the engine."""
+  sync: ID! @expectedType(name: "Changeset")
+
+  """Return a snapshot containing only the created and modified files"""
+  layer: Directory!
 
   """Return a Git-compatible patch of the changes"""
   asPatch: File!
-
-  """The older/lower snapshot to compare against."""
-  before: Directory!
-
-  """
-  Structured per-path diff statistics (kind and line counts) for this changeset.
-  """
-  diffStats: [DiffStat!]!
 
   """Applies the diff represented by this changeset to a path on the host."""
   export(
@@ -150,14 +145,11 @@ type Changeset implements Exportable & Node & Syncer {
     path: String!
   ): String!
 
-  """A unique identifier for this Changeset."""
-  id: ID!
-
   """Returns true if the changeset is empty (i.e. there are no changes)."""
   isEmpty: Boolean!
 
-  """Return a snapshot containing only the created and modified files"""
-  layer: Directory!
+  """Files and directories that were added in the newer directory."""
+  addedPaths: [String!]!
 
   """
   Files and directories that existed before and were updated in the newer directory.
@@ -170,8 +162,10 @@ type Changeset implements Exportable & Node & Syncer {
   """
   removedPaths: [String!]!
 
-  """Force evaluation in the engine."""
-  sync: ID! @expectedType(name: "Changeset")
+  """
+  Structured per-path diff statistics (kind and line counts) for this changeset.
+  """
+  diffStats: [DiffStat!]!
 
   """
   Add changes to an existing changeset
@@ -187,6 +181,12 @@ type Changeset implements Exportable & Node & Syncer {
     """What to do on a merge conflict"""
     onConflict: ChangesetMergeConflict = FAIL
   ): Changeset!
+
+  """The older/lower snapshot to compare against."""
+  before: Directory!
+
+  """The newer/upper snapshot."""
+  after: Directory!
 }
 
 """A unique identifier for an object."""
@@ -225,15 +225,6 @@ enum ChangesetsMergeConflict {
 }
 
 type Check implements Node {
-  """Whether the check completed"""
-  completed: Boolean!
-
-  """The description of the check"""
-  description: String!
-
-  """If the check failed, this is the error"""
-  error: Error
-
   """A unique identifier for this Check."""
   id: ID!
 
@@ -242,20 +233,29 @@ type Check implements Node {
   """
   name: String!
 
-  """The original module in which the check has been defined"""
-  originalModule: Module!
-
-  """Whether the check passed"""
-  passed: Boolean!
+  """The description of the check"""
+  description: String!
 
   """The path of the check within its module"""
   path: [String!]!
+
+  """The original module in which the check has been defined"""
+  originalModule: Module!
 
   """An emoji representing the result of the check"""
   resultEmoji: String!
 
   """Execute the check"""
   run: Check!
+
+  """Whether the check completed"""
+  completed: Boolean!
+
+  """Whether the check passed"""
+  passed: Boolean!
+
+  """If the check failed, this is the error"""
+  error: Error
 }
 
 type CheckGroup implements Node {
@@ -265,14 +265,14 @@ type CheckGroup implements Node {
   """Return a list of individual checks and their details"""
   list: [Check!]!
 
-  """Generate a markdown report"""
-  report: File!
-
   """Execute all selected checks"""
   run(
     """If true, stop running checks as soon as any check fails."""
     failFast: Boolean
   ): CheckGroup!
+
+  """Generate a markdown report"""
+  report: File!
 }
 
 """A unique identifier for an object."""
@@ -295,43 +295,40 @@ scalar CloudID
 
 """An OCI-compatible container, also known as a Docker container."""
 type Container implements Exportable & Node & Syncer {
-  """
-  Turn the container into a Service.
-
-  Be sure to set any exposed ports before this conversion.
-  """
-  asService: Service!
+  """A unique identifier for this Container."""
+  id: ID!
 
   """
-  Package the container state as an OCI image, and return it as a tar archive
+  Forces evaluation of the pipeline in the engine.
+
+  It doesn't run the default command if no exec has been set.
   """
-  asTarball(
-    """
-    Identifiers for other platform specific containers.
+  sync: ID! @expectedType(name: "Container")
 
-    Used for multi-platform images.
-    """
-    platformVariants: [ID!] = [] @expectedType(name: "Container")
+  """Creates a named sub-pipeline."""
+  pipeline(
+    """Name of the sub-pipeline."""
+    name: String!
 
-    """
-    Force each layer of the image to use the specified compression algorithm.
+    """Description of the sub-pipeline."""
+    description: String = ""
 
-    If this is unset, then if a layer already has a compressed blob in the
-    engine's cache, that will be used (this can result in a mix of compression
-    algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using
-    Gzip.
-    """
-    forcedCompression: ImageLayerCompression
+    """Labels to apply to the sub-pipeline."""
+    labels: [PipelineLabel!] = []
+  ): Container! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
+  """
+  Download a container image, and apply it to the container state. All previous state will be lost.
+  """
+  from(
     """
-    Use the specified media types for the image's layers.
+    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
 
-    Defaults to OCI, which is largely compatible with most recent container
-    runtimes, but Docker may be needed for older runtimes without OCI support.
+    An address without a tag or digest selects the greatest stable release tag,
+    falling back to the literal "latest" tag when no eligible release exists.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
-  ): File!
+    address: String!
+  ): Container!
 
   """Initializes this container from a Dockerfile build."""
   build(
@@ -371,14 +368,19 @@ type Container implements Exportable & Node & Syncer {
   ): Container! @deprecated(reason: "Use `Directory.build` instead")
 
   """
-  The combined buffered standard output and standard error stream of the last executed command
-
-  Returns an error if no command was executed
+  Return a snapshot of the container's root filesystem. The snapshot can be
+  modified then written back using withRootfs. Use that method for filesystem
+  modifications.
   """
-  combinedOutput: String!
+  rootfs: Directory!
 
-  """Return the container's default arguments."""
-  defaultArgs: [String!]!
+  """
+  Change the container's root filesystem. The previous root filesystem will be lost.
+  """
+  withRootfs(
+    """The new root filesystem."""
+    directory: ID! @expectedType(name: "Directory")
+  ): Container!
 
   """
   Retrieve a directory from the container's root filesystem
@@ -396,150 +398,6 @@ type Container implements Exportable & Node & Syncer {
     expand: Boolean = false
   ): Directory!
 
-  """Retrieves this container's configured docker healthcheck."""
-  dockerHealthcheck: HealthcheckConfig
-
-  """Return the container's OCI entrypoint."""
-  entrypoint: [String!]!
-
-  """Retrieves the value of the specified persistent environment variable."""
-  envVariable(
-    """The name of the environment variable to retrieve (e.g., "PATH")."""
-    name: String!
-  ): String
-
-  """
-  Retrieves the list of persistent environment variables configured on the container.
-  """
-  envVariables: [EnvVariable!]!
-
-  """check if a file or directory exists"""
-  exists(
-    """Path to check (e.g., "/file.txt")."""
-    path: String!
-
-    """
-    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-    """
-    expectedType: ExistsType
-
-    """If specified, do not follow symlinks."""
-    doNotFollowSymlinks: Boolean = false
-  ): Boolean!
-
-  """
-  The exit code of the last executed command
-
-  Returns an error if no command was executed
-  """
-  exitCode: Int!
-
-  """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
-  Configures all available GPUs on the host to be accessible to this container.
-
-  This currently works for Nvidia devices only.
-  """
-  experimentalWithAllGPUs: Container!
-
-  """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
-  Configures the provided list of devices to be accessible to this container.
-
-  This currently works for Nvidia devices only.
-  """
-  experimentalWithGPU(
-    """List of devices to be accessible to this container."""
-    devices: [String!]!
-  ): Container!
-
-  """
-  Writes the container as an OCI tarball to the destination file path on the host.
-
-  It can also export platform variants.
-  """
-  export(
-    """
-    Host's destination path (e.g., "./tarball").
-
-    Path can be relative to the engine's workdir or absolute.
-    """
-    path: String!
-
-    """
-    Identifiers for other platform specific containers.
-
-    Used for multi-platform image.
-    """
-    platformVariants: [ID!] = [] @expectedType(name: "Container")
-
-    """
-    Force each layer of the exported image to use the specified compression algorithm.
-
-    If this is unset, then if a layer already has a compressed blob in the
-    engine's cache, that will be used (this can result in a mix of compression
-    algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using
-    Gzip.
-    """
-    forcedCompression: ImageLayerCompression
-
-    """
-    Use the specified media types for the exported image's layers.
-
-    Defaults to OCI, which is largely compatible with most recent container
-    runtimes, but Docker may be needed for older runtimes without OCI support.
-    """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Boolean!
-
-  """Exports the container as an image to the host's container image store."""
-  exportImage(
-    """Name of image to export to in the host's store"""
-    name: String!
-
-    """
-    Identifiers for other platform specific containers.
-
-    Used for multi-platform image.
-    """
-    platformVariants: [ID!] = [] @expectedType(name: "Container")
-
-    """
-    Force each layer of the exported image to use the specified compression algorithm.
-
-    If this is unset, then if a layer already has a compressed blob in the
-    engine's cache, that will be used (this can result in a mix of compression
-    algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using
-    Gzip.
-    """
-    forcedCompression: ImageLayerCompression
-
-    """
-    Use the specified media types for the exported image's layers.
-
-    Defaults to OCI, which is largely compatible with most recent container
-    runtimes, but Docker may be needed for older runtimes without OCI support.
-    """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
-  ): Void!
-
-  """
-  Retrieves the list of exposed ports.
-
-  This includes ports already exposed by the image, even if not explicitly added with dagger.
-  """
-  exposedPorts: [Port!]!
-
   """
   Retrieves a file at the given path.
 
@@ -556,36 +414,106 @@ type Container implements Exportable & Node & Syncer {
     expand: Boolean = false
   ): File!
 
-  """
-  Download a container image, and apply it to the container state. All previous state will be lost.
-  """
-  from(
-    """
-    Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+  """Retrieves the user to be set for all commands."""
+  user: String!
 
-    An address without a tag or digest selects the greatest stable release tag,
-    falling back to the literal "latest" tag when no eligible release exists.
-    """
-    address: String!
+  """Retrieves this container with a different command user."""
+  withUser(
+    """The user to set (e.g., "root")."""
+    name: String!
   ): Container!
 
-  """A unique identifier for this Container."""
-  id: ID!
-
   """
-  The unique image reference which can only be retrieved immediately after the 'Container.From' call.
-  """
-  imageRef: String!
+  Retrieves this container with an unset command user.
 
-  """Reads the container from an OCI tarball."""
-  import(
-    """File to read the container from."""
-    source: ID! @expectedType(name: "File")
+  Should default to root.
+  """
+  withoutUser: Container!
+
+  """Retrieves the working directory for all commands."""
+  workdir: String!
+
+  """Change the container's working directory. Like WORKDIR in Dockerfile."""
+  withWorkdir(
+    """The path to set as the working directory (e.g., "/app")."""
+    path: String!
 
     """
-    Identifies the tag to import from the archive, if the archive bundles multiple tags.
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
     """
-    tag: String = ""
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Unset the container's working directory.
+
+  Should default to "/".
+  """
+  withoutWorkdir: Container!
+
+  """
+  Retrieves the list of persistent environment variables configured on the container.
+  """
+  envVariables: [EnvVariable!]!
+
+  """Retrieves the value of the specified persistent environment variable."""
+  envVariable(
+    """The name of the environment variable to retrieve (e.g., "PATH")."""
+    name: String!
+  ): String
+
+  """Set a new environment variable in the container."""
+  withEnvVariable(
+    """Name of the environment variable (e.g., "HOST")."""
+    name: String!
+
+    """Value of the environment variable. (e.g., "localhost")."""
+    value: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value according to the current environment
+    variables defined in the container (e.g. "/opt/bin:$PATH").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Export environment variables from an env-file to the container."""
+  withEnvFileVariables(
+    """Identifier of the envfile"""
+    source: ID! @expectedType(name: "EnvFile")
+  ): Container!
+
+  """Set a new environment variable, using a secret value"""
+  withSecretVariable(
+    """Name of the secret variable (e.g., "API_SECRET")."""
+    name: String!
+
+    """Identifier of the secret value."""
+    secret: ID! @expectedType(name: "Secret")
+  ): Container!
+
+  """Retrieves this container minus the given environment variable."""
+  withoutEnvVariable(
+    """The name of the environment variable (e.g., "HOST")."""
+    name: String!
+  ): Container!
+
+  """
+  Retrieves this container minus the given environment variable containing the secret.
+  """
+  withoutSecretVariable(
+    """The name of the environment variable (e.g., "HOST")."""
+    name: String!
+  ): Container!
+
+  """Retrieves this container plus the given label."""
+  withLabel(
+    """The name of the label (e.g., "org.opencontainers.artifact.created")."""
+    name: String!
+
+    """The value of the label (e.g., "2023-01-01T00:00:00Z")."""
+    value: String!
   ): Container!
 
   """Retrieves the value of the specified label."""
@@ -597,218 +525,12 @@ type Container implements Exportable & Node & Syncer {
   """Retrieves the list of labels passed to container."""
   labels: [Label!]!
 
-  """Retrieves the list of paths where a directory is mounted."""
-  mounts: [String!]!
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Name of the sub-pipeline."""
+  """Retrieves this container minus the given environment label."""
+  withoutLabel(
+    """
+    The name of the label to remove (e.g., "org.opencontainers.artifact.created").
+    """
     name: String!
-
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-  ): Container! @deprecated(reason: "Explicit pipeline creation is now a no-op")
-
-  """The platform this container executes and publishes as."""
-  platform: Platform!
-
-  """
-  Package the container state as an OCI image, and publish it to a registry
-
-  Returns the fully qualified address of the published image, with digest
-  """
-  publish(
-    """
-    The OCI address to publish to
-
-    Same format as "docker push". Example: "registry.example.com/user/repo:tag"
-    """
-    address: String!
-
-    """
-    Identifiers for other platform specific containers.
-
-    Used for multi-platform image.
-    """
-    platformVariants: [ID!] = [] @expectedType(name: "Container")
-
-    """
-    Force each layer of the published image to use the specified compression algorithm.
-
-    If this is unset, then if a layer already has a compressed blob in the
-    engine's cache, that will be used (this can result in a mix of compression
-    algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using
-    Gzip.
-    """
-    forcedCompression: ImageLayerCompression
-
-    """
-    Use the specified media types for the published image's layers.
-
-    Defaults to "OCI", which is compatible with most recent registries, but
-    "Docker" may be needed for older registries without OCI support.
-    """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
-  ): String!
-
-  """
-  Return a snapshot of the container's root filesystem. The snapshot can be
-  modified then written back using withRootfs. Use that method for filesystem
-  modifications.
-  """
-  rootfs: Directory!
-
-  """Return file status"""
-  stat(
-    """Path to check (e.g., "/file.txt")."""
-    path: String!
-
-    """If specified, do not follow symlinks."""
-    doNotFollowSymlinks: Boolean = false
-  ): Stat
-
-  """
-  The buffered standard error stream of the last executed command
-
-  Returns an error if no command was executed
-  """
-  stderr: String!
-
-  """
-  The buffered standard output stream of the last executed command
-
-  Returns an error if no command was executed
-  """
-  stdout: String!
-
-  """
-  Forces evaluation of the pipeline in the engine.
-
-  It doesn't run the default command if no exec has been set.
-  """
-  sync: ID! @expectedType(name: "Container")
-
-  """
-  Opens an interactive terminal for this container using its configured default
-  terminal command if not overridden by args (or sh as a fallback default).
-  """
-  terminal(
-    """
-    If set, override the container's default terminal command and invoke these command arguments instead.
-    """
-    cmd: [String!] = []
-
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
-
-    """
-    Execute the command with all root capabilities. This is similar to running a
-    command with "sudo" or executing "docker run" with the "--privileged" flag.
-    Containerization does not provide any security guarantees when using this
-    option. It should only be used when absolutely necessary and only with
-    trusted commands.
-    """
-    insecureRootCapabilities: Boolean = false
-  ): Terminal!
-
-  """
-  Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-
-  Be sure to set any exposed ports before calling this api.
-  """
-  up(
-    """
-    List of frontend/backend port mappings to forward.
-
-    Frontend is the port accepting traffic on the host, backend is the service port.
-    """
-    ports: [PortForward!] = []
-
-    """Bind each tunnel port to a random port on the host."""
-    random: Boolean = false
-  ): Void
-
-  """Retrieves the user to be set for all commands."""
-  user: String!
-
-  """Retrieves this container plus the given OCI annotation."""
-  withAnnotation(
-    """The name of the annotation."""
-    name: String!
-
-    """The value of the annotation."""
-    value: String!
-  ): Container!
-
-  """
-  Configures default arguments for future commands. Like CMD in Dockerfile.
-  """
-  withDefaultArgs(
-    """
-    Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-    """
-    args: [String!]!
-  ): Container!
-
-  """Set the default command to invoke for the container's terminal API."""
-  withDefaultTerminalCmd(
-    """The args of the command."""
-    args: [String!]!
-
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
-
-    """
-    Execute the command with all root capabilities. This is similar to running a
-    command with "sudo" or executing "docker run" with the "--privileged" flag.
-    Containerization does not provide any security guarantees when using this
-    option. It should only be used when absolutely necessary and only with
-    trusted commands.
-    """
-    insecureRootCapabilities: Boolean = false
-  ): Container!
-
-  """
-  Return a new container snapshot, with a directory added to its filesystem
-  """
-  withDirectory(
-    """Location of the written directory (e.g., "/tmp/directory")."""
-    path: String!
-
-    """Identifier of the directory to write"""
-    directory: ID! @expectedType(name: "Directory")
-
-    """
-    Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
-    """
-    exclude: [String!] = []
-
-    """
-    Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
-    """
-    include: [String!] = []
-
-    """Apply .gitignore rules when writing the directory."""
-    gitignore: Boolean = false
-
-    """
-    A user:group to set for the directory and its contents.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
   ): Container!
 
   """
@@ -851,6 +573,17 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
+  Retrieves this container without a configured docker healtcheck command.
+  """
+  withoutDockerHealthcheck: Container!
+
+  """Retrieves this container's configured docker healthcheck."""
+  dockerHealthcheck: HealthcheckConfig
+
+  """Return the container's OCI entrypoint."""
+  entrypoint: [String!]!
+
+  """
   Set an OCI-style entrypoint. It will be included in the container's OCI
   configuration. Note, withExec ignores the entrypoint by default.
   """
@@ -865,26 +598,399 @@ type Container implements Exportable & Node & Syncer {
     keepDefaultArgs: Boolean = false
   ): Container!
 
-  """Export environment variables from an env-file to the container."""
-  withEnvFileVariables(
-    """Identifier of the envfile"""
-    source: ID! @expectedType(name: "EnvFile")
+  """Reset the container's OCI entrypoint."""
+  withoutEntrypoint(
+    """Don't remove the default arguments when unsetting the entrypoint."""
+    keepDefaultArgs: Boolean = false
   ): Container!
 
-  """Set a new environment variable in the container."""
-  withEnvVariable(
-    """Name of the environment variable (e.g., "HOST")."""
-    name: String!
+  """Return the container's default arguments."""
+  defaultArgs: [String!]!
 
-    """Value of the environment variable. (e.g., "localhost")."""
-    value: String!
+  """
+  Configures default arguments for future commands. Like CMD in Dockerfile.
+  """
+  withDefaultArgs(
+    """
+    Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+    """
+    args: [String!]!
+  ): Container!
+
+  """Remove the container's default arguments."""
+  withoutDefaultArgs: Container!
+
+  """Retrieves the list of paths where a directory is mounted."""
+  mounts: [String!]!
+
+  """Retrieves this container plus a directory mounted at the given path."""
+  withMountedDirectory(
+    """Location of the mounted directory (e.g., "/mnt/directory")."""
+    path: String!
+
+    """Identifier of the mounted directory."""
+    source: ID! @expectedType(name: "Directory")
 
     """
-    Replace "${VAR}" or "$VAR" in the value according to the current environment
-    variables defined in the container (e.g. "/opt/bin:$PATH").
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
   ): Container!
+
+  """Retrieves this container plus a file mounted at the given path."""
+  withMountedFile(
+    """Location of the mounted file (e.g., "/tmp/file.txt")."""
+    path: String!
+
+    """Identifier of the mounted file."""
+    source: ID! @expectedType(name: "File")
+
+    """
+    A user or user:group to set for the mounted file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container plus a temporary directory mounted at the given path.
+  Any writes will be ephemeral to a single withExec call; they will not be
+  persisted to subsequent withExecs.
+  """
+  withMountedTemp(
+    """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
+    path: String!
+
+    """Size of the temporary directory in bytes."""
+    size: Int
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container plus a cache volume mounted at the given path.
+  """
+  withMountedCache(
+    """Location of the cache directory (e.g., "/root/.npm")."""
+    path: String!
+
+    """Identifier of the cache volume to mount."""
+    cache: ID! @expectedType(name: "CacheVolume")
+
+    """Identifier of the directory to use as the cache volume's root."""
+    source: ID @expectedType(name: "Directory")
+
+    """Sharing mode of the cache volume."""
+    sharing: CacheSharingMode = SHARED
+
+    """
+    A user:group to set for the mounted cache directory.
+
+    Note that this changes the ownership of the specified mount along with the
+    initial filesystem provided by source (if any). It does not have any effect
+    if/when the cache has already been created.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container plus a secret mounted into a file at the given path.
+  """
+  withMountedSecret(
+    """Location of the secret file (e.g., "/tmp/secret.txt")."""
+    path: String!
+
+    """Identifier of the secret to mount."""
+    source: ID! @expectedType(name: "Secret")
+
+    """
+    A user:group to set for the mounted secret.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Permission given to the mounted secret (e.g., 0600).
+
+    This option requires an owner to be set to be active.
+    """
+    mode: Int = 256
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container plus a socket forwarded to the given Unix socket path.
+  """
+  withUnixSocket(
+    """Location of the forwarded Unix socket (e.g., "/tmp/socket")."""
+    path: String!
+
+    """Identifier of the socket to forward."""
+    source: ID! @expectedType(name: "Socket")
+
+    """
+    A user:group to set for the mounted socket.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container with a previously added Unix socket removed."""
+  withoutUnixSocket(
+    """Location of the socket to remove (e.g., "/tmp/socket")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container after unmounting everything at the given path.
+  """
+  withoutMount(
+    """Location of the cache directory (e.g., "/root/.npm")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Return a container snapshot with a file added"""
+  withFile(
+    """
+    Path of the new file. Example: "/path/to/new-file.txt"
+    """
+    path: String!
+
+    """File to add"""
+    source: ID! @expectedType(name: "File")
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int
+
+    """
+    A user:group to set for the file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container with the file at the given path removed."""
+  withoutFile(
+    """Location of the file to remove (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Return a new container spanshot with specified files removed"""
+  withoutFiles(
+    """
+    Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
+    """
+    paths: [String!]!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of paths according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container plus the contents of the given files copied to the given path.
+  """
+  withFiles(
+    """Location where copied files should be placed (e.g., "/src")."""
+    path: String!
+
+    """Identifiers of the files to copy."""
+    sources: [ID!]! @expectedType(name: "File")
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
+
+    """
+    A user:group to set for the files.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container plus a new file written at the given path."""
+  withNewFile(
+    """Location of the written file (e.g., "/tmp/file.txt")."""
+    path: String!
+
+    """Content of the file to write (e.g., "Hello world!")."""
+    contents: String = ""
+
+    """Permission given to the written file (e.g., 0600)."""
+    permissions: Int = 420
+
+    """
+    A user:group to set for the file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+  ): Container!
+
+  """
+  Return a new container snapshot, with a directory added to its filesystem
+  """
+  withDirectory(
+    """Location of the written directory (e.g., "/tmp/directory")."""
+    path: String!
+
+    """Identifier of the directory to write"""
+    directory: ID! @expectedType(name: "Directory")
+
+    """
+    Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
+    """
+    include: [String!] = []
+
+    """Apply .gitignore rules when writing the directory."""
+    gitignore: Boolean = false
+
+    """
+    A user:group to set for the directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Return a new container snapshot, with a directory removed from its filesystem
+  """
+  withoutDirectory(
+    """Location of the directory to remove (e.g., ".github/")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
+  """Return file status"""
+  stat(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
 
   """Raise an error."""
   withError(
@@ -966,6 +1072,264 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
+  The buffered standard output stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  stdout: String!
+
+  """
+  The buffered standard error stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  stderr: String!
+
+  """
+  The combined buffered standard output and standard error stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  combinedOutput: String!
+
+  """
+  The exit code of the last executed command
+
+  Returns an error if no command was executed
+  """
+  exitCode: Int!
+
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container plus the given OCI annotation."""
+  withAnnotation(
+    """The name of the annotation."""
+    name: String!
+
+    """The value of the annotation."""
+    value: String!
+  ): Container!
+
+  """Retrieves this container minus the given OCI annotation."""
+  withoutAnnotation(
+    """The name of the annotation."""
+    name: String!
+  ): Container!
+
+  """
+  Package the container state as an OCI image, and publish it to a registry
+
+  Returns the fully qualified address of the published image, with digest
+  """
+  publish(
+    """
+    The OCI address to publish to
+
+    Same format as "docker push". Example: "registry.example.com/user/repo:tag"
+    """
+    address: String!
+
+    """
+    Identifiers for other platform specific containers.
+
+    Used for multi-platform image.
+    """
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
+
+    """
+    Force each layer of the published image to use the specified compression algorithm.
+
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the published image's layers.
+
+    Defaults to "OCI", which is compatible with most recent registries, but
+    "Docker" may be needed for older registries without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): String!
+
+  """The platform this container executes and publishes as."""
+  platform: Platform!
+
+  """
+  Writes the container as an OCI tarball to the destination file path on the host.
+
+  It can also export platform variants.
+  """
+  export(
+    """
+    Host's destination path (e.g., "./tarball").
+
+    Path can be relative to the engine's workdir or absolute.
+    """
+    path: String!
+
+    """
+    Identifiers for other platform specific containers.
+
+    Used for multi-platform image.
+    """
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
+
+    """
+    Force each layer of the exported image to use the specified compression algorithm.
+
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers.
+
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Boolean!
+
+  """Exports the container as an image to the host's container image store."""
+  exportImage(
+    """Name of image to export to in the host's store"""
+    name: String!
+
+    """
+    Identifiers for other platform specific containers.
+
+    Used for multi-platform image.
+    """
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
+
+    """
+    Force each layer of the exported image to use the specified compression algorithm.
+
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers.
+
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): Void!
+
+  """
+  Package the container state as an OCI image, and return it as a tar archive
+  """
+  asTarball(
+    """
+    Identifiers for other platform specific containers.
+
+    Used for multi-platform images.
+    """
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
+
+    """
+    Force each layer of the image to use the specified compression algorithm.
+
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the image's layers.
+
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): File!
+
+  """Reads the container from an OCI tarball."""
+  import(
+    """File to read the container from."""
+    source: ID! @expectedType(name: "File")
+
+    """
+    Identifies the tag to import from the archive, if the archive bundles multiple tags.
+    """
+    tag: String = ""
+  ): Container!
+
+  """
+  Attach credentials for future publishing to a registry. Use in combination with publish
+  """
+  withRegistryAuth(
+    """
+    The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
+    """
+    address: String!
+
+    """
+    The username to authenticate with. Example: "alice"
+    """
+    username: String!
+
+    """The API key, password or token to authenticate to this registry"""
+    secret: ID! @expectedType(name: "Secret")
+  ): Container!
+
+  """
+  Retrieves this container without the registry authentication of a given address.
+  """
+  withoutRegistryAuth(
+    """
+    Registry's address to remove the authentication from.
+
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!
+  ): Container!
+
+  """
+  The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+  """
+  imageRef: String!
+
+  """
   Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
 
   Exposed ports serve two purposes:
@@ -992,269 +1356,21 @@ type Container implements Exportable & Node & Syncer {
     experimentalSkipHealthcheck: Boolean = false
   ): Container!
 
-  """Return a container snapshot with a file added"""
-  withFile(
-    """
-    Path of the new file. Example: "/path/to/new-file.txt"
-    """
-    path: String!
+  """Unexpose a previously exposed port."""
+  withoutExposedPort(
+    """Port number to unexpose"""
+    port: Int!
 
-    """File to add"""
-    source: ID! @expectedType(name: "File")
-
-    """Permissions of the new file. Example: 0600"""
-    permissions: Int
-
-    """
-    A user:group to set for the file.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
+    """Port protocol to unexpose"""
+    protocol: NetworkProtocol = TCP
   ): Container!
 
   """
-  Retrieves this container plus the contents of the given files copied to the given path.
+  Retrieves the list of exposed ports.
+
+  This includes ports already exposed by the image, even if not explicitly added with dagger.
   """
-  withFiles(
-    """Location where copied files should be placed (e.g., "/src")."""
-    path: String!
-
-    """Identifiers of the files to copy."""
-    sources: [ID!]! @expectedType(name: "File")
-
-    """Permission given to the copied files (e.g., 0600)."""
-    permissions: Int
-
-    """
-    A user:group to set for the files.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """
-  Indicate that subsequent operations should be featured more prominently in the UI.
-  """
-  withFocus: Container!
-
-  """Retrieves this container plus the given label."""
-  withLabel(
-    """The name of the label (e.g., "org.opencontainers.artifact.created")."""
-    name: String!
-
-    """The value of the label (e.g., "2023-01-01T00:00:00Z")."""
-    value: String!
-  ): Container!
-
-  """
-  Retrieves this container plus a cache volume mounted at the given path.
-  """
-  withMountedCache(
-    """Location of the cache directory (e.g., "/root/.npm")."""
-    path: String!
-
-    """Identifier of the cache volume to mount."""
-    cache: ID! @expectedType(name: "CacheVolume")
-
-    """Identifier of the directory to use as the cache volume's root."""
-    source: ID @expectedType(name: "Directory")
-
-    """Sharing mode of the cache volume."""
-    sharing: CacheSharingMode = SHARED
-
-    """
-    A user:group to set for the mounted cache directory.
-
-    Note that this changes the ownership of the specified mount along with the
-    initial filesystem provided by source (if any). It does not have any effect
-    if/when the cache has already been created.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Retrieves this container plus a directory mounted at the given path."""
-  withMountedDirectory(
-    """Location of the mounted directory (e.g., "/mnt/directory")."""
-    path: String!
-
-    """Identifier of the mounted directory."""
-    source: ID! @expectedType(name: "Directory")
-
-    """
-    A user:group to set for the mounted directory and its contents.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Retrieves this container plus a file mounted at the given path."""
-  withMountedFile(
-    """Location of the mounted file (e.g., "/tmp/file.txt")."""
-    path: String!
-
-    """Identifier of the mounted file."""
-    source: ID! @expectedType(name: "File")
-
-    """
-    A user or user:group to set for the mounted file.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """
-  Retrieves this container plus a secret mounted into a file at the given path.
-  """
-  withMountedSecret(
-    """Location of the secret file (e.g., "/tmp/secret.txt")."""
-    path: String!
-
-    """Identifier of the secret to mount."""
-    source: ID! @expectedType(name: "Secret")
-
-    """
-    A user:group to set for the mounted secret.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Permission given to the mounted secret (e.g., 0600).
-
-    This option requires an owner to be set to be active.
-    """
-    mode: Int = 256
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """
-  Retrieves this container plus a temporary directory mounted at the given path.
-  Any writes will be ephemeral to a single withExec call; they will not be
-  persisted to subsequent withExecs.
-  """
-  withMountedTemp(
-    """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
-    path: String!
-
-    """Size of the temporary directory in bytes."""
-    size: Int
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Retrieves this container plus a new file written at the given path."""
-  withNewFile(
-    """Location of the written file (e.g., "/tmp/file.txt")."""
-    path: String!
-
-    """Content of the file to write (e.g., "Hello world!")."""
-    contents: String = ""
-
-    """Permission given to the written file (e.g., 0600)."""
-    permissions: Int = 420
-
-    """
-    A user:group to set for the file.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-  ): Container!
-
-  """
-  Attach credentials for future publishing to a registry. Use in combination with publish
-  """
-  withRegistryAuth(
-    """
-    The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
-    """
-    address: String!
-
-    """
-    The username to authenticate with. Example: "alice"
-    """
-    username: String!
-
-    """The API key, password or token to authenticate to this registry"""
-    secret: ID! @expectedType(name: "Secret")
-  ): Container!
-
-  """
-  Change the container's root filesystem. The previous root filesystem will be lost.
-  """
-  withRootfs(
-    """The new root filesystem."""
-    directory: ID! @expectedType(name: "Directory")
-  ): Container!
-
-  """Set a new environment variable, using a secret value"""
-  withSecretVariable(
-    """Name of the secret variable (e.g., "API_SECRET")."""
-    name: String!
-
-    """Identifier of the secret value."""
-    secret: ID! @expectedType(name: "Secret")
-  ): Container!
+  exposedPorts: [Port!]!
 
   """
   Establish a runtime dependency from a container to a network service.
@@ -1276,141 +1392,10 @@ type Container implements Exportable & Node & Syncer {
     service: ID! @expectedType(name: "Service")
   ): Container!
 
-  """Return a snapshot with a symlink"""
-  withSymlink(
-    """Location of the file or directory to link to (e.g., "/existing/file")."""
-    target: String!
-
-    """
-    Location where the symbolic link will be created (e.g., "/new-file-link").
-    """
-    linkName: String!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-  ): Container!
-
   """
-  Retrieves this container plus a socket forwarded to the given Unix socket path.
+  Indicate that subsequent operations should be featured more prominently in the UI.
   """
-  withUnixSocket(
-    """Location of the forwarded Unix socket (e.g., "/tmp/socket")."""
-    path: String!
-
-    """Identifier of the socket to forward."""
-    source: ID! @expectedType(name: "Socket")
-
-    """
-    A user:group to set for the mounted socket.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Retrieves this container with a different command user."""
-  withUser(
-    """The user to set (e.g., "root")."""
-    name: String!
-  ): Container!
-
-  """Change the container's working directory. Like WORKDIR in Dockerfile."""
-  withWorkdir(
-    """The path to set as the working directory (e.g., "/app")."""
-    path: String!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Retrieves this container minus the given OCI annotation."""
-  withoutAnnotation(
-    """The name of the annotation."""
-    name: String!
-  ): Container!
-
-  """Remove the container's default arguments."""
-  withoutDefaultArgs: Container!
-
-  """
-  Return a new container snapshot, with a directory removed from its filesystem
-  """
-  withoutDirectory(
-    """Location of the directory to remove (e.g., ".github/")."""
-    path: String!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """
-  Retrieves this container without a configured docker healtcheck command.
-  """
-  withoutDockerHealthcheck: Container!
-
-  """Reset the container's OCI entrypoint."""
-  withoutEntrypoint(
-    """Don't remove the default arguments when unsetting the entrypoint."""
-    keepDefaultArgs: Boolean = false
-  ): Container!
-
-  """Retrieves this container minus the given environment variable."""
-  withoutEnvVariable(
-    """The name of the environment variable (e.g., "HOST")."""
-    name: String!
-  ): Container!
-
-  """Unexpose a previously exposed port."""
-  withoutExposedPort(
-    """Port number to unexpose"""
-    port: Int!
-
-    """Port protocol to unexpose"""
-    protocol: NetworkProtocol = TCP
-  ): Container!
-
-  """Retrieves this container with the file at the given path removed."""
-  withoutFile(
-    """Location of the file to remove (e.g., "/file.txt")."""
-    path: String!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """Return a new container spanshot with specified files removed"""
-  withoutFiles(
-    """
-    Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
-    """
-    paths: [String!]!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of paths according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-  ): Container!
+  withFocus: Container!
 
   """
   Indicate that subsequent operations should not be featured more prominently in the UI.
@@ -1419,76 +1404,91 @@ type Container implements Exportable & Node & Syncer {
   """
   withoutFocus: Container!
 
-  """Retrieves this container minus the given environment label."""
-  withoutLabel(
+  """Set the default command to invoke for the container's terminal API."""
+  withDefaultTerminalCmd(
+    """The args of the command."""
+    args: [String!]!
+
+    """Provides Dagger access to the executed command."""
+    experimentalPrivilegedNesting: Boolean = false
+
     """
-    The name of the label to remove (e.g., "org.opencontainers.artifact.created").
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
     """
-    name: String!
+    insecureRootCapabilities: Boolean = false
   ): Container!
 
   """
-  Retrieves this container after unmounting everything at the given path.
+  Opens an interactive terminal for this container using its configured default
+  terminal command if not overridden by args (or sh as a fallback default).
   """
-  withoutMount(
-    """Location of the cache directory (e.g., "/root/.npm")."""
-    path: String!
+  terminal(
+    """
+    If set, override the container's default terminal command and invoke these command arguments instead.
+    """
+    cmd: [String!] = []
+
+    """Provides Dagger access to the executed command."""
+    experimentalPrivilegedNesting: Boolean = false
 
     """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
     """
-    expand: Boolean = false
+    insecureRootCapabilities: Boolean = false
+  ): Terminal!
+
+  """
+  EXPERIMENTAL API! Subject to change/removal at any time.
+
+  Configures the provided list of devices to be accessible to this container.
+
+  This currently works for Nvidia devices only.
+  """
+  experimentalWithGPU(
+    """List of devices to be accessible to this container."""
+    devices: [String!]!
   ): Container!
 
   """
-  Retrieves this container without the registry authentication of a given address.
+  EXPERIMENTAL API! Subject to change/removal at any time.
+
+  Configures all available GPUs on the host to be accessible to this container.
+
+  This currently works for Nvidia devices only.
   """
-  withoutRegistryAuth(
+  experimentalWithAllGPUs: Container!
+
+  """
+  Turn the container into a Service.
+
+  Be sure to set any exposed ports before this conversion.
+  """
+  asService: Service!
+
+  """
+  Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+
+  Be sure to set any exposed ports before calling this api.
+  """
+  up(
     """
-    Registry's address to remove the authentication from.
+    List of frontend/backend port mappings to forward.
 
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    Frontend is the port accepting traffic on the host, backend is the service port.
     """
-    address: String!
-  ): Container!
+    ports: [PortForward!] = []
 
-  """
-  Retrieves this container minus the given environment variable containing the secret.
-  """
-  withoutSecretVariable(
-    """The name of the environment variable (e.g., "HOST")."""
-    name: String!
-  ): Container!
-
-  """Retrieves this container with a previously added Unix socket removed."""
-  withoutUnixSocket(
-    """Location of the socket to remove (e.g., "/tmp/socket")."""
-    path: String!
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-  ): Container!
-
-  """
-  Retrieves this container with an unset command user.
-
-  Should default to root.
-  """
-  withoutUser: Container!
-
-  """
-  Unset the container's working directory.
-
-  Should default to "/".
-  """
-  withoutWorkdir: Container!
-
-  """Retrieves the working directory for all commands."""
-  workdir: String!
+    """Bind each tunnel port to a random port on the host."""
+    random: Boolean = false
+  ): Void
 }
 
 """A unique identifier for an object."""
@@ -1496,6 +1496,9 @@ scalar ContainerID
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule implements Node {
+  """A unique identifier for this CurrentModule."""
+  id: ID!
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -1503,15 +1506,6 @@ type CurrentModule implements Node {
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
-
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """A unique identifier for this CurrentModule."""
-  id: ID!
 
   """The name of the module being executed in"""
   name: String!
@@ -1554,26 +1548,32 @@ type CurrentModule implements Node {
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
   ): File!
+
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 }
 
 """A unique identifier for an object."""
 scalar CurrentModuleID
 
 type DiffStat implements Node {
-  """Number of added lines for this path."""
-  addedLines: Int!
-
   """A unique identifier for this DiffStat."""
   id: ID!
 
-  """Type of change."""
-  kind: DiffStatKind!
+  """Path of the changed file or directory."""
+  path: String!
 
   """Previous path of the file, set only for renames."""
   oldPath: String
 
-  """Path of the changed file or directory."""
-  path: String!
+  """Type of change."""
+  kind: DiffStatKind!
+
+  """Number of added lines for this path."""
+  addedLines: Int!
 
   """Number of removed lines for this path."""
   removedLines: Int!
@@ -1599,52 +1599,256 @@ enum DiffStatKind {
 
 """A directory."""
 type Directory implements Exportable & Node & Syncer {
-  """Converts this directory to a local git repository"""
-  asGit: GitRepository!
+  """A unique identifier for this Directory."""
+  id: ID!
 
-  """Load the directory as a Dagger module source"""
-  asModule(
-    """
-    An optional subpath of the directory which contains the module's configuration file.
+  """Force evaluation in the engine."""
+  sync: ID! @expectedType(name: "Directory")
 
-    If not set, the module source code is loaded from the root of the directory.
-    """
-    sourceRootPath: String = "."
-  ): Module!
+  """Creates a named sub-pipeline."""
+  pipeline(
+    """Name of the sub-pipeline."""
+    name: String!
 
-  """Load the directory as a Dagger module source"""
-  asModuleSource(
-    """
-    An optional subpath of the directory which contains the module's configuration file.
+    """Description of the sub-pipeline."""
+    description: String = ""
 
-    If not set, the module source code is loaded from the root of the directory.
-    """
-    sourceRootPath: String = "."
-  ): ModuleSource!
+    """Labels to apply to the sub-pipeline."""
+    labels: [PipelineLabel!] = []
+  ): Directory! @deprecated(reason: "Explicit pipeline creation is now a no-op")
+
+  """Returns the name of the directory."""
+  name: String!
+
+  """Returns a list of files and directories at the given path."""
+  entries(
+    """Location of the directory to look at (e.g., "/src")."""
+    path: String
+  ): [String!]!
+
+  """Returns a list of files and directories that matche the given pattern."""
+  glob(
+    """Pattern to match (e.g., "*.md")."""
+    pattern: String!
+  ): [String!]!
 
   """
-  Return the difference between this directory and another directory, typically an older snapshot.
+  Searches for content matching the given regular expression or literal string.
 
-  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
   """
-  changes(
-    """The base directory snapshot to compare against"""
-    from: ID! @expectedType(name: "Directory")
-  ): Changeset!
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
 
-  """Change the owner of the directory contents recursively."""
-  chown(
-    """Path of the directory to change ownership of (e.g., "/")."""
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    insensitive: Boolean = false
+
+    """Honor .gitignore, .ignore, and .rgignore files."""
+    skipIgnored: Boolean = false
+
+    """Skip hidden files (files starting with .)."""
+    skipHidden: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
+
+  """
+  Return the directory's digest. The format of the digest is not guaranteed to
+  be stable between releases of Dagger. It is guaranteed to be stable between
+  invocations of the same Dagger engine.
+  """
+  digest: String!
+
+  """Retrieve a file at the given path."""
+  file(
+    """Location of the file to retrieve (e.g., "README.md")."""
+    path: String!
+  ): File!
+
+  """
+  Retrieves this directory plus the contents of the given file copied to the given path.
+  """
+  withFile(
+    """Location of the copied file (e.g., "/file.txt")."""
     path: String!
 
+    """Identifier of the file to copy."""
+    source: ID! @expectedType(name: "File")
+
+    """Permission given to the copied file (e.g., 0600)."""
+    permissions: Int
+
     """
-    A user:group to set for the mounted directory and its contents.
+    A user:group to set for the copied directory and its contents.
 
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String!
+    owner: String = ""
+  ): Directory!
+
+  """
+  Retrieves this directory plus the contents of the given files copied to the given path.
+  """
+  withFiles(
+    """Location where copied files should be placed (e.g., "/src")."""
+    path: String!
+
+    """Identifiers of the files to copy."""
+    sources: [ID!]! @expectedType(name: "File")
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
+  ): Directory!
+
+  """Return a snapshot with a new file added"""
+  withNewFile(
+    """
+    Path of the new file. Example: "foo/bar.txt"
+    """
+    path: String!
+
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
+    contents: String!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
+  ): Directory!
+
+  """Return a snapshot with a file removed"""
+  withoutFile(
+    """Path of the file to remove (e.g., "/file.txt")."""
+    path: String!
+  ): Directory!
+
+  """Return a snapshot with files removed"""
+  withoutFiles(
+    """Paths of the files to remove (e.g., ["/file.txt"])."""
+    paths: [String!]!
+  ): Directory!
+
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
+  """Return file status"""
+  stat(
+    """Path to stat (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
+
+  """Retrieves a directory at the given path."""
+  directory(
+    """
+    Location of the directory to retrieve. Example: "/src"
+    """
+    path: String!
+  ): Directory!
+
+  """Return a snapshot with a directory added"""
+  withDirectory(
+    """Location of the written directory (e.g., "/src/")."""
+    path: String!
+
+    """Identifier of the directory to copy."""
+    directory: ID! @expectedType(name: "Directory")
+
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+  ): Directory!
+
+  """Return a snapshot with some paths included or excluded"""
+  filter(
+    """
+    If set, paths matching one of these glob patterns is excluded from the new
+    snapshot. Example: ["node_modules/", ".git*", ".env"]
+    """
+    exclude: [String!] = []
+
+    """
+    If set, only paths matching one of these glob patterns is included in the
+    new snapshot. Example: (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+
+    """If set, apply .gitignore rules when filtering the directory."""
+    gitignore: Boolean = false
+  ): Directory!
+
+  """
+  Retrieves this directory plus a new directory created at the given path.
+  """
+  withNewDirectory(
+    """Location of the directory created (e.g., "/logs")."""
+    path: String!
+
+    """Permission granted to the created directory (e.g., 0777)."""
+    permissions: Int = 420
+  ): Directory!
+
+  """Return a snapshot with a subdirectory removed"""
+  withoutDirectory(
+    """
+    Path of the subdirectory to remove. Example: ".github/workflows"
+    """
+    path: String!
   ): Directory!
 
   """
@@ -1656,19 +1860,47 @@ type Directory implements Exportable & Node & Syncer {
   ): Directory!
 
   """
-  Return the directory's digest. The format of the digest is not guaranteed to
-  be stable between releases of Dagger. It is guaranteed to be stable between
-  invocations of the same Dagger engine.
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
   """
-  digest: String!
+  findUp(
+    """The name of the file or directory to search for"""
+    name: String!
 
-  """Retrieves a directory at the given path."""
-  directory(
-    """
-    Location of the directory to retrieve. Example: "/src"
-    """
-    path: String!
+    """The path to start the search from"""
+    start: String!
+  ): String
+
+  """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  changes(
+    """The base directory snapshot to compare against"""
+    from: ID! @expectedType(name: "Directory")
+  ): Changeset!
+
+  """Return a directory with changes from another directory applied to it."""
+  withChanges(
+    """Changes to apply to the directory"""
+    changes: ID! @expectedType(name: "Changeset")
   ): Directory!
+
+  """Writes the contents of the directory to a path on the host."""
+  export(
+    """Location of the copied directory (e.g., "logs/")."""
+    path: String!
+
+    """
+    If true, then the host directory will be wiped clean before exporting so
+    that it exactly matches the directory being exported; this means it will
+    delete any files on the host that aren't in the exported dir. If false (the
+    default), the contents of the directory will be merged with any existing
+    contents of the host directory, leaving any existing files on the host that
+    aren't in the exported directory alone.
+    """
+    wipe: Boolean = false
+  ): Boolean!
 
   """
   Use Dockerfile compatibility to build a container from this directory. Only
@@ -1715,260 +1947,16 @@ type Directory implements Exportable & Node & Syncer {
     ssh: ID @expectedType(name: "Socket")
   ): Container!
 
-  """Returns a list of files and directories at the given path."""
-  entries(
-    """Location of the directory to look at (e.g., "/src")."""
-    path: String
-  ): [String!]!
-
-  """check if a file or directory exists"""
-  exists(
-    """Path to check (e.g., "/file.txt")."""
-    path: String!
-
-    """
-    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
-    """
-    expectedType: ExistsType
-
-    """If specified, do not follow symlinks."""
-    doNotFollowSymlinks: Boolean = false
-  ): Boolean!
-
-  """Writes the contents of the directory to a path on the host."""
-  export(
-    """Location of the copied directory (e.g., "logs/")."""
-    path: String!
-
-    """
-    If true, then the host directory will be wiped clean before exporting so
-    that it exactly matches the directory being exported; this means it will
-    delete any files on the host that aren't in the exported dir. If false (the
-    default), the contents of the directory will be merged with any existing
-    contents of the host directory, leaving any existing files on the host that
-    aren't in the exported directory alone.
-    """
-    wipe: Boolean = false
-  ): Boolean!
-
-  """Retrieve a file at the given path."""
-  file(
-    """Location of the file to retrieve (e.g., "README.md")."""
-    path: String!
-  ): File!
-
-  """Return a snapshot with some paths included or excluded"""
-  filter(
-    """
-    If set, paths matching one of these glob patterns is excluded from the new
-    snapshot. Example: ["node_modules/", ".git*", ".env"]
-    """
-    exclude: [String!] = []
-
-    """
-    If set, only paths matching one of these glob patterns is included in the
-    new snapshot. Example: (e.g., ["app/", "package.*"]).
-    """
-    include: [String!] = []
-
-    """If set, apply .gitignore rules when filtering the directory."""
-    gitignore: Boolean = false
-  ): Directory!
-
   """
-  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  Retrieves this directory with all file/dir timestamps set to the given time.
   """
-  findUp(
-    """The name of the file or directory to search for"""
-    name: String!
-
-    """The path to start the search from"""
-    start: String!
-  ): String
-
-  """Returns a list of files and directories that matche the given pattern."""
-  glob(
-    """Pattern to match (e.g., "*.md")."""
-    pattern: String!
-  ): [String!]!
-
-  """A unique identifier for this Directory."""
-  id: ID!
-
-  """Returns the name of the directory."""
-  name: String!
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Name of the sub-pipeline."""
-    name: String!
-
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-  ): Directory! @deprecated(reason: "Explicit pipeline creation is now a no-op")
-
-  """
-  Searches for content matching the given regular expression or literal string.
-
-  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-  """
-  search(
-    """Directory or file paths to search"""
-    paths: [String!] = []
-
-    """Glob patterns to match (e.g., "*.md")"""
-    globs: [String!] = []
-
-    """The text to match."""
-    pattern: String!
-
+  withTimestamps(
     """
-    Interpret the pattern as a literal string instead of a regular expression.
+    Timestamp to set dir/files in.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
-    literal: Boolean = false
-
-    """Enable searching across multiple lines."""
-    multiline: Boolean = false
-
-    """Allow the . pattern to match newlines in multiline mode."""
-    dotall: Boolean = false
-
-    """Enable case-insensitive matching."""
-    insensitive: Boolean = false
-
-    """Honor .gitignore, .ignore, and .rgignore files."""
-    skipIgnored: Boolean = false
-
-    """Skip hidden files (files starting with .)."""
-    skipHidden: Boolean = false
-
-    """Only return matching files, not lines and content"""
-    filesOnly: Boolean = false
-
-    """Limit the number of results to return"""
-    limit: Int
-  ): [SearchResult!]!
-
-  """Return file status"""
-  stat(
-    """Path to stat (e.g., "/file.txt")."""
-    path: String!
-
-    """If specified, do not follow symlinks."""
-    doNotFollowSymlinks: Boolean = false
-  ): Stat
-
-  """Force evaluation in the engine."""
-  sync: ID! @expectedType(name: "Directory")
-
-  """Return a directory with changes from another directory applied to it."""
-  withChanges(
-    """Changes to apply to the directory"""
-    changes: ID! @expectedType(name: "Changeset")
-  ): Directory!
-
-  """Return a snapshot with a directory added"""
-  withDirectory(
-    """Location of the written directory (e.g., "/src/")."""
-    path: String!
-
-    """Identifier of the directory to copy."""
-    directory: ID! @expectedType(name: "Directory")
-
-    """
-    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    """
-    exclude: [String!] = []
-
-    """
-    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    """
-    include: [String!] = []
-
-    """Apply .gitignore filter rules inside the directory"""
-    gitignore: Boolean = false
-
-    """
-    A user:group to set for the copied directory and its contents.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-  ): Directory!
-
-  """Raise an error."""
-  withError(
-    """Message of the error to raise. If empty, the error will be ignored."""
-    err: String!
-  ): Directory!
-
-  """
-  Retrieves this directory plus the contents of the given file copied to the given path.
-  """
-  withFile(
-    """Location of the copied file (e.g., "/file.txt")."""
-    path: String!
-
-    """Identifier of the file to copy."""
-    source: ID! @expectedType(name: "File")
-
-    """Permission given to the copied file (e.g., 0600)."""
-    permissions: Int
-
-    """
-    A user:group to set for the copied directory and its contents.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String = ""
-  ): Directory!
-
-  """
-  Retrieves this directory plus the contents of the given files copied to the given path.
-  """
-  withFiles(
-    """Location where copied files should be placed (e.g., "/src")."""
-    path: String!
-
-    """Identifiers of the files to copy."""
-    sources: [ID!]! @expectedType(name: "File")
-
-    """Permission given to the copied files (e.g., 0600)."""
-    permissions: Int
-  ): Directory!
-
-  """
-  Retrieves this directory plus a new directory created at the given path.
-  """
-  withNewDirectory(
-    """Location of the directory created (e.g., "/logs")."""
-    path: String!
-
-    """Permission granted to the created directory (e.g., 0777)."""
-    permissions: Int = 420
-  ): Directory!
-
-  """Return a snapshot with a new file added"""
-  withNewFile(
-    """
-    Path of the new file. Example: "foo/bar.txt"
-    """
-    path: String!
-
-    """
-    Contents of the new file. Example: "Hello world!"
-    """
-    contents: String!
-
-    """Permissions of the new file. Example: 0600"""
-    permissions: Int = 420
+    timestamp: Int!
   ): Directory!
 
   """Retrieves this directory with the given Git-compatible patch applied."""
@@ -1989,6 +1977,9 @@ type Directory implements Exportable & Node & Syncer {
     patch: ID! @expectedType(name: "File")
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
+  """Converts this directory to a local git repository"""
+  asGit: GitRepository!
+
   """Return a snapshot with a symlink"""
   withSymlink(
     """Location of the file or directory to link to (e.g., "/existing/file")."""
@@ -2000,37 +1991,46 @@ type Directory implements Exportable & Node & Syncer {
     linkName: String!
   ): Directory!
 
-  """
-  Retrieves this directory with all file/dir timestamps set to the given time.
-  """
-  withTimestamps(
-    """
-    Timestamp to set dir/files in.
-
-    Formatted in seconds following Unix epoch (e.g., 1672531199).
-    """
-    timestamp: Int!
-  ): Directory!
-
-  """Return a snapshot with a subdirectory removed"""
-  withoutDirectory(
-    """
-    Path of the subdirectory to remove. Example: ".github/workflows"
-    """
+  """Change the owner of the directory contents recursively."""
+  chown(
+    """Path of the directory to change ownership of (e.g., "/")."""
     path: String!
+
+    """
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
   ): Directory!
 
-  """Return a snapshot with a file removed"""
-  withoutFile(
-    """Path of the file to remove (e.g., "/file.txt")."""
-    path: String!
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Directory!
 
-  """Return a snapshot with files removed"""
-  withoutFiles(
-    """Paths of the files to remove (e.g., ["/file.txt"])."""
-    paths: [String!]!
-  ): Directory!
+  """Load the directory as a Dagger module source"""
+  asModule(
+    """
+    An optional subpath of the directory which contains the module's configuration file.
+
+    If not set, the module source code is loaded from the root of the directory.
+    """
+    sourceRootPath: String = "."
+  ): Module!
+
+  """Load the directory as a Dagger module source"""
+  asModuleSource(
+    """
+    An optional subpath of the directory which contains the module's configuration file.
+
+    If not set, the module source code is loaded from the root of the directory.
+    """
+    sourceRootPath: String = "."
+  ): ModuleSource!
 }
 
 """A unique identifier for an object."""
@@ -2038,34 +2038,26 @@ scalar DirectoryID
 
 """The Dagger engine configuration and state"""
 type Engine implements Node {
-  """The list of connected client IDs"""
-  clients: [String!]!
-
   """A unique identifier for this Engine."""
   id: ID!
 
-  """The local engine cache state tracked by dagql"""
-  localCache: EngineCache!
+  """The list of connected client IDs"""
+  clients: [String!]!
 
   """The name of the engine instance."""
   name: String!
+
+  """The local engine cache state tracked by dagql"""
+  localCache: EngineCache!
 }
 
 """A cache storage for the Dagger engine"""
 type EngineCache implements Node {
-  """The current set of entries in the cache"""
-  entrySet(key: String = ""): EngineCacheEntrySet!
-
   """A unique identifier for this EngineCache."""
   id: ID!
 
-  """The maximum bytes to keep in the cache without pruning."""
-  maxUsedSpace: Int!
-
-  """
-  The target amount of free disk space the garbage collector will attempt to leave.
-  """
-  minFreeSpace: Int!
+  """The current set of entries in the cache"""
+  entrySet(key: String = ""): EngineCacheEntrySet!
 
   """Prune the cache of releaseable entries"""
   prune(
@@ -2095,23 +2087,25 @@ type EngineCache implements Node {
     targetSpace: String = ""
   ): Void
 
-  """The minimum amount of disk space this policy is guaranteed to retain."""
-  reservedSpace: Int!
+  """The maximum bytes to keep in the cache without pruning."""
+  maxUsedSpace: Int!
 
   """The target number of bytes to keep when pruning."""
   targetSpace: Int!
+
+  """The minimum amount of disk space this policy is guaranteed to retain."""
+  reservedSpace: Int!
+
+  """
+  The target amount of free disk space the garbage collector will attempt to leave.
+  """
+  minFreeSpace: Int!
 }
 
 """An individual cache entry in a cache entry set"""
 type EngineCacheEntry implements Node {
-  """Whether the cache entry is actively being used."""
-  activelyUsed: Boolean!
-
-  """The time the cache entry was created, in Unix nanoseconds."""
-  createdTimeUnixNano: Int!
-
-  """The DagQL call that produced this cache entry."""
-  dagqlCall: String!
+  """A unique identifier for this EngineCacheEntry."""
+  id: ID!
 
   """The description of the cache entry."""
   description: String!
@@ -2119,11 +2113,14 @@ type EngineCacheEntry implements Node {
   """The disk space used by the cache entry."""
   diskSpaceBytes: Int!
 
-  """A unique identifier for this EngineCacheEntry."""
-  id: ID!
+  """The time the cache entry was created, in Unix nanoseconds."""
+  createdTimeUnixNano: Int!
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
+
+  """Whether the cache entry is actively being used."""
+  activelyUsed: Boolean!
 
   """
   The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
@@ -2132,6 +2129,9 @@ type EngineCacheEntry implements Node {
 
   """The storage record types represented by this cache entry."""
   recordTypes: [String!]!
+
+  """The DagQL call that produced this cache entry."""
+  dagqlCall: String!
 }
 
 """A unique identifier for an object."""
@@ -2139,8 +2139,8 @@ scalar EngineCacheEntryID
 
 """A set of cache entries returned by a query to a cache"""
 type EngineCacheEntrySet implements Node {
-  """The total disk space used by the cache entries in this set."""
-  diskSpaceBytes: Int!
+  """A unique identifier for this EngineCacheEntrySet."""
+  id: ID!
 
   """The list of individual cache entries in the set"""
   entries: [EngineCacheEntry!]!
@@ -2148,8 +2148,8 @@ type EngineCacheEntrySet implements Node {
   """The number of cache entries in this set."""
   entryCount: Int!
 
-  """A unique identifier for this EngineCacheEntrySet."""
-  id: ID!
+  """The total disk space used by the cache entries in this set."""
+  diskSpaceBytes: Int!
 }
 
 """A unique identifier for an object."""
@@ -2163,17 +2163,20 @@ scalar EngineID
 
 """A definition of a custom enum defined in a Module."""
 type EnumTypeDef implements Node {
-  """A doc string for the enum, if any."""
-  description: String!
-
   """A unique identifier for this EnumTypeDef."""
   id: ID!
+
+  """The members of the enum."""
+  values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 
   """The members of the enum."""
   members: [EnumValueTypeDef!]!
 
   """The name of the enum."""
   name: String!
+
+  """A doc string for the enum, if any."""
+  description: String!
 
   """The location of this enum declaration."""
   sourceMap: SourceMap
@@ -2182,9 +2185,6 @@ type EnumTypeDef implements Node {
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
-
-  """The members of the enum."""
-  values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
 """A unique identifier for an object."""
@@ -2192,23 +2192,23 @@ scalar EnumTypeDefID
 
 """A definition of a value in a custom enum defined in a Module."""
 type EnumValueTypeDef implements Node {
-  """The reason this enum member is deprecated, if any."""
-  deprecated: String
-
-  """A doc string for the enum member, if any."""
-  description: String!
-
   """A unique identifier for this EnumValueTypeDef."""
   id: ID!
 
   """The name of the enum member."""
   name: String!
 
+  """The value of the enum member"""
+  value: String!
+
+  """A doc string for the enum member, if any."""
+  description: String!
+
   """The location of this enum member declaration."""
   sourceMap: SourceMap
 
-  """The value of the enum member"""
-  value: String!
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
 }
 
 """A unique identifier for an object."""
@@ -2216,41 +2216,8 @@ scalar EnumValueTypeDefID
 
 """A collection of environment variables."""
 type EnvFile implements Node {
-  """Return as a file"""
-  asFile: File!
-
-  """Check if a variable exists"""
-  exists(
-    """Variable name"""
-    name: String!
-  ): Boolean!
-
-  """
-  Lookup a variable (last occurrence wins) and return its value, or an empty string
-  """
-  get(
-    """Variable name"""
-    name: String!
-
-    """
-    Return the value exactly as written to the file. No quote removal or variable expansion
-    """
-    raw: Boolean
-  ): String!
-
   """A unique identifier for this EnvFile."""
   id: ID!
-
-  """
-  Filters variables by prefix and removes the pref from keys. Variables without
-  the prefix are excluded. For example, with the prefix "MY_APP_" and variables:
-  MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment
-  will contain: TOKEN=topsecret NAME=hello
-  """
-  namespace(
-    """The prefix to filter by"""
-    prefix: String!
-  ): EnvFile!
 
   """Return all variables"""
   variables(
@@ -2273,6 +2240,39 @@ type EnvFile implements Node {
   withoutVariable(
     """Variable name"""
     name: String!
+  ): EnvFile!
+
+  """
+  Lookup a variable (last occurrence wins) and return its value, or an empty string
+  """
+  get(
+    """Variable name"""
+    name: String!
+
+    """
+    Return the value exactly as written to the file. No quote removal or variable expansion
+    """
+    raw: Boolean
+  ): String!
+
+  """Check if a variable exists"""
+  exists(
+    """Variable name"""
+    name: String!
+  ): Boolean!
+
+  """Return as a file"""
+  asFile: File!
+
+  """
+  Filters variables by prefix and removes the pref from keys. Variables without
+  the prefix are excluded. For example, with the prefix "MY_APP_" and variables:
+  MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment
+  will contain: TOKEN=topsecret NAME=hello
+  """
+  namespace(
+    """The prefix to filter by"""
+    prefix: String!
   ): EnvFile!
 }
 
@@ -2298,12 +2298,6 @@ type Error implements Node {
   """A unique identifier for this Error."""
   id: ID!
 
-  """A description of the error."""
-  message: String!
-
-  """The extensions of the error."""
-  values: [ErrorValue!]!
-
   """Add a value to the error."""
   withValue(
     """The name of the value."""
@@ -2312,6 +2306,12 @@ type Error implements Node {
     """The value to store on the error."""
     value: JSON!
   ): Error!
+
+  """A description of the error."""
+  message: String!
+
+  """The extensions of the error."""
+  values: [ErrorValue!]!
 }
 
 """A unique identifier for an object."""
@@ -2349,8 +2349,8 @@ An object that can be exported to the host.
 Calling export writes the object to a path on the host filesystem and returns the path that was written.
 """
 interface Exportable implements Node {
-  export(path: String!): String!
   id: ID!
+  export(path: String!): String!
 }
 
 """A unique identifier for an object."""
@@ -2363,23 +2363,23 @@ A field on an object has a static value, as opposed to a function on an object
 whose value is computed by invoking code (and can accept arguments).
 """
 type FieldTypeDef implements Node {
-  """The reason this enum member is deprecated, if any."""
-  deprecated: String
-
-  """A doc string for the field, if any."""
-  description: String!
-
   """A unique identifier for this FieldTypeDef."""
   id: ID!
+
+  """The type of the field."""
+  typeDef: TypeDef!
 
   """The name of the field in lowerCamelCase format."""
   name: String!
 
+  """A doc string for the field, if any."""
+  description: String!
+
   """The location of this field declaration."""
   sourceMap: SourceMap
 
-  """The type of the field."""
-  typeDef: TypeDef!
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
 }
 
 """A unique identifier for an object."""
@@ -2387,26 +2387,11 @@ scalar FieldTypeDefID
 
 """A file."""
 type File implements Exportable & Node & Syncer {
-  """Parse as an env file"""
-  asEnvFile(
-    """Replace "${VAR}" or "$VAR" with the value of other vars"""
-    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
-  ): EnvFile!
+  """A unique identifier for this File."""
+  id: ID!
 
-  """Parse the file contents as JSON."""
-  asJSON: JSONValue!
-
-  """Change the owner of the file recursively."""
-  chown(
-    """
-    A user:group to set for the file.
-
-    The user and group can either be an ID (1000:1000) or a name (foo:bar).
-
-    If the group is omitted, it defaults to the same as the user.
-    """
-    owner: String!
-  ): File!
+  """Force evaluation in the engine."""
+  sync: ID! @expectedType(name: "File")
 
   """Retrieves the contents of the file."""
   contents(
@@ -2416,6 +2401,15 @@ type File implements Exportable & Node & Syncer {
     """Maximum number of lines to read"""
     limitLines: Int
   ): String!
+
+  """Retrieves the size of the file, in bytes."""
+  size: Int!
+
+  """Retrieves the name of the file."""
+  name: String!
+
+  """Return file status"""
+  stat: Stat
 
   """
   Return the file's digest. The format of the digest is not guaranteed to be
@@ -2427,23 +2421,11 @@ type File implements Exportable & Node & Syncer {
     excludeMetadata: Boolean = false
   ): String!
 
-  """Writes the file to a file path on the host."""
-  export(
-    """Location of the written directory (e.g., "output.txt")."""
-    path: String!
-
-    """
-    If allowParentDirPath is true, the path argument can be a directory path, in
-    which case the file will be created in that directory.
-    """
-    allowParentDirPath: Boolean = false
-  ): Boolean!
-
-  """A unique identifier for this File."""
-  id: ID!
-
-  """Retrieves the name of the file."""
-  name: String!
+  """Retrieves this file with its name set to the given name."""
+  withName(
+    """Name to set file to."""
+    name: String!
+  ): File!
 
   """
   Searches for content matching the given regular expression or literal string.
@@ -2485,21 +2467,6 @@ type File implements Exportable & Node & Syncer {
     globs: [String!] = []
   ): [SearchResult!]!
 
-  """Retrieves the size of the file, in bytes."""
-  size: Int!
-
-  """Return file status"""
-  stat: Stat
-
-  """Force evaluation in the engine."""
-  sync: ID! @expectedType(name: "File")
-
-  """Retrieves this file with its name set to the given name."""
-  withName(
-    """Name to set file to."""
-    name: String!
-  ): File!
-
   """
   Retrieves the file with content replaced with the given text.
 
@@ -2525,6 +2492,18 @@ type File implements Exportable & Node & Syncer {
     firstFrom: Int
   ): File!
 
+  """Writes the file to a file path on the host."""
+  export(
+    """Location of the written directory (e.g., "output.txt")."""
+    path: String!
+
+    """
+    If allowParentDirPath is true, the path argument can be a directory path, in
+    which case the file will be created in that directory.
+    """
+    allowParentDirPath: Boolean = false
+  ): Boolean!
+
   """
   Retrieves this file with its created/modified timestamps set to the given time.
   """
@@ -2536,6 +2515,27 @@ type File implements Exportable & Node & Syncer {
     """
     timestamp: Int!
   ): File!
+
+  """Change the owner of the file recursively."""
+  chown(
+    """
+    A user:group to set for the file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): File!
+
+  """Parse the file contents as JSON."""
+  asJSON: JSONValue!
+
+  """Parse as an env file"""
+  asEnvFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
+  ): EnvFile!
 }
 
 """A unique identifier for an object."""
@@ -2553,31 +2553,37 @@ Function represents a resolver provided by a Module.
 A function always evaluates against a parent object and is given a set of named arguments.
 """
 type Function implements Node {
-  """Arguments accepted by the function, if any."""
-  args: [FunctionArg!]!
-
-  """The reason this function is deprecated, if any."""
-  deprecated: String
-
-  """A doc string for the function, if any."""
-  description: String!
-
   """A unique identifier for this Function."""
   id: ID!
 
-  """The name of the function."""
-  name: String!
+  """Returns the function with the given doc string."""
+  withDescription(
+    """The doc string to set."""
+    description: String!
+  ): Function!
 
-  """The type returned by the function."""
-  returnType: TypeDef!
+  """Returns the function with the provided deprecation reason."""
+  withDeprecated(
+    """Reason or migration path describing the deprecation."""
+    reason: String
+  ): Function!
 
-  """The location of this function declaration."""
-  sourceMap: SourceMap
+  """Returns the function with a flag indicating it's a check."""
+  withCheck: Function!
+
+  """Returns the function with a flag indicating it's a generator."""
+  withGenerator: Function!
 
   """
-  If this function is provided by a module, the name of the module. Unset otherwise.
+  Returns the function with a flag indicating it returns a service for dagger up.
   """
-  sourceModuleName: String!
+  withUp: Function!
+
+  """Returns the function with the given source map."""
+  withSourceMap(
+    """The source map for the function definition."""
+    sourceMap: ID! @expectedType(name: "SourceMap")
+  ): Function!
 
   """Returns the function with the provided argument"""
   withArg(
@@ -2623,34 +2629,28 @@ type Function implements Node {
     timeToLive: String
   ): Function!
 
-  """Returns the function with a flag indicating it's a check."""
-  withCheck: Function!
+  """The name of the function."""
+  name: String!
 
-  """Returns the function with the provided deprecation reason."""
-  withDeprecated(
-    """Reason or migration path describing the deprecation."""
-    reason: String
-  ): Function!
+  """A doc string for the function, if any."""
+  description: String!
 
-  """Returns the function with the given doc string."""
-  withDescription(
-    """The doc string to set."""
-    description: String!
-  ): Function!
+  """The reason this function is deprecated, if any."""
+  deprecated: String
 
-  """Returns the function with a flag indicating it's a generator."""
-  withGenerator: Function!
-
-  """Returns the function with the given source map."""
-  withSourceMap(
-    """The source map for the function definition."""
-    sourceMap: ID! @expectedType(name: "SourceMap")
-  ): Function!
+  """The location of this function declaration."""
+  sourceMap: SourceMap
 
   """
-  Returns the function with a flag indicating it returns a service for dagger up.
+  If this function is provided by a module, the name of the module. Unset otherwise.
   """
-  withUp: Function!
+  sourceModuleName: String!
+
+  """Arguments accepted by the function, if any."""
+  args: [FunctionArg!]!
+
+  """The type returned by the function."""
+  returnType: TypeDef!
 }
 
 """
@@ -2659,11 +2659,22 @@ An argument accepted by a function.
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
 type FunctionArg implements Node {
+  """A unique identifier for this FunctionArg."""
+  id: ID!
+
+  """The name of the argument in lowerCamelCase format."""
+  name: String!
+
+  """A doc string for the argument, if any."""
+  description: String!
+
+  """The location of this arg declaration."""
+  sourceMap: SourceMap
+
   """
-  Only applies to arguments of type Container. If the argument is not set, load
-  it from the given address (e.g. alpine:latest)
+  A default value to use for this argument when not explicitly set by the caller, if any.
   """
-  defaultAddress: String!
+  defaultValue: JSON!
 
   """
   Only applies to arguments of type File or Directory. If the argument is not
@@ -2672,18 +2683,10 @@ type FunctionArg implements Node {
   defaultPath: String!
 
   """
-  A default value to use for this argument when not explicitly set by the caller, if any.
+  Only applies to arguments of type Container. If the argument is not set, load
+  it from the given address (e.g. alpine:latest)
   """
-  defaultValue: JSON!
-
-  """The reason this function is deprecated, if any."""
-  deprecated: String
-
-  """A doc string for the argument, if any."""
-  description: String!
-
-  """A unique identifier for this FunctionArg."""
-  id: ID!
+  defaultAddress: String!
 
   """
   Only applies to arguments of type Directory. The ignore patterns are applied
@@ -2692,11 +2695,8 @@ type FunctionArg implements Node {
   """
   ignore: [String!]!
 
-  """The name of the argument in lowerCamelCase format."""
-  name: String!
-
-  """The location of this arg declaration."""
-  sourceMap: SourceMap
+  """The reason this function is deprecated, if any."""
+  deprecated: String
 
   """The type of the argument."""
   typeDef: TypeDef!
@@ -2717,23 +2717,11 @@ type FunctionCall implements Node {
   """A unique identifier for this FunctionCall."""
   id: ID!
 
-  """The argument values the function is being invoked with."""
-  inputArgs: [FunctionCallArgValue!]!
-
-  """The name of the function being called."""
-  name: String!
-
-  """
-  The value of the parent object of the function being called. If the function
-  is top-level to the module, this is always an empty object.
-  """
-  parent: JSON!
-
-  """
-  The name of the parent object of the function being called. If the function is
-  top-level to the module, this is the name of the module.
-  """
-  parentName: String!
+  """Set the return value of the function call to the provided value."""
+  returnValue(
+    """JSON serialization of the return value."""
+    value: JSON!
+  ): Void
 
   """Return an error from the function."""
   returnError(
@@ -2741,11 +2729,23 @@ type FunctionCall implements Node {
     error: ID! @expectedType(name: "Error")
   ): Void
 
-  """Set the return value of the function call to the provided value."""
-  returnValue(
-    """JSON serialization of the return value."""
-    value: JSON!
-  ): Void
+  """The name of the function being called."""
+  name: String!
+
+  """
+  The name of the parent object of the function being called. If the function is
+  top-level to the module, this is the name of the module.
+  """
+  parentName: String!
+
+  """
+  The value of the parent object of the function being called. If the function
+  is top-level to the module, this is always an empty object.
+  """
+  parent: JSON!
+
+  """The argument values the function is being invoked with."""
+  inputArgs: [FunctionCallArgValue!]!
 }
 
 """A value passed as a named argument to a function call."""
@@ -2771,11 +2771,17 @@ scalar FunctionID
 
 """The result of running an SDK's codegen."""
 type GeneratedCode implements Node {
-  """The directory containing the generated code."""
-  code: Directory!
-
   """A unique identifier for this GeneratedCode."""
   id: ID!
+
+  """Set the list of paths to mark generated in version control."""
+  withVCSGeneratedPaths(paths: [String!]!): GeneratedCode!
+
+  """Set the list of paths to ignore in version control."""
+  withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
+
+  """The directory containing the generated code."""
+  code: Directory!
 
   """
   List of paths to mark generated in version control (i.e. .gitattributes).
@@ -2784,51 +2790,57 @@ type GeneratedCode implements Node {
 
   """List of paths to ignore in version control (i.e. .gitignore)."""
   vcsIgnoredPaths: [String!]!
-
-  """Set the list of paths to mark generated in version control."""
-  withVCSGeneratedPaths(paths: [String!]!): GeneratedCode!
-
-  """Set the list of paths to ignore in version control."""
-  withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
 }
 
 """A unique identifier for an object."""
 scalar GeneratedCodeID
 
 type Generator implements Node {
-  """The generated changeset from the last run"""
-  changes: Changeset!
-
-  """Whether the generator complete"""
-  completed: Boolean!
-
-  """Return the description of the generator"""
-  description: String!
-
   """A unique identifier for this Generator."""
   id: ID!
-
-  """Whether changeset from the last generator run is empty or not"""
-  isEmpty: Boolean!
 
   """
   Return the command name of the generator. Entrypoint targets omit the module prefix.
   """
   name: String!
 
+  """The path of the generator within its module"""
+  path: [String!]!
+
+  """Return the description of the generator"""
+  description: String!
+
   """
   The module that defined the generator, or null for an engine-defined generator
   """
   originalModule: Module
 
-  """The path of the generator within its module"""
-  path: [String!]!
+  """The generated changeset from the last run"""
+  changes: Changeset!
 
   """Execute the generator"""
   run: Generator!
+
+  """Whether changeset from the last generator run is empty or not"""
+  isEmpty: Boolean!
+
+  """Whether the generator complete"""
+  completed: Boolean!
 }
 
 type GeneratorGroup implements Node {
+  """A unique identifier for this GeneratorGroup."""
+  id: ID!
+
+  """Return a list of individual generators and their details"""
+  list: [Generator!]!
+
+  """Execute all selected generators"""
+  run: GeneratorGroup!
+
+  """Whether the generated changeset from the last run is empty or not"""
+  isEmpty: Boolean!
+
   """
   The combined changes from the last run of the generators
 
@@ -2842,18 +2854,6 @@ type GeneratorGroup implements Node {
     """Strategy to apply on conflicts between generators"""
     onConflict: ChangesetsMergeConflict = FAIL_EARLY
   ): Changeset!
-
-  """A unique identifier for this GeneratorGroup."""
-  id: ID!
-
-  """Whether the generated changeset from the last run is empty or not"""
-  isEmpty: Boolean!
-
-  """Return a list of individual generators and their details"""
-  list: [Generator!]!
-
-  """Execute all selected generators"""
-  run: GeneratorGroup!
 }
 
 """A unique identifier for an object."""
@@ -2864,20 +2864,8 @@ scalar GeneratorID
 
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
-  """The resolved commit id at this ref."""
-  commit: String!
-
-  """Find the best common ancestor between this ref and another ref."""
-  commonAncestor(
-    """The other ref to compare against."""
-    other: ID! @expectedType(name: "GitRef")
-  ): GitRef!
-
   """A unique identifier for this GitRef."""
   id: ID!
-
-  """The resolved ref name at this ref."""
-  ref: String!
 
   """The filesystem tree at this ref."""
   tree(
@@ -2896,6 +2884,18 @@ type GitRef implements Node {
     """DEPRECATED: This option should be passed to `git` instead."""
     sshAuthSocket: ID @deprecated(reason: "This option should be passed to `git` instead.") @expectedType(name: "Socket")
   ): Directory!
+
+  """The resolved commit id at this ref."""
+  commit: String!
+
+  """The resolved ref name at this ref."""
+  ref: String!
+
+  """Find the best common ancestor between this ref and another ref."""
+  commonAncestor(
+    """The other ref to compare against."""
+    other: ID! @expectedType(name: "GitRef")
+  ): GitRef!
 }
 
 """A unique identifier for an object."""
@@ -2903,31 +2903,11 @@ scalar GitRefID
 
 """A git repository."""
 type GitRepository implements Node {
-  """Returns details of a branch."""
-  branch(
-    """Branch's name (e.g., "main")."""
-    name: String!
-  ): GitRef!
-
-  """branches that match any of the given glob patterns."""
-  branches(
-    """Glob patterns (e.g., "refs/tags/v*")."""
-    patterns: [String!]
-  ): [String!]!
-
-  """Returns details of a commit."""
-  commit(
-    """
-    Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
-    """
-    id: String!
-  ): GitRef!
+  """A unique identifier for this GitRepository."""
+  id: ID!
 
   """Returns details for HEAD."""
   head: GitRef!
-
-  """A unique identifier for this GitRepository."""
-  id: ID!
 
   """Returns details of a ref."""
   ref(
@@ -2937,10 +2917,24 @@ type GitRepository implements Node {
     name: String!
   ): GitRef!
 
+  """Returns details of a branch."""
+  branch(
+    """Branch's name (e.g., "main")."""
+    name: String!
+  ): GitRef!
+
   """Returns details of a tag."""
   tag(
     """Tag's name (e.g., "v0.3.9")."""
     name: String!
+  ): GitRef!
+
+  """Returns details of a commit."""
+  commit(
+    """
+    Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+    """
+    id: String!
   ): GitRef!
 
   """tags that match any of the given glob patterns."""
@@ -2949,11 +2943,20 @@ type GitRepository implements Node {
     patterns: [String!]
   ): [String!]!
 
+  """branches that match any of the given glob patterns."""
+  branches(
+    """Glob patterns (e.g., "refs/tags/v*")."""
+    patterns: [String!]
+  ): [String!]!
+
   """Returns the changeset of uncommitted changes in the git repository."""
   uncommitted: Changeset!
 
-  """The URL of the git repository."""
-  url: String
+  """Token to authenticate the remote with."""
+  withAuthToken(
+    """Secret used to populate the password during basic HTTP Authorization"""
+    token: ID! @expectedType(name: "Secret")
+  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
 
   """Header to authenticate the remote with."""
   withAuthHeader(
@@ -2961,11 +2964,8 @@ type GitRepository implements Node {
     header: ID! @expectedType(name: "Secret")
   ): GitRepository! @deprecated(reason: "Use \"httpAuthHeader\" in the constructor instead.")
 
-  """Token to authenticate the remote with."""
-  withAuthToken(
-    """Secret used to populate the password during basic HTTP Authorization"""
-    token: ID! @expectedType(name: "Secret")
-  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
+  """The URL of the git repository."""
+  url: String
 }
 
 """A unique identifier for an object."""
@@ -2973,27 +2973,20 @@ scalar GitRepositoryID
 
 """Image healthcheck configuration."""
 type HealthcheckConfig implements Node {
-  """Healthcheck command arguments."""
-  args: [String!]!
-
   """A unique identifier for this HealthcheckConfig."""
   id: ID!
 
-  """Interval between running healthcheck. Example:30s"""
-  interval: String!
-
-  """
-  The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
-  """
-  retries: Int!
+  """Healthcheck command arguments."""
+  args: [String!]!
 
   """Healthcheck command is a shell command."""
   shell: Boolean!
 
-  """
-  StartInterval configures the duration between checks during the startup phase. Example:5s
-  """
-  startInterval: String!
+  """Healthcheck timeout. Example:3s"""
+  timeout: String!
+
+  """Interval between running healthcheck. Example:30s"""
+  interval: String!
 
   """
   StartPeriod allows for failures during this initial startup period which do
@@ -3001,8 +2994,15 @@ type HealthcheckConfig implements Node {
   """
   startPeriod: String!
 
-  """Healthcheck timeout. Example:3s"""
-  timeout: String!
+  """
+  StartInterval configures the duration between checks during the startup phase. Example:5s
+  """
+  startInterval: String!
+
+  """
+  The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+  """
+  retries: Int!
 }
 
 """A unique identifier for an object."""
@@ -3010,11 +3010,8 @@ scalar HealthcheckConfigID
 
 """Information about the host environment."""
 type Host implements Node {
-  """Accesses a container image on the host."""
-  containerImage(
-    """Name of the image to access."""
-    name: String!
-  ): Container!
+  """A unique identifier for this Host."""
+  id: ID!
 
   """Accesses a directory on the host."""
   directory(
@@ -3058,25 +3055,11 @@ type Host implements Node {
     noCache: Boolean = false
   ): String
 
-  """A unique identifier for this Host."""
-  id: ID!
-
-  """
-  Creates a service that forwards traffic to a specified address via the host.
-  """
-  service(
-    """
-    Ports to expose via the service, forwarding through the host network.
-
-    If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-
-    An empty set of ports is not valid; an error will be returned.
-    """
-    ports: [PortForward!]!
-
-    """Upstream host to forward traffic to."""
-    host: String = "localhost"
-  ): Service!
+  """Accesses a Unix socket on the host."""
+  unixSocket(
+    """Location of the Unix socket (e.g., "/var/run/docker.sock")."""
+    path: String!
+  ): Socket!
 
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
@@ -3104,11 +3087,28 @@ type Host implements Node {
     ports: [PortForward!] = []
   ): Service!
 
-  """Accesses a Unix socket on the host."""
-  unixSocket(
-    """Location of the Unix socket (e.g., "/var/run/docker.sock")."""
-    path: String!
-  ): Socket!
+  """
+  Creates a service that forwards traffic to a specified address via the host.
+  """
+  service(
+    """
+    Ports to expose via the service, forwarding through the host network.
+
+    If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
+
+    An empty set of ports is not valid; an error will be returned.
+    """
+    ports: [PortForward!]!
+
+    """Upstream host to forward traffic to."""
+    host: String = "localhost"
+  ): Service!
+
+  """Accesses a container image on the host."""
+  containerImage(
+    """Name of the image to access."""
+    name: String!
+  ): Container!
 }
 
 """A unique identifier for an object."""
@@ -3135,11 +3135,11 @@ in the core API. It is not used by user modules and shouldn't ever be as user
 module accept input objects via their id rather than graphql input types.
 """
 type InputTypeDef implements Node {
-  """Static fields defined on this input object, if any."""
-  fields: [FieldTypeDef!]!
-
   """A unique identifier for this InputTypeDef."""
   id: ID!
+
+  """Static fields defined on this input object, if any."""
+  fields: [FieldTypeDef!]!
 
   """The name of the input object."""
   name: String!
@@ -3150,17 +3150,17 @@ scalar InputTypeDefID
 
 """A definition of a custom interface defined in a Module."""
 type InterfaceTypeDef implements Node {
-  """The doc string for the interface, if any."""
-  description: String!
+  """A unique identifier for this InterfaceTypeDef."""
+  id: ID!
 
   """Functions defined on this interface, if any."""
   functions: [Function!]!
 
-  """A unique identifier for this InterfaceTypeDef."""
-  id: ID!
-
   """The name of the interface."""
   name: String!
+
+  """The doc string for the interface, if any."""
+  description: String!
 
   """The location of this interface declaration."""
   sourceMap: SourceMap
@@ -3178,17 +3178,8 @@ scalar InterfaceTypeDefID
 scalar JSON
 
 type JSONValue implements Node {
-  """Decode an array from json"""
-  asArray: [JSONValue!]!
-
-  """Decode a boolean from json"""
-  asBoolean: Boolean!
-
-  """Decode an integer from json"""
-  asInteger: Int!
-
-  """Decode a string from json"""
-  asString: String!
+  """A unique identifier for this JSONValue."""
+  id: ID!
 
   """Return the value encoded as json"""
   contents(
@@ -3199,22 +3190,10 @@ type JSONValue implements Node {
     indent: String = "  "
   ): JSON!
 
-  """Lookup the field at the given path, and return its value."""
-  field(
-    """Path of the field to lookup, encoded as an array of field names"""
-    path: [String!]!
-  ): JSONValue!
-
-  """List fields of the encoded object"""
-  fields: [String!]!
-
-  """A unique identifier for this JSONValue."""
-  id: ID!
-
-  """Encode a boolean to json"""
-  newBoolean(
-    """New boolean value"""
-    value: Boolean!
+  """Return a new json value, decoded from the given content"""
+  withContents(
+    """New JSON-encoded contents"""
+    contents: JSON!
   ): JSONValue!
 
   """Encode an integer to json"""
@@ -3223,16 +3202,37 @@ type JSONValue implements Node {
     value: Int!
   ): JSONValue!
 
+  """Decode an integer from json"""
+  asInteger: Int!
+
   """Encode a string to json"""
   newString(
     """New string value"""
     value: String!
   ): JSONValue!
 
-  """Return a new json value, decoded from the given content"""
-  withContents(
-    """New JSON-encoded contents"""
-    contents: JSON!
+  """Decode a string from json"""
+  asString: String!
+
+  """Encode a boolean to json"""
+  newBoolean(
+    """New boolean value"""
+    value: Boolean!
+  ): JSONValue!
+
+  """Decode a boolean from json"""
+  asBoolean: Boolean!
+
+  """Decode an array from json"""
+  asArray: [JSONValue!]!
+
+  """List fields of the encoded object"""
+  fields: [String!]!
+
+  """Lookup the field at the given path, and return its value."""
+  field(
+    """Path of the field to lookup, encoded as an array of field names"""
+    path: [String!]!
   ): JSONValue!
 
   """Set a new field at the given path"""
@@ -3253,20 +3253,8 @@ A conversation with a large language model (LLM): queue prompts, expose tools,
 and step the model until it completes its turn.
 """
 type LLM implements Node & Syncer {
-  """create a branch in the LLM's history"""
-  attempt(number: Int!): LLM!
-
   """A unique identifier for this LLM."""
   id: ID!
-
-  """The text of the model's most recent reply."""
-  lastReply: String!
-
-  """
-  Send the queued prompt and step the model against the available tools, until
-  it ends its turn: a reply with no tool calls and nothing left queued.
-  """
-  loop: LLM!
 
   """
   The model the conversation is running against, after resolving any configured default.
@@ -3278,34 +3266,16 @@ type LLM implements Node & Syncer {
   """
   provider: String!
 
-  """
-  Advance the conversation by a single step: send the queued prompt or tool
-  results to the model, evaluate any tool calls it makes, and queue their
-  results. Use loop to step until the model ends its turn.
-  """
-  step: LLM!
+  """Clear the message history, keeping only the system prompts."""
+  withoutMessageHistory: LLM!
 
   """
-  Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
+  Clear the user-added system prompts, keeping only the default system prompt.
   """
-  sync: ID! @expectedType(name: "LLM")
+  withoutSystemPrompts: LLM!
 
-  """
-  The cumulative token usage, summed across every API call in the conversation.
-  """
-  tokenUsage: LLMTokenUsage!
-
-  """Render documentation for the tools currently exposed to the model."""
-  tools: String!
-
-  """Add an external MCP server to the LLM"""
-  withMCPServer(
-    """The name of the MCP server"""
-    name: String!
-
-    """The MCP service to run and communicate with over stdio"""
-    service: ID! @expectedType(name: "Service")
-  ): LLM!
+  """The text of the model's most recent reply."""
+  lastReply: String!
 
   """
   Change the model for the rest of the conversation. The message history is
@@ -3339,13 +3309,43 @@ type LLM implements Node & Syncer {
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
 
-  """Clear the message history, keeping only the system prompts."""
-  withoutMessageHistory: LLM!
+  """Add an external MCP server to the LLM"""
+  withMCPServer(
+    """The name of the MCP server"""
+    name: String!
+
+    """The MCP service to run and communicate with over stdio"""
+    service: ID! @expectedType(name: "Service")
+  ): LLM!
 
   """
-  Clear the user-added system prompts, keeping only the default system prompt.
+  Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
   """
-  withoutSystemPrompts: LLM!
+  sync: ID! @expectedType(name: "LLM")
+
+  """
+  Send the queued prompt and step the model against the available tools, until
+  it ends its turn: a reply with no tool calls and nothing left queued.
+  """
+  loop: LLM!
+
+  """
+  Advance the conversation by a single step: send the queued prompt or tool
+  results to the model, evaluate any tool calls it makes, and queue their
+  results. Use loop to step until the model ends its turn.
+  """
+  step: LLM!
+
+  """create a branch in the LLM's history"""
+  attempt(number: Int!): LLM!
+
+  """Render documentation for the tools currently exposed to the model."""
+  tools: String!
+
+  """
+  The cumulative token usage, summed across every API call in the conversation.
+  """
+  tokenUsage: LLMTokenUsage!
 }
 
 """A unique identifier for an object."""
@@ -3353,12 +3353,6 @@ scalar LLMID
 
 """A count of tokens consumed by LLM API calls."""
 type LLMTokenUsage implements Node {
-  """Input tokens served from the provider's prompt cache."""
-  cachedTokenReads: Int!
-
-  """Input tokens written to the provider's prompt cache."""
-  cachedTokenWrites: Int!
-
   """A unique identifier for this LLMTokenUsage."""
   id: ID!
 
@@ -3367,6 +3361,12 @@ type LLMTokenUsage implements Node {
 
   """Tokens received from the model, including text and tool calls."""
   outputTokens: Int!
+
+  """Input tokens served from the provider's prompt cache."""
+  cachedTokenReads: Int!
+
+  """Input tokens written to the provider's prompt cache."""
+  cachedTokenWrites: Int!
 
   """Total tokens consumed, as reported by the provider."""
   totalTokens: Int!
@@ -3392,11 +3392,11 @@ scalar LabelID
 
 """A definition of a list type in a Module."""
 type ListTypeDef implements Node {
-  """The type of the elements in the list."""
-  elementTypeDef: TypeDef!
-
   """A unique identifier for this ListTypeDef."""
   id: ID!
+
+  """The type of the elements in the list."""
+  elementTypeDef: TypeDef!
 }
 
 """A unique identifier for an object."""
@@ -3404,6 +3404,20 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module implements Node & Syncer {
+  """A unique identifier for this Module."""
+  id: ID!
+
+  """
+  Forces evaluation of the module, including any loading into the engine and associated validation.
+  """
+  sync: ID! @expectedType(name: "Module")
+
+  """Return all checks defined by the module"""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """
   Return the check defined by the module with the given name. Must match to exactly one check.
   """
@@ -3412,25 +3426,17 @@ type Module implements Node & Syncer {
     name: String!
   ): Check! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
-  """Return all checks defined by the module"""
-  checks(
-    """Only include checks matching the specified patterns"""
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
     include: [String!]
-  ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
-  """The dependencies of the module."""
-  dependencies: [Module!]!
-
-  """The doc string of the module, if any"""
-  description: String!
-
-  """Enumerations served by this module."""
-  enums: [TypeDef!]!
-
-  """
-  The generated files and directories made on top of the module source's context directory.
-  """
-  generatedContextDirectory: Directory!
+  """Return all services defined by the module"""
+  services(
+    """Only include services matching the specified patterns"""
+    include: [String!]
+  ): UpGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """
   Return the generator defined by the module with the given name. Must match to exactly one generator.
@@ -3440,17 +3446,8 @@ type Module implements Node & Syncer {
     name: String!
   ): Generator! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
-  """Return all generators defined by the module"""
-  generators(
-    """Only include generators matching the specified patterns"""
-    include: [String!]
-  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
-  """A unique identifier for this Module."""
-  id: ID!
-
-  """Interfaces served by this module."""
-  interfaces: [TypeDef!]!
+  """The dependencies of the module."""
+  dependencies: [Module!]!
 
   """
   The introspection schema JSON file for this module.
@@ -3462,19 +3459,33 @@ type Module implements Node & Syncer {
   """
   introspectionSchemaJSON: File!
 
-  """The name of the module"""
-  name: String!
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  generatedContextDirectory: Directory!
 
-  """Objects served by this module."""
-  objects: [TypeDef!]!
+  """User-defined default values, loaded from local .env files."""
+  userDefaults: EnvFile!
+
+  """Retrieves the module with the given description"""
+  withDescription(
+    """The description to set"""
+    description: String!
+  ): Module!
+
+  """This module plus the given Object type and associated functions."""
+  withObject(object: ID! @expectedType(name: "TypeDef")): Module!
+
+  """This module plus the given Interface type and associated functions"""
+  withInterface(iface: ID! @expectedType(name: "TypeDef")): Module!
+
+  """This module plus the given Enum type and associated values"""
+  withEnum(enum: ID! @expectedType(name: "TypeDef")): Module!
 
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
   runtime: Container
-
-  """The SDK config used by this module."""
-  sdk: SDKConfig
 
   """
   Serve a module's API in the current session.
@@ -3492,49 +3503,38 @@ type Module implements Node & Syncer {
     entrypoint: Boolean
   ): Void
 
-  """Return all services defined by the module"""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
-
   """The source for the module."""
   source: ModuleSource
 
-  """
-  Forces evaluation of the module, including any loading into the engine and associated validation.
-  """
-  sync: ID! @expectedType(name: "Module")
+  """The name of the module"""
+  name: String!
 
-  """User-defined default values, loaded from local .env files."""
-  userDefaults: EnvFile!
+  """The SDK config used by this module."""
+  sdk: SDKConfig
 
-  """Retrieves the module with the given description"""
-  withDescription(
-    """The description to set"""
-    description: String!
-  ): Module!
+  """The doc string of the module, if any"""
+  description: String!
 
-  """This module plus the given Enum type and associated values"""
-  withEnum(enum: ID! @expectedType(name: "TypeDef")): Module!
+  """Objects served by this module."""
+  objects: [TypeDef!]!
 
-  """This module plus the given Interface type and associated functions"""
-  withInterface(iface: ID! @expectedType(name: "TypeDef")): Module!
+  """Interfaces served by this module."""
+  interfaces: [TypeDef!]!
 
-  """This module plus the given Object type and associated functions."""
-  withObject(object: ID! @expectedType(name: "TypeDef")): Module!
+  """Enumerations served by this module."""
+  enums: [TypeDef!]!
 }
 
 """The client generated for the module."""
 type ModuleConfigClient implements Node {
-  """The directory the client is generated in."""
-  directory: String!
+  """A unique identifier for this ModuleConfigClient."""
+  id: ID!
 
   """The generator to use"""
   generator: String!
 
-  """A unique identifier for this ModuleConfigClient."""
-  id: ID!
+  """The directory the client is generated in."""
+  directory: String!
 }
 
 """A unique identifier for an object."""
@@ -3547,131 +3547,13 @@ scalar ModuleID
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
 type ModuleSource implements Node & Syncer {
-  """
-  Load the source as a module. If this is a local source, the parent directory
-  must have been provided during module source creation
-  """
-  asModule: Module!
-
-  """A human readable ref string representation of this module source."""
-  asString: String!
-
-  """The blueprint referenced by the module source."""
-  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
-
-  """
-  The ref to clone the root of the git repo from. Only valid for git sources.
-  """
-  cloneRef: String!
-
-  """The URL to clone the root of the git repo from"""
-  cloneURL: String! @deprecated(reason: "Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references")
-
-  """The resolved commit of the git repo this source points to."""
-  commit: String!
-
-  """The clients generated for the module."""
-  configClients: [ModuleConfigClient!]!
-
-  """Whether an existing module config file was found."""
-  configExists: Boolean!
-
-  """
-  The full directory loaded for the module source, including the source code as a subdirectory.
-  """
-  contextDirectory: Directory!
-
-  """The dependencies of the module source."""
-  dependencies: [ModuleSource!]!
-
-  """
-  A content-hash of the module source. Module sources with the same digest will
-  output the same generated context and convert into the same module instance.
-  """
-  digest: String!
-
-  """
-  The directory containing the module configuration and source code (source code may be in a subdir).
-  """
-  directory(
-    """A subpath from the source directory to select."""
-    path: String!
-  ): Directory!
-
-  """The engine version of the module."""
-  engineVersion: String!
-
-  """
-  The generated files and directories made on top of the module source's context directory, returned as a Changeset.
-  """
-  generatedContextChangeset: Changeset!
-
-  """
-  The generated files and directories made on top of the module source's context directory.
-  """
-  generatedContextDirectory: Directory!
-
-  """
-  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
-  """
-  htmlRepoURL: String!
-
-  """
-  The URL to the source's git repo in a web browser. Only valid for git sources.
-  """
-  htmlURL: String!
-
   """A unique identifier for this ModuleSource."""
   id: ID!
 
   """
-  The introspection schema JSON file for this module source.
-
-  This file represents the schema visible to the module's source code, including
-  all core types and those from the dependencies.
-
-  Note: this is in the context of a module, so some core types may be hidden.
+  Forces evaluation of the module source, including any loading into the engine and associated validation.
   """
-  introspectionSchemaJSON: File!
-
-  """The kind of module source (currently local, git or dir)."""
-  kind: ModuleSourceKind!
-
-  """
-  The full absolute path to the context directory on the caller's host
-  filesystem that this module source is loaded from. Only valid for local module
-  sources.
-  """
-  localContextDirectoryPath: String!
-
-  """The name of the module, including any setting via the withName API."""
-  moduleName: String!
-
-  """
-  The original name of the module as read from the module config file (or set for the first time with the withName API).
-  """
-  moduleOriginalName: String!
-
-  """
-  The original subpath used when instantiating this module source, relative to the context directory.
-  """
-  originalSubpath: String!
-
-  """The pinned version of this module source."""
-  pin: String!
-
-  """
-  The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
-  """
-  repoRootPath: String!
-
-  """The SDK configuration of the module."""
-  sdk: SDKConfig
-
-  """
-  The path, relative to the context directory, that contains the module config.
-  """
-  sourceRootSubpath: String!
+  sync: ID! @expectedType(name: "ModuleSource")
 
   """
   The path to the directory containing the module's source code, relative to the context directory.
@@ -3679,52 +3561,28 @@ type ModuleSource implements Node & Syncer {
   sourceSubpath: String!
 
   """
-  Forces evaluation of the module source, including any loading into the engine and associated validation.
+  The original subpath used when instantiating this module source, relative to the context directory.
   """
-  sync: ID! @expectedType(name: "ModuleSource")
-
-  """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
-
-  """User-defined defaults read from local .env files"""
-  userDefaults: EnvFile!
-
-  """The specified version of the git repo this source points to."""
-  version: String!
-
-  """Set a blueprint for the module source."""
-  withBlueprint(
-    """The blueprint module to set."""
-    blueprint: ID! @expectedType(name: "ModuleSource")
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
-
-  """Update the module source with a new client to generate."""
-  withClient(
-    """The generator to use"""
-    generator: String!
-
-    """The output directory for the generated client."""
-    outputDir: String!
-  ): ModuleSource!
+  originalSubpath: String!
 
   """
-  Append the provided dependencies to the module source's dependency list.
+  A content-hash of the module source. Module sources with the same digest will
+  output the same generated context and convert into the same module instance.
   """
-  withDependencies(
-    """The dependencies to append."""
-    dependencies: [ID!]! @expectedType(name: "ModuleSource")
+  digest: String!
+
+  """Update the module source with a new source subpath."""
+  withSourceSubpath(
+    """
+    The path to set as the source subpath. Must be relative to the module source's source root directory.
+    """
+    path: String!
   ): ModuleSource!
 
-  """Upgrade the engine version of the module to the given value."""
-  withEngineVersion(
-    """The engine version to upgrade to."""
-    version: String!
-  ): ModuleSource!
-
-  """Enable the experimental features for the module source."""
-  withExperimentalFeatures(
-    """The experimental features to enable."""
-    features: [ModuleSourceExperimentalFeature!]!
+  """Update the module source with a new name."""
+  withName(
+    """The name to set."""
+    name: String!
   ): ModuleSource!
 
   """
@@ -3736,60 +3594,30 @@ type ModuleSource implements Node & Syncer {
     patterns: [String!]!
   ): ModuleSource!
 
-  """Update the module source with a new name."""
-  withName(
-    """The name to set."""
-    name: String!
-  ): ModuleSource!
-
   """Update the module source with a new SDK."""
   withSDK(
     """The SDK source to set."""
     source: String!
   ): ModuleSource!
 
-  """Update the module source with a new source subpath."""
-  withSourceSubpath(
-    """
-    The path to set as the source subpath. Must be relative to the module source's source root directory.
-    """
-    path: String!
+  """Upgrade the engine version of the module to the given value."""
+  withEngineVersion(
+    """The engine version to upgrade to."""
+    version: String!
   ): ModuleSource!
 
-  """Add toolchains to the module source."""
-  withToolchains(
-    """The toolchain modules to add."""
-    toolchains: [ID!]! @expectedType(name: "ModuleSource")
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
-
-  """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  """
+  Append the provided dependencies to the module source's dependency list.
+  """
+  withDependencies(
+    """The dependencies to append."""
+    dependencies: [ID!]! @expectedType(name: "ModuleSource")
+  ): ModuleSource!
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
-  ): ModuleSource!
-
-  """Update one or more toolchains."""
-  withUpdateToolchains(
-    """The toolchains to update."""
-    toolchains: [String!]!
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
-
-  """Update one or more clients."""
-  withUpdatedClients(
-    """The clients to update"""
-    clients: [String!]!
-  ): ModuleSource!
-
-  """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
-
-  """Remove a client from the module source."""
-  withoutClient(
-    """The path of the client to remove."""
-    path: String!
   ): ModuleSource!
 
   """
@@ -3800,17 +3628,189 @@ type ModuleSource implements Node & Syncer {
     dependencies: [String!]!
   ): ModuleSource!
 
-  """Disable experimental features for the module source."""
-  withoutExperimentalFeatures(
-    """The experimental features to disable."""
-    features: [ModuleSourceExperimentalFeature!]!
-  ): ModuleSource!
+  """Set a blueprint for the module source."""
+  withBlueprint(
+    """The blueprint module to set."""
+    blueprint: ID! @expectedType(name: "ModuleSource")
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+
+  """Add toolchains to the module source."""
+  withToolchains(
+    """The toolchain modules to add."""
+    toolchains: [ID!]! @expectedType(name: "ModuleSource")
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+
+  """Update one or more toolchains."""
+  withUpdateToolchains(
+    """The toolchains to update."""
+    toolchains: [String!]!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
 
   """Remove the provided toolchains from the module source."""
   withoutToolchains(
     """The toolchains to remove."""
     toolchains: [String!]!
   ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+
+  """Update the blueprint module to the latest version."""
+  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+
+  """Remove the current blueprint from the module source."""
+  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  generatedContextDirectory: Directory!
+
+  """
+  The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+  """
+  generatedContextChangeset: Changeset!
+
+  """A human readable ref string representation of this module source."""
+  asString: String!
+
+  """The pinned version of this module source."""
+  pin: String!
+
+  """
+  The full absolute path to the context directory on the caller's host
+  filesystem that this module source is loaded from. Only valid for local module
+  sources.
+  """
+  localContextDirectoryPath: String!
+
+  """
+  Load the source as a module. If this is a local source, the parent directory
+  must have been provided during module source creation
+  """
+  asModule: Module!
+
+  """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
+
+  """
+  The directory containing the module configuration and source code (source code may be in a subdir).
+  """
+  directory(
+    """A subpath from the source directory to select."""
+    path: String!
+  ): Directory!
+
+  """
+  The ref to clone the root of the git repo from. Only valid for git sources.
+  """
+  cloneRef: String!
+
+  """
+  The URL to the source's git repo in a web browser. Only valid for git sources.
+  """
+  htmlURL: String!
+
+  """
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
+  """
+  htmlRepoURL: String!
+
+  """The specified version of the git repo this source points to."""
+  version: String!
+
+  """The resolved commit of the git repo this source points to."""
+  commit: String!
+
+  """
+  The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
+  """
+  repoRootPath: String!
+
+  """The URL to clone the root of the git repo from"""
+  cloneURL: String! @deprecated(reason: "Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references")
+
+  """Update the module source with a new client to generate."""
+  withClient(
+    """The generator to use"""
+    generator: String!
+
+    """The output directory for the generated client."""
+    outputDir: String!
+  ): ModuleSource!
+
+  """Update one or more clients."""
+  withUpdatedClients(
+    """The clients to update"""
+    clients: [String!]!
+  ): ModuleSource!
+
+  """Remove a client from the module source."""
+  withoutClient(
+    """The path of the client to remove."""
+    path: String!
+  ): ModuleSource!
+
+  """Whether an existing module config file was found."""
+  configExists: Boolean!
+
+  """The name of the module, including any setting via the withName API."""
+  moduleName: String!
+
+  """
+  The original name of the module as read from the module config file (or set for the first time with the withName API).
+  """
+  moduleOriginalName: String!
+
+  """The engine version of the module."""
+  engineVersion: String!
+
+  """The SDK configuration of the module."""
+  sdk: SDKConfig
+
+  """The dependencies of the module source."""
+  dependencies: [ModuleSource!]!
+
+  """The blueprint referenced by the module source."""
+  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
+
+  """The toolchains referenced by the module source."""
+  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
+
+  """User-defined defaults read from local .env files"""
+  userDefaults: EnvFile!
+
+  """The clients generated for the module."""
+  configClients: [ModuleConfigClient!]!
+
+  """
+  The path, relative to the context directory, that contains the module config.
+  """
+  sourceRootSubpath: String!
+
+  """
+  The full directory loaded for the module source, including the source code as a subdirectory.
+  """
+  contextDirectory: Directory!
+
+  """The kind of module source (currently local, git or dir)."""
+  kind: ModuleSourceKind!
 }
 
 """Experimental features of a module"""
@@ -3842,14 +3842,8 @@ interface Node {
 
 """A definition of a custom object defined in a Module."""
 type ObjectTypeDef implements Node {
-  """The function used to construct new instances of this object, if any."""
-  constructor: Function
-
-  """The reason this enum member is deprecated, if any."""
-  deprecated: String
-
-  """The doc string for the object, if any."""
-  description: String!
+  """A unique identifier for this ObjectTypeDef."""
+  id: ID!
 
   """Static fields defined on this object, if any."""
   fields: [FieldTypeDef!]!
@@ -3857,14 +3851,20 @@ type ObjectTypeDef implements Node {
   """Functions defined on this object, if any."""
   functions: [Function!]!
 
-  """A unique identifier for this ObjectTypeDef."""
-  id: ID!
+  """The function used to construct new instances of this object, if any."""
+  constructor: Function
 
   """The name of the object."""
   name: String!
 
+  """The doc string for the object, if any."""
+  description: String!
+
   """The location of this object declaration."""
   sourceMap: SourceMap
+
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
 
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -3893,12 +3893,6 @@ scalar Platform
 
 """A port exposed by a container."""
 type Port implements Node {
-  """The port description."""
-  description: String
-
-  """Skip the health check when run as a service."""
-  experimentalSkipHealthcheck: Boolean!
-
   """A unique identifier for this Port."""
   id: ID!
 
@@ -3907,6 +3901,12 @@ type Port implements Node {
 
   """The transport layer protocol."""
   protocol: NetworkProtocol!
+
+  """The port description."""
+  description: String
+
+  """Skip the health check when run as a service."""
+  experimentalSkipHealthcheck: Boolean!
 }
 
 """Port forwarding rules for tunneling network traffic."""
@@ -3926,83 +3926,68 @@ scalar PortID
 
 """The root of the DAG."""
 type Query implements Node {
-  """
-  initialize an address to load directories, containers, secrets or other object types.
-  """
-  address(value: String!): Address!
+  """A unique identifier for this Query."""
+  id: ID!
 
-  """Constructs a cache volume for a given cache key."""
-  cacheVolume(
-    """
-    A string identifier to target this cache volume (e.g., "modules-cache").
-    """
-    key: String!
-  ): CacheVolume!
+  """Load any object by its ID."""
+  node(id: ID!): Node
 
-  """Creates an empty changeset"""
-  changeset: Changeset!
+  """Load a Syncer from its ID."""
+  loadSyncerFromID(id: SyncerID!): Syncer!
 
-  """Dagger Cloud configuration and state"""
-  cloud: Cloud!
+  """Load a Exportable from its ID."""
+  loadExportableFromID(id: ExportableID!): Exportable!
 
-  """
-  Creates a scratch container, with no image or metadata.
+  """Load a EnvVariable from its ID."""
+  loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
 
-  To pull an image, follow up with the "from" function.
-  """
-  container(
-    """
-    Platform to initialize the container with. Defaults to the native platform of the current engine
-    """
-    platform: Platform
-  ): Container!
+  """Load a Port from its ID."""
+  loadPortFromID(id: PortID!): Port!
 
-  """
-  The FunctionCall context that the SDK caller is currently executing in.
+  """Load a Label from its ID."""
+  loadLabelFromID(id: LabelID!): Label!
 
-  If the caller is not currently executing in a function, this will return an error.
-  """
-  currentFunctionCall: FunctionCall!
+  """Load a HealthcheckConfig from its ID."""
+  loadHealthcheckConfigFromID(id: HealthcheckConfigID!): HealthcheckConfig!
 
-  """The module currently being served in the session, if any."""
-  currentModule: CurrentModule!
+  """Creates a named sub-pipeline."""
+  pipeline(
+    """Name of the sub-pipeline."""
+    name: String!
 
-  """
-  The TypeDef representations of the objects currently being served in the session.
-  """
-  currentTypeDefs(
-    """
-    Strip core API functions from the Query type, leaving only module-sourced
-    functions (constructors, entrypoint proxies, etc.).
+    """Description of the sub-pipeline."""
+    description: String = ""
 
-    Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
-    """
-    hideCore: Boolean
-  ): [TypeDef!]!
+    """Labels to apply to the sub-pipeline."""
+    labels: [PipelineLabel!]
+  ): Query! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
-  """Detect and return the current workspace."""
-  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
-
-  """The default platform of the engine."""
-  defaultPlatform: Platform!
+  """Get the current Dagger Engine version."""
+  version: String!
 
   """Creates an empty directory."""
   directory: Directory!
 
-  """The Dagger engine container configuration and state"""
-  engine: Engine!
+  """Load a Stat from its ID."""
+  loadStatFromID(id: StatID!): Stat
 
-  """Initialize an environment file"""
-  envFile(
-    """Replace "${VAR}" or "$VAR" with the value of other vars"""
-    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
-  ): EnvFile!
+  """Load a Directory from its ID."""
+  loadDirectoryFromID(id: DirectoryID!): Directory!
 
-  """Create a new error."""
-  error(
-    """A brief description of the error."""
-    message: String!
-  ): Error!
+  """Load a SearchResult from its ID."""
+  loadSearchResultFromID(id: SearchResultID!): SearchResult!
+
+  """Load a SearchSubmatch from its ID."""
+  loadSearchSubmatchFromID(id: SearchSubmatchID!): SearchSubmatch!
+
+  """Load a DiffStat from its ID."""
+  loadDiffStatFromID(id: DiffStatID!): DiffStat!
+
+  """Load a Changeset from its ID."""
+  loadChangesetFromID(id: ChangesetID!): Changeset!
+
+  """Creates an empty changeset"""
+  changeset: Changeset!
 
   """Creates a file with the specified contents."""
   file(
@@ -4020,21 +4005,8 @@ type Query implements Node {
     permissions: Int = 420
   ): File!
 
-  """Creates a function."""
-  function(
-    """
-    Name of the function, in its original format from the implementation language.
-    """
-    name: String!
-
-    """Return type of the function."""
-    returnType: ID! @expectedType(name: "TypeDef")
-  ): Function!
-
-  """
-  Create a code generation result, given a directory containing the generated code.
-  """
-  generatedCode(code: ID! @expectedType(name: "Directory")): GeneratedCode!
+  """Load a File from its ID."""
+  loadFileFromID(id: FileID!): File!
 
   """Queries a Git repository."""
   git(
@@ -4069,271 +4041,40 @@ type Query implements Node {
     experimentalServiceHost: ID @expectedType(name: "Service")
   ): GitRepository!
 
-  """Queries the host environment."""
-  host: Host!
-
-  """Returns a file containing an http remote url content."""
-  http(
-    """HTTP url to get the content from (e.g., "https://docs.dagger.io")."""
-    url: String!
-
-    """File name to use for the file. Defaults to the last part of the URL."""
-    name: String
-
-    """Permissions to set on the file."""
-    permissions: Int
-
-    """Secret used to populate the Authorization HTTP header"""
-    authHeader: ID @expectedType(name: "Secret")
-
-    """A service which must be started before the URL is fetched."""
-    experimentalServiceHost: ID @expectedType(name: "Service")
-  ): File!
-
-  """A unique identifier for this Query."""
-  id: ID!
-
-  """Initialize a JSON value"""
-  json: JSONValue!
-
-  """Initialize a new LLM conversation."""
-  llm(
-    """
-    The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
-    """
-    model: String
-
-    """Cap the number of API calls for this LLM"""
-    maxAPICalls: Int
-  ): LLM! @experimental(reason: "LLM support is not yet stabilized")
-
-  """Load a Address from its ID."""
-  loadAddressFromID(id: AddressID!): Address!
-
-  """Load a CacheVolume from its ID."""
-  loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
-
-  """Load a Changeset from its ID."""
-  loadChangesetFromID(id: ChangesetID!): Changeset!
-
-  """Load a Check from its ID."""
-  loadCheckFromID(id: CheckID!): Check!
-
-  """Load a CheckGroup from its ID."""
-  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
-
-  """Load a Cloud from its ID."""
-  loadCloudFromID(id: CloudID!): Cloud!
-
-  """Load a Container from its ID."""
-  loadContainerFromID(id: ContainerID!): Container!
-
-  """Load a CurrentModule from its ID."""
-  loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
-
-  """Load a DiffStat from its ID."""
-  loadDiffStatFromID(id: DiffStatID!): DiffStat!
-
-  """Load a Directory from its ID."""
-  loadDirectoryFromID(id: DirectoryID!): Directory!
-
-  """Load a EngineCacheEntry from its ID."""
-  loadEngineCacheEntryFromID(id: EngineCacheEntryID!): EngineCacheEntry!
-
-  """Load a EngineCacheEntrySet from its ID."""
-  loadEngineCacheEntrySetFromID(id: EngineCacheEntrySetID!): EngineCacheEntrySet!
-
-  """Load a EngineCache from its ID."""
-  loadEngineCacheFromID(id: EngineCacheID!): EngineCache!
-
-  """Load a Engine from its ID."""
-  loadEngineFromID(id: EngineID!): Engine!
-
-  """Load a EnumTypeDef from its ID."""
-  loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
-
-  """Load a EnumValueTypeDef from its ID."""
-  loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
-
-  """Load a EnvFile from its ID."""
-  loadEnvFileFromID(id: EnvFileID!): EnvFile!
-
-  """Load a EnvVariable from its ID."""
-  loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
-
-  """Load a Error from its ID."""
-  loadErrorFromID(id: ErrorID!): Error!
-
-  """Load a ErrorValue from its ID."""
-  loadErrorValueFromID(id: ErrorValueID!): ErrorValue!
-
-  """Load a Exportable from its ID."""
-  loadExportableFromID(id: ExportableID!): Exportable!
-
-  """Load a FieldTypeDef from its ID."""
-  loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
-
-  """Load a File from its ID."""
-  loadFileFromID(id: FileID!): File!
-
-  """Load a FunctionArg from its ID."""
-  loadFunctionArgFromID(id: FunctionArgID!): FunctionArg!
-
-  """Load a FunctionCallArgValue from its ID."""
-  loadFunctionCallArgValueFromID(id: FunctionCallArgValueID!): FunctionCallArgValue!
-
-  """Load a FunctionCall from its ID."""
-  loadFunctionCallFromID(id: FunctionCallID!): FunctionCall!
-
-  """Load a Function from its ID."""
-  loadFunctionFromID(id: FunctionID!): Function!
-
-  """Load a GeneratedCode from its ID."""
-  loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
-
-  """Load a Generator from its ID."""
-  loadGeneratorFromID(id: GeneratorID!): Generator!
-
-  """Load a GeneratorGroup from its ID."""
-  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
+  """Load a GitRepository from its ID."""
+  loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
 
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
 
-  """Load a GitRepository from its ID."""
-  loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
+  """
+  Creates a scratch container, with no image or metadata.
 
-  """Load a HealthcheckConfig from its ID."""
-  loadHealthcheckConfigFromID(id: HealthcheckConfigID!): HealthcheckConfig!
+  To pull an image, follow up with the "from" function.
+  """
+  container(
+    """
+    Platform to initialize the container with. Defaults to the native platform of the current engine
+    """
+    platform: Platform
+  ): Container!
 
-  """Load a Host from its ID."""
-  loadHostFromID(id: HostID!): Host!
-
-  """Load a InputTypeDef from its ID."""
-  loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!
-
-  """Load a InterfaceTypeDef from its ID."""
-  loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
-
-  """Load a JSONValue from its ID."""
-  loadJSONValueFromID(id: JSONValueID!): JSONValue!
-
-  """Load a LLM from its ID."""
-  loadLLMFromID(id: LLMID!): LLM!
-
-  """Load a LLMTokenUsage from its ID."""
-  loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
-
-  """Load a Label from its ID."""
-  loadLabelFromID(id: LabelID!): Label!
-
-  """Load a ListTypeDef from its ID."""
-  loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
-
-  """Load a ModuleConfigClient from its ID."""
-  loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
-
-  """Load a Module from its ID."""
-  loadModuleFromID(id: ModuleID!): Module!
-
-  """Load a ModuleSource from its ID."""
-  loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
-
-  """Load a ObjectTypeDef from its ID."""
-  loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
-
-  """Load a Port from its ID."""
-  loadPortFromID(id: PortID!): Port!
-
-  """Load a SDKConfig from its ID."""
-  loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
-
-  """Load a ScalarTypeDef from its ID."""
-  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
-
-  """Load a SearchResult from its ID."""
-  loadSearchResultFromID(id: SearchResultID!): SearchResult!
-
-  """Load a SearchSubmatch from its ID."""
-  loadSearchSubmatchFromID(id: SearchSubmatchID!): SearchSubmatch!
-
-  """Load a Secret from its ID."""
-  loadSecretFromID(id: SecretID!): Secret!
-
-  """Load a Service from its ID."""
-  loadServiceFromID(id: ServiceID!): Service!
-
-  """Load a Socket from its ID."""
-  loadSocketFromID(id: SocketID!): Socket!
-
-  """Load a SourceMap from its ID."""
-  loadSourceMapFromID(id: SourceMapID!): SourceMap!
-
-  """Load a Stat from its ID."""
-  loadStatFromID(id: StatID!): Stat
-
-  """Load a Syncer from its ID."""
-  loadSyncerFromID(id: SyncerID!): Syncer!
+  """Load a Container from its ID."""
+  loadContainerFromID(id: ContainerID!): Container!
 
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
-  """Load a TypeDef from its ID."""
-  loadTypeDefFromID(id: TypeDefID!): TypeDef!
-
-  """Load a Up from its ID."""
-  loadUpFromID(id: UpID!): Up!
-
-  """Load a UpGroup from its ID."""
-  loadUpGroupFromID(id: UpGroupID!): UpGroup!
-
-  """Load a Workspace from its ID."""
-  loadWorkspaceFromID(id: WorkspaceID!): Workspace!
-
-  """Create a new module."""
-  module: Module!
-
-  """Create a new module source instance from a source ref string"""
-  moduleSource(
-    """The string ref representation of the module source"""
-    refString: String!
-
-    """The pinned version of the module source"""
-    refPin: String = ""
-
+  """Constructs a cache volume for a given cache key."""
+  cacheVolume(
     """
-    If true, do not attempt to find a module config file in a parent directory
-    of the provided path. Only relevant for local module sources.
+    A string identifier to target this cache volume (e.g., "modules-cache").
     """
-    disableFindUp: Boolean = false
+    key: String!
+  ): CacheVolume!
 
-    """
-    If true, do not error out if the provided ref string is a local path and
-    does not exist yet. Useful when initializing new modules in directories that
-    don't exist yet.
-    """
-    allowNotExists: Boolean = false
-
-    """
-    If set, error out if the ref string is not of the provided requireKind.
-    """
-    requireKind: ModuleSourceKind
-  ): ModuleSource!
-
-  """Load any object by its ID."""
-  node(id: ID!): Node
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Name of the sub-pipeline."""
-    name: String!
-
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!]
-  ): Query! @deprecated(reason: "Explicit pipeline creation is now a no-op")
+  """Load a CacheVolume from its ID."""
+  loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
   """Creates a new secret."""
   secret(
@@ -4369,6 +4110,103 @@ type Query implements Node {
     plaintext: String!
   ): Secret!
 
+  """Load a Secret from its ID."""
+  loadSecretFromID(id: SecretID!): Secret!
+
+  """Load a Service from its ID."""
+  loadServiceFromID(id: ServiceID!): Service!
+
+  """Queries the host environment."""
+  host: Host!
+
+  """Load a Host from its ID."""
+  loadHostFromID(id: HostID!): Host!
+
+  """Returns a file containing an http remote url content."""
+  http(
+    """HTTP url to get the content from (e.g., "https://docs.dagger.io")."""
+    url: String!
+
+    """File name to use for the file. Defaults to the last part of the URL."""
+    name: String
+
+    """Permissions to set on the file."""
+    permissions: Int
+
+    """Secret used to populate the Authorization HTTP header"""
+    authHeader: ID @expectedType(name: "Secret")
+
+    """A service which must be started before the URL is fetched."""
+    experimentalServiceHost: ID @expectedType(name: "Service")
+  ): File!
+
+  """The default platform of the engine."""
+  defaultPlatform: Platform!
+
+  """Load a Socket from its ID."""
+  loadSocketFromID(id: SocketID!): Socket!
+
+  """Create a new module source instance from a source ref string"""
+  moduleSource(
+    """The string ref representation of the module source"""
+    refString: String!
+
+    """The pinned version of the module source"""
+    refPin: String = ""
+
+    """
+    If true, do not attempt to find a module config file in a parent directory
+    of the provided path. Only relevant for local module sources.
+    """
+    disableFindUp: Boolean = false
+
+    """
+    If true, do not error out if the provided ref string is a local path and
+    does not exist yet. Useful when initializing new modules in directories that
+    don't exist yet.
+    """
+    allowNotExists: Boolean = false
+
+    """
+    If set, error out if the ref string is not of the provided requireKind.
+    """
+    requireKind: ModuleSourceKind
+  ): ModuleSource!
+
+  """Load a ModuleSource from its ID."""
+  loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
+
+  """Load a SDKConfig from its ID."""
+  loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
+
+  """Load a ModuleConfigClient from its ID."""
+  loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
+
+  """Load a GeneratedCode from its ID."""
+  loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
+
+  """Create a new module."""
+  module: Module!
+
+  """Create a new TypeDef."""
+  typeDef: TypeDef!
+
+  """
+  Create a code generation result, given a directory containing the generated code.
+  """
+  generatedCode(code: ID! @expectedType(name: "Directory")): GeneratedCode!
+
+  """Creates a function."""
+  function(
+    """
+    Name of the function, in its original format from the implementation language.
+    """
+    name: String!
+
+    """Return type of the function."""
+    returnType: ID! @expectedType(name: "TypeDef")
+  ): Function!
+
   """Creates source map metadata."""
   sourceMap(
     """The filename from the module source."""
@@ -4381,11 +4219,173 @@ type Query implements Node {
     column: Int!
   ): SourceMap!
 
-  """Create a new TypeDef."""
-  typeDef: TypeDef!
+  """The module currently being served in the session, if any."""
+  currentModule: CurrentModule!
 
-  """Get the current Dagger Engine version."""
-  version: String!
+  """
+  The TypeDef representations of the objects currently being served in the session.
+  """
+  currentTypeDefs(
+    """
+    Strip core API functions from the Query type, leaving only module-sourced
+    functions (constructors, entrypoint proxies, etc.).
+
+    Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    """
+    hideCore: Boolean
+  ): [TypeDef!]!
+
+  """
+  The FunctionCall context that the SDK caller is currently executing in.
+
+  If the caller is not currently executing in a function, this will return an error.
+  """
+  currentFunctionCall: FunctionCall!
+
+  """Load a FunctionCall from its ID."""
+  loadFunctionCallFromID(id: FunctionCallID!): FunctionCall!
+
+  """Load a Module from its ID."""
+  loadModuleFromID(id: ModuleID!): Module!
+
+  """Load a CurrentModule from its ID."""
+  loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
+
+  """Load a Function from its ID."""
+  loadFunctionFromID(id: FunctionID!): Function!
+
+  """Load a FunctionArg from its ID."""
+  loadFunctionArgFromID(id: FunctionArgID!): FunctionArg!
+
+  """Load a FunctionCallArgValue from its ID."""
+  loadFunctionCallArgValueFromID(id: FunctionCallArgValueID!): FunctionCallArgValue!
+
+  """Load a SourceMap from its ID."""
+  loadSourceMapFromID(id: SourceMapID!): SourceMap!
+
+  """Load a TypeDef from its ID."""
+  loadTypeDefFromID(id: TypeDefID!): TypeDef!
+
+  """Load a ObjectTypeDef from its ID."""
+  loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
+
+  """Load a InterfaceTypeDef from its ID."""
+  loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
+
+  """Load a InputTypeDef from its ID."""
+  loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!
+
+  """Load a FieldTypeDef from its ID."""
+  loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
+
+  """Load a ListTypeDef from its ID."""
+  loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
+
+  """Load a ScalarTypeDef from its ID."""
+  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
+
+  """Load a EnumTypeDef from its ID."""
+  loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
+
+  """Load a EnumValueTypeDef from its ID."""
+  loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Create a new error."""
+  error(
+    """A brief description of the error."""
+    message: String!
+  ): Error!
+
+  """Load a Error from its ID."""
+  loadErrorFromID(id: ErrorID!): Error!
+
+  """Load a ErrorValue from its ID."""
+  loadErrorValueFromID(id: ErrorValueID!): ErrorValue!
+
+  """The Dagger engine container configuration and state"""
+  engine: Engine!
+
+  """Load a Engine from its ID."""
+  loadEngineFromID(id: EngineID!): Engine!
+
+  """Load a EngineCache from its ID."""
+  loadEngineCacheFromID(id: EngineCacheID!): EngineCache!
+
+  """Load a EngineCacheEntrySet from its ID."""
+  loadEngineCacheEntrySetFromID(id: EngineCacheEntrySetID!): EngineCacheEntrySet!
+
+  """Load a EngineCacheEntry from its ID."""
+  loadEngineCacheEntryFromID(id: EngineCacheEntryID!): EngineCacheEntry!
+
+  """Dagger Cloud configuration and state"""
+  cloud: Cloud!
+
+  """Load a Cloud from its ID."""
+  loadCloudFromID(id: CloudID!): Cloud!
+
+  """Initialize a new LLM conversation."""
+  llm(
+    """
+    The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
+    """
+    model: String
+
+    """Cap the number of API calls for this LLM"""
+    maxAPICalls: Int
+  ): LLM! @experimental(reason: "LLM support is not yet stabilized")
+
+  """Load a LLM from its ID."""
+  loadLLMFromID(id: LLMID!): LLM!
+
+  """Load a LLMTokenUsage from its ID."""
+  loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
+
+  """Initialize a JSON value"""
+  json: JSONValue!
+
+  """Load a JSONValue from its ID."""
+  loadJSONValueFromID(id: JSONValueID!): JSONValue!
+
+  """Initialize an environment file"""
+  envFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
+  ): EnvFile!
+
+  """Load a EnvFile from its ID."""
+  loadEnvFileFromID(id: EnvFileID!): EnvFile!
+
+  """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  address(value: String!): Address!
+
+  """Load a Address from its ID."""
+  loadAddressFromID(id: AddressID!): Address!
+
+  """Load a CheckGroup from its ID."""
+  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
+
+  """Load a Check from its ID."""
+  loadCheckFromID(id: CheckID!): Check!
+
+  """Load a GeneratorGroup from its ID."""
+  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
+
+  """Load a Generator from its ID."""
+  loadGeneratorFromID(id: GeneratorID!): Generator!
+
+  """Load a UpGroup from its ID."""
+  loadUpGroupFromID(id: UpGroupID!): UpGroup!
+
+  """Load a Up from its ID."""
+  loadUpFromID(id: UpID!): Up!
+
+  """Detect and return the current workspace."""
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+
+  """Load a Workspace from its ID."""
+  loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 }
 
 """Expected return type of an execution"""
@@ -4402,11 +4402,6 @@ enum ReturnType {
 
 """The SDK config of the module."""
 type SDKConfig implements Node {
-  """
-  Whether to start the SDK runtime in debug mode with an interactive terminal.
-  """
-  debug: Boolean!
-
   """A unique identifier for this SDKConfig."""
   id: ID!
 
@@ -4414,6 +4409,11 @@ type SDKConfig implements Node {
   Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
   """
   source: String!
+
+  """
+  Whether to start the SDK runtime in debug mode with an interactive terminal.
+  """
+  debug: Boolean!
 }
 
 """A unique identifier for an object."""
@@ -4421,14 +4421,14 @@ scalar SDKConfigID
 
 """A definition of a custom scalar defined in a Module."""
 type ScalarTypeDef implements Node {
-  """A doc string for the scalar, if any."""
-  description: String!
-
   """A unique identifier for this ScalarTypeDef."""
   id: ID!
 
   """The name of the scalar."""
   name: String!
+
+  """A doc string for the scalar, if any."""
+  description: String!
 
   """
   If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -4440,17 +4440,17 @@ type ScalarTypeDef implements Node {
 scalar ScalarTypeDefID
 
 type SearchResult implements Node {
-  """The byte offset of this line within the file."""
-  absoluteOffset: Int!
+  """A unique identifier for this SearchResult."""
+  id: ID!
 
   """The path to the file that matched."""
   filePath: String!
 
-  """A unique identifier for this SearchResult."""
-  id: ID!
-
   """The first line that matched."""
   lineNumber: Int!
+
+  """The byte offset of this line within the file."""
+  absoluteOffset: Int!
 
   """The line content that matched."""
   matchedLines: String!
@@ -4463,17 +4463,17 @@ type SearchResult implements Node {
 scalar SearchResultID
 
 type SearchSubmatch implements Node {
-  """The match's end offset within the matched lines."""
-  end: Int!
-
   """A unique identifier for this SearchSubmatch."""
   id: ID!
+
+  """The matched text."""
+  text: String!
 
   """The match's start offset within the matched lines."""
   start: Int!
 
-  """The matched text."""
-  text: String!
+  """The match's end offset within the matched lines."""
+  end: Int!
 }
 
 """A unique identifier for an object."""
@@ -4489,11 +4489,11 @@ type Secret implements Node {
   """The name of this secret."""
   name: String!
 
-  """The value of this secret."""
-  plaintext: String!
-
   """The URI of this secret."""
   uri: String!
+
+  """The value of this secret."""
+  plaintext: String!
 }
 
 """A unique identifier for an object."""
@@ -4501,6 +4501,28 @@ scalar SecretID
 
 """A content-addressed service providing TCP connectivity."""
 type Service implements Node & Syncer {
+  """A unique identifier for this Service."""
+  id: ID!
+
+  """Forces evaluation of the pipeline in the engine."""
+  sync: ID! @expectedType(name: "Service")
+
+  """
+  Retrieves a hostname which can be used by clients to reach this container.
+  """
+  hostname: String!
+
+  """
+  Configures a hostname which can be used by clients within the session to reach this container.
+  """
+  withHostname(
+    """The hostname to use."""
+    hostname: String!
+  ): Service!
+
+  """Retrieves the list of ports provided by the service."""
+  ports: [Port!]!
+
   """
   Retrieves an endpoint that clients can use to reach this container.
 
@@ -4517,33 +4539,11 @@ type Service implements Node & Syncer {
   ): String!
 
   """
-  Retrieves a hostname which can be used by clients to reach this container.
-  """
-  hostname: String!
-
-  """A unique identifier for this Service."""
-  id: ID!
-
-  """Retrieves the list of ports provided by the service."""
-  ports: [Port!]!
-
-  """
   Start the service and wait for its health checks to succeed.
 
   Services bound to a Container do not need to be manually started.
   """
   start: ID! @expectedType(name: "Service")
-
-  """Stop the service."""
-  stop(
-    """Immediately kill the service without waiting for a graceful exit"""
-    kill: Boolean = false
-  ): ID! @expectedType(name: "Service")
-
-  """Forces evaluation of the pipeline in the engine."""
-  sync: ID! @expectedType(name: "Service")
-
-  terminal(cmd: [String!] = []): Service!
 
   """
   Creates a tunnel that forwards traffic from the caller's network to this service.
@@ -4560,13 +4560,13 @@ type Service implements Node & Syncer {
     random: Boolean = false
   ): Void
 
-  """
-  Configures a hostname which can be used by clients within the session to reach this container.
-  """
-  withHostname(
-    """The hostname to use."""
-    hostname: String!
-  ): Service!
+  """Stop the service."""
+  stop(
+    """Immediately kill the service without waiting for a graceful exit"""
+    kill: Boolean = false
+  ): ID! @expectedType(name: "Service")
+
+  terminal(cmd: [String!] = []): Service!
 }
 
 """A unique identifier for an object."""
@@ -4583,20 +4583,20 @@ scalar SocketID
 
 """Source location information."""
 type SourceMap implements Node {
-  """The column number within the line."""
-  column: Int!
+  """A unique identifier for this SourceMap."""
+  id: ID!
+
+  """The module dependency this was declared in."""
+  module: String!
 
   """The filename from the module source."""
   filename: String!
 
-  """A unique identifier for this SourceMap."""
-  id: ID!
-
   """The line number within the filename."""
   line: Int!
 
-  """The module dependency this was declared in."""
-  module: String!
+  """The column number within the line."""
+  column: Int!
 
   """
   The URL to the file, if any. This can be used to link to the source map in the browser.
@@ -4609,20 +4609,20 @@ scalar SourceMapID
 
 """A file or directory status object."""
 type Stat implements Node {
-  """file type"""
-  fileType: FileType
-
   """A unique identifier for this Stat."""
   id: ID!
+
+  """file size"""
+  size: Int!
 
   """file name"""
   name: String!
 
+  """file type"""
+  fileType: FileType
+
   """permission bits"""
   permissions: Int!
-
-  """file size"""
-  size: Int!
 }
 
 """A unique identifier for an object."""
@@ -4664,47 +4664,59 @@ scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef implements Node {
-  """
-  If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
-  """
-  asEnum: EnumTypeDef
-
-  """
-  If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
-  """
-  asInput: InputTypeDef
-
-  """
-  If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
-  """
-  asInterface: InterfaceTypeDef
-
-  """
-  If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
-  """
-  asList: ListTypeDef
-
-  """
-  If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
-  """
-  asObject: ObjectTypeDef
-
-  """
-  If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
-  """
-  asScalar: ScalarTypeDef
-
   """A unique identifier for this TypeDef."""
   id: ID!
 
-  """The kind of type this is (e.g. primitive, list, object)."""
-  kind: TypeDefKind!
+  """Sets whether this type can be set to null."""
+  withOptional(optional: Boolean!): TypeDef!
 
-  """The canonical non-optional name of the type."""
-  name: String!
+  """Sets the kind of the type."""
+  withKind(kind: TypeDefKind!): TypeDef!
 
-  """Whether this type can be set to null. Defaults to false."""
-  optional: Boolean!
+  """Returns a TypeDef of kind Scalar with the provided name."""
+  withScalar(name: String!, description: String = ""): TypeDef!
+
+  """
+  Returns a TypeDef of kind List with the provided type for its elements.
+  """
+  withListOf(elementType: ID! @expectedType(name: "TypeDef")): TypeDef!
+
+  """
+  Returns a TypeDef of kind Object with the provided name.
+
+  Note that an object's fields and functions may be omitted if the intent is
+  only to refer to an object. This is how functions are able to return their own
+  object, or any other circular reference.
+  """
+  withObject(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap"), deprecated: String): TypeDef!
+
+  """Returns a TypeDef of kind Interface with the provided name."""
+  withInterface(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap")): TypeDef!
+
+  """
+  Adds a static field for an Object TypeDef, failing if the type is not an object.
+  """
+  withField(
+    """The name of the field in the object"""
+    name: String!
+
+    """The type of the field"""
+    typeDef: ID! @expectedType(name: "TypeDef")
+
+    """A doc string for the field, if any"""
+    description: String = ""
+
+    """The source map for the field definition."""
+    sourceMap: ID @expectedType(name: "SourceMap")
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
+  ): TypeDef!
+
+  """
+  Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
+  """
+  withFunction(function: ID! @expectedType(name: "Function")): TypeDef!
 
   """
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
@@ -4732,6 +4744,23 @@ type TypeDef implements Node {
   """
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.
   """
+  withEnumValue(
+    """The name of the value in the enum"""
+    value: String!
+
+    """A doc string for the value, if any"""
+    description: String = ""
+
+    """The source map for the enum value definition."""
+    sourceMap: ID @expectedType(name: "SourceMap")
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
+  ): TypeDef! @deprecated(reason: "Use `withEnumMember` instead")
+
+  """
+  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  """
   withEnumMember(
     """The name of the member in the enum"""
     name: String!
@@ -4749,73 +4778,44 @@ type TypeDef implements Node {
     deprecated: String
   ): TypeDef!
 
-  """
-  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-  """
-  withEnumValue(
-    """The name of the value in the enum"""
-    value: String!
+  """The canonical non-optional name of the type."""
+  name: String!
 
-    """A doc string for the value, if any"""
-    description: String = ""
+  """The kind of type this is (e.g. primitive, list, object)."""
+  kind: TypeDefKind!
 
-    """The source map for the enum value definition."""
-    sourceMap: ID @expectedType(name: "SourceMap")
-
-    """If deprecated, the reason or migration path."""
-    deprecated: String
-  ): TypeDef! @deprecated(reason: "Use `withEnumMember` instead")
+  """Whether this type can be set to null. Defaults to false."""
+  optional: Boolean!
 
   """
-  Adds a static field for an Object TypeDef, failing if the type is not an object.
+  If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
   """
-  withField(
-    """The name of the field in the object"""
-    name: String!
-
-    """The type of the field"""
-    typeDef: ID! @expectedType(name: "TypeDef")
-
-    """A doc string for the field, if any"""
-    description: String = ""
-
-    """The source map for the field definition."""
-    sourceMap: ID @expectedType(name: "SourceMap")
-
-    """If deprecated, the reason or migration path."""
-    deprecated: String
-  ): TypeDef!
+  asList: ListTypeDef
 
   """
-  Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
+  If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
   """
-  withFunction(function: ID! @expectedType(name: "Function")): TypeDef!
-
-  """Returns a TypeDef of kind Interface with the provided name."""
-  withInterface(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap")): TypeDef!
-
-  """Sets the kind of the type."""
-  withKind(kind: TypeDefKind!): TypeDef!
+  asObject: ObjectTypeDef
 
   """
-  Returns a TypeDef of kind List with the provided type for its elements.
+  If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
   """
-  withListOf(elementType: ID! @expectedType(name: "TypeDef")): TypeDef!
+  asInterface: InterfaceTypeDef
 
   """
-  Returns a TypeDef of kind Object with the provided name.
-
-  Note that an object's fields and functions may be omitted if the intent is
-  only to refer to an object. This is how functions are able to return their own
-  object, or any other circular reference.
+  If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
   """
-  withObject(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap"), deprecated: String): TypeDef!
+  asInput: InputTypeDef
 
-  """Sets whether this type can be set to null."""
-  withOptional(optional: Boolean!): TypeDef!
+  """
+  If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+  """
+  asScalar: ScalarTypeDef
 
-  """Returns a TypeDef of kind Scalar with the provided name."""
-  withScalar(name: String!, description: String = ""): TypeDef!
+  """
+  If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+  """
+  asEnum: EnumTypeDef
 }
 
 """A unique identifier for an object."""
@@ -4882,9 +4882,6 @@ enum TypeDefKind {
 }
 
 type Up implements Node {
-  """The description of the service"""
-  description: String!
-
   """A unique identifier for this Up."""
   id: ID!
 
@@ -4893,11 +4890,14 @@ type Up implements Node {
   """
   name: String!
 
-  """The original module in which the service has been defined"""
-  originalModule: Module!
+  """The description of the service"""
+  description: String!
 
   """The path of the service within its module"""
   path: [String!]!
+
+  """The original module in which the service has been defined"""
+  originalModule: Module!
 
   """Execute the service function"""
   run: Up!
@@ -4931,21 +4931,22 @@ scalar Void
 A Dagger workspace detected from the current working directory or constructed from a Directory.
 """
 type Workspace implements Node {
-  """
-  Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
-  """
-  address: String!
+  """A unique identifier for this Workspace."""
+  id: ID!
 
-  """Return all checks from modules loaded in the workspace."""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-  ): CheckGroup!
+  """Workspace directory path relative to the workspace boundary."""
+  path: String!
 
   """
   Path to config.toml relative to the workspace boundary (empty if not initialized).
   """
   configPath: String!
+
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
+
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
 
   """
   Returns a Directory from the workspace.
@@ -5008,29 +5009,28 @@ type Workspace implements Node {
     from: String = "."
   ): String
 
+  """Return all checks from modules loaded in the workspace."""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """Return all generators from modules loaded in the workspace."""
   generators(
     """Only include generators matching the specified patterns"""
     include: [String!]
   ): GeneratorGroup!
 
-  """Whether a config.toml file exists in the workspace."""
-  hasConfig: Boolean!
-
-  """A unique identifier for this Workspace."""
-  id: ID!
-
-  """Whether .dagger/config.toml exists."""
-  initialized: Boolean!
-
-  """Workspace directory path relative to the workspace boundary."""
-  path: String!
-
   """Return all services from modules loaded in the workspace."""
   services(
     """Only include services matching the specified patterns"""
     include: [String!]
   ): UpGroup!
+
+  """
+  Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
+  """
+  address: String!
 }
 
 """A unique identifier for an object."""

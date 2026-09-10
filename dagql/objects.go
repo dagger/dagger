@@ -27,7 +27,10 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.RWMutex
-	view    ViewFilter
+
+	// Shared across value copies, like fields; cloned when the class is forked.
+	fieldOrder *[]string
+	view       ViewFilter
 
 	// interfaces records the interfaces this class implements.
 	// Uses a map (reference type) so it's shared across value copies of Class.
@@ -118,6 +121,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		inner:      opts.Typed,
 		fields:     map[string][]*Field[T]{},
 		fieldsL:    new(sync.RWMutex),
+		fieldOrder: new([]string),
 		interfaces: map[string]*Interface{},
 		sourceMap:  opts.SourceMap,
 		view:       opts.View,
@@ -182,6 +186,8 @@ func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
 
 	forked := class
 	forked.fields = maps.Clone(forked.fields)
+	order := slices.Clone(*class.fieldOrder)
+	forked.fieldOrder = &order
 	forked.interfaces = maps.Clone(class.interfaces)
 	forked.fieldsL = new(sync.RWMutex)
 	forked.invalidateSchemaCache = srv.invalidateSchemaCache
@@ -227,7 +233,7 @@ func (class Class[T]) FieldSpecs(view call.View) []FieldSpec {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	var specs []FieldSpec
-	for name := range class.fields {
+	for _, name := range *class.fieldOrder {
 		if field, ok := class.fieldLocked(name, view); ok {
 			specs = append(specs, *field.Spec)
 		}
@@ -281,6 +287,9 @@ func (class Class[T]) Install(fields ...Field[T]) {
 			}
 		}
 
+		if _, exists := class.fields[field.Spec.Name]; !exists {
+			*class.fieldOrder = append(*class.fieldOrder, field.Spec.Name)
+		}
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
 	if class.invalidateSchemaCache != nil {
@@ -333,6 +342,9 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 			return fun(ctx, self, args)
 		},
 	}
+	if _, exists := class.fields[spec.Name]; !exists {
+		*class.fieldOrder = append(*class.fieldOrder, spec.Name)
+	}
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
 	class.fieldsL.Unlock()
 
@@ -366,15 +378,11 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	for name := range class.fields {
+	for _, name := range *class.fieldOrder {
 		if field, ok := class.fieldLocked(name, view); ok {
 			def.Fields = append(def.Fields, field.FieldDefinition(view))
 		}
 	}
-	// TODO preserve order
-	sort.Slice(def.Fields, func(i, j int) bool {
-		return def.Fields[i].Name < def.Fields[j].Name
-	})
 	// Populate interface names on the definition.
 	for name, iface := range class.interfaces {
 		if !typeVisibleInView(iface, view) {
