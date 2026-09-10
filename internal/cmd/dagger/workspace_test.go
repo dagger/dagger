@@ -100,6 +100,19 @@ func TestWorkspaceCatCommand(t *testing.T) {
 	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "cat", "README.md", "-W", "github.com/dagger/dagger"}))
 }
 
+func TestWorkspaceFindCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "find"})
+		require.NoError(t, err)
+		require.Same(t, workspaceFindCmd, cmd)
+		require.NoError(t, cmd.ValidateArgs(nil))
+		require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+		require.NoError(t, cmd.ValidateArgs([]string{"src", "other"}))
+	}
+	require.NotNil(t, workspaceFindCmd.Flags().Lookup("name"))
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "find", "-W", "github.com/dagger/dagger"}))
+}
+
 func TestWorkspaceExportCommand(t *testing.T) {
 	for _, command := range []string{"workspace", "ws"} {
 		cmd, _, err := rootCmd.Find([]string{command, "export"})

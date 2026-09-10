@@ -333,6 +333,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		workspaceRootCmd,
 		workspaceCwdCmd,
+		workspaceFindCmd,
 		workspaceLsCmd,
 		workspaceCatCmd,
 		workspaceExportCmd,
