@@ -266,6 +266,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceCwdCmd)
 	workspaceCmd.AddCommand(workspaceLsCmd)
 	workspaceCmd.AddCommand(workspaceCatCmd)
+	workspaceCmd.AddCommand(workspaceGitCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)

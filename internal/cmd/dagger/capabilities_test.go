@@ -300,9 +300,12 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger uninstall",
 		"dagger up",
 		"dagger workspace",
+		"dagger workspace cat",
 		"dagger workspace config",
 		"dagger workspace config-file",
 		"dagger workspace cwd",
+		"dagger workspace git",
+		"dagger workspace ls",
 		"dagger workspace remotes",
 		"dagger workspace root",
 		"dagger workspace update",
@@ -611,6 +614,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"sdk":              sdkCmd,
 		"setup":            setupCmd,
 		"workspace root":   workspaceRootCmd,
+		"workspace git":    workspaceGitCmd,
 		"workspace remote": workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayReadWorkspaceConfig), name)
