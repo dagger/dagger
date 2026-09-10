@@ -2203,6 +2203,7 @@ the source of truth.
 * [dagger workspace config-file](#dagger-workspace-config-file)	 - Print the selected workspace config file
 * [dagger workspace cwd](#dagger-workspace-cwd)	 - Print the workspace cwd
 * [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+* [dagger workspace grep](#dagger-workspace-grep)	 - Search file contents in the selected workspace
 * [dagger workspace ls](#dagger-workspace-ls)	 - List directories or files in the selected workspace
 * [dagger workspace remote](#dagger-workspace-remote)	 - Print the selectable remote address for the current workspace
 * [dagger workspace remotes](#dagger-workspace-remotes)	 - List selectable remote workspace addresses
@@ -2530,6 +2531,67 @@ dagger workspace git url [flags]
 ### SEE ALSO
 
 * [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace grep
+
+Search file contents in the selected workspace
+
+### Synopsis
+
+Search file contents in the selected workspace, including subdirectories.
+
+PATTERN is a case-sensitive regular expression. Use -F for a literal string.
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Honor .gitignore, .ignore, and .rgignore files by default. Include hidden files.
+Use --all to include ignored files. Use -g to filter paths with glob patterns.
+
+Print each full matching line as path:line:text, with no surrounding lines.
+Output paths are relative to the workspace's current directory.
+Highlight matches when stdout is a terminal, unless NO_COLOR is set.
+Use -l for paths only, or --json for a JSON array of structured matches.
+The -l and --json options cannot be combined.
+
+Exit status is 0 if a match is found, 1 if no matches are found, and 2 on error.
+
+```
+dagger workspace grep PATTERN [PATH...] [flags]
+```
+
+### Examples
+
+```
+  dagger ws grep 'CurrentWorkspace' sdk/go core
+  dagger -W github.com/dagger/dagger ws grep -i -g '*.md' 'workspace'
+  dagger ws grep -l -F 'TODO'
+```
+
+### Options
+
+```
+      --all                  Include ignored files
+  -l, --files-with-matches   Print only paths of matching files
+  -F, --fixed-strings        Treat PATTERN as a literal string
+  -g, --glob stringArray     Include or exclude paths with a glob pattern (repeatable; prefix ! to exclude)
+  -i, --ignore-case          Ignore case when matching
+      --json                 Print a JSON array of structured matches
+      --multiline            Allow matches to span multiple lines
+      --shell-on-error       Open a shell when a container exec fails (needs an interactive terminal)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
 
 ## dagger workspace ls
 
