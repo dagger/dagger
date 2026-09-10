@@ -98,6 +98,10 @@ func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
 	}{
 		{args: []string{"--auto-apply", "module", "init", "go", "--name", "sdk-smoke", "--path", ".dagger/modules/sdk-smoke"}, wantSDK: "go"},
 		{args: []string{"module", "init", "--name", "demo", "go"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "--install=false", "go"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "--entrypoint=false", "go"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "go", "--install", "--entrypoint"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "--no-apply", "go"}, wantSDK: "go"},
 		{args: []string{"module", "init", "go", "--starter", "empty"}, wantSDK: "go"},
 		{args: []string{"module", "client", "add", "database", "--sdk=go"}},
 		{args: []string{"module", "client", "add", "--sdk", "go", "database"}},
@@ -500,4 +504,80 @@ func TestModuleInitHelpWithoutInstalledSDKs(t *testing.T) {
 	require.Contains(t, help, "dagger module init SDK [flags]")
 	require.Contains(t, help, "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'")
 	require.NotContains(t, help, "AVAILABLE COMMANDS")
+}
+
+func TestModuleInitControlMessages(t *testing.T) {
+	yes, no := true, false
+	for _, tc := range []struct {
+		name, path          string
+		explicitName        bool
+		install, entrypoint *bool
+		want                string
+	}{
+		{name: "default", want: "Automatically installed module \"demo\" as entrypoint.\n"},
+		{name: "named", explicitName: true, want: "Automatically installed module \"demo\".\n"},
+		{name: "custom path", path: "custom", want: "Initialized module custom\nCustom path; module was not installed.\n"},
+		{name: "custom install", path: "custom", install: &yes, want: "Installed module \"demo\".\n"},
+		{name: "explicit entrypoint", path: "custom", entrypoint: &yes, want: "Installed module \"demo\" as entrypoint.\n"},
+		{name: "explicit install automatic entrypoint", install: &yes, want: "Installed module \"demo\".\nAutomatically selected module \"demo\" as entrypoint.\n"},
+		{name: "disable entrypoint", entrypoint: &no, want: "Automatically installed module \"demo\".\n"},
+		{name: "disable install", install: &no, want: "Initialized module \"demo\".\nModule was not installed.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := workspace.PlanModuleInit(tc.path != "", tc.explicitName, tc.install, tc.entrypoint)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, moduleInitSuccessMessage("demo", tc.path, plan))
+		})
+	}
+}
+
+func TestModuleInitControlPresence(t *testing.T) {
+	for _, arg := range []string{"", "--install", "--install=false", "--entrypoint", "--entrypoint=false"} {
+		t.Run(arg, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("install", false, "")
+			cmd.Flags().Bool("entrypoint", false, "")
+			if arg != "" {
+				require.NoError(t, cmd.ParseFlags([]string{arg}))
+			}
+			for _, flag := range []string{"install", "entrypoint"} {
+				value := moduleInitControl(cmd.Flags(), flag)
+				if !strings.HasPrefix(arg, "--"+flag) {
+					require.Nil(t, value)
+					continue
+				}
+				require.NotNil(t, value)
+				require.Equal(t, !strings.HasSuffix(arg, "=false"), *value)
+			}
+		})
+	}
+}
+
+func TestModuleInitControlsRespectSDKFlagPosition(t *testing.T) {
+	for _, flag := range []string{"install", "entrypoint"} {
+		t.Run(flag, func(t *testing.T) {
+			root := &cobra.Command{Use: "dagger", TraverseChildren: rootCmd.TraverseChildren}
+			module := &cobra.Command{Use: "module"}
+			init := &cobra.Command{Use: "init"}
+			init.PersistentFlags().Bool(flag, false, "")
+			root.AddCommand(module)
+			module.AddCommand(init)
+			sdk, err := newSDKModuleInitCommand(configuredSDK{commandName: "custom"}, []*modFunctionArg{
+				{Name: flag, TypeDef: &modTypeDef{Kind: dagger.TypeDefKindBooleanKind}},
+			})
+			require.NoError(t, err)
+			sdk.RunE = func(cmd *cobra.Command, _ []string) error {
+				control := moduleInitControl(init.PersistentFlags(), flag)
+				require.NotNil(t, control)
+				require.False(t, *control)
+				settings, err := sdkModuleSettingsJSON(cmd, "custom")
+				require.NoError(t, err)
+				require.JSONEq(t, `{"`+flag+`":true}`, settings)
+				return nil
+			}
+			init.AddCommand(sdk)
+			root.SetArgs([]string{"module", "init", "--" + flag + "=false", "custom", "--" + flag})
+			require.NoError(t, root.Execute())
+		})
+	}
 }

@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net/url"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -20,10 +18,12 @@ import (
 )
 
 type sdkModuleInitArgs struct {
-	SDK      string
-	Name     string    `default:""`
-	Path     string    `default:""`
-	Settings core.JSON `default:""`
+	SDK        string
+	Name       string    `default:""`
+	Path       string    `default:""`
+	Settings   core.JSON `default:""`
+	Install    dagql.Optional[dagql.Boolean]
+	Entrypoint dagql.Optional[dagql.Boolean]
 }
 
 type sdkModuleDetectScopeArgs struct {
@@ -61,6 +61,10 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	parent dagql.ObjectResult[*core.Workspace],
 	args sdkModuleInitArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	install, entrypoint := optionalInitControl(args.Install), optionalInitControl(args.Entrypoint)
+	if _, err := workspace.PlanModuleInit(args.Path != "", args.Name != "", install, entrypoint); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	ws := parent.Self()
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, false)
 	if err != nil {
@@ -100,7 +104,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := planSDKModuleInitInstall(staged.Config, moduleName, modulePath, explicitPath, args.Name != ""); err != nil {
+	if err := planSDKModuleInitInstall(staged.Config, moduleName, modulePath, explicitPath, args.Name != "", install, entrypoint); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if owner, found, err := moduleScopeOwner(staged.Config, staged.ConfigDir, scopePath); err != nil {
@@ -116,6 +120,14 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	scope.IsModule = true
 	if args.Name != "" {
 		scope.Name = args.Name
+	} else if scope.Name == "" && (install != nil || entrypoint != nil) {
+		inferredName, err := resolveSDKModuleName(ws, staged.Config, staged.ConfigDir, scopePath, scope.Name)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if inferredName != moduleName {
+			scope.Name = moduleName
+		}
 	}
 	mergeSDKModuleSettings(&scope, explicitSettings)
 	entry.Scopes[configScopePath] = scope
@@ -131,12 +143,23 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	return s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope)
 }
 
-func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath string, explicitPath, explicitName bool) error {
-	if explicitPath {
+func optionalInitControl(value dagql.Optional[dagql.Boolean]) *bool {
+	if !value.Valid {
 		return nil
 	}
-	autoEntrypoint := !explicitName
-	if autoEntrypoint {
+	result := bool(value.Value)
+	return &result
+}
+
+func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath string, explicitPath, explicitName bool, install, entrypoint *bool) error {
+	plan, err := workspace.PlanModuleInit(explicitPath, explicitName, install, entrypoint)
+	if err != nil {
+		return err
+	}
+	if !plan.Install {
+		return nil
+	}
+	if plan.AutomaticEntrypoint {
 		var entrypoints []string
 		for name, entry := range cfg.Modules {
 			if name != moduleName && entry.Entrypoint {
@@ -155,10 +178,8 @@ func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath stri
 	if _, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, moduleName, sourcePath); err != nil {
 		return err
 	}
-	if autoEntrypoint {
-		entry := cfg.Modules[moduleName]
-		entry.Entrypoint = true
-		cfg.Modules[moduleName] = entry
+	if plan.Entrypoint {
+		return workspace.SetEntrypoint(cfg, moduleName)
 	}
 	return nil
 }
@@ -224,75 +245,11 @@ func resolveSDKModuleName(ws *core.Workspace, cfg *workspace.Config, configDir, 
 			name = entrypoints[0]
 		}
 	}
-	if name == "" && scopePath != "" {
-		name = workspaceDirectoryName(scopePath)
-	}
-	if name == "" {
-		name = moduleDevName(workspaceDirectoryName(configDir))
-	}
-	if name == "" {
-		name = moduleDevName(workspaceRootDirectoryName(ws))
-	}
-	if strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("cannot infer module name from the scope path, active config file, or workspace root; pass --name to module init or set the scope name")
-	}
-	return name, nil
-}
-
-func moduleDevName(directoryName string) string {
-	if directoryName == "" {
-		return ""
-	}
-	return directoryName + "-dev"
-}
-
-func workspaceDirectoryName(workspacePath string) string {
-	cleaned := path.Clean(strings.ReplaceAll(filepath.ToSlash(workspacePath), `\`, "/"))
-	if cleaned == "." || cleaned == "/" || cleaned == "" {
-		return ""
-	}
-	return path.Base(cleaned)
+	return workspace.ModuleInitName(name, scopePath, configDir, workspaceRootDirectoryName(ws))
 }
 
 func workspaceRootDirectoryName(ws *core.Workspace) string {
-	if hostPath := strings.TrimSpace(ws.HostPath()); hostPath != "" {
-		return workspaceDirectoryName(hostPath)
-	}
-
-	address := strings.TrimSpace(ws.Address)
-	if address == "" {
-		return ""
-	}
-	if strings.Contains(address, "://") {
-		parsed, err := url.Parse(address)
-		if err != nil {
-			return ""
-		}
-		switch parsed.Scheme {
-		case "file":
-			address = parsed.Path
-		case "http", "https", "ssh":
-			address = parsed.Host + parsed.Path
-		default:
-			return ""
-		}
-	}
-
-	address = filepath.ToSlash(address)
-	cwd := cleanWorkspaceRelPath(ws.Cwd)
-	if cwd != "." {
-		suffix := "/" + filepath.ToSlash(cwd)
-		if versioned := strings.LastIndex(address, suffix+"@"); versioned >= 0 {
-			address = address[:versioned]
-		} else if strings.HasSuffix(address, suffix) {
-			address = strings.TrimSuffix(address, suffix)
-		} else {
-			return ""
-		}
-	} else if version := strings.LastIndex(address, "@"); version > strings.Index(address, "/") {
-		address = address[:version]
-	}
-	return workspaceDirectoryName(address)
+	return workspace.ModuleRootDirectoryName(ws.HostPath(), ws.Address, ws.Cwd)
 }
 
 // sdkModuleDetectScope returns the selected SDK module's current scope for the

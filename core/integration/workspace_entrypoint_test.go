@@ -73,9 +73,10 @@ entrypoint = true
 	for _, args := range [][]string{
 		{"missing"}, {"./a"}, {"a@v2"}, {"a", "--unset"}, {"a", "b"},
 	} {
-		ctr := base.With(daggerExec(append([]string{"ws", "entrypoint"}, args...)...))
-		_, err := ctr.Sync(ctx)
-		require.Error(t, err, args)
+		ctr := base.With(daggerExecFail(append([]string{"ws", "entrypoint"}, args...)...))
+		unchanged, err := ctr.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err, args)
+		require.Equal(t, original, unchanged, args)
 	}
 	// A setter repairs all existing flags in one config edit.
 	repaired := base.With(daggerExec("ws", "entrypoint", "b"))

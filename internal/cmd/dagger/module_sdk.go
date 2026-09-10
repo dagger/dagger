@@ -21,6 +21,9 @@ const sdkModuleSettingAnnotation = "sdk-module-setting"
 var (
 	moduleInitName        string
 	moduleInitPath        string
+	moduleInitInstall     bool
+	moduleInitEntrypoint  bool
+	moduleInitNoApply     bool
 	moduleClientAddSDK    string
 	moduleClientRemoveSDK string
 	moduleClientScopeSDK  string
@@ -122,6 +125,9 @@ root. To remove a row, run 'dagger module client rm TARGET --sdk=SDK' from SCOPE
 func init() {
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleInitName, "name", "n", "", "Module name (inferred when omitted)")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path (default: .dagger/modules/<name> beside dagger.toml)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitInstall, "install", false, "Install the module (default: install when --path is omitted)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitEntrypoint, "entrypoint", false, "Install and select the module as entrypoint (default: select when --path and --name are omitted)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoApply, "no-apply", false, "Show generated changes without applying them")
 	moduleClientAddCmd.Flags().StringVar(&moduleClientAddSDK, "sdk", "", "Select an installed `SDK` (default: deepest scope)")
 	moduleClientRemoveCmd.Flags().StringVar(&moduleClientRemoveSDK, "sdk", "", "Select an installed `SDK` (default: deepest matching scope)")
 	moduleClientScopeCmd.Flags().StringVar(&moduleClientScopeSDK, "sdk", "", "SDK module to query")
@@ -144,24 +150,96 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module init does not support --env; SDK scopes live in the base workspace config")
 	}
+	install, entrypoint := moduleInitControl(moduleInitCmd.PersistentFlags(), "install"), moduleInitControl(moduleInitCmd.PersistentFlags(), "entrypoint")
+	plan, err := workspace.PlanModuleInit(moduleInitPath != "", moduleInitName != "", install, entrypoint)
+	if err != nil {
+		return err
+	}
 	settings, err := sdkModuleSettingsJSON(cmd, sdk)
 	if err != nil {
 		return err
 	}
-	return mutateSDKModuleWorkspace(cmd, `
-query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON) {
+	disposition := changesetDispositionForAutoApply(autoApply)
+	if moduleInitNoApply {
+		disposition = changesetDispositionNoApply
+	}
+	return mutateSDKModuleWorkspaceWithDisposition(cmd, `
+query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $entrypoint: Boolean) {
   currentWorkspace {
-    result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings) { id }
+    result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings, install: $install, entrypoint: $entrypoint) { id }
   }
 }`, map[string]any{
-		"sdk":      sdk,
-		"name":     moduleInitName,
-		"path":     moduleInitPath,
-		"settings": dagger.JSON(settings),
-	}, func() error {
-		_, err := fmt.Fprint(cmd.OutOrStdout(), moduleInitCustomPathMessage(moduleInitPath))
+		"sdk":        sdk,
+		"name":       moduleInitName,
+		"path":       moduleInitPath,
+		"settings":   dagger.JSON(settings),
+		"install":    install,
+		"entrypoint": entrypoint,
+	}, disposition, func(ctx context.Context, current *dagger.Workspace) error {
+		name, err := moduleInitResultName(ctx, current)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), moduleInitSuccessMessage(name, moduleInitPath, plan))
 		return err
 	})
+}
+
+func moduleInitControl(flags *pflag.FlagSet, name string) *bool {
+	if !flags.Changed(name) {
+		return nil
+	}
+	value, _ := flags.GetBool(name)
+	return &value
+}
+
+func moduleInitResultName(ctx context.Context, current *dagger.Workspace) (string, error) {
+	if moduleInitName != "" {
+		return moduleInitName, nil
+	}
+	configFile, err := current.ConfigFile(ctx)
+	if err != nil {
+		return "", err
+	}
+	cwd, err := current.Cwd(ctx)
+	if err != nil {
+		return "", err
+	}
+	address, err := current.Address(ctx)
+	if err != nil {
+		return "", err
+	}
+	scopePath := ""
+	if moduleInitPath != "" {
+		scopePath, err = workspace.ResolveSDKManagedPath(cwd, moduleInitPath)
+		if err != nil {
+			return "", err
+		}
+	}
+	return workspace.ModuleInitName("", scopePath, filepath.Dir(configFile), workspace.ModuleRootDirectoryName("", address, cwd))
+}
+
+func moduleInitSuccessMessage(name, modulePath string, plan workspace.ModuleInitPlan) string {
+	if !plan.Install {
+		if modulePath != "" {
+			return moduleInitCustomPathMessage(modulePath)
+		}
+		return fmt.Sprintf("Initialized module %q.\nModule was not installed.\n", name)
+	}
+	if plan.Entrypoint && !plan.AutomaticEntrypoint {
+		return fmt.Sprintf("Installed module %q as entrypoint.\n", name)
+	}
+	if plan.AutomaticInstall {
+		if plan.Entrypoint {
+			return fmt.Sprintf("Automatically installed module %q as entrypoint.\n", name)
+		}
+		return fmt.Sprintf("Automatically installed module %q.\n", name)
+	}
+	message := fmt.Sprintf("Installed module %q.\n", name)
+	if plan.AutomaticEntrypoint {
+		message += fmt.Sprintf("Automatically selected module %q as entrypoint.\n", name)
+	}
+	return message
 }
 
 func moduleInitCustomPathMessage(modulePath string) string {
@@ -221,7 +299,17 @@ func mutateSDKModuleWorkspace(
 	cmd *cobra.Command,
 	query string,
 	variables map[string]any,
-	afterApply func() error,
+	afterApply func(context.Context, *dagger.Workspace) error,
+) error {
+	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, changesetDispositionForAutoApply(autoApply), afterApply)
+}
+
+func mutateSDKModuleWorkspaceWithDisposition(
+	cmd *cobra.Command,
+	query string,
+	variables map[string]any,
+	disposition changesetDisposition,
+	afterApply func(context.Context, *dagger.Workspace) error,
 ) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -244,11 +332,11 @@ func mutateSDKModuleWorkspace(
 
 		current := dag.CurrentWorkspace()
 		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID)
-		applied, err := handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
+		applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, cmd.OutOrStdout())
 		if err != nil || !applied || afterApply == nil {
 			return err
 		}
-		return afterApply()
+		return afterApply(ctx, current)
 	})
 }
 
