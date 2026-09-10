@@ -112,20 +112,23 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 	creator := connect(ctx, t, sink.clientOpts()...)
 	var created struct {
 		Original struct {
-			ID string
+			ID     string
+			Digest string
 		} `json:"original"`
 		Same struct {
-			ID string
+			ID     string
+			Digest string
 		} `json:"same"`
 		Different struct {
-			ID string
+			ID     string
+			Digest string
 		} `json:"different"`
 	}
 	err := creator.Do(ctx, &dagger.Request{
 		Query: `query Blob($contents: Bytes!, $different: Bytes!) {
-			original: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
-			same: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
-			different: blob(name: "binary.dat", contents: $different, permissions: 384) { id }
+			original: blob(name: "binary.dat", contents: $contents, permissions: 384) { id digest }
+			same: blob(name: "binary.dat", contents: $contents, permissions: 384) { id digest }
+			different: blob(name: "binary.dat", contents: $different, permissions: 384) { id digest }
 		}`,
 		Variables: map[string]any{
 			"contents":  base64.StdEncoding.EncodeToString(contents),
@@ -134,8 +137,14 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 	}, &dagger.Response{Data: &created})
 	require.NoError(t, err)
 	require.NotEmpty(t, created.Original.ID)
-	require.Equal(t, created.Original.ID, created.Same.ID)
+	require.NotEmpty(t, created.Same.ID)
+	require.NotEmpty(t, created.Different.ID)
 	require.NotEqual(t, created.Original.ID, created.Different.ID)
+	// Equivalent files may have different runtime handles; compare their content and metadata.
+	require.NotEmpty(t, created.Original.Digest)
+	require.Equal(t, created.Original.Digest, created.Same.Digest)
+	require.NotEmpty(t, created.Different.Digest)
+	require.NotEqual(t, created.Original.Digest, created.Different.Digest)
 
 	var (
 		recipeID   string
