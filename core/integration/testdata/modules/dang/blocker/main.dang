@@ -1,0 +1,51 @@
+# A module whose one method dwells inside a container exec, heartbeating to a
+# shared cache volume — an observable stand-in for the staff module's ask: a
+# MODULE-function tool call that blocks while an agent's turn is inside it.
+#
+# The heartbeat is the caller's cancellation oracle. While the exec runs, the
+# beat file on the volume keeps advancing; when cancellation propagates down
+# the chain (tool call -> module function -> Dang eval -> nested query ->
+# container exec), the exec dies and the beat goes quiet. A test that
+# interrupts the agent mid-call can therefore assert propagation by watching
+# the beat stop, without any view into the engine's internals.
+#
+# Dang is the load-bearing choice (mirrors agent-hirer): the Dang runtime
+# evaluates in-process and serves its function-call client on a local
+# listener (core/sdk/dang/shared/shared.go WithNestedClientServer), so the
+# call's work happens behind a nested client — the exact chain the staff
+# module's tools run through, and the one interrupt has to reach through.
+"""
+Blocks inside a container exec, heartbeating until canceled.
+"""
+type Blocker {
+  """
+  Dwell in a container exec, heartbeating to the volume until canceled or
+  until the dwell elapses. Touches started on the volume first, so callers
+  can synchronize on the exec really being underway.
+  """
+  block(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): the dwell is the point; a replayed answer would skip it.
+    Dagger.container
+      .from("alpine:3.20")
+      .withMountedCache("/sync", cacheVolume(volume))
+      .withEnvVariable("CACHEBUSTER", bust)
+      .withExec(["sh", "-c", "touch /sync/started; i=0; while [ $i -lt 1200 ]; do date +%s%N > /sync/beat.tmp && mv /sync/beat.tmp /sync/beat; i=$((i+1)); sleep 0.5; done; echo BLOCK-DONE"])
+      .stdout
+  }
+
+  """
+  Read the current heartbeat (empty until the first beat lands). Callers use
+  this to synchronize on the exec being underway (non-empty) and to observe
+  it stopping (two equal reads far enough apart). Provided by the module
+  because its cache volumes are namespaced per module: the caller cannot
+  mount the same volume from its own client.
+  """
+  peek(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    Dagger.container
+      .from("alpine:3.20")
+      .withMountedCache("/sync", cacheVolume(volume))
+      .withEnvVariable("CACHEBUSTER", bust)
+      .withExec(["sh", "-c", "cat /sync/beat 2>/dev/null || true"])
+      .stdout
+  }
+}

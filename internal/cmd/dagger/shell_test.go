@@ -2,6 +2,10 @@ package daggercmd
 
 import (
 	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +62,125 @@ func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
 	handler := newShellCallHandler(nil, &idtui.FrontendMock{})
 	require.True(t, handler.noModule)
 	require.Equal(t, moduleURLDefault, handler.moduleURL)
+}
+
+func TestAssignAgentUsesPortableID(t *testing.T) {
+	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
+	handler.state = NewStateStore(nil)
+
+	portableID := dagger.ID("portable-agent-id")
+	handler.assignAgent(portableID)
+
+	agentToken := handler.shellEnv.Get(agentVar).String()
+	agentState, err := handler.state.Load(GetStateKey(agentToken))
+	require.NoError(t, err)
+	require.Len(t, agentState.Calls, 1)
+	require.Equal(t, "node", agentState.Calls[0].Name)
+	require.Equal(t, "LLM", agentState.Calls[0].ReturnObject)
+	require.Equal(t, string(portableID), agentState.Calls[0].Arguments["id"])
+}
+
+func TestAgentDebugServerHotkey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var debugSection idtui.SidebarSection
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Debug" {
+				debugSection = section
+			}
+		},
+	})
+	// The hidden binding is only active once prompt mode has an LLM session,
+	// matching the neighboring ctrl+t behavior.
+	handler.llmSession = &LLMSession{target: &sessionAgent{}}
+	for _, binding := range handler.KeyBindings(idtui.NewOutput(io.Discard)) {
+		require.NotContains(t, binding.Keys(), debugServerHotkey)
+		require.NotEqual(t, debugServerHotkey, binding.Help().Key)
+	}
+
+	ev := uv.KeyPressEvent{Code: 'p', Mod: uv.ModCtrl | uv.ModAlt}
+	work := handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+
+	require.Equal(t, "Debug", debugSection.Title)
+	pprofURL, err := url.Parse(debugSection.Content)
+	require.NoError(t, err)
+	require.Equal(t, "http", pprofURL.Scheme)
+	require.Equal(t, "127.0.0.1", pprofURL.Hostname())
+	require.NotEmpty(t, pprofURL.Port())
+	require.NotEqual(t, "0", pprofURL.Port())
+	require.Equal(t, "/debug/pprof/", pprofURL.Path)
+	handler.debugServerL.Lock()
+	require.NotNil(t, handler.debugServerStop)
+	handler.debugServerL.Unlock()
+
+	client := &http.Client{Timeout: time.Second}
+	res, err := client.Get(pprofURL.String())
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	work = handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+	require.Empty(t, debugSection.Body(80))
+	handler.debugServerL.Lock()
+	require.Nil(t, handler.debugServerStop, "manual disable must retire context cleanup")
+	handler.debugServerL.Unlock()
+
+	conn, err := net.DialTimeout("tcp", pprofURL.Host, 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+	}
+	require.Error(t, err, "disabling the debug server must close its listener")
+}
+
+func TestAgentDebugServerContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sections := make(chan idtui.SidebarSection, 2)
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Debug" {
+				sections <- section
+			}
+		},
+	})
+	handler.llmSession = &LLMSession{target: &sessionAgent{}}
+
+	ev := uv.KeyPressEvent{Code: 'p', Mod: uv.ModCtrl | uv.ModAlt}
+	work := handler.ReactToInput(ctx, ev, "", true)
+	require.NotNil(t, work)
+	work()
+
+	var enabled idtui.SidebarSection
+	select {
+	case enabled = <-sections:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for enabled Debug sidebar")
+	}
+	pprofURL, err := url.Parse(enabled.Content)
+	require.NoError(t, err)
+
+	cancel()
+	select {
+	case cleared := <-sections:
+		require.Empty(t, cleared.Body(80), "context cleanup must clear the Debug sidebar")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Debug sidebar cleanup")
+	}
+
+	handler.debugServerL.Lock()
+	require.Nil(t, handler.debugServer)
+	require.Nil(t, handler.debugServerStop)
+	handler.debugServerL.Unlock()
+	conn, err := net.DialTimeout("tcp", pprofURL.Host, 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+	}
+	require.Error(t, err, "context cleanup must close the debug listener")
 }
 
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
@@ -130,7 +253,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	handler.Handle(ctx, "What do you see in fruit.txt?")
 	sess, err := handler.llm(ctx)
 	require.NoError(t, err)
-	reply, err := sess.llm.LastReply(ctx)
+	reply, err := sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 
@@ -146,7 +269,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt now?")
-	reply, err = sess.llm.LastReply(ctx)
+	reply, err = sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 }

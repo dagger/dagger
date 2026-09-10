@@ -1,0 +1,98 @@
+# A Dang twin of ../../go/agent-hirer, reshaped to mirror modules/staff:
+# spawn an agent INSIDE a module function, resolve its opening turn there,
+# store the handle in module state, and let later module calls address it by
+# name — the agent ID itself never crosses back to the caller.
+#
+# Dang is the load-bearing choice, not a porting exercise. The Dang runtime
+# evaluates in-process and serves its function-call client on a local
+# listener that is shut down the moment the call returns
+# (core/sdk/dang/shared/shared.go WithNestedClientServer), so the spawning
+# client genuinely ENDS when hire completes — the same shape as the staff
+# module's spawn. A Go runtime container's client connection lingers for the
+# rest of the session, which masks the spawner-teardown window
+# core/integration/agent_runtime_test.go probes with this fixture.
+"""
+Hires agents inside module functions, keeping the handles to itself.
+"""
+type Hirer {
+  # Live worker handles, unique by name — the staff module's members map,
+  # minus everything not needed to reproduce its shapes. Engine-object
+  # handles in Dang state serialize as IDs; a later call deserializes and
+  # re-loads them in its own function-call client.
+  let workers: Map[Agent!]! = [:]
+
+  """
+  The system prompt composed into every hired agent. Public so recordings
+  that replay a hired agent's conversation can match its exact text.
+  """
+  workerPrompt: String! = "You are a worker hired by the hirer module."
+
+  """
+  Spawn an agent from the caller's seed, start it on the task, and block
+  until the turn that consumed the task ends — then return self with the
+  worker stored, so later calls can address it by name.
+  """
+  hire(
+    seed: LLM!,
+    name: String!,
+    task: String!,
+  ): Dagger.Hirer! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): spawns, messages and awaits a real agent runtime —
+    # side effects that must actually run, never replay from cache.
+    let worker = seed.withSystemPrompt(workerPrompt).spawn(name: name)
+    # Response INSIDE the module call: the opening turn provably completes
+    # while this function-call client is still alive; the call returning is
+    # what ends that client.
+    worker.send(task).response
+    currentNode.{{... on Dagger.Hirer!}}.withWorker(name, worker)
+  }
+
+  """
+  Plumbing (mirrors staff.withWorker): store the worker without re-running
+  the spawn when the returned ID is replayed.
+  """
+  withWorker(name: String!, worker: Agent!): Hirer! {
+    self.workers = self.workers.with(name, worker)
+    self
+  }
+
+  """
+  Send a message to a hired worker and block for the reply of the turn that
+  consumes it — the staff module's ask: resume-first, then send, then
+  response, all inside THIS call's own function-call client.
+  """
+  ask(
+    name: String!,
+    message: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): sends and blocks on live runtime state; a replayed
+    # answer would masquerade as a fresh round-trip.
+    let worker = member(name)
+    worker.resume
+    worker.send(message).response
+  }
+
+  """
+  The ask, addressed by handle instead of name: resume + send + response on a
+  caller-provided Agent. This is how a client that rebuilt a handle from
+  the trace hands it INTO a module tool — the path that must work wherever
+  node(id:) on the same handle works.
+  """
+  askAgent(
+    agent: Agent!,
+    message: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): same as ask.
+    agent.resume
+    agent.send(message).response
+  }
+
+  # Address a worker by name, with a helpful miss (mirrors staff.member).
+  let member(name: String!): Agent! {
+    let worker = workers[name]
+    if (worker == null) {
+      raise `no hired worker named "${name}"`
+    }
+    worker
+  }
+}

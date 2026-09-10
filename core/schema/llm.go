@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 type llmSchema struct {
@@ -67,6 +68,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					`The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.`).
 					View(AfterVersion("v1.0.0-0")),
 			),
+		dagql.NodeFunc("withSmallModel", s.withSmallModel).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model."),
 		dagql.Func("reasoningEffort", s.reasoningEffort).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
@@ -81,6 +85,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Queue a user prompt, to be sent to the model on the next step or loop.").
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
+				dagql.Arg("origin").
+					Experimental("Agent APIs are likely to change.").
+					View(AfterVersion("v1.0.0-0")).
+					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
 			currentSrv, err := core.CurrentDagqlServer(ctx)
@@ -201,6 +209,36 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxTokens").Doc("Cap the model's output tokens for this step. Defaults to the model's maximum.").
 					View(AfterVersion("v1.0.0-0")),
 			),
+		dagql.NodeFunc("spawn", s.spawn).
+			Experimental("Agent APIs are likely to change.").
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Every spawn mints a distinct agent instance.").
+			Doc(`Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.`,
+				`Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.`,
+				`The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.`,
+				`With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.`).
+			Args(
+				dagql.Arg("name").Doc("Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation."),
+				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
+				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
+					`RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.`),
+				dagql.Arg("error").Doc(`The loop error to create the agent with, for state FAILED. Refused with any other state.`),
+			),
+		// agent is deliberately cached (no DoNotCache): the runtime handle
+		// argument pins the lookup to one spawned instance, so the same
+		// chain always denotes the same agent value — which is exactly what
+		// lets spawn pin its result's identity by re-exec: re-loading a
+		// spawned agent's ID replays …llm!agent(handle:…) and lands on the same
+		// value, never re-minting an instance.
+		dagql.NodeFunc("agent", s.agent).
+			Experimental("Agent APIs are likely to change.").
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Reconstruct a spawned agent from its runtime handle.`,
+				`This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.`).
+			Args(
+				dagql.Arg("handle").Doc("The opaque runtime handle minted by the spawn that created the agent."),
+				dagql.Arg("name").Doc("The agent's display name, as recorded by the spawn."),
+			),
 		dagql.Func("hasPending", s.hasPending).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete."),
@@ -230,12 +268,31 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMSkill](srv).View(AfterVersion("v1.0.0-0")))
-	dagql.Fields[*core.LLMMessage]{}.Install(srv)
+	srv.InstallObject(dagql.NewClass[*core.LLMMessageOrigin](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMMessage]{
+		// Origin is an explicit nullable accessor rather than field:"true":
+		// absent (the user's own prompts, model output, tool results) is the
+		// common case, and a struct-derived pointer field renders non-null.
+		dagql.Func("origin", s.messageOrigin).
+			Experimental("Agent APIs are likely to change.").
+			Doc(`Who put this message on the record, when it arrived through an agent mailbox.`,
+				`Null for the user's own prompts and for everything the model or tools produced.`),
+	}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
 	dagql.Fields[*core.LLMSkill]{}.Install(srv)
+	dagql.Fields[*core.LLMMessageOrigin]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
+	core.LLMMessageOriginKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.MustInputSpec(core.LLMMessageOriginInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+}
+
+func (s *llmSchema) messageOrigin(_ context.Context, msg *core.LLMMessage, _ struct{}) (dagql.Nullable[*core.LLMMessageOrigin], error) {
+	if msg.Origin == nil {
+		return dagql.Null[*core.LLMMessageOrigin](), nil
+	}
+	return dagql.NonNull(msg.Origin), nil
 }
 
 func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struct {
@@ -304,6 +361,24 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	return llm.WithModel(args.Model, args.Provider.Value.String()), nil
 }
 
+func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
+	model, provider, err := parent.Self().SmallModelRoute(ctx)
+	if err != nil {
+		return res, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	return res, srv.Select(ctx, parent, &res, dagql.Selector{
+		Field: "withModel",
+		Args: []dagql.NamedInput{
+			{Name: "model", Value: dagql.NewString(model)},
+			{Name: "provider", Value: dagql.Opt(dagql.NewString(provider))},
+		},
+	})
+}
+
 func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
 	ep, err := llm.Endpoint(ctx)
 	if err != nil {
@@ -320,8 +395,13 @@ func (s *llmSchema) withReasoningEffort(ctx context.Context, llm *core.LLM, args
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
+	Origin dagql.Optional[dagql.InputObject[core.LLMMessageOriginInput]]
 }) (*core.LLM, error) {
-	return llm.WithPrompt(args.Prompt), nil
+	var origin *core.LLMMessageOrigin
+	if args.Origin.Valid {
+		origin = args.Origin.Value.Value.ToLLMMessageOrigin()
+	}
+	return llm.WithPromptOrigin(args.Prompt, origin), nil
 }
 
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
@@ -483,6 +563,104 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 	MaxTokens dagql.Optional[dagql.Int] `name:"maxTokens"`
 }) (dagql.ObjectResult[*core.LLM], error) {
 	return parent.Self().Step(ctx, parent, int(args.MaxTokens.Value))
+}
+
+// spawn creates a unique agent instance from the conversation. Instance
+// identity is minted here — where instances are born — unless the caller
+// supplies a handle to restore an instance under (resume-from-trace §4.1):
+// either way the resolver pins the handle by re-exec (design §9, the same
+// trick send uses for message identity): a real Select through the pure
+// agent(handle:) lookup on the same receiver yields a handle whose ID is the
+// honest, replayable chain `…llm!agent(handle:"…", name:"…")` —
+// re-addressable from any request in the session, and carrying the unique
+// runtime handle into the value's content digest, so every spawn gets a fresh
+// runtime registry entry (a dismissed name can never resolve to a
+// predecessor's tombstone). spawn is DoNotCache and ID-returning like every
+// imperative verb: lazy clients force the create exactly once and re-hydrate
+// the handle from the ID, which replays the lookup, not the spawn.
+//
+// The registry entry is created HERE, not lazily on first use: spawn is
+// create-pin, whether the handle was minted (a fresh instance) or supplied
+// (a restore, which adopts the receiver as the committed history). Since a
+// registry miss on send is an error rather than a constructor
+// (resume-from-trace §4.2 — a miss used to boot an amnesiac twin from the
+// seed), spawn is the only verb that creates an entry, and every other verb
+// addresses one that exists.
+func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
+	Name   dagql.Optional[dagql.String]
+	Handle dagql.Optional[dagql.String]
+	State  core.AgentState `default:"IDLE"`
+	Error  string          `default:""`
+}) (res dagql.Result[core.AgentID], _ error) {
+	name := args.Name.Value.String()
+	if name == "" {
+		// Derive a short display name from the seed conversation's recipe
+		// digest — a readable default label, with no identity role.
+		// (parent.ID().Digest() would panic here: a post-evaluation LLM
+		// carries a handle-form ID with no digest — see core/llm.go's
+		// llmCallDigest derivation for the same dance.)
+		dig, err := parent.RecipeDigest(ctx)
+		if err != nil {
+			return res, fmt.Errorf("llm recipe digest: %w", err)
+		}
+		enc := dig.Encoded()
+		if len(enc) > 8 {
+			enc = enc[:8]
+		}
+		name = "agent-" + enc
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	restored := args.Handle.Valid && args.Handle.Value.String() != ""
+	handle := identity.NewID()
+	if restored {
+		handle = args.Handle.Value.String()
+	}
+	var pinned dagql.ObjectResult[*core.Agent]
+	if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
+		Field: "agent",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "handle",
+				Value: dagql.NewString(handle),
+			},
+			{
+				Name:  "name",
+				Value: dagql.NewString(name),
+			},
+		},
+	}); err != nil {
+		return res, err
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored); err != nil {
+		return res, err
+	}
+	pinnedID, err := pinned.ID()
+	if err != nil {
+		return res, fmt.Errorf("agent ID: %w", err)
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewID[*core.Agent](pinnedID))
+}
+
+// agent is the pure lookup spawn pins instance identity through: it
+// reconstructs the agent value from the (id, name) literals on the chain,
+// touching no runtime state — a cold re-Select of a spawned agent's ID lands
+// here and projects IDLE-from-absence like any never-started agent.
+func (s *llmSchema) agent(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
+	Handle string
+	Name   string
+}) (*core.Agent, error) {
+	return &core.Agent{
+		Seed:   parent,
+		Handle: args.Handle,
+		Name:   args.Name,
+	}, nil
 }
 
 func (s *llmSchema) replay(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {

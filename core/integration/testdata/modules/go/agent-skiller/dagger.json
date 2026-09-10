@@ -1,0 +1,8 @@
+{
+  "name": "skiller",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "."
+}

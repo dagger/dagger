@@ -119,8 +119,8 @@ type {{ $field | FieldOptionsStructName }} struct {
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
-	return &{{ $.Name | InterfaceClientName }}{
-		query: selectNode(q.Root(), id, "{{ $.Name }}"),
+	return &{{ $field | IDHandleClient }}{
+		query: selectNode(q.Root(), id, "{{ $field | IDHandleType }}"),
 	}, nil
 	{{- else if IsInterfaceRef $field.TypeRef }}
 	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}

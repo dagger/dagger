@@ -82,21 +82,32 @@ func (p *SpanProgress) Totals() (current, total int64) {
 func (db *DB) ingestProgress(record sdklog.Record) bool {
 	var item, unit string
 	var current, total int64
+	var reserved, validItem bool
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.ProgressItemAttr:
-			item = kv.Value.AsString()
+			reserved = true
+			item, validItem = LogValueString(kv.Value)
 		case telemetryattrs.ProgressCurrentAttr:
-			current = kv.Value.AsInt64()
+			if value, ok := LogValueInt64(kv.Value); ok {
+				current = value
+			}
 		case telemetryattrs.ProgressTotalAttr:
-			total = kv.Value.AsInt64()
+			if value, ok := LogValueInt64(kv.Value); ok {
+				total = value
+			}
 		case telemetryattrs.ProgressUnitAttr:
-			unit = kv.Value.AsString()
+			if value, ok := LogValueString(kv.Value); ok {
+				unit = value
+			}
 		}
 		return true
 	})
-	if item == "" {
+	if !reserved {
 		return false
+	}
+	if !validItem || item == "" {
+		return true
 	}
 
 	spanID := SpanID{SpanID: record.SpanID()}

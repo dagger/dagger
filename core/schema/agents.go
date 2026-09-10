@@ -14,37 +14,43 @@ var _ SchemaResolvers = &agentsSchema{}
 func (s agentsSchema) Install(srv *dagql.Server) {
 	// Agents are v1+ API surface; installing the classes with a view gate also
 	// gates their generated ID/load fields.
-	srv.InstallObject(dagql.NewClass[*core.AgentGroup](srv).View(AfterVersion("v1.0.0-0")))
-	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.AgentMiddlewareGroup](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.AgentMiddleware](srv).View(AfterVersion("v1.0.0-0")))
 
-	dagql.Fields[*core.AgentGroup]{
+	dagql.Fields[*core.AgentMiddlewareGroup]{
 		dagql.Func("list", s.list).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Return a list of individual agents and their details"),
 
 		dagql.Func("compose", s.compose).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.").
 			Args(
 				dagql.Arg("base").Doc("The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."),
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.Agent]{
+	dagql.Fields[*core.AgentMiddleware]{
 		dagql.Func("name", s.name).
+			Experimental("Agent APIs are likely to change.").
 			Doc("Return the command name of the agent. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The description of the agent"),
 		dagql.Func("path", s.path).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The path of the agent within its module"),
 		dagql.Func("originalModule", s.originalModule).
+			Experimental("Agent APIs are likely to change.").
 			Doc("The original module in which the agent has been defined"),
 	}.Install(srv)
 }
 
-func (s agentsSchema) list(_ context.Context, parent *core.AgentGroup, args struct{}) ([]*core.Agent, error) {
+func (s agentsSchema) list(_ context.Context, parent *core.AgentMiddlewareGroup, args struct{}) ([]*core.AgentMiddleware, error) {
 	return parent.List(), nil
 }
 
-func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args struct {
+func (s agentsSchema) compose(ctx context.Context, parent *core.AgentMiddlewareGroup, args struct {
 	Base dagql.Optional[core.LLMID]
 }) (dagql.ObjectResult[*core.LLM], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -87,18 +93,18 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args
 	return parent.Compose(ctx, base)
 }
 
-func (s agentsSchema) name(_ context.Context, parent *core.Agent, args struct{}) (string, error) {
+func (s agentsSchema) name(_ context.Context, parent *core.AgentMiddleware, args struct{}) (string, error) {
 	return parent.Name(), nil
 }
 
-func (s agentsSchema) description(_ context.Context, parent *core.Agent, args struct{}) (string, error) {
+func (s agentsSchema) description(_ context.Context, parent *core.AgentMiddleware, args struct{}) (string, error) {
 	return parent.Description(), nil
 }
 
-func (s agentsSchema) path(_ context.Context, parent *core.Agent, args struct{}) ([]string, error) {
+func (s agentsSchema) path(_ context.Context, parent *core.AgentMiddleware, args struct{}) ([]string, error) {
 	return parent.Path(), nil
 }
 
-func (s agentsSchema) originalModule(_ context.Context, parent *core.Agent, args struct{}) (*core.Module, error) {
+func (s agentsSchema) originalModule(_ context.Context, parent *core.AgentMiddleware, args struct{}) (*core.Module, error) {
 	return parent.OriginalModule(), nil
 }
