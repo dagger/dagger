@@ -15,8 +15,10 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 	for _, ext := range new.Extensions {
 		extensionOnly[ext.Name] = new.Definitions.ForName(ext.Name) == nil
 	}
-	canonicalize(old)
-	canonicalize(new)
+	mergeExtensions(old)
+	mergeExtensions(new)
+	canonicalOld := canonicalize(old)
+	canonicalNew := canonicalize(new)
 	var out strings.Builder
 	emit := func(label, s string) {
 		if s == "" {
@@ -44,7 +46,9 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 			emit("Changed (after):", after)
 		}
 	}
-	compare(format(&ast.SchemaDocument{Schema: old.Schema}), format(&ast.SchemaDocument{Schema: new.Schema}))
+	if format(&ast.SchemaDocument{Schema: canonicalOld.Schema}) != format(&ast.SchemaDocument{Schema: canonicalNew.Schema}) {
+		compare(format(&ast.SchemaDocument{Schema: old.Schema}), format(&ast.SchemaDocument{Schema: new.Schema}))
+	}
 	for _, name := range names(old.Directives, new.Directives, func(d *ast.DirectiveDefinition) string { return d.Name }) {
 		render := func(d *ast.DirectiveDefinition) string {
 			if d == nil {
@@ -52,7 +56,9 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 			}
 			return format(&ast.SchemaDocument{Directives: ast.DirectiveDefinitionList{d}})
 		}
-		compare(render(old.Directives.ForName(name)), render(new.Directives.ForName(name)))
+		if render(canonicalOld.Directives.ForName(name)) != render(canonicalNew.Directives.ForName(name)) {
+			compare(render(old.Directives.ForName(name)), render(new.Directives.ForName(name)))
+		}
 	}
 	for _, name := range names(old.Definitions, new.Definitions, func(d *ast.Definition) string { return d.Name }) {
 		before, after := old.Definitions.ForName(name), new.Definitions.ForName(name)
@@ -60,12 +66,13 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 			compare(renderDefinition(before, false), renderDefinition(after, extensionOnly[name]))
 			continue
 		}
+		canonicalBefore, canonicalAfter := canonicalOld.Definitions.ForName(name), canonicalNew.Definitions.ForName(name)
 		// Kind, type-level directives, and descriptions cannot be replaced with
 		// an extension. Show the complete replacement when these change.
 		header := func(d *ast.Definition) string {
 			return renderDefinition(&ast.Definition{Kind: d.Kind, Name: d.Name, Description: d.Description, Directives: d.Directives}, false)
 		}
-		if header(before) != header(after) {
+		if header(canonicalBefore) != header(canonicalAfter) {
 			compare(renderDefinition(before, false), renderDefinition(after, false))
 			continue
 		}
@@ -84,8 +91,7 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 				render := func(f *ast.FieldDefinition) string {
 					return renderDefinition(&ast.Definition{Kind: after.Kind, Name: name, Fields: ast.FieldList{f}}, true)
 				}
-				if render(a) != render(b) {
-					changedBefore.Fields = append(changedBefore.Fields, a)
+				if render(canonicalBefore.Fields.ForName(field)) != render(canonicalAfter.Fields.ForName(field)) {
 					changedAfter.Fields = append(changedAfter.Fields, b)
 				}
 			}
@@ -101,10 +107,19 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 				render := func(v *ast.EnumValueDefinition) string {
 					return renderDefinition(&ast.Definition{Kind: ast.Enum, Name: name, EnumValues: ast.EnumValueList{v}}, true)
 				}
-				if render(a) != render(b) {
-					changedBefore.EnumValues = append(changedBefore.EnumValues, a)
+				if render(canonicalBefore.EnumValues.ForName(value)) != render(canonicalAfter.EnumValues.ForName(value)) {
 					changedAfter.EnumValues = append(changedAfter.EnumValues, b)
 				}
+			}
+		}
+		for _, field := range before.Fields {
+			if changedAfter.Fields.ForName(field.Name) != nil {
+				changedBefore.Fields = append(changedBefore.Fields, field)
+			}
+		}
+		for _, value := range before.EnumValues {
+			if changedAfter.EnumValues.ForName(value.Name) != nil {
+				changedBefore.EnumValues = append(changedBefore.EnumValues, value)
 			}
 		}
 		added.Interfaces, removed.Interfaces = difference(before.Interfaces, after.Interfaces)
@@ -139,14 +154,19 @@ func renderDefinition(d *ast.Definition, extension bool) string {
 }
 
 func names[T any](a, b []T, name func(T) string) []string {
+	// Follow the new schema, then append removed names in old schema order.
 	var result []string
-	for _, list := range [][]T{a, b} {
+	seen := map[string]bool{}
+	for _, list := range [][]T{b, a} {
 		for _, item := range list {
-			result = append(result, name(item))
+			key := name(item)
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, key)
+			}
 		}
 	}
-	slices.Sort(result)
-	return slices.Compact(result)
+	return result
 }
 
 func difference(before, after []string) (added, removed []string) {
@@ -163,9 +183,7 @@ func difference(before, after []string) (added, removed []string) {
 	return
 }
 
-// Compare named members independently of their declaration order. Directive
-// application order and list value order are retained because they can matter.
-func canonicalize(doc *ast.SchemaDocument) {
+func mergeExtensions(doc *ast.SchemaDocument) {
 	for _, ext := range doc.Extensions {
 		if def := doc.Definitions.ForName(ext.Name); def != nil {
 			def.Fields = append(def.Fields, ext.Fields...)
@@ -187,55 +205,91 @@ func canonicalize(doc *ast.SchemaDocument) {
 			first.Directives = append(first.Directives, ext.Directives...)
 		}
 		doc.Schema = doc.Schema[:1]
+	}
+}
+
+// Canonicalize a copy for comparison, leaving declaration order intact for output.
+// Directive application order and list value order are retained because they can matter.
+func canonicalize(source *ast.SchemaDocument) *ast.SchemaDocument {
+	doc := *source
+	doc.Schema = cloneNodes(doc.Schema)
+	doc.Directives = cloneNodes(doc.Directives)
+	doc.Definitions = cloneNodes(doc.Definitions)
+	for _, first := range doc.Schema {
+		first.OperationTypes = slices.Clone(first.OperationTypes)
 		slices.SortFunc(first.OperationTypes, func(a, b *ast.OperationTypeDefinition) int { return cmp.Compare(a.Operation, b.Operation) })
-		canonicalDirectives(first.Directives)
+		first.Directives = canonicalDirectives(first.Directives)
 	}
 	for _, def := range doc.Directives {
-		canonicalArguments(def.Arguments)
+		def.Arguments = canonicalArguments(def.Arguments)
+		def.Locations = slices.Clone(def.Locations)
 		slices.Sort(def.Locations)
 	}
 	for _, def := range doc.Definitions {
+		def.Interfaces = slices.Clone(def.Interfaces)
+		def.Types = slices.Clone(def.Types)
+		def.Fields = cloneNodes(def.Fields)
+		def.EnumValues = cloneNodes(def.EnumValues)
 		slices.Sort(def.Interfaces)
 		slices.Sort(def.Types)
 		slices.SortFunc(def.Fields, func(a, b *ast.FieldDefinition) int { return cmp.Compare(a.Name, b.Name) })
 		slices.SortFunc(def.EnumValues, func(a, b *ast.EnumValueDefinition) int { return cmp.Compare(a.Name, b.Name) })
-		canonicalDirectives(def.Directives)
+		def.Directives = canonicalDirectives(def.Directives)
 		for _, field := range def.Fields {
-			canonicalArguments(field.Arguments)
-			canonicalValue(field.DefaultValue)
-			canonicalDirectives(field.Directives)
+			field.Arguments = canonicalArguments(field.Arguments)
+			field.DefaultValue = canonicalValue(field.DefaultValue)
+			field.Directives = canonicalDirectives(field.Directives)
 		}
 		for _, value := range def.EnumValues {
-			canonicalDirectives(value.Directives)
+			value.Directives = canonicalDirectives(value.Directives)
 		}
 	}
+	return &doc
 }
 
-func canonicalArguments(args ast.ArgumentDefinitionList) {
+func cloneNodes[T any, S ~[]*T](nodes S) S {
+	clones := make(S, len(nodes))
+	for i, node := range nodes {
+		clone := *node
+		clones[i] = &clone
+	}
+	return clones
+}
+
+func canonicalArguments(args ast.ArgumentDefinitionList) ast.ArgumentDefinitionList {
+	args = cloneNodes(args)
 	slices.SortFunc(args, func(a, b *ast.ArgumentDefinition) int { return cmp.Compare(a.Name, b.Name) })
 	for _, arg := range args {
-		canonicalValue(arg.DefaultValue)
-		canonicalDirectives(arg.Directives)
+		arg.DefaultValue = canonicalValue(arg.DefaultValue)
+		arg.Directives = canonicalDirectives(arg.Directives)
 	}
+	return args
 }
 
-func canonicalDirectives(directives ast.DirectiveList) {
+func canonicalDirectives(directives ast.DirectiveList) ast.DirectiveList {
+	directives = cloneNodes(directives)
 	for _, dir := range directives {
+		dir.Arguments = cloneNodes(dir.Arguments)
 		slices.SortFunc(dir.Arguments, func(a, b *ast.Argument) int { return cmp.Compare(a.Name, b.Name) })
 		for _, arg := range dir.Arguments {
-			canonicalValue(arg.Value)
+			arg.Value = canonicalValue(arg.Value)
 		}
 	}
+	return directives
 }
 
-func canonicalValue(value *ast.Value) {
+func canonicalValue(value *ast.Value) *ast.Value {
 	if value == nil {
-		return
+		return nil
 	}
+	clone := *value
+	value = &clone
+	value.Children = cloneNodes(value.Children)
 	if value.Kind == ast.ObjectValue {
 		slices.SortFunc(value.Children, func(a, b *ast.ChildValue) int { return cmp.Compare(a.Name, b.Name) })
 	}
 	for _, child := range value.Children {
-		canonicalValue(child.Value)
+		child.Value = canonicalValue(child.Value)
 	}
+	return value
 }

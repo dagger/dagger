@@ -36,11 +36,7 @@ func TestSemanticDiff(t *testing.T) {
 			name:   "new types and enum input union extensions",
 			before: `enum Mode { ON } input Options { x: Int } union Result = Foo type Foo { id: ID! }`,
 			after:  `enum Mode { ON OFF } input Options { x: Int y: Int = 2 } union Result = Foo | Bar type Bar { id: ID! } type Foo { id: ID! }`,
-			want: `type Bar {
-  id: ID!
-}
-
-extend enum Mode {
+			want: `extend enum Mode {
   OFF
 }
 
@@ -48,7 +44,11 @@ extend input Options {
   y: Int = 2
 }
 
-extend union Result = Bar`,
+extend union Result = Bar
+
+type Bar {
+  id: ID!
+}`,
 		},
 		{
 			name:   "changed field signatures",
@@ -78,6 +78,81 @@ extend union Result = Bar`,
 			want: `extend type Foo {
   added: ID
 }`,
+		},
+		{
+			name:   "schema order for APIs fields and arguments",
+			before: `type Alpha { unchanged: ID } type Zebra { goneZ: ID goneA: ID z: Int a: Int } scalar RemovedZ scalar RemovedA`,
+			after:  `type Zebra { a: String z: String newZ(z: Int, a: Int): ID newA: ID } type Alpha { unchanged: ID z: ID a: ID } type NewZ { z: ID a: ID } scalar NewA`,
+			want: `extend type Zebra {
+  newZ(z: Int, a: Int): ID
+  newA: ID
+}
+
+# Removed:
+# extend type Zebra {
+#   goneZ: ID
+#   goneA: ID
+# }
+
+# Changed (before):
+# extend type Zebra {
+#   z: Int
+#   a: Int
+# }
+
+# Changed (after):
+# extend type Zebra {
+#   a: String
+#   z: String
+# }
+
+extend type Alpha {
+  z: ID
+  a: ID
+}
+
+type NewZ {
+  z: ID
+  a: ID
+}
+
+scalar NewA
+
+# Removed:
+# scalar RemovedZ
+
+# Removed:
+# scalar RemovedA`,
+		},
+		{
+			name:   "changed signatures preserve argument and default order",
+			before: `type Foo { f(z: Input = {z: 1, a: 2}, a: Int): ID @tag(z: 1, a: 2) }`,
+			after:  `type Foo { f(a: Int, z: Input = {a: 2, z: 1}): String @tag(a: 2, z: 1) }`,
+			want: `# Changed (before):
+# extend type Foo {
+#   f(z: Input = {z:1,a:2}, a: Int): ID @tag(z: 1, a: 2)
+# }
+
+# Changed (after):
+# extend type Foo {
+#   f(a: Int, z: Input = {a:2,z:1}): String @tag(a: 2, z: 1)
+# }`,
+		},
+		{
+			name:   "replacement preserves full declaration order",
+			before: `type Foo implements Z & A { z: ID a: ID }`,
+			after:  `interface Foo implements Z & A { z: ID a: ID }`,
+			want: `# Changed (before):
+# type Foo implements Z & A {
+#   z: ID
+#   a: ID
+# }
+
+# Changed (after):
+# interface Foo implements Z & A {
+#   z: ID
+#   a: ID
+# }`,
 		},
 		{
 			name: "ignore ordering descriptions and extension placement",
