@@ -68,7 +68,7 @@ func (cli *CloudCLI) Usage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	minutes, err := client.OrgUsedMinutes(ctx, org.ID)
+	minutes, err := client.OrgComputeMinutes(ctx, org.ID)
 	if err != nil {
 		return err
 	}

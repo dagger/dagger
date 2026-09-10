@@ -42,16 +42,16 @@ func TestMonthUsage(t *testing.T) {
 	})
 }
 
-func TestOrgUsedMinutes(t *testing.T) {
+func TestOrgComputeMinutes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		require.Contains(t, string(body), "orgUsedMinutes")
+		require.Contains(t, string(body), "orgComputeMinutes")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":{"orgUsedMinutes":137}}`)
+		_, _ = io.WriteString(w, `{"data":{"orgComputeMinutes":137}}`)
 	}))
 	defer srv.Close()
 
-	minutes, err := testClient(t, srv.URL).OrgUsedMinutes(context.Background(), "org-1")
+	minutes, err := testClient(t, srv.URL).OrgComputeMinutes(context.Background(), "org-1")
 	require.NoError(t, err)
 	require.Equal(t, 137, minutes)
 }

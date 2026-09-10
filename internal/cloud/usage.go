@@ -35,22 +35,22 @@ func (c *Client) MonthUsage(ctx context.Context, orgID, month string) (*MonthlyU
 	return &data.MonthUsage, nil
 }
 
-const orgUsedMinutesOperation = `
-query OrgUsedMinutes($org: ID!) {
-	orgUsedMinutes(org: $org)
+const orgComputeMinutesOperation = `
+query OrgComputeMinutes($org: ID!) {
+	orgComputeMinutes(org: $org)
 }
 `
 
-// OrgUsedMinutes returns the number of Cloud compute (engine) minutes the org
+// OrgComputeMinutes returns the number of Cloud compute (engine) minutes the org
 // has consumed in the current billing period.
-func (c *Client) OrgUsedMinutes(ctx context.Context, orgID string) (int, error) {
+func (c *Client) OrgComputeMinutes(ctx context.Context, orgID string) (int, error) {
 	var data struct {
-		OrgUsedMinutes int `json:"orgUsedMinutes"`
+		OrgComputeMinutes int `json:"orgComputeMinutes"`
 	}
-	if err := c.doGraphQL(ctx, "OrgUsedMinutes", orgUsedMinutesOperation, map[string]any{
+	if err := c.doGraphQL(ctx, "OrgComputeMinutes", orgComputeMinutesOperation, map[string]any{
 		"org": orgID,
 	}, &data); err != nil {
 		return 0, err
 	}
-	return data.OrgUsedMinutes, nil
+	return data.OrgComputeMinutes, nil
 }
