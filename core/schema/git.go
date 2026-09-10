@@ -168,6 +168,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("bundle"),
 				dagql.Arg("prerequisiteRef"),
 			),
+		dagql.Func("__withPushURLs", s.withPushURLs).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Record push routing metadata. Does not grant credential access."),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
@@ -203,6 +207,15 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.NodeFunc("push", s.push).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Pushes to an external Git repository on each invocation.").
+			Doc("Push this ref's commit and history to a remote repository using the destination's credentials.",
+				"The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.",
+				"A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.").
+			Args(dagql.Arg("to").Doc("Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL."),
+				dagql.Arg("branch").Doc("Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs."),
+				dagql.Arg("expectedRemoteSHA").Doc("Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.")),
 		dagql.NodeFunc("targetCommit", s.targetCommit).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The commit this ref resolves to.`),
@@ -269,6 +282,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
+	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.GitPushResult](srv).View(AfterVersion("v1.0.0-0")))
+	core.GitPushDispositions.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.GitPushResult]{}.Install(srv)
+	dagql.Fields[*core.Query]{
+		dagql.Func("__gitPushResult", s.pushResult).View(AfterVersion("v1.0.0-0")).
+			Doc("(Internal-only) Reconstruct a completed push receipt without contacting the remote."),
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitBundle](srv).View(AfterVersion("v1.0.0-beta.10")))
@@ -681,7 +702,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 			if sshAuthSocketPath == "" {
-				return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+				// A credential-free destination can be used by push, which asks
+				// before borrowing the owner's agent. Reads still fail in setup.
+				break
 			}
 
 			// Scope that client's default SSH auth socket and reinvoke so it appears in the DAG.
@@ -1251,6 +1274,7 @@ func (s *gitSchema) withBundle(
 		return inst, fmt.Errorf("open imported git bundle repository: %w", err)
 	}
 	repo.URL = parent.Self().URL
+	repo.PushURLs = slices.Clone(parent.Self().PushURLs)
 	repo.DiscardGitDir = parent.Self().DiscardGitDir
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
@@ -1416,6 +1440,11 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		repo.URL.Value.String(),
 		string(ref.Digest()),
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// The same commit with different push routing is a different GitRef:
+		// merging these results could send a push to the wrong destination.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
@@ -1735,6 +1764,16 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
+	// Trees without .git are content-addressed independently of the ref name.
+	// Record a pinned recipe before publishing that equivalence: otherwise a
+	// later SHA-based selection (such as Workspace.sync) can reuse the
+	// first writer's mutable branch recipe. Keep named refs for trees with .git,
+	// where the ref name is part of the checkout metadata and content identity.
+	ref := parent.Self()
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
+	}
+
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 	if err != nil {
 		return inst, err
@@ -1756,6 +1795,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	return inst, nil
+}
+
+func pinnedGitTree(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], sha string, args treeArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	err = srv.Select(ctx, repo, &inst,
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(sha)},
+		}},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(args.DiscardGitDir)},
+			{Name: "depth", Value: dagql.NewInt(args.Depth)},
+			{Name: "includeTags", Value: dagql.NewBoolean(args.IncludeTags)},
+		}},
+	)
+	return inst, err
 }
 
 func (s *gitSchema) targetCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
@@ -1787,6 +1840,10 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		repo.URL.Value.String(),
 		ref.SHA,
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// GitCommit retains its repository, including its push routing.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
@@ -1827,6 +1884,17 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	// Share the pinned recipe with GitRef.tree, even when this commit was
+	// originally selected through a mutable ref's targetCommit.
+	commit := parent.Self()
+	if commit.Repo.Self().DiscardGitDir || args.DiscardGitDir {
+		return pinnedGitTree(ctx, srv, commit.Repo, commit.Ref.SHA, treeArgs{
+			DiscardGitDir: args.DiscardGitDir,
+			Depth:         args.Depth,
+			IncludeTags:   args.IncludeTags,
+		})
 	}
 
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)

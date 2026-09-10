@@ -130,6 +130,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
+	initialLLM *dagger.LLM,
 ) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
@@ -163,18 +164,18 @@ func NewLLMSession(
 	own.model = llmModel
 	s.agents = []*sessionAgent{own}
 	s.target = own
-	own.reset()
-	// This plain prompt-mode LLM is the real starting value when no composed
-	// agent replaces it. startInteractivePromptMode explicitly replaces this
-	// baseline together with the composed LLM before entering the prompt.
-	own.setLastSynced(own.llm.Workspace())
-
-	// Grab the model to check for a valid config
-	model, err := own.llm.Model(ctx)
-	if err != nil {
+	// Install the selected composition before status reads so its frozen
+	// checkpoint is captured only once and belongs to this conversation.
+	if initialLLM == nil {
+		workspace, err := syncWorkspace(ctx, dag)
+		if err != nil {
+			return nil, err
+		}
+		initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+	}
+	if err := own.setInitialLLM(initialLLM); err != nil {
 		return nil, err
 	}
-	own.model = model
 
 	return s, nil
 }

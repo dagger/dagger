@@ -1018,6 +1018,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitPushResult",
+			"p": "Dagger/GitPushResult.html",
+			"d": "<p>A receipt for a completed Git push. Reading or replaying the receipt does not push again.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -1871,6 +1881,16 @@
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
 			"d": "<p>A Dagger workspace detected from the current working directory or constructed from a Directory.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceCommitPick",
+			"p": "Dagger/WorkspaceCommitPick.html",
+			"d": "<p>A source commit classified against the receiving workspace.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -2889,6 +2909,12 @@
 			"n": "Dagger\\Client::currentNode",
 			"p": "Dagger/Client.html#method_currentNode",
 			"d": "<p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentTimestamp",
+			"p": "Dagger/Client.html#method_currentTimestamp",
+			"d": "<p>The current UTC time in RFC3339 format. Never cached.</p>"
 		},
 		{
 			"t": "M",
@@ -5706,6 +5732,36 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitPushResult::disposition",
+			"p": "Dagger/GitPushResult.html#method_disposition",
+			"d": "<p>How the remote ref was updated.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::id",
+			"p": "Dagger/GitPushResult.html#method_id",
+			"d": "<p>A unique identifier for this GitPushResult.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::previousSHA",
+			"p": "Dagger/GitPushResult.html#method_previousSHA",
+			"d": "<p>The previous remote object ID; empty when the ref was created.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::ref",
+			"p": "Dagger/GitPushResult.html#method_ref",
+			"d": "<p>The fully qualified remote ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitPushResult::sha",
+			"p": "Dagger/GitPushResult.html#method_sha",
+			"d": "<p>The object ID pushed to the remote.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::asWorkspace",
 			"p": "Dagger/GitRef.html#method_asWorkspace",
 			"d": "<p>Creates a synthetic workspace from this git ref.</p>"
@@ -5745,6 +5801,12 @@
 			"n": "Dagger\\GitRef::name",
 			"p": "Dagger/GitRef.html#method_name",
 			"d": "<p>The resolved name of this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::push",
+			"p": "Dagger/GitRef.html#method_push",
+			"d": "<p>Push this ref's commit and history to a remote repository using the destination's credentials.</p>"
 		},
 		{
 			"t": "M",
@@ -7716,6 +7778,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::commitsFrom",
+			"p": "Dagger/Workspace.html#method_commitsFrom",
+			"d": "<p>Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::configFile",
 			"p": "Dagger/Workspace.html#method_configFile",
 			"d": "<p>Selected native workspace config file relative to the workspace cwd, if any.</p>"
@@ -7754,7 +7822,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::export",
 			"p": "Dagger/Workspace.html#method_export",
-			"d": "<p>Write this workspace's pending changes to its local Git workspace on the current client's host.</p>"
+			"d": "<p>Write this workspace's changes to a local Git checkout on the calling client.</p>"
 		},
 		{
 			"t": "M",
@@ -7824,12 +7892,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::reloaded",
-			"p": "Dagger/Workspace.html#method_reloaded",
-			"d": "<p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::sdk",
 			"p": "Dagger/Workspace.html#method_sdk",
 			"d": "<p>An installed SDK, by name.</p>"
@@ -7854,6 +7916,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::sync",
+			"p": "Dagger/Workspace.html#method_sync",
+			"d": "<p>Capture this workspace as a stable value and return its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::terminals",
 			"p": "Dagger/Workspace.html#method_terminals",
 			"d": "<p>Return all terminal targets from modules loaded in the workspace.</p>"
@@ -7872,9 +7940,33 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCommit",
+			"p": "Dagger/Workspace.html#method_withCommit",
+			"d": "<p>Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withCommitsFrom",
+			"p": "Dagger/Workspace.html#method_withCommitsFrom",
+			"d": "<p>Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withConfigEnv",
 			"p": "Dagger/Workspace.html#method_withConfigEnv",
 			"d": "<p>Return this workspace with a named config environment created.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withConfigEnvironment",
+			"p": "Dagger/Workspace.html#method_withConfigEnvironment",
+			"d": "<p>Select the config environment carried by this workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withConfigPaths",
+			"p": "Dagger/Workspace.html#method_withConfigPaths",
+			"d": "<p>Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.</p>"
 		},
 		{
 			"t": "M",
@@ -7929,6 +8021,12 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReset",
+			"p": "Dagger/Workspace.html#method_withReset",
+			"d": "<p>Move this workspace's Git HEAD to a commit and return the resulting stable workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -8001,6 +8099,36 @@
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::commit",
+			"p": "Dagger/WorkspaceCommitPick.html#method_commit",
+			"d": "<p>The commit in the source workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::conflictPaths",
+			"p": "Dagger/WorkspaceCommitPick.html#method_conflictPaths",
+			"d": "<p>Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::id",
+			"p": "Dagger/WorkspaceCommitPick.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceCommitPick.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::reason",
+			"p": "Dagger/WorkspaceCommitPick.html#method_reason",
+			"d": "<p>Why the commit conflicts, or NONE.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceCommitPick::status",
+			"p": "Dagger/WorkspaceCommitPick.html#method_status",
+			"d": "<p>Whether this commit can be applied.</p>"
 		},
 		{
 			"t": "M",

@@ -90,6 +90,31 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Push this ref's commit and history to a remote repository using the destination's credentials.
+     *
+     * The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+     *
+     * A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+     */
+    public function push(
+        ?GitRepository $to = null,
+        ?string $branch = '',
+        ?string $expectedRemoteSHA = '',
+    ): GitPushResult {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('push');
+        if (null !== $to) {
+        $innerQueryBuilder->setArgument('to', $to);
+        }
+        if (null !== $branch) {
+        $innerQueryBuilder->setArgument('branch', $branch);
+        }
+        if (null !== $expectedRemoteSHA) {
+        $innerQueryBuilder->setArgument('expectedRemoteSHA', $expectedRemoteSHA);
+        }
+        return new \Dagger\GitPushResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved ref name at this ref.
      */
     public function ref(): string

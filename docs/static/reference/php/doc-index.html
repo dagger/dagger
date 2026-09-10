@@ -355,7 +355,9 @@
 <abbr title="Dagger\Client">Client</abbr>::currentModule</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The module currently being served in the session, if any.</p></dd><dt><a href="Dagger/Client.html#method_currentNode">
 <abbr title="Dagger\Client">Client</abbr>::currentNode</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p></dd><dt><a href="Dagger/Client.html#method_currentTypeDefs">
+                    <dd><p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p></dd><dt><a href="Dagger/Client.html#method_currentTimestamp">
+<abbr title="Dagger\Client">Client</abbr>::currentTimestamp</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>The current UTC time in RFC3339 format. Never cached.</p></dd><dt><a href="Dagger/Client.html#method_currentTypeDefs">
 <abbr title="Dagger\Client">Client</abbr>::currentTypeDefs</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The TypeDef representations of the objects currently being served in the session.</p></dd><dt><a href="Dagger/Client.html#method_currentWorkspace">
 <abbr title="Dagger\Client">Client</abbr>::currentWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -471,13 +473,19 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace's changes, with paths relative to its working directory.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_commitsFrom">
+<abbr title="Dagger\Workspace">Workspace</abbr>::commitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace cwd, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Read a configuration value from dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_cwd">
 <abbr title="Dagger\Workspace">Workspace</abbr>::cwd</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Current location within the workspace root.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
+                    <dd><p>Current location within the workspace root.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_commit">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>The commit in the source workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_conflictPaths">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::conflictPaths</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
                     <dd><p>Filesystem changes for the full migration plan.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_changes">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -563,7 +571,9 @@
 <abbr title="Dagger\Function_">Function_</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>A doc string for the function, if any.</p></dd><dt><a href="Dagger/Generator.html#method_description">
 <abbr title="Dagger\Generator">Generator</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>Return the description of the generator</p></dd><dt><a href="Dagger/Host.html#method_directory">
+                    <dd><p>Return the description of the generator</p></dd><dt><a href="Dagger/GitPushResult.html#method_disposition">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::disposition</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>How the remote ref was updated.</p></dd><dt><a href="Dagger/Host.html#method_directory">
 <abbr title="Dagger\Host">Host</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Accesses a directory on the host.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_description">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
@@ -701,7 +711,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::envList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List named environments defined in the workspace configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_export">
 <abbr title="Dagger\Workspace">Workspace</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Write this workspace's pending changes to its local Git workspace on the current client's host.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
+                    <dd><p>Write this workspace's changes to a local Git checkout on the calling client.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::entrypoint</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
                     <dd><p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p></dd>        </dl><h2 id="letterF">F</h2>
         <dl id="indexF"><dt><a href="Dagger/Address.html#method_file">
@@ -801,7 +811,8 @@
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.</p></dd><dt><a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A ref advertised by a Git bundle.</p></dd><dt><a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A receipt for a completed Git push. Reading or replaying the receipt does not push again.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git ref (tag, branch, or commit).</p></dd><dt><a href="Dagger/GitRefId.html"><abbr title="Dagger\GitRefId">GitRefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git repository.</p></dd><dt><a href="Dagger/GitRepositoryId.html"><abbr title="Dagger\GitRepositoryId">GitRepositoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -971,7 +982,9 @@
 <abbr title="Dagger\GitBundleRef">GitBundleRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitBundleRef.html"><abbr title="Dagger\GitBundleRef">GitBundleRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitBundleRef.</p></dd><dt><a href="Dagger/GitCommit.html#method_id">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
+                    <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitPushResult.html#method_id">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this GitPushResult.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
 <abbr title="Dagger\GitRef">GitRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitRef.</p></dd><dt><a href="Dagger/GitRepository.html#method_id">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1076,7 +1089,9 @@
 <abbr title="Dagger\Volume">Volume</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Volume.</p></dd><dt><a href="Dagger/Workspace.html#method_id">
 <abbr title="Dagger\Workspace">Workspace</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
+                    <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_id">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this WorkspaceCommitPick.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
 <abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceGit.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -1395,7 +1410,11 @@
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::prerequisiteSHAs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Commits that must already exist wherever this bundle is applied.</p></dd><dt><a href="Dagger/GitCommit.html#method_parentShas">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::parentShas</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
+                    <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/GitPushResult.html#method_previousSHA">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::previousSHA</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The previous remote object ID; empty when the ref was created.</p></dd><dt><a href="Dagger/GitRef.html#method_push">
+<abbr title="Dagger\GitRef">GitRef</abbr>::push</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
+                    <dd><p>Push this ref's commit and history to a remote repository using the destination's credentials.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
 <abbr title="Dagger\LLM">LLM</abbr>::portableID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
 <abbr title="Dagger\LLM">LLM</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -1477,7 +1496,9 @@
 <abbr title="Dagger\GitBundle">GitBundle</abbr>::refs</a>() &mdash; <em>Method in class <a href="Dagger/GitBundle.html"><abbr title="Dagger\GitBundle">GitBundle</abbr></a></em></dt>
                     <dd><p>Refs advertised by the bundle and the object IDs they resolve to.</p></dd><dt><a href="Dagger/GitCommit.html#method_releaseTag">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::releaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
+                    <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitPushResult.html#method_ref">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The fully qualified remote ref.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved ref name at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_ref">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1505,9 +1526,9 @@
 <abbr title="Dagger\Up">Up</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>Execute the service function</p></dd><dt><a href="Dagger/UpGroup.html#method_run">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/Workspace.html#method_reloaded">
-<abbr title="Dagger\Workspace">Workspace</abbr>::reloaded</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
+                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_reason">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::reason</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Why the commit conflicts, or NONE.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>The module reference this SDK was installed from.</p></dd>        </dl><h2 id="letterS">S</h2>
         <dl id="indexS"><dt><a href="Dagger/Address.html#method_secret">
@@ -1586,7 +1607,9 @@
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
                     <dd><p>The full commit SHA.</p></dd><dt><a href="Dagger/GitCommit.html#method_shortSha">
 <abbr title="Dagger\GitCommit">GitCommit</abbr>::shortSha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
-                    <dd><p>The abbreviated commit SHA.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
+                    <dd><p>The abbreviated commit SHA.</p></dd><dt><a href="Dagger/GitPushResult.html#method_sha">
+<abbr title="Dagger\GitPushResult">GitPushResult</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
+                    <dd><p>The object ID pushed to the remote.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::shell</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
                     <dd><p>Healthcheck command is a shell command.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_startInterval">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::startInterval</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
@@ -1684,7 +1707,11 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::search</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Searches for content matching the given regular expression or literal string.</p></dd><dt><a href="Dagger/Workspace.html#method_services">
 <abbr title="Dagger\Workspace">Workspace</abbr>::services</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_steps">
+                    <dd><p>Return all services from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_sync">
+<abbr title="Dagger\Workspace">Workspace</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Capture this workspace as a stable value and return its ID.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html#method_status">
+<abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr>::status</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a></em></dt>
+                    <dd><p>Whether this commit can be applied.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_steps">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::steps</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
                     <dd><p>Logical migration steps, each identified by a stable code.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_settings">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::settings</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
@@ -2296,9 +2323,17 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withChanges</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a changeset applied, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withClient">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a generated module client added to one SDK scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
+                    <dd><p>Return this workspace with a generated module client added to one SDK scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommit">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withCommit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommitsFrom">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withCommitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigValue">
+                    <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnvironment">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnvironment</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Select the config environment carried by this workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigPaths">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withConfigPaths</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigValue">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigValue</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a configuration value written.</p></dd><dt><a href="Dagger/Workspace.html#method_withDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2316,7 +2351,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with the given path replaced by a directory, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
+                    <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withReset">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withReset</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Move this workspace's Git HEAD to a commit and return the resulting stable workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with an SDK installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedClients">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withUpdatedClients</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2340,7 +2377,8 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a module removed from its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withoutSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withoutSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Return this workspace with an SDK removed from its config.</p></dd><dt><a href="Dagger/WorkspaceCommitPick.html"><abbr title="Dagger\WorkspaceCommitPick">WorkspaceCommitPick</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A source commit classified against the receiving workspace.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Local git state for a workspace.</p></dd><dt><a href="Dagger/WorkspaceGitId.html"><abbr title="Dagger\WorkspaceGitId">WorkspaceGitId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>

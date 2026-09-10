@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Add Workspace.sync to freeze a workspace's Git history and approved
+  working-tree changes. Synced workspaces use public GitBundle compositions and can
+  be restored without the original checkout when a remote serves their base.
+  Local-only repositories still freeze within the session.
+  Frozen workspaces retain their config selection and load modules from their
+  own tree. Sync currentWorkspace again to capture later checkout changes;
+  Workspace.reloaded and read epochs have been removed.
+time: 2026-09-05T12:00:00Z
+custom:
+  Author: vito
+  PR: ""

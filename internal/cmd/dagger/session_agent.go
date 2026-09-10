@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -347,18 +345,18 @@ func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
 
 // setInitialLLM installs the composition selected when prompt mode starts and
 // records its workspace as the conversation's first synchronization baseline.
-// NewLLMSession first creates a temporary currentWorkspace-bound LLM; keeping
-// this explicit prevents that temporary value from becoming an agent
-// conversation's baseline.
+// Install it before any status reads, without capturing a temporary workspace.
 func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
 	a.initialLLM = llm
 	workspace := llm.Workspace()
-	if _, err := workspace.ID(a.session.plumbingCtx); err != nil {
+	if id, err := workspace.ID(a.session.plumbingCtx); err != nil {
 		// Trace restore deliberately starts from an unbound base. It is still the
 		// reset composition, but it cannot serve as a comparison baseline; the
 		// restored snapshot (or a later explicit sync) supplies one instead.
 		slog.Debug("starting LLM has no workspace synchronization baseline", "error", err)
 		workspace = nil
+	} else {
+		workspace = dagger.Ref[*dagger.Workspace](a.session.dag, id)
 	}
 	return a.updateSyncedLLM(llm, workspace)
 }
@@ -1054,24 +1052,20 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
-	entries, err := idtui.PreviewPatch(a.session.plumbingCtx, a.session.dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: baseline}))
+	preview, err := previewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace, baseline)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	if preview.empty() {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
 	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title: "Changes",
-		ContentFunc: func(width int) string {
-			var buf strings.Builder
-			patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
-			return buf.String()
-		},
+		Title:       "Changes",
+		ContentFunc: preview.render,
 		KeyMap: []key.Binding{
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reset")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reload")),
 		},
 	})
 	return nil
@@ -1165,39 +1159,49 @@ func (a *sessionAgent) busy() bool {
 	return a.turnCancel != nil
 }
 
-// ExportChanges writes the frozen workspace's pending overlay edits to the
-// current client-local Git workspace by passing it as Workspace.export's
-// explicit target, then refreshes the changes preview. It is the ctrl+s action;
-// export fails clearly when the current workspace cannot persist (a remote ref,
-// a synthetic workspace, or a local dir with no Git root).
+// ExportChanges integrates commits and pending edits into the live checkout,
+// then captures a new per-agent checkpoint. Failed exports retain agent state.
 func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
 	if a.busy() {
-		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before saving")
+		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before synchronizing")
 	}
-	if err := a.llm.Workspace().Export(ctx); err != nil {
+	source := a.llm.Workspace()
+	integratedID, err := a.session.dag.CurrentWorkspace().WithCommitsFrom(source).ID(ctx)
+	if err != nil {
 		return err
 	}
-	// The exported edits now live on disk, so rebind the live workspace: the
-	// overlay the agent accumulated is now redundant with the files
-	// themselves, and carrying it forward would re-diff already-saved content
-	// as pending changes. Rebinding also drops it from the next save —
-	// portableID emits only the current binding. Export bumps the client's
-	// workspace read epoch, so reads after this point see the saved content
-	// rather than a snapshot cached earlier in the session. Sync eagerly so a
-	// failure surfaces here rather than corrupting later saves.
-	frozen := a.session.dag.CurrentWorkspace()
-	rebound, err := a.llm.WithWorkspace(frozen).Sync(ctx)
+	integrated := dagger.Ref[*dagger.Workspace](a.session.dag, integratedID)
+	// Pull transfers commits only. Explicitly merge pending edits against their
+	// original HEAD so local edits cannot be silently overwritten by withChanges.
+	pending := source.Git().Uncommitted()
+	empty, err := pending.IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		merged := integrated.Directory("/").Changes(source.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).WithChangeset(pending)
+		integrated = integrated.WithChanges(merged)
+	}
+	if err := integrated.Export(ctx); err != nil {
+		return err
+	}
+	// Capture once, then bind by ID so future reads do not repeat host capture.
+	baseline, err := syncWorkspace(ctx, a.session.dag)
+	if err != nil {
+		return fmt.Errorf("saved to checkout, but could not refresh checkpoint: %w", err)
+	}
+	rebound, err := a.llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("rebind workspace after export: %w", err)
 	}
-	if err := a.updateSyncedLLM(rebound, frozen); err != nil {
+	if err := a.updateSyncedLLM(rebound, baseline); err != nil {
 		return err
 	}
 	a.session.stepped(a)
-	return a.updateChangesPreview(a.llm)
+	return nil
 }
 
 // ResetWorkspace discards the workspace's pending overlay edits, re-binding the
@@ -1213,18 +1217,21 @@ func (a *sessionAgent) ResetWorkspace(ctx context.Context) error {
 		return fmt.Errorf("no LLM session active")
 	}
 	if a.busy() {
-		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before resetting")
+		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before synchronizing")
 	}
-	frozen := a.session.dag.CurrentWorkspace().Reloaded()
-	reset, err := a.llm.WithWorkspace(frozen).Sync(ctx)
+	baseline, err := syncWorkspace(ctx, a.session.dag)
+	if err != nil {
+		return err
+	}
+	reset, err := a.llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
-	if err := a.updateSyncedLLM(reset, frozen); err != nil {
+	if err := a.updateSyncedLLM(reset, baseline); err != nil {
 		return err
 	}
 	a.session.stepped(a)
-	return a.updateChangesPreview(a.llm)
+	return nil
 }
 
 const autoCompactReserveTokens = 16_384

@@ -1,0 +1,14 @@
+kind: Added
+body: |
+  Add Workspace.withCommit to create real Git commits in frozen workspaces,
+  with deterministic dates, resolved author identity, and optional path scopes.
+  Missing author fields are resolved at commit time from Git config in the
+  calling client's working directory, respecting repository-local overrides.
+  Resolved values are recorded explicitly for stable replay; unconfigured
+  fields default to Dagger and dagger@localhost.
+  Host-backed workspaces are checkpointed before committing; the local checkout
+  is not changed. Unselected edits remain uncommitted on the returned workspace.
+time: 2026-09-05T18:00:00Z
+custom:
+  Author: vito
+  PR: ""

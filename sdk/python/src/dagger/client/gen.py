@@ -173,6 +173,22 @@ class FunctionCachePolicy(Enum):
     PerSession = "PerSession"
 
 
+class GitPushDisposition(Enum):
+    """How a Git push updated the remote ref."""
+
+    CREATED = "CREATED"
+    """The remote ref was created."""
+
+    FAST_FORWARD = "FAST_FORWARD"
+    """The remote ref was fast-forwarded."""
+
+    FORCED = "FORCED"
+    """The remote ref was replaced under an explicit lease."""
+
+    UP_TO_DATE = "UP_TO_DATE"
+    """The remote ref already pointed to this commit."""
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -389,6 +405,35 @@ class TypeDefKind(Enum):
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
+
+
+class WorkspaceCommitPickReason(Enum):
+    """Why a source commit cannot be pulled."""
+
+    CONTENT = "CONTENT"
+    """The patch conflicts with committed content."""
+
+    DIRTY = "DIRTY"
+    """The commit touches uncommitted paths in the receiving workspace."""
+
+    NONE = "NONE"
+    """No conflict."""
+
+
+class WorkspaceCommitPickStatus(Enum):
+    """Whether a source commit can be pulled."""
+
+    CONFLICT = "CONFLICT"
+    """The commit cannot be applied; see reason and conflictPaths."""
+
+    PICKABLE = "PICKABLE"
+    """The commit can be applied."""
+
+    PICKED = "PICKED"
+    """The commit is already present by hash or cherry-pick origin."""
+
+    REDUNDANT = "REDUNDANT"
+    """The patch is already present, or applying it would be empty."""
 
 
 @typecheck
@@ -9105,6 +9150,122 @@ class GitCommit(Type):
 
 
 @typecheck
+class GitPushResult(Type):
+    """A receipt for a completed Git push. Reading or replaying the
+    receipt does not push again."""
+
+    async def disposition(self) -> GitPushDisposition:
+        """How the remote ref was updated.
+
+        Returns
+        -------
+        GitPushDisposition
+            How a Git push updated the remote ref.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("disposition", _args)
+        return await _ctx.execute(GitPushDisposition)
+
+    async def id(self) -> str:
+        """A unique identifier for this GitPushResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def previous_sha(self) -> str:
+        """The previous remote object ID; empty when the ref was created.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("previousSHA", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The fully qualified remote ref.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
+        return await _ctx.execute(str)
+
+    async def sha(self) -> str:
+        """The object ID pushed to the remote.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
@@ -9264,6 +9425,48 @@ class GitRef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def push(
+        self,
+        *,
+        to: "GitRepository | None" = None,
+        branch: str | None = "",
+        expected_remote_sha: str | None = "",
+    ) -> GitPushResult:
+        """Push this ref's commit and history to a remote repository using the
+        destination's credentials.
+
+        The source can come from a remote repository or an engine-side Git
+        repository. To publish a workspace's commits, use
+        Workspace.git.head.push. Pushing does not modify the calling client's
+        checkout, and checkout hooks do not run.
+
+        A missing remote ref is created. Without a lease, Git's normal non-
+        force rules apply. Each invocation performs a push; loading the
+        returned receipt does not push again.
+
+        Parameters
+        ----------
+        to:
+            Destination remote repository. Defaults to the source's captured
+            push URL, or its repository URL when none was captured. Required
+            when the source has multiple push URLs or no remote URL.
+        branch:
+            Destination branch; a refs/ prefix is used verbatim. Defaults to
+            this ref's branch name. Required for detached and non-branch refs.
+        expected_remote_sha:
+            Optional lease: a full lowercase object ID allows replacement only
+            if the remote ref still has that value. Checked even for up-to-
+            date pushes. Empty or omitted uses normal non-force rules,
+            creating the ref if it does not exist.
+        """
+        _args = [
+            Arg("to", to, None),
+            Arg("branch", branch, ""),
+            Arg("expectedRemoteSHA", expected_remote_sha, ""),
+        ]
+        _ctx = self._select("push", _args)
+        return GitPushResult(_ctx)
 
     async def ref(self) -> str:
         """The resolved ref name at this ref.
@@ -13677,6 +13880,27 @@ class Query(Root):
         _ctx = self._select("currentNode", _args)
         return _NodeClient(_ctx)
 
+    async def current_timestamp(self) -> str:
+        """The current UTC time in RFC3339 format. Never cached.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentTimestamp", _args)
+        return await _ctx.execute(str)
+
     async def current_type_defs(
         self,
         *,
@@ -16232,6 +16456,46 @@ class Workspace(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
+    async def commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+        max_commits: int | None = 100,
+    ) -> list["WorkspaceCommitPick"]:
+        """Preview which source commits withCommitsFrom would apply, skip, or
+        report as conflicting.
+
+        Results are ordered oldest first and account for earlier applicable
+        commits in the same preview. The preview does not apply commits or
+        write to the checkout.
+
+        A local receiver is synced automatically; untracked files require
+        interactive approval. Source uncommitted changes are ignored.
+        Exceeding maxCommits fails rather than returning a partial preview.
+        Divergent merge commits require manual integration.
+
+        Parameters
+        ----------
+        source:
+            Git-backed source workspace. For a local checkout, call sync on
+            the source first and pass the returned workspace.
+        commits:
+            Full commit hashes to select, in any order. Empty selects all new
+            source commits. Explicit hashes must be within the source's latest
+            10000 commits.
+        max_commits:
+            Maximum commits in either differing history, from 1 to 1000.
+            Exceeding the limit fails; nothing is silently omitted.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+            Arg("maxCommits", max_commits, 100),
+        ]
+        _ctx = self._select("commitsFrom", _args)
+        return await _ctx.execute_object_list(WorkspaceCommitPick)
+
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace cwd,
         if any.
@@ -16402,12 +16666,22 @@ class Workspace(Type):
         return await _ctx.execute(list[str])
 
     async def export(self) -> Void:
-        """Write this workspace's pending changes to its local Git workspace on
-        the current client's host.
+        """Write this workspace's changes to a local Git checkout on the calling
+        client.
 
-        Like Directory.export, the write is a side effect on the client that
-        makes the call — never on the client that created the workspace.
-        Inside a module, this cannot reach the caller's host.
+        Local overlays can be exported directly. To save commits from another
+        workspace, first integrate them with
+        currentWorkspace.withCommitsFrom(source). Merge any pending source
+        edits explicitly before exporting the result.
+
+        For prepared Git integrations, export checks the live checkout,
+        preserves unrelated local edits, and refuses stale or conflicting
+        writes. History is never rewritten. To publish commits to a remote
+        repository, use git.head.push.
+
+        Like Directory.export, writes affect the client making the call, never
+        the client that created the workspace. Inside a module, this cannot
+        reach the caller's host.
 
         Returns
         -------
@@ -16679,15 +16953,6 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
-    def reloaded(self) -> Self:
-        """Return this workspace with its cached host reads invalidated, so
-        subsequent file and directory reads re-read the live host instead of a
-        snapshot cached earlier in the session.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("reloaded", _args)
-        return Workspace(_ctx)
-
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.
 
@@ -16791,6 +17056,40 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    async def sync(self) -> Self:
+        """Capture this workspace as a stable value and return its ID.
+
+        Git capture is a progressive enhancement: if the workspace has no Git
+        repository or commits, or the client cannot capture Git, return this
+        workspace unchanged. Approval rejections and capture failures remain
+        errors.
+
+        Use the returned workspace for subsequent reads, edits, and module
+        loading against the captured baseline. Syncing an existing stable
+        value preserves its baseline; sync currentWorkspace again to capture
+        later checkout changes.
+
+        Only the owning client can capture a local checkout. Tracked changes
+        are captured automatically; untracked files require interactive
+        approval. Remote Git refs are pinned to their resolved commits.
+        Capturing leaves the checkout unchanged.
+
+        The recipe is portable when a remote can serve its base; otherwise it
+        is frozen for this session only.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
+
     def terminals(
         self,
         *,
@@ -16856,6 +17155,102 @@ class Workspace(Type):
         _ctx = self._select("withClient", _args)
         return Workspace(_ctx)
 
+    def with_commit(
+        self,
+        message: str,
+        date: str,
+        *,
+        paths: list[str] | None = None,
+        author_name: str | None = None,
+        author_email: str | None = None,
+    ) -> Self:
+        """Create a Git commit from this workspace's uncommitted changes and
+        return a stable workspace with HEAD advanced.
+
+        A local workspace is synced automatically before committing; untracked
+        files require interactive approval. The host checkout is not modified.
+        Changes outside the selected paths remain uncommitted.
+
+        Missing author fields are resolved from Git config in the calling
+        client's working directory at commit time, then recorded explicitly
+        for reproducible commits. Unconfigured fields default to Dagger and
+        dagger@localhost.
+
+        Parameters
+        ----------
+        message:
+            Commit message.
+        date:
+            RFC3339 author and committer date. Required for reproducible
+            commits.
+        paths:
+            Literal paths relative to the workspace cwd. Empty commits
+            everything. Renames must include both paths.
+        author_name:
+            Author and committer name. Defaults to git config user.name in the
+            calling client's working directory, otherwise Dagger.
+        author_email:
+            Author and committer email. Defaults to git config user.email in
+            the calling client's working directory, otherwise
+            dagger@localhost.
+        """
+        _args = [
+            Arg("message", message),
+            Arg("date", date),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("authorName", author_name, None),
+            Arg("authorEmail", author_email, None),
+        ]
+        _ctx = self._select("withCommit", _args)
+        return Workspace(_ctx)
+
+    def with_commits_from(
+        self,
+        source: Self,
+        *,
+        commits: list[str] | None = None,
+        max_commits: int | None = 100,
+    ) -> Self:
+        """Integrate source commits into this workspace and return the result,
+        preserving this workspace's uncommitted changes and metadata.
+
+        Fast-forward when the selected commits include all new ancestors of
+        their tip; otherwise cherry-pick them oldest first. Already integrated
+        commits and patches already present are skipped. Any conflict fails
+        the operation. Source uncommitted changes are not transferred; merge
+        them explicitly if needed. Use commitsFrom to preview the integration.
+
+        A local receiver is synced automatically; untracked files require
+        interactive approval. The result retains the receiver's checkout
+        destination for export. The checkout is not modified until export.
+
+        Cherry-picks preserve the source author and author date, use the
+        calling client's Git config for committer identity, and reuse the
+        source committer date for reproducible hashes. Origin trailers track
+        cherry-picked commits. Divergent merge commits require manual
+        integration.
+
+        Parameters
+        ----------
+        source:
+            Git-backed source workspace. For a local checkout, call sync on
+            the source first and pass the returned workspace.
+        commits:
+            Full commit hashes to select, in any order. Empty selects all new
+            source commits. Explicit hashes must be within the source's latest
+            10000 commits.
+        max_commits:
+            Maximum commits in either differing history, from 1 to 1000.
+            Exceeding the limit fails; nothing is silently omitted.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("commits", [] if commits is None else commits, []),
+            Arg("maxCommits", max_commits, 100),
+        ]
+        _ctx = self._select("withCommitsFrom", _args)
+        return Workspace(_ctx)
+
     def with_config_env(
         self,
         name: str,
@@ -16876,6 +17271,38 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def with_config_environment(self, name: str) -> Self:
+        """Select the config environment carried by this workspace.
+
+        Parameters
+        ----------
+        name:
+            Environment name, or empty to clear the selection.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withConfigEnvironment", _args)
+        return Workspace(_ctx)
+
+    def with_config_paths(self, config_file: str, lock_file: str) -> Self:
+        """Select workspace-root-relative config and lockfile paths. Empty paths
+        clear the selection.
+
+        Parameters
+        ----------
+        config_file:
+            Config file path.
+        lock_file:
+            Lockfile path.
+        """
+        _args = [
+            Arg("configFile", config_file),
+            Arg("lockFile", lock_file),
+        ]
+        _ctx = self._select("withConfigPaths", _args)
         return Workspace(_ctx)
 
     def with_config_value(
@@ -17124,6 +17551,44 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_reset(
+        self,
+        commit: str,
+        *,
+        hard: bool | None = False,
+    ) -> Self:
+        """Move this workspace's Git HEAD to a commit and return the resulting
+        stable workspace.
+
+        A local workspace is synced automatically before resetting; untracked
+        files require interactive approval. The host checkout is not modified.
+        By default the difference between the previous working tree and the
+        target commit stays uncommitted, as with git reset --mixed, so history
+        can be reworked and reapplied with withCommit — e.g. to amend the
+        latest commit message, reset to its parent and commit again.
+
+        With hard, the working tree is reset to the commit and every
+        uncommitted change is discarded.
+
+        Commits orphaned by the reset are not preserved: the frozen repository
+        keeps reachable history only, so a reset cannot be undone by resetting
+        forward again.
+
+        Parameters
+        ----------
+        commit:
+            Full commit hash to reset HEAD to.
+        hard:
+            Discard uncommitted changes, resetting the working tree to the
+            commit.
+        """
+        _args = [
+            Arg("commit", commit),
+            Arg("hard", hard, False),
+        ]
+        _ctx = self._select("withReset", _args)
         return Workspace(_ctx)
 
     def with_sdk(
@@ -17408,6 +17873,105 @@ class Workspace(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class WorkspaceCommitPick(Type):
+    """A source commit classified against the receiving workspace."""
+
+    def commit(self) -> GitCommit:
+        """The commit in the source workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("commit", _args)
+        return GitCommit(_ctx)
+
+    async def conflict_paths(self) -> list[str]:
+        """Workspace-root-relative conflicting paths. Empty unless the status is
+        CONFLICT.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("conflictPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceCommitPick.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def reason(self) -> WorkspaceCommitPickReason:
+        """Why the commit conflicts, or NONE.
+
+        Returns
+        -------
+        WorkspaceCommitPickReason
+            Why a source commit cannot be pulled.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reason", _args)
+        return await _ctx.execute(WorkspaceCommitPickReason)
+
+    async def status(self) -> WorkspaceCommitPickStatus:
+        """Whether this commit can be applied.
+
+        Returns
+        -------
+        WorkspaceCommitPickStatus
+            Whether a source commit can be pulled.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("status", _args)
+        return await _ctx.execute(WorkspaceCommitPickStatus)
 
 
 @typecheck
@@ -18015,6 +18579,8 @@ __all__ = [
     "GitBundle",
     "GitBundleRef",
     "GitCommit",
+    "GitPushDisposition",
+    "GitPushResult",
     "GitRef",
     "GitRepository",
     "HTTPState",
@@ -18075,6 +18641,9 @@ __all__ = [
     "Void",
     "Volume",
     "Workspace",
+    "WorkspaceCommitPick",
+    "WorkspaceCommitPickReason",
+    "WorkspaceCommitPickStatus",
     "WorkspaceGit",
     "WorkspaceMigration",
     "WorkspaceMigrationStep",

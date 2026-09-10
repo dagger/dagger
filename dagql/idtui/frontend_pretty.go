@@ -1385,12 +1385,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	return fe.handleForm(ctx, func() *huh.Form { return form })
+}
+
+// Build on the UI goroutine when the form needs current terminal dimensions.
+func (fe *frontendPretty) handleForm(ctx context.Context, create func() *huh.Form) error {
 	if fe.reportOnly {
 		return ErrNonInteractive
 	}
 
-	req := fe.newPromptFormRequest(ctx, form, nil)
+	req := fe.newPromptFormRequest(ctx, nil, nil)
 	fe.dispatch(func() {
+		req.model = create()
 		fe.enqueuePromptForm(req)
 		fe.Update()
 	})
@@ -1516,6 +1522,7 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	model := req.model.
 		WithTheme(frontendFormTheme()).
 		WithKeyMap(frontendFormKeyMap()).
+		WithWidth(fe.window.Width).
 		WithShowHelp(false)
 	// Cap the form at half the screen so a tall field (e.g. the .resume session
 	// picker's long Select) stays scrollable instead of dominating the terminal.
@@ -1536,12 +1543,22 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		fe.completePromptForm(active, true)
 	})
 
-	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
-	// typed before the wrapper's first render and restores the captured owner
-	// when this form is dismissed.
+	// Keep queued permission forms above the draft and preserve scoped focus.
+	if fe.promptFrame != nil {
+		fe.tui.RemoveChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(active.wrap)
 	fe.tui.AddChild(active.spacer)
+	if fe.promptFrame != nil {
+		fe.tui.AddChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.AddChild(fe.statusLine)
+	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.activeForm = active
 	active.focus = fe.tui.PushFocus(active.wrap)
@@ -6728,6 +6745,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	old := fe.window
 	fe.window = msg
+	if fe.activeForm != nil {
+		// Huh fixes its width at 80 under TERM=dumb, including headless
+		// consoles. The pretty frontend owns layout and must override it.
+		fe.activeForm.model.WithWidth(msg.Width)
+	}
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
@@ -8603,17 +8625,18 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	return fe.HandleForm(ctx, NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(title).
-				Description(strings.TrimSpace((&Markdown{
-					Content: message,
-					Width:   fe.window.Width,
-				}).View())).
-				Value(dest),
-		),
-	))
+	return fe.handleForm(ctx, func() *huh.Form {
+		field := NewExplicitConfirm("Yes", "No", dest).Title(title)
+		if title == "" {
+			// A self-contained question needs no separate Markdown description.
+			field.Title(message).Inline(true)
+		} else if message == "" {
+			field.Inline(true)
+		} else {
+			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width}).View()))
+		}
+		return huh.NewForm(huh.NewGroup(field))
+	})
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
