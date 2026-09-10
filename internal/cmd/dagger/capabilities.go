@@ -286,6 +286,7 @@ func init() {
 		scriptCmd,
 		shellCmd,
 		mcpCmd,
+		workspaceExecCmd,
 		moduleInitCmd,
 		moduleRecommendCmd,
 		moduleClientAddCmd,
@@ -363,6 +364,7 @@ func init() {
 		moduleClientUpdateCmd,
 		setupCmd,
 		moduleRecommendCmd,
+		workspaceExecCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)
 	}
