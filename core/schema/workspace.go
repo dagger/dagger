@@ -1014,7 +1014,29 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
 	}
 
-	changesID, err := changes.ID()
+	activeChanges := changes
+	if gitignore {
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok {
+			sparseBase, err := s.sparseHostBaseWithGitignore(ctx, ws, ws.OverlayTouchedPaths(), true)
+			if err != nil {
+				return inst, err
+			}
+			sparseBaseID, err := sparseBase.ID()
+			if err != nil {
+				return inst, err
+			}
+			var gitignoreChanges dagql.ObjectResult[*core.Changeset]
+			if err := srv.Select(ctx, deltaRoot, &gitignoreChanges, dagql.Selector{
+				Field: "changes",
+				Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sparseBaseID)}},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace directory %q (overlay gitignore diff): %w", resolvedPath, err)
+			}
+			activeChanges = gitignoreChanges
+		}
+	}
+
+	changesID, err := activeChanges.ID()
 	if err != nil {
 		return inst, err
 	}
@@ -2731,6 +2753,15 @@ func (s *workspaceSchema) sparseHostBase(
 	ws *core.Workspace,
 	touched []string,
 ) (dagql.ObjectResult[*core.Directory], error) {
+	return s.sparseHostBaseWithGitignore(ctx, ws, touched, false)
+}
+
+func (s *workspaceSchema) sparseHostBaseWithGitignore(
+	ctx context.Context,
+	ws *core.Workspace,
+	touched []string,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -2753,13 +2784,20 @@ func (s *workspaceSchema) sparseHostBase(
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(absPath)},
+		{Name: "include", Value: includes},
+	}
+	if gitignore {
+		args = append(args,
+			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
+			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
+		)
+	}
 	var out dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, srv.Root(), &out,
 		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(absPath)},
-			{Name: "include", Value: includes},
-		}},
+		dagql.Selector{Field: "directory", Args: args},
 	); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("sparse host base: %w", err)
 	}
