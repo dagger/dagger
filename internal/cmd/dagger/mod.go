@@ -68,7 +68,8 @@ func loadSDKSearchRegistry() ([]registryModule, error) {
 }
 
 // searchModuleRegistry returns modules whose name or description match query
-// (case-insensitive substring), sorted by name. An empty query returns all.
+// (case-insensitive substring), sorted by the displayed source. An empty query
+// returns all.
 func searchModuleRegistry(mods []registryModule, query string) []registryModule {
 	out := make([]registryModule, 0, len(mods))
 	q := strings.ToLower(query)
@@ -84,10 +85,10 @@ func searchModuleRegistry(mods []registryModule, query string) []registryModule 
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Name != out[j].Name {
-			return out[i].Name < out[j].Name
+		if out[i].Repo != out[j].Repo {
+			return out[i].Repo < out[j].Repo
 		}
-		return out[i].Repo < out[j].Repo
+		return out[i].Name < out[j].Name
 	})
 	return out
 }
