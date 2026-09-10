@@ -1536,6 +1536,13 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		fe.completePromptForm(active, true)
 	})
 
+	// Capture the focus scope BEFORE reshuffling children: removing the
+	// promptFrame below removes the focused TextInput's ancestor, which
+	// clears Tuist focus as a safety measure — so a PushFocus after the
+	// reshuffle would record "nothing focused" and its Restore would drop
+	// focus instead of returning it to the prompt.
+	active.focus = fe.tui.PushFocus(active.wrap)
+
 	// Insert before keymapBar, then acquire scoped focus. Tuist preserves input
 	// typed before the wrapper's first render and restores the captured owner
 	// when this form is dismissed.
@@ -1544,7 +1551,6 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	fe.tui.AddChild(active.spacer)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.activeForm = active
-	active.focus = fe.tui.PushFocus(active.wrap)
 	fe.syncHardwareCursor()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
