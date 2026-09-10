@@ -305,6 +305,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger workspace config-file",
 		"dagger workspace cwd",
 		"dagger workspace exec",
+		"dagger workspace export",
 		"dagger workspace git",
 		"dagger workspace grep",
 		"dagger workspace ls",
@@ -618,6 +619,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"sdk":              sdkCmd,
 		"setup":            setupCmd,
 		"workspace root":   workspaceRootCmd,
+		"workspace export": workspaceExportCmd,
 		"workspace git":    workspaceGitCmd,
 		"workspace remote": workspaceRemoteCmd,
 	} {

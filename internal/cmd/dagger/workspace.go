@@ -265,6 +265,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
 	workspaceCmd.AddCommand(workspaceExecCmd)
+	workspaceCmd.AddCommand(workspaceExportCmd)
 	workspaceCmd.AddCommand(workspaceLsCmd)
 	workspaceCmd.AddCommand(workspaceCatCmd)
 	workspaceCmd.AddCommand(workspaceGitCmd)

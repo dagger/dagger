@@ -335,6 +335,7 @@ func init() {
 		workspaceCwdCmd,
 		workspaceLsCmd,
 		workspaceCatCmd,
+		workspaceExportCmd,
 		workspaceGitCmd,
 		workspaceGrepCmd,
 		workspaceConfigFileCmd,

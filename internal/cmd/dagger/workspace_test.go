@@ -100,6 +100,23 @@ func TestWorkspaceCatCommand(t *testing.T) {
 	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "cat", "README.md", "-W", "github.com/dagger/dagger"}))
 }
 
+func TestWorkspaceExportCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "export"})
+		require.NoError(t, err)
+		require.Same(t, workspaceExportCmd, cmd)
+	}
+
+	cmd := newWorkspaceExportCmd()
+	require.NoError(t, cmd.ValidateArgs(nil))
+	require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+	require.Error(t, cmd.ValidateArgs([]string{"src", "other"}))
+	require.Equal(t, "o", cmd.Flags().Lookup("output").Shorthand)
+	require.NotNil(t, cmd.Flags().Lookup("include"))
+	require.NotNil(t, cmd.Flags().Lookup("exclude"))
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "export", "src", "-o", "dest", "-W", "github.com/dagger/dagger"}))
+}
+
 func TestCosmeticCommandAliases(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"api", "call"})
 	require.NoError(t, err)
