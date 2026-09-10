@@ -237,7 +237,9 @@ type Check implements Node {
   """A unique identifier for this Check."""
   id: ID!
 
-  """Return the fully qualified name of the check"""
+  """
+  Return the command name of the check. Entrypoint targets omit the module prefix.
+  """
   name: String!
 
   """The original module in which the check has been defined"""
@@ -2809,7 +2811,9 @@ type Generator implements Node {
   """Whether changeset from the last generator run is empty or not"""
   isEmpty: Boolean!
 
-  """Return the fully qualified name of the generator"""
+  """
+  Return the command name of the generator. Entrypoint targets omit the module prefix.
+  """
   name: String!
 
   """
@@ -4884,7 +4888,9 @@ type Up implements Node {
   """A unique identifier for this Up."""
   id: ID!
 
-  """Return the fully qualified name of the service"""
+  """
+  Return the command name of the service. Entrypoint targets omit the module prefix.
+  """
   name: String!
 
   """The original module in which the service has been defined"""

@@ -815,6 +815,8 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 // TestSelectedWorkspaceEnvOverlay should cover the end-to-end interaction
 // between declared workspace selection and --env.
 func (WorkspaceSelectionSuite) TestSelectedWorkspaceEnvOverlay(ctx context.Context, t *testctx.T) {
+	t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 	t.Run("env overlay applies to the explicitly selected workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).

@@ -92,6 +92,7 @@ func init() {
 		installedCmd,
 		moduleUpdateCmd,
 		searchCmd,
+		moduleRecommendCmd,
 		settingsCmd,
 		moduleInitCmd,
 		moduleClientCmd,
@@ -109,8 +110,8 @@ func init() {
 
 	moduleAddFlags(mcpCmd, mcpCmd.PersistentFlags(), true)
 
-	moduleAddFlags(shellCmd, shellCmd.PersistentFlags(), true)
-	shellAddFlags(shellCmd)
+	moduleAddFlags(scriptCmd, scriptCmd.PersistentFlags(), true)
+	shellAddFlags(scriptCmd)
 	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
@@ -121,6 +122,7 @@ func init() {
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd)
+	setWorkspaceFlagPolicy(moduleRecommendCmd)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd)
 	setWorkspaceFlagPolicy(installAliasCmd)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd)
@@ -173,10 +175,7 @@ func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Long: `Install a module into the current workspace.
 
 If no workspace config is selected, this creates one at the workspace root first.
-Use --here to create the workspace config at the workspace cwd instead.
-
-With --env the module is recorded in that env's overlay (env.<name>.modules.*)
-and the env is created if missing.`,
+Use --here to create the workspace config at the workspace cwd instead.`,
 		Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
@@ -192,9 +191,7 @@ func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 		Use:     "uninstall [options] <module>",
 		Aliases: aliases,
 		Short:   "Uninstall a module from your workspace",
-		Long: `Uninstall a module from the current workspace, removing it from dagger.toml.
-
-With --env only the env's overlay entry is removed, never the base module.`,
+		Long:    `Uninstall a module from the current workspace, removing it from dagger.toml.`,
 		Example: "dagger module uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),

@@ -51,7 +51,7 @@ a parse/marshal round trip; only the fixed header is ever written.
 Each entry is an ordered tuple:
 
 ```json
-[namespace, operation, required-inputs, value, optional-options]
+[namespace, operation, inputs, value]
 ```
 
 Examples:
@@ -61,7 +61,7 @@ Examples:
 ["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:3d23f8"]
 ["","git-latest",["https://github.com/dagger/dagger.git"],"refs/tags/v1.2.3"]
 ["","git-sha",["https://github.com/dagger/dagger.git","refs/tags/v1.2.3"],"495a8c8ce85670e58560a9561626297a436225c0"]
-["","oci-latest",["registry.example/acme/image"],"2.0.0",[["protocol","http"]]]
+["","oci-latest",["registry.example/acme/image",["protocol","http"]],"2.0.0"]
 ```
 
 Rules:
@@ -71,8 +71,9 @@ Rules:
   requested it.
 - required inputs are positional values in the third-element array.
 - `value` is always a single operation-specific string.
-- optional inputs are encoded after `value` as one array of key-value pairs.
-- the optional array is omitted when every option has its default value.
+- optional inputs are encoded as key-value pairs after the required inputs in
+  the third-element array.
+- optional pairs are omitted when every option has its default value.
 - option pairs are unique and sorted by name.
 - dictionaries, maps, and named-argument objects are forbidden.
 - ordering is deterministic by `(namespace, operation, inputs-json)`
@@ -257,7 +258,7 @@ Notes:
 ### Implemented
 
 - [x] tuple lockfile substrate in `util/lockfile`
-- [x] v2 entries with grouped required inputs and trailing options
+- [x] v2 entries with required inputs and inline option pairs
 - [x] ordered positional tuple keys with operation-specific result values
 - [x] API-view gating for pinned-by-default locking
 - [x] local workspace lockfile read/write helpers

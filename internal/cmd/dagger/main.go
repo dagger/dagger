@@ -172,7 +172,7 @@ func init() {
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
 	upCmd.GroupID = "daily"
-	terminalCmd.GroupID = "daily"
+	shellCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
 
 	moduleCmd.GroupID = "workspace"
@@ -199,7 +199,7 @@ func init() {
 		traceCmd,
 		checksCmd,
 		upCmd,
-		terminalCmd,
+		shellCmd,
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
@@ -213,7 +213,7 @@ func init() {
 		callModCmd.Command(),
 		functionsAliasCmd,
 		sessionAliasCmd,
-		shellCmd,
+		scriptCmd,
 		mcpCmd,
 	)
 
@@ -307,7 +307,7 @@ var rootCmd = &cobra.Command{
 		})
 
 		// Keep subscription OAuth tokens fresh for as long as this command
-		// runs: `dagger shell`/`agent` sessions outlive an hour-long access
+		// runs: `dagger script`/`agent` sessions outlive an hour-long access
 		// token, and refreshing ahead of expiry keeps the round-trip off the
 		// critical path. No-op unless a subscription provider is configured;
 		// the on-demand refresher hook stays the fallback.
@@ -329,17 +329,15 @@ var rootCmd = &cobra.Command{
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	// Historically, the root command fell back to the hidden shell command:
-	// `dagger`, `dagger -c ...`, and `dagger file.dsh` all executed shell.
-	// Bare `dagger` now prints regular CLI usage, but explicit shell-style root
-	// invocations still take the old fallback below.
+	// Bare `dagger` prints regular CLI usage. Explicit script invocations
+	// (`dagger -c ...` and `dagger file.dsh`) use the hidden script command.
 	if len(args) == 0 && !hasChangedRootShellFlag(cmd) {
 		return cmd.Usage()
 	}
 	if len(args) > 0 && !isFile(args[0]) {
 		return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
 	}
-	cmd.SetArgs(append([]string{"shell"}, args...))
+	cmd.SetArgs(append([]string{"script"}, args...))
 	return cmd.Execute()
 }
 
@@ -437,6 +435,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
 	setFlagCapabilities(flags.Lookup("workspace"), maySelectWorkspace)
 	flags.StringVar(&workspaceEnv, "env", "", "Apply a named env overlay; writes target it, creating it if missing")
+	flags.Lookup("env").Hidden = true
 	setFlagAnyCapabilities(flags.Lookup("env"), mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when an output is returned")

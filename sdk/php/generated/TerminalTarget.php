@@ -29,7 +29,7 @@ class TerminalTarget extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * Return the fully qualified name of the terminal target
+     * Return the command name of the terminal target. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {

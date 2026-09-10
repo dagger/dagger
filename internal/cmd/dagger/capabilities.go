@@ -102,6 +102,10 @@ func addFlagCapabilities(flag *pflag.Flag, annotation string, capabilities ...co
 // FlagAvailableForCommand reports whether a flag's required capabilities are
 // available on cmd. It is exported for CLI reference generation.
 func FlagAvailableForCommand(cmd *cobra.Command, flag *pflag.Flag) bool {
+	// Environment selection is temporarily disabled across the CLI.
+	if flag.Name == "env" {
+		return false
+	}
 	for _, required := range flag.Annotations[flagCapabilitiesAnnotation] {
 		if !commandHasCapability(cmd, commandCapability(required)) {
 			return false
@@ -191,7 +195,7 @@ func validateFlagCapabilities(root *cobra.Command, args []string) error {
 	_ = parsed.Parse(commandArgs)
 
 	// Bare `dagger` prints usage, but shell-style root invocations run the
-	// shell command, so they get the shell command's capabilities.
+	// script command, so they get the script command's capabilities.
 	effective := rootShellFallbackCommand(cmd, parsed)
 
 	var unsupported []string
@@ -211,14 +215,14 @@ func validateFlagCapabilities(root *cobra.Command, args []string) error {
 }
 
 // rootShellFallbackCommand reports the command that a root invocation runs.
-// `dagger -c ...` and `dagger file.dsh` fall back to `dagger shell`, so their
-// flags are checked against the shell command instead of the root command.
+// `dagger -c ...` and `dagger file.dsh` fall back to `dagger script`, so their
+// flags are checked against the script command instead of the root command.
 func rootShellFallbackCommand(cmd *cobra.Command, parsed *pflag.FlagSet) *cobra.Command {
 	if cmd != rootCmd {
 		return cmd
 	}
 	if args := parsed.Args(); len(args) > 0 && isFile(args[0]) {
-		return shellCmd
+		return scriptCmd
 	}
 	// Only root-local flags signal a shell-style invocation. Global flags are
 	// persistent, and they do not select the shell.
@@ -230,7 +234,7 @@ func rootShellFallbackCommand(cmd *cobra.Command, parsed *pflag.FlagSet) *cobra.
 		}
 	})
 	if shellStyle {
-		return shellCmd
+		return scriptCmd
 	}
 	return cmd
 }
@@ -259,7 +263,7 @@ func init() {
 	// calls no engine, selects no workspace, reads no workspace configuration,
 	// and renders no pipeline, so its usage message stays free of those flags.
 	// Shell-style invocations (`dagger -c ...`, `dagger FILE`) do all of that,
-	// but they run `dagger shell`, which declares the capabilities;
+	// but they run `dagger script`, which declares the capabilities;
 	// rootShellFallbackCommand routes the flag check there.
 	setLocalCommandCapabilities(workspaceCmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig)
 
@@ -279,10 +283,11 @@ func init() {
 		listenCmd,
 		apiSessionCmd,
 		sessionAliasCmd,
+		scriptCmd,
 		shellCmd,
-		terminalCmd,
 		mcpCmd,
 		moduleInitCmd,
+		moduleRecommendCmd,
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
@@ -293,6 +298,7 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		moduleDepInstallCmd,
+		moduleRecommendCmd,
 		installAliasCmd,
 		moduleDepUninstallCmd,
 		uninstallAliasCmd,
@@ -352,6 +358,7 @@ func init() {
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
 		setupCmd,
+		moduleRecommendCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)
 	}

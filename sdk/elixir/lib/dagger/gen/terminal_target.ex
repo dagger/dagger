@@ -38,7 +38,7 @@ defmodule Dagger.TerminalTarget do
   end
 
   @doc """
-  Return the fully qualified name of the terminal target
+  Return the command name of the terminal target. Entrypoint targets omit the module prefix.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = terminal_target) do

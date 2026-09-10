@@ -1,6 +1,6 @@
 Expected stderr:
 
 GENERATORS  ✘ 1 failed
-✘ viztest:generate-fail X.Xs ERROR
+✘ generate-fail X.Xs ERROR
   ┃ boom
   ! exit code: 3

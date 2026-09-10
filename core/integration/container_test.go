@@ -6042,7 +6042,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
-		_, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerc.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6058,7 +6058,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
 		imageName := "foobar:" + identity.NewID()
-		_, err := alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := alt.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -6076,7 +6076,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
+			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -6107,7 +6107,7 @@ func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) 
 		imageName := "foobar:" + identity.NewID()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
+			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -6138,7 +6138,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
+		out, err := dockerc.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6151,7 +6151,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := alt.WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
+		out, err := alt.WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
 	})
@@ -6166,7 +6166,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
-			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).
+			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/foo | stdout`}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/foo\n", out)
@@ -6205,7 +6205,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 
 		out, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
 				InsecureRootCapabilities: true,
 			}).Stdout(ctx)
 		require.NoError(t, err)
@@ -6229,7 +6229,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 
 	imageName := "foobar:" + identity.NewID()
 	out, err := alt.WithExec([]string{
-		"dagger", "shell", "-c",
+		"dagger", "script", "-c",
 		`container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`,
 	}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
@@ -6241,7 +6241,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	require.Contains(t, strings.ToLower(out), "no such object")
 
 	out, err = alt.WithExec([]string{
-		"dagger", "shell", "-c",
+		"dagger", "script", "-c",
 		`host | container-image ` + imageName + ` | with-exec echo,foo | stdout`,
 	}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)

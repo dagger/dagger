@@ -17,6 +17,7 @@ func (s *workspaceSchema) syntheticSDKGenerators(
 	ctx context.Context,
 	staged *stagedWorkspaceConfig,
 	include []string,
+	entrypoints map[string]bool,
 ) ([]*core.Generator, error) {
 	names := make([]string, 0, len(staged.Config.SDKs))
 	for name := range staged.Config.SDKs {
@@ -33,7 +34,7 @@ func (s *workspaceSchema) syntheticSDKGenerators(
 
 		providerName := selected.entry.Module
 		leafName := "generate"
-		root := &core.ModTreeNode{Parent: &core.ModTreeNode{}, Name: providerName}
+		root := &core.ModTreeNode{Parent: &core.ModTreeNode{}, Name: providerName, WorkspaceEntrypoint: entrypoints[providerName]}
 		node := &core.ModTreeNode{
 			Parent:      root,
 			Name:        leafName,
@@ -43,14 +44,14 @@ func (s *workspaceSchema) syntheticSDKGenerators(
 		generator := &core.Generator{
 			Node: node,
 			Synthetic: &core.SyntheticGeneratorSpec{
-				Name:        providerName + ":" + leafName,
+				Name:        node.CommandName(),
 				Path:        []string{providerName, leafName},
 				Description: node.Description,
 				Provider:    sdkName,
 				Kind:        syntheticSDKScopesGenerator,
 			},
 		}
-		filtered, err := filterGeneratorsByInclude(ctx, []*core.Generator{generator}, include, false)
+		filtered, err := filterGeneratorsByInclude(ctx, []*core.Generator{generator}, include)
 		if err != nil {
 			return nil, err
 		}

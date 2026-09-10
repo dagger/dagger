@@ -74,7 +74,7 @@ defmodule Dagger.Generator do
   end
 
   @doc """
-  Return the fully qualified name of the generator
+  Return the command name of the generator. Entrypoint targets omit the module prefix.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = generator) do

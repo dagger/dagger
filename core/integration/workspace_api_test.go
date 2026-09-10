@@ -701,13 +701,13 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		initGitRepo(ctx, t, workdir)
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		out, err := hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | file .refs/deps/vendored.txt | contents`)
 		require.NoError(t, err)
 		require.Contains(t, string(out), "vendored")
 
 		// The .refs parent exists only through the mount, never on the host.
-		out, err = hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		out, err = hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | directory .refs | entries`)
 		require.NoError(t, err)
 		require.Contains(t, string(out), "deps")
@@ -720,7 +720,7 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		initGitRepo(ctx, t, workdir)
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+		_, err := hostDaggerExec(ctx, t, workdir, "script", "-c",
 			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | with-new-file staged.txt "staged" | export`)
 		require.NoError(t, err)
 

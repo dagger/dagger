@@ -68,7 +68,7 @@ type LookupEntry struct {
 }
 
 // LookupOption is an optional input to a lock operation. Options are encoded
-// as ordered key-value pairs after the entry value.
+// as ordered key-value pairs after the required positional inputs.
 type LookupOption struct {
 	Name  string
 	Value any
@@ -84,7 +84,7 @@ func LookupInputs(required []any, options ...LookupOption) []any {
 	for _, option := range options {
 		pairs = append(pairs, []any{option.Name, option.Value})
 	}
-	return append(inputs, pairs)
+	return append(inputs, pairs...)
 }
 
 // ParseLookupInputs separates required positional inputs from optional named
@@ -95,25 +95,30 @@ func ParseLookupInputs(inputs []any) ([]any, map[string]any, error) {
 	if len(inputs) == 0 {
 		return required, options, nil
 	}
-	pairs, ok := inputs[len(inputs)-1].([]any)
-	if !ok || len(pairs) == 0 {
-		return required, options, nil
-	}
-	for _, rawPair := range pairs {
-		pair, ok := rawPair.([]any)
+	optionStart := len(inputs)
+	for optionStart > 0 {
+		pair, ok := inputs[optionStart-1].([]any)
 		if !ok || len(pair) != 2 {
-			return inputs, nil, nil
+			break
 		}
 		name, ok := pair[0].(string)
 		if !ok || name == "" {
-			return inputs, nil, nil
+			break
 		}
+		optionStart--
+	}
+	for _, rawPair := range inputs[optionStart:] {
+		pair, ok := rawPair.([]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid lock option")
+		}
+		name := pair[0].(string)
 		if _, exists := options[name]; exists {
 			return nil, nil, fmt.Errorf("duplicate lock option %q", name)
 		}
 		options[name] = pair[1]
 	}
-	return inputs[:len(inputs)-1], options, nil
+	return inputs[:optionStart], options, nil
 }
 
 // Lock is the workspace lockfile wrapper.

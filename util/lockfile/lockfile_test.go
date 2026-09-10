@@ -67,14 +67,12 @@ func TestMarshalDeterministicOrdering(t *testing.T) {
 	}, "\n"), string(output))
 }
 
-func TestOptionsFollowValueAndAreCanonical(t *testing.T) {
+func TestOptionsAreInlineWithInputsAndCanonical(t *testing.T) {
 	lock := New()
 	inputs := []any{
 		"registry.example/acme/image",
-		[]any{
-			[]any{"protocol", "https"},
-			[]any{"insecureSkipTLSVerify", true},
-		},
+		[]any{"protocol", "https"},
+		[]any{"insecureSkipTLSVerify", true},
 	}
 	require.NoError(t, lock.Set("", "oci-latest", inputs, "2.0.0"))
 
@@ -83,7 +81,7 @@ func TestOptionsFollowValueAndAreCanonical(t *testing.T) {
 	require.Equal(t, strings.Join([]string{
 		HeaderComment,
 		`[["version","2"]]`,
-		`["","oci-latest",["registry.example/acme/image"],"2.0.0",[["insecureSkipTLSVerify",true],["protocol","https"]]]`,
+		`["","oci-latest",["registry.example/acme/image",["insecureSkipTLSVerify",true],["protocol","https"]],"2.0.0"]`,
 	}, "\n"), string(output))
 
 	reparsed, err := Parse(output)
@@ -91,6 +89,31 @@ func TestOptionsFollowValueAndAreCanonical(t *testing.T) {
 	value, ok := reparsed.Get("", "oci-latest", inputs)
 	require.True(t, ok)
 	require.Equal(t, "2.0.0", value)
+}
+
+func TestInputFormatWithAndWithoutOptions(t *testing.T) {
+	lock := New()
+	require.NoError(t, lock.Set(
+		"",
+		"git-latest",
+		[]any{"github.com/dagger/sdk-helpers", []any{"version", "v1"}},
+		"refs/tags/v1.2.3",
+	))
+	require.NoError(t, lock.Set(
+		"",
+		"git-latest",
+		[]any{"github.com/dagger/sdk-helpers"},
+		"refs/tags/v1.3.0",
+	))
+
+	output, err := lock.Marshal()
+	require.NoError(t, err)
+	require.Contains(t, string(output),
+		`["","git-latest",["github.com/dagger/sdk-helpers",["version","v1"]],"refs/tags/v1.2.3"]`,
+	)
+	require.Contains(t, string(output),
+		`["","git-latest",["github.com/dagger/sdk-helpers"],"refs/tags/v1.3.0"]`,
+	)
 }
 
 func TestParseDuplicateTupleOverwrites(t *testing.T) {
@@ -145,6 +168,14 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		require.ErrorContains(t, err, "invalid tuple length")
 	})
 
+	t.Run("options after output", func(t *testing.T) {
+		_, err := Parse([]byte(strings.Join([]string{
+			`[["version","2"]]`,
+			`["","oci-sha",["alpine:latest"],"sha256:abc",[["protocol","https"]]]`,
+		}, "\n")))
+		require.ErrorContains(t, err, "invalid tuple length 5: expected 4")
+	})
+
 	t.Run("invalid json", func(t *testing.T) {
 		_, err := Parse([]byte(strings.Join([]string{
 			`[["version","2"]]`,
@@ -163,28 +194,12 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 		require.ErrorContains(t, err, "unordered object/map/dict in lock inputs")
 	})
 
-	t.Run("empty options are omitted", func(t *testing.T) {
-		lock, err := Parse([]byte(strings.Join([]string{
-			`[["version","2"]]`,
-			`["","oci-sha",["alpine:latest"],"sha256:abc",[]]`,
-		}, "\n")))
-		require.NoError(t, err)
-
-		data, err := lock.Marshal()
-		require.NoError(t, err)
-		require.Equal(t, strings.Join([]string{
-			HeaderComment,
-			`[["version","2"]]`,
-			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
-		}, "\n"), string(data))
-	})
-
-	t.Run("malformed options", func(t *testing.T) {
+	t.Run("duplicate options", func(t *testing.T) {
 		_, err := Parse([]byte(strings.Join([]string{
 			`[["version","2"]]`,
-			`["","oci-sha",["alpine:latest"],"sha256:abc",[["protocol"]]]`,
+			`["","oci-sha",["alpine:latest",["protocol","http"],["protocol","https"]],"sha256:abc"]`,
 		}, "\n")))
-		require.ErrorContains(t, err, "option must be a key-value pair")
+		require.ErrorContains(t, err, `duplicate option "protocol"`)
 	})
 
 	t.Run("non-string value", func(t *testing.T) {

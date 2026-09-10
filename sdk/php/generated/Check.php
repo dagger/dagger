@@ -61,7 +61,7 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the fully qualified name of the check
+     * Return the command name of the check. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {

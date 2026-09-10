@@ -1,6 +1,6 @@
 package core
 
-// These tests cover `dagger shell`, the command interpreter for composing
+// These tests cover `dagger script`, the command interpreter for composing
 // Dagger API calls. They verify module lookup, script mode, state variables,
 // arguments, exports, command errors, and shell builtins.
 //
@@ -37,7 +37,7 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		execArgs := []string{"dagger", "shell"}
+		execArgs := []string{"dagger", "script"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
@@ -50,7 +50,7 @@ func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "-M"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "script", "-M"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -93,7 +93,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 	tmpdir := t.TempDir()
 	copyTestdataFixture(ctx, t, tmpdir, "modules", "go", "shell-secret-uri")
 
-	t.Run("dagger shell default cache key", func(ctx context.Context, t *testctx.T) {
+	t.Run("dagger script default cache key", func(ctx context.Context, t *testctx.T) {
 		c1 := connect(ctx, t)
 		c2 := connect(ctx, t)
 
@@ -123,7 +123,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 		}
 	})
 
-	t.Run("dagger shell custom cache key", func(ctx context.Context, t *testctx.T) {
+	t.Run("dagger script custom cache key", func(ctx context.Context, t *testctx.T) {
 		c1 := connect(ctx, t)
 		c2 := connect(ctx, t)
 
@@ -173,7 +173,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			WithNewFile("script.sh", ".echo foobar").
-			WithExec([]string{"dagger", "shell", "script.sh"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "script.sh"}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
@@ -182,7 +182,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("shell script shebang", func(ctx context.Context, t *testctx.T) {
-		script := fmt.Sprintf("#!%s shell\n\n.echo foobar", testCLIBinPath)
+		script := fmt.Sprintf("#!%s script\n\n.echo foobar", testCLIBinPath)
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
@@ -460,7 +460,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 
 func (ShellSuite) TestNoLoadModuleByName(ctx context.Context, t *testctx.T) {
 	// Regression test for https://github.com/dagger/dagger/issues/13728: with
-	// `dagger shell -M`, modules must be callable by their configured name, as
+	// `dagger script -M`, modules must be callable by their configured name, as
 	// in v0.2x, not only by their source path.
 
 	t.Run("workspace module by name", func(ctx context.Context, t *testctx.T) {

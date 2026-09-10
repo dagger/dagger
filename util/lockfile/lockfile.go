@@ -152,15 +152,11 @@ func (l *Lockfile) Marshal() ([]byte, error) {
 	lines = append(lines, header)
 
 	for _, entry := range l.sortedEntries() {
-		requiredInputs, options := splitOptions(entry.inputs)
 		tuple := []any{
 			entry.namespace,
 			entry.operation,
-			requiredInputs,
+			entry.inputs,
 			entry.value,
-		}
-		if len(options) > 0 {
-			tuple = append(tuple, options)
 		}
 		line, err := json.Marshal(tuple)
 		if err != nil {
@@ -266,9 +262,9 @@ func parseEntry(line []byte, version string) (lockEntry, error) {
 	if err := decodeJSON(line, &tuple); err != nil {
 		return lockEntry{}, fmt.Errorf("invalid tuple JSON: %w", err)
 	}
-	if len(tuple) < 4 || len(tuple) > 5 {
+	if len(tuple) != 4 {
 		return lockEntry{}, fmt.Errorf(
-			"invalid tuple length %d: expected 4 or 5 for lockfile version %s",
+			"invalid tuple length %d: expected 4 for lockfile version %s",
 			len(tuple),
 			version,
 		)
@@ -287,18 +283,6 @@ func parseEntry(line []byte, version string) (lockEntry, error) {
 	var inputs []any
 	if err := decodeJSON(tuple[2], &inputs); err != nil {
 		return lockEntry{}, fmt.Errorf("invalid inputs: %w", err)
-	}
-	if len(tuple) == 5 {
-		var options []any
-		if err := decodeJSON(tuple[4], &options); err != nil {
-			return lockEntry{}, fmt.Errorf("invalid options: %w", err)
-		}
-		if err := validateOptions(options); err != nil {
-			return lockEntry{}, fmt.Errorf("invalid options: %w", err)
-		}
-		if len(options) > 0 {
-			inputs = append(inputs, options)
-		}
 	}
 	canonicalInputs, inputsJSON, err := canonicalizeInputs(inputs)
 	if err != nil {
@@ -337,10 +321,13 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 		return nil, "", err
 	}
 	if required, options := splitOptions(canonical); len(options) > 0 {
+		if err := validateOptions(options); err != nil {
+			return nil, "", err
+		}
 		sort.Slice(options, func(i, j int) bool {
 			return options[i].([]any)[0].(string) < options[j].([]any)[0].(string)
 		})
-		required = append(required, options)
+		required = append(required, options...)
 		canonical = required
 	}
 	data, err = json.Marshal(canonical)
@@ -351,18 +338,20 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 }
 
 func splitOptions(inputs []any) ([]any, []any) {
-	if len(inputs) == 0 || !isOptions(inputs[len(inputs)-1]) {
-		return inputs, nil
+	optionStart := len(inputs)
+	for optionStart > 0 && isOption(inputs[optionStart-1]) {
+		optionStart--
 	}
-	return inputs[:len(inputs)-1], inputs[len(inputs)-1].([]any)
+	return inputs[:optionStart], inputs[optionStart:]
 }
 
-func isOptions(value any) bool {
-	options, ok := value.([]any)
-	if !ok || len(options) == 0 {
+func isOption(value any) bool {
+	pair, ok := value.([]any)
+	if !ok || len(pair) != 2 {
 		return false
 	}
-	return validateOptions(options) == nil
+	name, ok := pair[0].(string)
+	return ok && name != ""
 }
 
 func validateOptions(options []any) error {

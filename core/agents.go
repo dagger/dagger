@@ -137,9 +137,9 @@ func (a *Agent) Path() []string {
 	return a.Node.Path()
 }
 
-// Name is the fully qualified module:fn path of the agent.
+// Name is the command name of the agent.
 func (a *Agent) Name() string {
-	return a.Node.PathString()
+	return a.Node.CommandName()
 }
 
 func (a *Agent) Description() string {

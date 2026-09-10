@@ -38,7 +38,7 @@ defmodule Dagger.Up do
   end
 
   @doc """
-  Return the fully qualified name of the service
+  Return the command name of the service. Entrypoint targets omit the module prefix.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = up) do

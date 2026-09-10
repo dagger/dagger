@@ -74,5 +74,10 @@ func GetDriver(ctx context.Context, name string) (Driver, error) {
 			return driver, nil
 		}
 	}
-	return nil, fmt.Errorf("driver for scheme %q was not available", name)
+	return nil, &runtimeUnavailableError{
+		err: fmt.Errorf("no container runtime is available for engine scheme %q", name),
+		message: "Dagger needs a container runtime to start the local engine.\n\n" +
+			"Install a compatible container runtime and make sure its command is in PATH.\n" +
+			"To choose a local or remote engine, run `dagger help engine`.",
+	}
 }

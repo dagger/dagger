@@ -3659,6 +3659,10 @@ func (s *workspaceSchema) checks(
 	if err != nil {
 		return nil, err
 	}
+	entrypoints, err := workspaceEntrypointNames(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
 
 	ignoreChecks := workspaceConfigSkipPatternsFromConfig(cfg, func(e workspace.ModuleEntry) []string {
 		return e.Check.Skip
@@ -3670,7 +3674,7 @@ func (s *workspaceSchema) checks(
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
-		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
 		filtered, err := filterNodesByInclude(
 			ctx,
 			checkGroup.Checks,
@@ -3688,6 +3692,7 @@ func (s *workspaceSchema) checks(
 				ctx,
 				filtered,
 				skip,
+				false,
 				func(check *core.Check) *core.ModTreeNode { return check.Node },
 				func(check *core.Check) string { return check.Name() },
 				"check",
@@ -3702,6 +3707,7 @@ func (s *workspaceSchema) checks(
 				ctx,
 				filtered,
 				exclude,
+				true,
 				func(check *core.Check) *core.ModTreeNode { return check.Node },
 				func(check *core.Check) string { return check.Name() },
 				"check",
@@ -3783,6 +3789,10 @@ func (s *workspaceSchema) generators(
 	if err != nil {
 		return nil, err
 	}
+	entrypoints, err := workspaceEntrypointNames(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
 
 	ignoreGenerators, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
 		return e.Generate.Skip
@@ -3845,14 +3855,12 @@ func (s *workspaceSchema) generators(
 	moduleGenerators = selectVisibleGeneratorModules(moduleGenerators)
 
 	var allGenerators []*core.Generator
-	allowSingleModuleCompat := len(moduleGenerators) == 1
 	for _, entry := range moduleGenerators {
-		reparentWorkspaceTreeRoot(entry.group.Node, entry.name)
+		reparentWorkspaceTreeRoot(entry.group.Node, entry.name, entrypoints[entry.name])
 		filtered, err := filterGeneratorsByInclude(
 			ctx,
 			entry.group.Generators,
 			include,
-			allowSingleModuleCompat,
 		)
 		if err != nil {
 			return nil, err
@@ -3868,6 +3876,7 @@ func (s *workspaceSchema) generators(
 				ctx,
 				filtered,
 				exclude,
+				true,
 				func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
 				func(generator *core.Generator) string { return generator.Name() },
 				"generator",
@@ -3880,7 +3889,7 @@ func (s *workspaceSchema) generators(
 	}
 
 	if staged != nil {
-		syntheticGenerators, err := s.syntheticSDKGenerators(ctx, staged, include)
+		syntheticGenerators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
 		if err != nil {
 			return nil, err
 		}
@@ -3922,6 +3931,10 @@ func (s *workspaceSchema) services(
 	if err != nil {
 		return nil, err
 	}
+	entrypoints, err := workspaceEntrypointNames(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
 
 	var allUps []*core.Up
 	for _, mod := range mods {
@@ -3929,7 +3942,7 @@ func (s *workspaceSchema) services(
 		if err != nil {
 			return nil, fmt.Errorf("services from module %q: %w", mod.Self().Name(), err)
 		}
-		reparentWorkspaceTreeRoot(upGroup.Node, mod.Self().Name())
+		reparentWorkspaceTreeRoot(upGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
 		filtered, err := filterNodesByInclude(
 			ctx,
 			upGroup.Ups,
@@ -3946,6 +3959,7 @@ func (s *workspaceSchema) services(
 				ctx,
 				filtered,
 				exclude,
+				true,
 				func(up *core.Up) *core.ModTreeNode { return up.Node },
 				func(up *core.Up) string { return up.Name() },
 				"service",
@@ -3969,7 +3983,7 @@ func (s *workspaceSchema) services(
 			return nil, fmt.Errorf("workspace port key %q: %w", hostStr, err)
 		}
 		for _, up := range allUps {
-			if up.Name() != pm.BackendService {
+			if up.Name() != pm.BackendService && up.Node.PathString() != pm.BackendService {
 				continue
 			}
 			up.PortMappings = append(up.PortMappings, core.PortForward{
@@ -4081,6 +4095,10 @@ func collectWorkspaceModuleTargets[T any](
 	if err != nil {
 		return nil, err
 	}
+	entrypoints, err := workspaceEntrypointNames(ctx, parentResult.Self())
+	if err != nil {
+		return nil, err
+	}
 
 	var all []T
 	for _, mod := range mods {
@@ -4088,7 +4106,7 @@ func collectWorkspaceModuleTargets[T any](
 		if err != nil {
 			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
 		}
-		reparentWorkspaceTreeRoot(root, mod.Self().Name())
+		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
 		filtered, err := filterNodesByInclude(
 			ctx,
 			targets,
@@ -4142,7 +4160,6 @@ func filterGeneratorsByInclude(
 	ctx context.Context,
 	generators []*core.Generator,
 	include []string,
-	allowSingleModuleCompat bool,
 ) ([]*core.Generator, error) {
 	if len(include) == 0 {
 		return generators, nil
@@ -4153,12 +4170,6 @@ func filterGeneratorsByInclude(
 		match, err := matchWorkspaceInclude(ctx, generator.Node, include)
 		if err != nil {
 			return nil, fmt.Errorf("generator %q include match: %w", generator.Name(), err)
-		}
-		if !match && allowSingleModuleCompat {
-			match, err = matchSingleModuleInclude(ctx, generator.Node, include)
-			if err != nil {
-				return nil, fmt.Errorf("generator %q compat include match: %w", generator.Name(), err)
-			}
 		}
 		if match {
 			filtered = append(filtered, generator)
@@ -4299,13 +4310,13 @@ func workspaceConfigSkipPatternsFromConfig(
 	return result
 }
 
-// filterNodesByExclude removes items whose nodes match any of the exclude
-// patterns. Matching uses the same single-module compat fallback as include
-// filtering (stripping the leading module name segment).
+// filterNodesByExclude uses command names and qualified paths. Module-local
+// patterns are also accepted for skips configured on an individual module.
 func filterNodesByExclude[T any](
 	ctx context.Context,
 	items []T,
 	exclude []string,
+	moduleLocal bool,
 	nodeOf func(T) *core.ModTreeNode,
 	nameOf func(T) string,
 	itemKind string,
@@ -4320,8 +4331,7 @@ func filterNodesByExclude[T any](
 		if err != nil {
 			return nil, fmt.Errorf("%s %q exclude match: %w", itemKind, nameOf(item), err)
 		}
-		if !match {
-			// Also try without module prefix for single-module compat.
+		if !match && moduleLocal {
 			match, err = matchSingleModuleInclude(ctx, nodeOf(item), exclude)
 			if err != nil {
 				return nil, fmt.Errorf("%s %q exclude compat match: %w", itemKind, nameOf(item), err)
@@ -4334,12 +4344,13 @@ func filterNodesByExclude[T any](
 	return filtered, nil
 }
 
-func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string) {
+func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, entrypoint bool) {
 	if root == nil {
 		return
 	}
 	root.Parent = &core.ModTreeNode{}
 	root.Name = modName
+	root.WorkspaceEntrypoint = entrypoint
 }
 
 func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include []string) (bool, error) {
@@ -4349,7 +4360,11 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if node == nil {
 		return false, nil
 	}
-	return node.Match(ctx, include)
+	match, err := node.Match(ctx, include)
+	if err != nil || match {
+		return match, err
+	}
+	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
 }
 
 func filterNodesByInclude[T any](
@@ -4369,15 +4384,6 @@ func filterNodesByInclude[T any](
 		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
 		if err != nil {
 			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
-		}
-		// Preserve old single-module semantics: if the pattern doesn't match
-		// the full workspace path (module:check), retry against just the
-		// check path without the leading module name segment.
-		if !match {
-			match, err = matchSingleModuleInclude(ctx, nodeOf(item), include)
-			if err != nil {
-				return nil, fmt.Errorf("%s %q compat include match: %w", itemKind, nameOf(item), err)
-			}
 		}
 		if match {
 			filtered = append(filtered, item)
