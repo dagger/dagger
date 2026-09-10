@@ -14,35 +14,37 @@ A Git event, such as a push or pull request, starts Cloud Checks. They run your 
 
 Your project must be a GitHub repository, and its Git `origin` remote must point to that repository.
 
-## Sign in to Dagger Cloud
-
-Sign in or create an account:
-
-```shell
-dagger cloud login
-```
-
-Complete the authentication in the browser. Create or select a Dagger Cloud organization when requested.
-
-## Connect the repository
-
-Connect the GitHub account or organization that owns the repository:
-
-```shell
-dagger cloud integration create github --open
-```
-
-In the browser, select that account or organization, then grant Dagger access to the repository.
-
 ## Enable Cloud Checks
 
 From your project root:
 
 ```shell
-dagger cloud check on
+dagger cloud checks on
 ```
 
-Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled.
+Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled. If they are already enabled, it makes no change.
+
+In an interactive terminal, the command offers to complete missing prerequisites:
+
+- Sign in or create a Dagger Cloud account and organization.
+- Connect the GitHub account or organization that owns the repository. In the browser, grant Dagger access to the repository.
+
+Each prerequisite must finish before the command enables Cloud Checks. You can decline a prompt and complete it later.
+
+In non-interactive mode, the command stops and prints the required command followed by the command to retry. It does not open a browser or wait for input.
+
+You can also complete the prerequisites separately:
+
+```shell
+dagger cloud signup
+dagger cloud integration create github --open
+```
+
+Complete the browser steps, then retry:
+
+```shell
+dagger cloud checks on
+```
 
 ## Trigger Cloud Checks
 
@@ -79,4 +81,4 @@ You did not write a CI workflow file. You do not maintain a build server. The Ch
 ## Next steps
 
 - [Run selected Checks](../using/checking.mdx)
-- [Manage Cloud Checks from the CLI](../reference/cli/index.mdx#dagger-cloud-check)
+- [Manage Cloud Checks from the CLI](../reference/cli/index.mdx#dagger-cloud-checks)

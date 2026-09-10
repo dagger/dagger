@@ -270,6 +270,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger core",
 		"dagger functions",
 		"dagger generate",
+		"dagger init",
 		"dagger install",
 		"dagger listen",
 		"dagger mcp",
@@ -281,6 +282,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger module init",
 		"dagger module install",
 		"dagger module list",
+		"dagger module migrate",
 		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
@@ -312,6 +314,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger workspace git",
 		"dagger workspace grep",
 		"dagger workspace ls",
+		"dagger workspace migrate",
 		"dagger workspace remotes",
 		"dagger workspace root",
 		"dagger workspace update",
@@ -354,7 +357,7 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 
 func TestMaySelectWorkspaceCommands(t *testing.T) {
 	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
-		"dagger cloud check",
+		"dagger cloud checks",
 		"dagger cloud rerun",
 		"dagger workspace activity",
 		"dagger workspace remote",
@@ -373,11 +376,11 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 	visit(rootCmd)
 
 	for name, cmd := range map[string]*cobra.Command{
-		"activity":           activityCmd,
-		"cloud check list":   cloudCheckListCmd,
-		"cloud check status": cloudCheckStatusCmd,
-		"cloud rerun":        cloudRerunCmd,
-		"workspace remote":   workspaceRemoteCmd,
+		"activity":            activityCmd,
+		"cloud checks list":   cloudCheckListCmd,
+		"cloud checks status": cloudCheckStatusCmd,
+		"cloud rerun":         cloudRerunCmd,
+		"workspace remote":    workspaceRemoteCmd,
 	} {
 		require.True(t, commandHasCapability(cmd, maySelectWorkspace), name)
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
@@ -430,13 +433,16 @@ func TestMayProduceOutputCommands(t *testing.T) {
 		"dagger call",
 		"dagger core",
 		"dagger generate",
+		"dagger init",
 		"dagger module client add",
 		"dagger module client rm",
 		"dagger module client update",
 		"dagger module init",
+		"dagger module migrate",
 		"dagger module recommend",
 		"dagger setup",
 		"dagger workspace exec",
+		"dagger workspace migrate",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayProduceOutput))
 
@@ -563,6 +569,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger core",
 		"dagger functions",
 		"dagger generate",
+		"dagger init",
 		"dagger install",
 		"dagger listen",
 		"dagger mcp",
@@ -574,6 +581,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger module init",
 		"dagger module install",
 		"dagger module list",
+		"dagger module migrate",
 		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
@@ -596,17 +604,20 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger workspace",
 		"dagger workspace config",
 		"dagger workspace exec",
+		"dagger workspace migrate",
 		"dagger workspace update",
 	}
 	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
 
 	writers := []string{
+		"dagger init",
 		"dagger install",
 		"dagger module client add",
 		"dagger module client rm",
 		"dagger module client update",
 		"dagger module init",
 		"dagger module install",
+		"dagger module migrate",
 		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
@@ -617,6 +628,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger uninstall",
 		"dagger workspace",
 		"dagger workspace config",
+		"dagger workspace migrate",
 	}
 	require.ElementsMatch(t, writers, commandsDeclaringCapability(rootCmd, mayWriteWorkspaceConfig))
 

@@ -4,8 +4,10 @@ import "github.com/vektah/gqlparser/v2/ast"
 
 // WorkspaceMigration describes the explicit migration plan for a workspace.
 type WorkspaceMigration struct {
-	Changes *Changeset                `field:"true" doc:"Filesystem changes for the full migration plan."`
-	Steps   []*WorkspaceMigrationStep `field:"true" doc:"Logical migration steps, each identified by a stable code."`
+	Changes          *Changeset                `field:"true" doc:"Filesystem changes for the full migration plan."`
+	Steps            []*WorkspaceMigrationStep `field:"true" doc:"Logical migration steps, each identified by a stable code."`
+	ModuleCandidates []string                  `field:"true" doc:"Unselected legacy module directories relative to the workspace root. Candidates can include fixtures."`
+	ConfigFile       string                    `field:"true" doc:"Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists."`
 }
 
 // WorkspaceMigrationStep describes one logical migration step.

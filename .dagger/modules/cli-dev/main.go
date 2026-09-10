@@ -34,7 +34,7 @@ func New(
 	//   "!install.sh",
 	//   "!install.ps1",
 	//   "!**/*.sql",
-	//   "!core/prompts/*.md"
+	//   "!core/prompts/*.md", "!core/sdk/sdkmeta/sdks.json"
 	// ]
 	source *dagger.Directory,
 

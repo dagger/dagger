@@ -14,6 +14,11 @@ import (
 
 func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn func(*testing.T, error, *bytes.Buffer, *bytes.Buffer)) {
 	t.Helper()
+	daggerCloudWithConfig(t, env, args, nil, testCommandFn)
+}
+
+func daggerCloudWithConfig(t *testing.T, env []string, args []string, configFiles map[string]string, testCommandFn func(*testing.T, error, *bytes.Buffer, *bytes.Buffer)) {
+	t.Helper()
 
 	daggerBin := "dagger" // $PATH
 	if bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"); bin != "" {
@@ -22,6 +27,11 @@ func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn
 	cmd := exec.Command(daggerBin, args...)
 
 	home := t.TempDir()
+	for name, data := range configFiles {
+		file := filepath.Join(home, ".config", "dagger", name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+		require.NoError(t, os.WriteFile(file, []byte(data), 0o600))
+	}
 	cmd.Env = env
 	cmd.Env = append(cmd.Env,
 		"PATH="+os.Getenv("PATH"),

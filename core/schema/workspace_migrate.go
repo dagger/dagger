@@ -48,10 +48,11 @@ func (plans workspaceMigrationPlanBundle) empty() bool {
 		len(plans.ModuleConfigConversions) == 0
 }
 
-func (s *workspaceSchema) migrate(
+// migrateLegacy retains the existing legacy workspace conversion as one phase
+// of the complete engine-owned migration plan.
+func (s *workspaceSchema) migrateLegacy(
 	ctx context.Context,
 	ws *core.Workspace,
-	args struct{},
 ) (migration *core.WorkspaceMigration, rerr error) {
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace migration is local-only")
@@ -63,9 +64,7 @@ func (s *workspaceSchema) migrate(
 	}
 
 	if ws.ConfigFile != "" {
-		// FIXME(workspace-migrate): Existing workspace config is treated as an
-		// explicit opt-in, so migration does not scan for legacy child
-		// dagger.json files below it yet.
+		// Native workspaces need only the module phase, which the caller plans.
 		return &core.WorkspaceMigration{
 			Changes: emptyChanges,
 			Steps:   nil,
@@ -158,7 +157,10 @@ func (s *workspaceSchema) migrate(
 	if err != nil {
 		return nil, err
 	}
-	gitignoreCleanups, gitignoreWarnings := s.workspaceMigrationGitignoreCleanups(ctx, ws, compatWorkspaces)
+	gitignoreCleanups, err := s.workspaceMigrationGitignoreCleanups(ctx, ws, compatWorkspaces)
+	if err != nil {
+		return nil, err
+	}
 	planBundle := workspaceMigrationPlanBundle{
 		WorkspacePlans:          plans,
 		ParentPlans:             parentPlans,
@@ -166,7 +168,6 @@ func (s *workspaceSchema) migrate(
 		GitignoreCleanups:       gitignoreCleanups,
 	}
 	warnings := workspaceMigrationPlanBundleWarnings(planBundle)
-	warnings = append(warnings, gitignoreWarnings...)
 	warnings = append(warnings, discoveryWarnings...)
 
 	if planBundle.empty() {
@@ -198,18 +199,21 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 	ctx context.Context,
 	ws *core.Workspace,
 	compatWorkspaces []*workspace.CompatWorkspace,
-) ([]workspaceMigrationGitignoreCleanup, []string) {
+) ([]workspaceMigrationGitignoreCleanup, error) {
 	ctx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("could not prepare legacy .gitignore cleanup: %v", err)}
+		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("could not prepare legacy .gitignore cleanup: %v", err)}
+		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
+	}
+	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	if err != nil {
+		return nil, err
 	}
 
 	cleanups := make([]workspaceMigrationGitignoreCleanup, 0, len(compatWorkspaces))
-	warnings := make([]string, 0)
 	for _, compatWorkspace := range compatWorkspaces {
 		if compatWorkspace == nil || compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil {
 			continue
@@ -219,34 +223,53 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 		if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
 			continue
 		}
-		cleanup, err := s.workspaceMigrationGitignoreCleanup(ctx, srv, ws, compatWorkspace)
+		cleanup, err := s.workspaceMigrationGitignoreCleanup(ctx, srv, ws, rootDir, compatWorkspace)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"could not clean legacy .gitignore for module %q: %v",
+			return nil, fmt.Errorf(
+				"clean legacy .gitignore for module %q: %w",
 				compatWorkspace.Config.Name,
 				err,
-			))
-			continue
+			)
 		}
 		if cleanup != nil {
 			cleanups = append(cleanups, *cleanup)
 		}
 	}
-	return cleanups, warnings
+	return cleanups, nil
 }
 
 func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 	ctx context.Context,
 	srv *dagql.Server,
 	ws *core.Workspace,
+	rootDir dagql.ObjectResult[*core.Directory],
 	compatWorkspace *workspace.CompatWorkspace,
 ) (*workspaceMigrationGitignoreCleanup, error) {
+	projectRoot, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+	sourcePath := compatWorkspace.Config.Source
+	if sourcePath != "" && !filepath.IsLocal(sourcePath) {
+		return nil, fmt.Errorf("module source path %q escapes its project", sourcePath)
+	}
+	cleanupPath := path.Join(filepath.ToSlash(projectRoot), filepath.ToSlash(sourcePath), ".gitignore")
+	// Check the file before loading the legacy SDK or running its generator.
+	exists, err := workspaceMigrationPathExists(ctx, rootDir, cleanupPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat legacy .gitignore %s: %w", cleanupPath, err)
+	}
+	if !exists {
+		return nil, nil
+	}
 	var source dagql.ObjectResult[*core.ModuleSource]
-	if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{
-		Field: "moduleSource",
+	// Load the same snapshot used for planning. A host path would discard
+	// workspace overlays and could select a different module or SDK. Keep the
+	// full root as context so relative dependencies use this snapshot as well.
+	if err := srv.Select(ctx, rootDir, &source, dagql.Selector{
+		Field: "asModuleSource",
 		Args: []dagql.NamedInput{
-			{Name: "refString", Value: dagql.String(compatWorkspace.ProjectRoot)},
-			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(projectRoot))},
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("load legacy module source: %w", err)
@@ -281,17 +304,8 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 		return nil, nil
 	}
 
-	projectRoot, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
-	if err != nil {
-		return nil, err
-	}
-	sourcePath := compatWorkspace.Config.Source
-	if sourcePath != "" && !filepath.IsLocal(sourcePath) {
-		return nil, fmt.Errorf("module source path %q escapes its project", sourcePath)
-	}
-
 	return &workspaceMigrationGitignoreCleanup{
-		Path:    filepath.Join(projectRoot, sourcePath, ".gitignore"),
+		Path:    cleanupPath,
 		Entries: entries,
 	}, nil
 }

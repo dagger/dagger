@@ -16718,11 +16718,50 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// WorkspaceMigrateOpts contains options for Workspace.Migrate
+type WorkspaceMigrateOpts struct {
+	// Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	Modules []string
+}
+
 // Plan the explicit migration needed for the current workspace.
 //
+// Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+//
 // The returned plan has an empty changeset and no steps when no migration is needed.
-func (r *Workspace) Migrate() *WorkspaceMigration {
+func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
 	q := r.query.Select("migrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+	}
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// WorkspaceMigrateModuleOpts contains options for Workspace.MigrateModule
+type WorkspaceMigrateModuleOpts struct {
+	// Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	//
+	// Default: "."
+	Path string
+}
+
+// Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+//
+// Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+func (r *Workspace) MigrateModule(opts ...WorkspaceMigrateModuleOpts) *WorkspaceMigration {
+	q := r.query.Select("migrateModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+	}
 
 	return &WorkspaceMigration{
 		query: q,
@@ -17150,6 +17189,17 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		}
 	}
 	q = q.Arg("sdk", sdk)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a native configuration, without changing an existing configuration.
+//
+// Fail if legacy configuration needs workspace migration.
+func (r *Workspace) WithInitialized() *Workspace {
+	q := r.query.Select("withInitialized")
 
 	return &Workspace{
 		query: q,
@@ -17617,7 +17667,8 @@ func (r *WorkspaceGit) AsNode() Node {
 type WorkspaceMigration struct {
 	query *querybuilder.Selection
 
-	id *ID
+	configFile *string
+	id         *ID
 }
 
 func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
@@ -17633,6 +17684,19 @@ func (r *WorkspaceMigration) Changes() *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+func (r *WorkspaceMigration) ConfigFile(ctx context.Context) (string, error) {
+	if r.configFile != nil {
+		return *r.configFile, nil
+	}
+	q := r.query.Select("configFile")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this WorkspaceMigration.
@@ -17673,6 +17737,16 @@ func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+func (r *WorkspaceMigration) ModuleCandidates(ctx context.Context) ([]string, error) {
+	q := r.query.Select("moduleCandidates")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Logical migration steps, each identified by a stable code.

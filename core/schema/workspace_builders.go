@@ -35,7 +35,7 @@ func (s *workspaceSchema) loadWorkspaceConfigForOverlay(
 		return nil, fmt.Errorf("workspace is required")
 	}
 	if ws.CompatWorkspace() != nil {
-		return nil, fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
+		return nil, fmt.Errorf("workspace is using legacy dagger.json config; run dagger workspace migrate first")
 	}
 
 	configDir := workspaceConfigDirectoryForWrite(ws, here)

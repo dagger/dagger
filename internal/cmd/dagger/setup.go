@@ -12,12 +12,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/charmbracelet/huh"
-	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/client"
-	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mattn/go-isatty"
@@ -25,190 +19,43 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 )
 
-// setupCmd is the idempotent "ensure environment works" doctor verb.
-// Walks through optional steps, each with a confirmation prompt:
-// (1) Cloud login, then EITHER (2) workspace migration when the workspace
-// is legacy, OR (3) recommended modules when it is already current.
-var setupCmd = &cobra.Command{
-	Use:   "setup",
-	Short: "Ensure Dagger is properly set up and operational in the workspace",
-	Long: `Ensure Dagger is properly set up and operational in the workspace.
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize a workspace and show the next commands",
+	Long: `Initialize a workspace and show the next commands.
 
-Starts with a Cloud login prompt, then takes one of two paths:
+Use an existing dagger.toml when present. If a legacy dagger.json has
+workspace settings, stop and direct the user to dagger workspace migrate.
+Otherwise, create an empty dagger.toml. Existing module files remain unchanged.
 
-  • Workspace migrate    — if a legacy dagger.json project is detected,
-                           convert it to the current workspace format.
-  • Recommended modules  — otherwise, suggest modules to install based
-                           on files present in the workspace.
-
-Migration and recommendations never run together: after applying a
-migration, run setup again to see recommendations for the migrated
-workspace. Declining the migration falls through to recommendations.
-
-Run from a module subdirectory (a dagger.json below the repository
-root), the migrate step converts just that module to dagger-module.toml:
-no workspace is created and module recommendations are skipped. If that
-config lists toolchains, they are installed into a dagger.toml at the
-repository root — never a nested one. A subdirectory config with a
-blueprint is left as legacy with a warning.
-
-Toolchains of a module with an SDK are also added as dependencies in the
-migrated dagger-module.toml, since 0.21 exposed toolchains to module code
-the same way as dependencies. Remove any the module code does not use.
-
-Idempotent: safe to run anytime. No-ops what's already in good shape.
-Each step can be skipped at the prompt. With --auto-apply, workspace
-changes and module recommendations are applied without prompting. Cloud
-login is skipped in non-interactive mode; run dagger login separately.`,
+Run this command in a local Git repository.
+Run this command again to inspect the current initialization state.`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		showFinalProgressKey: "true",
 	},
-	RunE: runSetup,
+	RunE: runInit,
 }
 
-func runSetup(cmd *cobra.Command, _ []string) error {
-	if workspaceEnv != "" {
-		return fmt.Errorf("setup does not support --env; it configures the base workspace")
-	}
+const deprecatedSetupHint = `This command is deprecated.
+To initialize a new Dagger configuration: 'dagger init'.
+To migrate an existing configuration: 'dagger ws migrate'.
+`
 
-	// All steps run under ONE Frontend (one live TUI) so their prompts can be
-	// huh forms the TUI renders — a raw stdin prompt would be drawn over by the
-	// progress display. withSetupSessions provides connect() so the install can
-	// run in a FRESH engine session: the per-client workspace is detected once
-	// and cached for a session's lifetime, so install must not reuse the
-	// migrate session or it would still see the legacy dagger.json.
-	var (
-		setupUI       *setupUI
-		setupLoginErr error
-	)
-	return withSetupSessions(cmd.Context(), func(ctx context.Context) {
-		setupUI = newSetupUI(Frontend)
-		setupLoginErr = setupStepLogin(ctx, cmd, cloudauth.GetCloudAuth, setupUI)
-		if setupLoginErr != nil {
-			if !errors.Is(setupLoginErr, idtui.ErrInterrupted) {
-				setupUI.setLoginFailed(setupLoginErr)
-			}
-			if setupUI == nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", setupLoginErr)
-			}
-			// Login failures shouldn't block migration/recommend.
-		}
-	}, func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) (rerr error) {
-		if errors.Is(setupLoginErr, idtui.ErrInterrupted) {
-			return setupLoginErr
-		}
-		defer func() {
-			if rerr != nil {
-				setupUI.fail(rerr)
-			}
-		}()
-		ctx, setupSpan := Tracer().Start(ctx, "setup", telemetry.Passthrough())
-		defer telemetry.EndWithCause(setupSpan, &rerr)
-		setupStdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-		defer setupStdio.Close()
-		setupID := dagui.SpanID{SpanID: setupSpan.SpanContext().SpanID()}
-		Frontend.SetPrimary(setupID)
-		setupUI.setRoot(setupID)
-
-		// Session 1: migrate (apply form) or recommend (compute + install
-		// confirm form). The migrate write lands here; the session is closed
-		// before the install session opens so the workspace lock is released.
-		var (
-			recs            []recommendation
-			install         bool
-			migrated        bool
-			moduleOnly      bool
-			migratedConfigs []string
-		)
-		if err := func() error {
-			sess, closeSess, err := connect(ctx)
-			if err != nil {
-				return err
-			}
-			defer closeSess()
-			dag := sess.Dagger()
-			migrated, moduleOnly, migratedConfigs, err = setupStepMigrate(ctx, dag, setupUI)
-			if err != nil {
-				return fmt.Errorf("step 2 (migrate): %w", err)
-			}
-			if migrated {
-				// Migration and recommendations are alternative paths: piling
-				// recommended modules onto a freshly migrated workspace adds
-				// confusion, not value. Recommendations appear on the next
-				// `dagger setup`. A declined migration falls through — the
-				// user opted to keep the workspace as-is, so recommendations
-				// still run.
-				return nil
-			}
-			if moduleOnly {
-				// Setup ran from a module subdirectory: the migration converts
-				// just that module and creates no workspace. Recommendations
-				// are workspace-scoped and would create one, so they never run
-				// here — even when the migration was declined.
-				return nil
-			}
-			recs, install, err = planRecommend(ctx, dag, setupUI)
-			if err != nil {
-				return fmt.Errorf("step 3 (recommend): %w", err)
-			}
-			return nil
-		}(); err != nil {
-			return err
-		}
-
-		// Session 2: a fresh session re-detects the workspace migrated in
-		// session 1 as native. Resolve any SDK that migration recorded by short
-		// name to its real ref (sdks.json), then install accepted recommendations.
-		// A module-only migration writes no dagger.toml, so there is nothing to
-		// resolve or install and no second session to open.
-		needInstall := install && len(recs) > 0
-		if (migrated && !moduleOnly) || needInstall {
-			sess, closeSess, err := connect(ctx)
-			if err != nil {
-				return err
-			}
-			defer closeSess()
-			dag := sess.Dagger()
-			// Only a migration writes SDK installs by short name, so scope the
-			// resolution to that case — never rewrite an already-native config.
-			if migrated {
-				if err := setupResolveMigratedSDKs(ctx, dag, migratedConfigs); err != nil {
-					return fmt.Errorf("step 2 (resolve SDKs): %w", err)
-				}
-			}
-			if needInstall {
-				if err := installRecommended(ctx, dag, recs, setupUI); err != nil {
-					return fmt.Errorf("step 3 (install): %w", err)
-				}
-			}
-		}
-
-		if migrated {
-			if moduleOnly {
-				setupHumanMessage(setupUI, ctx, "module migrated", "Migrated the module in place; no workspace config was created.")
-			} else {
-				setupHumanMessage(setupUI, ctx, "migration next steps", "Run `dagger setup` again to see recommended modules for the migrated workspace.")
-			}
-		}
-		if setupUI != nil {
-			setupUI.complete()
-		} else {
-			fmt.Fprintln(setupStdio.Stdout, "Setup complete.")
-		}
-		return nil
-	})
-}
-
-func setupHumanMessage(ui *setupUI, ctx context.Context, name, markdown string) {
-	if ui != nil {
-		ui.setMigrationMessage(markdown)
-		return
-	}
-	setupMessage(ctx, name, markdown)
+// Keep the old command as guidance only. It must not initialize, migrate,
+// connect to an engine, or run optional setup operations.
+var setupCmd = &cobra.Command{
+	Use:    "setup",
+	Short:  "Show replacement commands for deprecated setup",
+	Long:   deprecatedSetupHint,
+	Hidden: true,
+	Args:   cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		_, err := fmt.Fprint(cmd.OutOrStdout(), deprecatedSetupHint)
+		return err
+	},
 }
 
 // setupMessage emits human-facing Markdown as a revealed message span. The
@@ -224,158 +71,7 @@ func setupMessage(ctx context.Context, name, markdown string) {
 	telemetry.EndWithCause(span, nil)
 }
 
-// --- Step 1: Cloud login ---
-
-func setupStepLogin(ctx context.Context, cmd *cobra.Command, getCloudAuth func(context.Context) (*cloudauth.Cloud, error), ui *setupUI) error {
-	out := cmd.OutOrStdout()
-
-	if ui == nil {
-		fmt.Fprintln(out, "Step 1: Cloud login")
-	} else {
-		ui.setLoginPending("Checking Cloud account...")
-	}
-
-	if auth, err := getCloudAuth(ctx); err == nil && auth != nil {
-		if ui == nil {
-			fmt.Fprintln(out, "  Already logged in.")
-		} else {
-			ui.setLoginComplete("Already logged in.")
-		}
-		return nil
-	}
-	if !autoApply {
-		disabled, err := setupCloudLoginPromptDisabled()
-		if err != nil {
-			return err
-		}
-		if disabled {
-			if ui == nil {
-				fmt.Fprintln(out, "  "+setupLoginSkippedHint)
-			} else {
-				ui.setLoginSkipped(setupLoginSkippedHint)
-			}
-			return nil
-		}
-	}
-
-	if ui != nil {
-		ui.setLoginPending("Waiting for login choice...")
-	}
-	choice, err := confirmSetupLogin(ctx, cmd, ui)
-	if err != nil {
-		return err
-	}
-	if choice == setupLoginNever {
-		if err := disableSetupCloudLoginPrompt(); err != nil {
-			return err
-		}
-	}
-	if choice != setupLogin {
-		message := "Skipped."
-		if choice == setupLoginNever {
-			message = setupLoginSkippedHint
-		}
-		if ui == nil {
-			fmt.Fprintln(out, "  "+message)
-		} else {
-			ui.setLoginSkipped(message)
-		}
-		return nil
-	}
-
-	loginOut := cmd.ErrOrStderr()
-	if ui != nil && ui.live {
-		ui.setLoginPending("Waiting for authentication...")
-		loginOut = setupLoginWriter{ui: ui}
-	}
-	if err := cloudauth.Login(ctx, loginOut); err != nil {
-		return err
-	}
-	if ui == nil {
-		fmt.Fprintln(out, "  Logged in.")
-	} else {
-		ui.setLoginComplete("Logged in.")
-	}
-	return nil
-}
-
-type setupLoginChoice string
-
-const (
-	setupLogin       setupLoginChoice = "login"
-	setupLoginNotNow setupLoginChoice = "not-now"
-	setupLoginNever  setupLoginChoice = "never"
-
-	setupLoginSkippedHint = "Skipped. (dagger login to log in)"
-)
-
-func confirmSetupLogin(ctx context.Context, cmd *cobra.Command, ui *setupUI) (setupLoginChoice, error) {
-	return confirmSetupLoginInteractive(ctx, cmd, ui, isatty.IsTerminal(os.Stdin.Fd()))
-}
-
-func confirmSetupLoginInteractive(ctx context.Context, cmd *cobra.Command, ui *setupUI, interactive bool) (setupLoginChoice, error) {
-	if !interactive {
-		if ui != nil {
-			ui.setLoginSkipped("Skipped in non-interactive mode; run `dagger login` to log in.")
-		}
-		return setupLoginNotNow, nil
-	}
-	if ui == nil || !ui.live {
-		if confirm(cmd, "  Log in to Dagger Cloud?") {
-			return setupLogin, nil
-		}
-		return setupLoginNotNow, nil
-	}
-	if autoApply {
-		return setupLogin, nil
-	}
-	choice := setupLogin
-	form := huh.NewForm(huh.NewGroup(
-		idtui.NewExplicitChoice(&choice,
-			huh.NewOption("Log in", setupLogin),
-			huh.NewOption("Not now", setupLoginNotNow),
-			huh.NewOption("Never ask again", setupLoginNever),
-		).
-			Title("Log in to Dagger Cloud?").
-			TitleLink("https://dagger.io/cloud").
-			Description("For observability, compute, and persistence (ish).\nMore info: https://dagger.io/cloud"),
-	))
-	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return "", err
-	}
-	return choice, nil
-}
-
-func setupCloudLoginPromptDisabled() (bool, error) {
-	data, err := os.ReadFile(llmconfig.ConfigFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("read Dagger config: %w", err)
-	}
-	tree, err := toml.LoadBytes(data)
-	if err != nil {
-		return false, fmt.Errorf("parse Dagger config: %w", err)
-	}
-	return tree.GetPath([]string{"setup", "cloud_login"}) == string(setupLoginNever), nil
-}
-
-func disableSetupCloudLoginPrompt() error {
-	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
-		tree, err := toml.LoadBytes(existing)
-		if err != nil {
-			return nil, fmt.Errorf("parse Dagger config: %w", err)
-		}
-		tree.SetPath([]string{"setup", "cloud_login"}, string(setupLoginNever))
-		out, err := tree.ToTomlString()
-		if err != nil {
-			return nil, fmt.Errorf("serialize Dagger config: %w", err)
-		}
-		return []byte(out), nil
-	})
-}
-
+// Explicit login still clears the preference saved by the old setup prompt.
 func clearSetupCloudLoginPromptPreference() error {
 	if _, err := os.Stat(llmconfig.ConfigFile); os.IsNotExist(err) {
 		return nil
@@ -404,124 +100,6 @@ func clearSetupCloudLoginPromptPreference() error {
 	})
 }
 
-type setupLoginWriter struct{ ui *setupUI }
-
-func (w setupLoginWriter) Write(p []byte) (int, error) {
-	w.ui.appendLoginDetail(string(p))
-	return len(p), nil
-}
-
-// --- Step 2: Migrate ---
-
-// emptyWorkspaceSetupHint is printed when `dagger setup` has nothing to migrate
-// and no workspace config exists yet: the greenfield case, where the useful
-// thing is to show how to get started rather than write an empty dagger.toml.
-const emptyWorkspaceSetupHint = `No workspace loaded here yet — nothing to migrate.
-
-To get started:
-
-- Install a published module as a dependency: dagger module install <module>
-- Find an SDK module: dagger module search <sdk>
-- Install the SDK module: dagger module install <sdk-module>
-- Create a new module: dagger module init <sdk>
-`
-
-// setupStepMigrate reports whether a migration was applied (which routes setup
-// down the migration path instead of recommendations, and means a fresh
-// session should resolve SDKs migration may have recorded by short name) and
-// the workspace-root-relative paths of the dagger.toml configs it wrote — the
-// exact set the SDK resolution pass must scope itself to.
-//
-// moduleOnly reports a migration that writes no dagger.toml at all: setup ran
-// from a module subdirectory, so only the module config converts (dagger.json
-// -> dagger-module.toml) and no workspace is created. It is reported whether
-// or not the migration was applied, so the caller can skip workspace-scoped
-// recommendations either way.
-func setupStepMigrate(ctx context.Context, dag *dagger.Client, ui *setupUI) (applied bool, moduleOnly bool, configs []string, rerr error) {
-	messageCtx := ctx
-	spanOpts := []trace.SpanStartOption{telemetry.Reveal()}
-	if ui != nil {
-		spanOpts = append(spanOpts, telemetry.Encapsulate())
-	}
-	ctx, span := Tracer().Start(ctx, "Workspace migration", spanOpts...)
-	ui.setMigration(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-	defer telemetry.EndWithCause(span, &rerr)
-
-	ws := dag.CurrentWorkspace()
-	migration := ws.Migrate()
-	changes := migration.Changes()
-
-	changesID, err := changes.ID(ctx)
-	if err != nil {
-		return false, false, nil, fmt.Errorf("compute migration: %w", err)
-	}
-	changes = dagger.Ref[*dagger.Changeset](dag, changesID)
-
-	isEmpty, err := changes.IsEmpty(ctx)
-	if err != nil {
-		return false, false, nil, fmt.Errorf("check migration: %w", err)
-	}
-	if isEmpty {
-		// An empty changeset can still carry warning-only steps: a legacy
-		// config migration skipped by design (e.g. a subdirectory dagger.json
-		// with a blueprint is left as legacy). Surface those instead of "No
-		// migration needed", and skip workspace-scoped recommendations — the
-		// selected legacy config sits in a module subdirectory.
-		skipWarnings, err := migrationStepWarnings(ctx, migration)
-		if err != nil {
-			return false, false, nil, fmt.Errorf("check migration warnings: %w", err)
-		}
-		if len(skipWarnings) > 0 {
-			for _, warning := range skipWarnings {
-				setupHumanMessage(ui, messageCtx, "migration skipped", "Skipped: "+warning)
-			}
-			return false, true, nil, nil
-		}
-
-		configFile, err := ws.ConfigFile(ctx)
-		if err != nil {
-			return false, false, nil, fmt.Errorf("check workspace config: %w", err)
-		}
-		if configFile == "" {
-			// Nothing to migrate and no workspace config yet — don't seed an empty
-			// dagger.toml; guide the user to get started instead.
-			if !silent {
-				if ui != nil {
-					ui.setMigrationMessage("Nothing to migrate.")
-					ui.setMigrationFinalMessage(emptyWorkspaceSetupHint)
-				} else {
-					setupHumanMessage(nil, messageCtx, "workspace not loaded", emptyWorkspaceSetupHint)
-				}
-			}
-			return false, false, nil, nil
-		}
-		setupHumanMessage(ui, messageCtx, "no migration needed", "No migration needed.")
-		return false, false, nil, nil
-	}
-
-	configs, err = migratedConfigPaths(ctx, changes)
-	if err != nil {
-		return false, false, nil, err
-	}
-	moduleOnly = len(configs) == 0
-
-	// handleWorkspaceResponse owns the apply prompt via a huh form when
-	// autoApply is false — we don't run our own confirm() here, otherwise
-	// the user would face two prompts back-to-back for the same action.
-	// Migration can move config above the current directory. Use the workspace
-	// root so changes() includes it.
-	applied, err = handleWorkspaceResponse(ctx, dag, ws, ws.WithChanges(changes).WithWorkdir("."), autoApply)
-	if err != nil {
-		return false, false, nil, err
-	}
-	if !applied {
-		// The user declined: the legacy config is left in place, so there is
-		// nothing to resolve and the migrated config files were never written.
-		return false, moduleOnly, nil, nil
-	}
-	return true, moduleOnly, configs, nil
-}
-
 // migrationStepWarnings collects the warnings attached to the migration's
 // steps. With an empty changeset these are the only signal a legacy config was
 // deliberately skipped rather than absent.
@@ -539,143 +117,6 @@ func migrationStepWarnings(ctx context.Context, migration *dagger.WorkspaceMigra
 		warnings = append(warnings, stepWarnings...)
 	}
 	return warnings, nil
-}
-
-// migratedConfigPaths returns the workspace-root-relative paths of the
-// dagger.toml files the migration changeset creates or rewrites. Scoping SDK
-// resolution to exactly these files avoids touching pre-existing workspace
-// configs the migration deliberately left alone (it treats them as ownership
-// boundaries).
-func migratedConfigPaths(ctx context.Context, changes *dagger.Changeset) ([]string, error) {
-	added, err := changes.AddedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	modified, err := changes.ModifiedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var configs []string
-	for _, p := range append(added, modified...) {
-		if filepath.Base(p) == workspace.ConfigFileName {
-			configs = append(configs, p)
-		}
-	}
-	return configs, nil
-}
-
-// setupResolveMigratedSDKs rewrites SDK installs that migration recorded by bare
-// short name (e.g. `php`) to their real ref and canonical name from sdks.json,
-// so the SDK is loadable for authoring (`dagger module init <sdk>`) instead of
-// being treated as a local path. Runs in a post-migration session where the
-// workspace is native; a no-op when nothing was recorded by short name (and
-// when the user declined migration, leaving the legacy config in place).
-func setupResolveMigratedSDKs(ctx context.Context, dag *dagger.Client, migratedConfigs []string) (rerr error) {
-	ctx, span := Tracer().Start(ctx, "Resolve migrated SDKs", telemetry.Reveal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-	out := stdio.Stdout
-
-	ws := dag.CurrentWorkspace()
-	raw, err := ws.ConfigRead(ctx)
-	if err != nil {
-		return err
-	}
-	cfg, err := workspace.ParseConfig([]byte(raw))
-	if err != nil {
-		return err
-	}
-
-	fixes := planMigratedSDKFixups(cfg)
-	if len(fixes) > 0 {
-		if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
-			return err
-		}
-		updatedConfig, err := workspace.UpdateConfigBytes([]byte(raw), cfg)
-		if err != nil {
-			return err
-		}
-		configFile, err := ws.ConfigFile(ctx)
-		if err != nil {
-			return err
-		}
-		if err := ws.WithNewFile(configFile, string(updatedConfig)).Export(ctx); err != nil {
-			return err
-		}
-		for _, fix := range fixes {
-			fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
-		}
-	}
-
-	// Migration also writes SDK installs into workspace configs other than the
-	// top-level one it runs in — nested workspace plans and synthesized parents.
-	// The workspace API above only reaches the current workspace, so resolve the
-	// short-name installs those carry directly on disk. The changeset is already
-	// applied in this session, and the paths are scoped to exactly the configs
-	// migration wrote, so pre-existing workspaces are never touched.
-	root, err := currentWorkspaceExportPath(ctx, ws)
-	if err != nil {
-		return err
-	}
-	for _, rel := range migratedConfigs {
-		if filepath.Clean(rel) == workspace.ConfigFileName {
-			// The top-level config is handled through the workspace API above.
-			continue
-		}
-		if err := resolveMigratedSDKsInConfigFile(out, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	cfg, err := workspace.ParseConfig(data)
-	if err != nil {
-		return err
-	}
-	fixes := planMigratedSDKFixups(cfg)
-	if len(fixes) == 0 {
-		return nil
-	}
-	if err := applyMigratedSDKFixups(cfg, fixes); err != nil {
-		return err
-	}
-	updated, err := workspace.UpdateConfigBytes(data, cfg)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
-		return err
-	}
-	for _, fix := range fixes {
-		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
-	}
-	return nil
-}
-
-func applyMigratedSDKFixups(cfg *workspace.Config, fixes []migratedSDKFixup) error {
-	for _, fix := range fixes {
-		entry := cfg.Modules[fix.ModuleName]
-		entry.Source = fix.Ref
-		cfg.Modules[fix.ModuleName] = entry
-
-		if fix.CurrentSDKName == fix.SDKName {
-			continue
-		}
-		if _, exists := cfg.SDKs[fix.SDKName]; exists {
-			return fmt.Errorf("cannot rename SDK %q to %q: name already exists", fix.CurrentSDKName, fix.SDKName)
-		}
-		sdk := cfg.SDKs[fix.CurrentSDKName]
-		delete(cfg.SDKs, fix.CurrentSDKName)
-		cfg.SDKs[fix.SDKName] = sdk
-	}
-	return nil
 }
 
 // currentWorkspaceExportPath derives the local workspace root from its file

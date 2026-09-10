@@ -80,14 +80,9 @@ func workspaceMigrationLeavesModuleLegacy(compatWorkspace *workspace.CompatWorks
 }
 
 func legacyModuleConfigAsCurrent(cfg *modules.ModuleConfig) ([]byte, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("module config is required")
+	plan, err := workspace.PlanModuleMigration(cfg, false)
+	if err != nil {
+		return nil, err
 	}
-	cloned := *cfg
-	if cloned.Source == "." {
-		cloned.Source = ""
-	}
-	return modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
-		ModuleConfig: cloned,
-	}, modules.ConfigFormatCurrent)
+	return plan.ConfigData, nil
 }

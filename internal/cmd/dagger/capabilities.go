@@ -298,6 +298,7 @@ func init() {
 	setCommandCapabilities(traceCmd, mayRenderPipeline)
 
 	for _, cmd := range []*cobra.Command{
+		initCmd,
 		moduleDepInstallCmd,
 		moduleRecommendCmd,
 		installAliasCmd,
@@ -343,6 +344,8 @@ func init() {
 		workspaceGrepCmd,
 		workspaceConfigFileCmd,
 		workspaceRemotesCmd,
+		// Accept legacy setup flags so old invocations receive the guidance.
+		// The hidden command does not use the engine or selected workspace.
 		setupCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace)
@@ -366,6 +369,7 @@ func init() {
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
+		initCmd,
 		setupCmd,
 		moduleRecommendCmd,
 		workspaceExecCmd,
