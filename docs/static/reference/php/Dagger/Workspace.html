@@ -456,6 +456,16 @@
                     <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withClient">withClient</a>(string $module, string|null $sdk = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $settings = null)
+        
+                                            <p><p>Return this workspace with a generated module client added to one SDK scope.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withCommit">withCommit</a>(string $message, string $date, array|null $paths = [], string|null $authorName = null, string|null $authorEmail = null)
         
                                             <p><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></p>                </div>
@@ -469,16 +479,6 @@
                     <a href="#method_withCommitsFrom">withCommitsFrom</a>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $source, array|null $commits = [], int|null $maxCommits = 100)
         
                                             <p><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withClient">withClient</a>(string $module, string|null $sdk = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $settings = null)
-        
-                                            <p><p>Return this workspace with a generated module client added to one SDK scope.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -740,7 +740,7 @@
                     <div class="method-item">
                     <h3 id="method___construct">
         <div class="location">in <a href="../Dagger/Client/AbstractObject.html#method___construct">
-<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 0</div>
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 13</div>
         <code>                    
     <strong>__construct</strong>(<a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> $client, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain)
         </code>
@@ -780,7 +780,7 @@
                     <div class="method-item">
                     <h3 id="method_queryLeaf">
         <div class="location">in <a href="../Dagger/Client/AbstractObject.html#method_queryLeaf">
-<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 0</div>
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 19</div>
         <code>            protected        <abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr>
     <strong>queryLeaf</strong>(<abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr> $leafQueryBuilder, string $leafKey)
         </code>
@@ -2153,8 +2153,60 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withClient">
+        <div class="location">at line 485</div>
+        <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+    <strong>withClient</strong>(string $module, string|null $sdk = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $settings = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return this workspace with a generated module client added to one SDK scope.</p></p>                <p><p>Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$module</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$sdk</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\Json">Json</abbr>|null</td>
+                <td>$settings</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withCommit">
-        <div class="location">at line 487</div>
+        <div class="location">at line 505</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withCommit</strong>(string $message, string $date, array|null $paths = [], string|null $authorName = null, string|null $authorEmail = null)
         </code>
@@ -2165,7 +2217,7 @@
 
         <div class="method-description">
                             <p><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></p>                <p><p>The host checkout is not modified. Changes outside the selected paths remain uncommitted.</p>
-<p>Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.</p></p>
+<p>Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -2217,7 +2269,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withCommitsFrom">
-        <div class="location">at line 516</div>
+        <div class="location">at line 534</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withCommitsFrom</strong>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $source, array|null $commits = [], int|null $maxCommits = 100)
         </code>
@@ -2228,7 +2280,7 @@
 
         <div class="method-description">
                             <p><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.</p></p>                <p><p>Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.</p>
-<p>Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.</p></p>
+<p>Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -2247,58 +2299,6 @@
                     <tr>
                 <td>int|null</td>
                 <td>$maxCommits</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withClient">
-        <div class="location">at line 534</div>
-        <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
-    <strong>withClient</strong>(string $module, string|null $sdk = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $settings = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return this workspace with a generated module client added to one SDK scope.</p></p>                <p><p>Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.</p></p>        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$module</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$sdk</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><abbr title="Dagger\Dagger\Json">Json</abbr>|null</td>
-                <td>$settings</td>
                 <td></td>
             </tr>
             </table>

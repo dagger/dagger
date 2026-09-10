@@ -3432,6 +3432,18 @@ export type WorkspaceTerminalsOpts = {
   include?: string[]
 }
 
+export type WorkspaceWithClientOpts = {
+  /**
+   * Optional SDK name. Inspect all installed SDKs when omitted.
+   */
+  sdk?: string
+
+  /**
+   * Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+   */
+  settings?: JSON
+}
+
 export type WorkspaceWithCommitOpts = {
   /**
    * Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
@@ -3464,18 +3476,6 @@ export type WorkspaceWithCommitsFromOpts = {
    * Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
   maxCommits?: number
-}
-
-export type WorkspaceWithClientOpts = {
-  /**
-   * Optional SDK name. Inspect all installed SDKs when omitted.
-   */
-  sdk?: string
-
-  /**
-   * Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
-   */
-  settings?: JSON
 }
 
 export type WorkspaceWithConfigEnvOpts = {
@@ -16165,6 +16165,22 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a generated module client added to one SDK scope.
+   *
+   * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+   * @param module Explicit local path or module address to generate a client for. Installed module names are not supported.
+   * @param opts.sdk Optional SDK name. Inspect all installed SDKs when omitted.
+   * @param opts.settings Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+   */
+  withClient = (module_: string, opts?: WorkspaceWithClientOpts): Workspace => {
+    const ctx = this._ctx.select("withClient", {
+      module: module_,
+      ...opts,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
    *
    * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
@@ -16196,22 +16212,6 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithCommitsFromOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withCommitsFrom", { source, ...opts })
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Return this workspace with a generated module client added to one SDK scope.
-   *
-   * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-   * @param module Explicit local path or module address to generate a client for. Installed module names are not supported.
-   * @param opts.sdk Optional SDK name. Inspect all installed SDKs when omitted.
-   * @param opts.settings Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
-   */
-  withClient = (module_: string, opts?: WorkspaceWithClientOpts): Workspace => {
-    const ctx = this._ctx.select("withClient", {
-      module: module_,
-      ...opts,
-    })
     return new Workspace(ctx)
   }
 

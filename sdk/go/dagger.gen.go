@@ -17268,6 +17268,36 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// WorkspaceWithClientOpts contains options for Workspace.WithClient
+type WorkspaceWithClientOpts struct {
+	// Optional SDK name. Inspect all installed SDKs when omitted.
+	SDK string
+	// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+	Settings JSON
+}
+
+// Return this workspace with a generated module client added to one SDK scope.
+//
+// Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *Workspace {
+	q := r.query.Select("withClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `settings` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Settings) {
+			q = q.Arg("settings", opts[i].Settings)
+		}
+	}
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithCommitOpts contains options for Workspace.WithCommit
 type WorkspaceWithCommitOpts struct {
 	// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
@@ -17336,36 +17366,6 @@ func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithComm
 		}
 	}
 	q = q.Arg("source", source)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// WorkspaceWithClientOpts contains options for Workspace.WithClient
-type WorkspaceWithClientOpts struct {
-	// Optional SDK name. Inspect all installed SDKs when omitted.
-	SDK string
-	// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
-	Settings JSON
-}
-
-// Return this workspace with a generated module client added to one SDK scope.
-//
-// Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *Workspace {
-	q := r.query.Select("withClient")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sdk` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SDK) {
-			q = q.Arg("sdk", opts[i].SDK)
-		}
-		// `settings` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Settings) {
-			q = q.Arg("settings", opts[i].Settings)
-		}
-	}
-	q = q.Arg("module", module)
 
 	return &Workspace{
 		query: q,

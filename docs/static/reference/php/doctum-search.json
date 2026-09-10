@@ -7704,6 +7704,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withClient",
+			"p": "Dagger/Workspace.html#method_withClient",
+			"d": "<p>Return this workspace with a generated module client added to one SDK scope.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withCommit",
 			"p": "Dagger/Workspace.html#method_withCommit",
 			"d": "<p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p>"
@@ -7713,12 +7719,6 @@
 			"n": "Dagger\\Workspace::withCommitsFrom",
 			"p": "Dagger/Workspace.html#method_withCommitsFrom",
 			"d": "<p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is checkpointed first and retains its checkout destination for export; the checkout is not modified until export.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::withClient",
-			"p": "Dagger/Workspace.html#method_withClient",
-			"d": "<p>Return this workspace with a generated module client added to one SDK scope.</p>"
 		},
 		{
 			"t": "M",

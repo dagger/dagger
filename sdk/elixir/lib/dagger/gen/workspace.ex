@@ -595,6 +595,29 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a generated module client added to one SDK scope.
+
+  Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+  """
+  @spec with_client(t(), String.t(), [
+          {:sdk, String.t() | nil},
+          {:settings, Dagger.JSON.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_client(%__MODULE__{} = workspace, module, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withClient")
+      |> QB.put_arg("module", module)
+      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+      |> QB.maybe_put_arg("settings", optional_args[:settings])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
 
   The host checkout is not modified. Changes outside the selected paths remain uncommitted.
@@ -615,29 +638,6 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("paths", optional_args[:paths])
       |> QB.maybe_put_arg("authorName", optional_args[:author_name])
       |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
-
-    %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
-  Return this workspace with a generated module client added to one SDK scope.
-
-  Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-  """
-  @spec with_client(t(), String.t(), [
-          {:sdk, String.t() | nil},
-          {:settings, Dagger.JSON.t() | nil}
-        ]) :: Dagger.Workspace.t()
-  def with_client(%__MODULE__{} = workspace, module, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("withClient")
-      |> QB.put_arg("module", module)
-      |> QB.maybe_put_arg("sdk", optional_args[:sdk])
-      |> QB.maybe_put_arg("settings", optional_args[:settings])
 
     %Dagger.Workspace{
       query_builder: query_builder,

@@ -478,6 +478,24 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a generated module client added to one SDK scope.
+     *
+     * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+     */
+    public function withClient(string $module, ?string $sdk = '', ?Json $settings = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
+        $innerQueryBuilder->setArgument('module', $module);
+        if (null !== $sdk) {
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $settings) {
+        $innerQueryBuilder->setArgument('settings', $settings);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
      *
      * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
@@ -522,24 +540,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $maxCommits) {
         $innerQueryBuilder->setArgument('maxCommits', $maxCommits);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return this workspace with a generated module client added to one SDK scope.
-     *
-     * Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-     */
-    public function withClient(string $module, ?string $sdk = '', ?Json $settings = null): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
-        $innerQueryBuilder->setArgument('module', $module);
-        if (null !== $sdk) {
-        $innerQueryBuilder->setArgument('sdk', $sdk);
-        }
-        if (null !== $settings) {
-        $innerQueryBuilder->setArgument('settings', $settings);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

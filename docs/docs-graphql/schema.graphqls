@@ -6087,6 +6087,26 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a generated module client added to one SDK scope.
+
+  Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+  """
+  withClient(
+    """
+    Explicit local path or module address to generate a client for. Installed module names are not supported.
+    """
+    module: String!
+
+    """Optional SDK name. Inspect all installed SDKs when omitted."""
+    sdk: String = ""
+
+    """
+    Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+    """
+    settings: JSON
+  ): Workspace!
+
+  """
   Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
 
   The host checkout is not modified. Changes outside the selected paths remain uncommitted.
@@ -6148,26 +6168,6 @@ type Workspace implements Node {
     Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
     """
     maxCommits: Int = 100
-  ): Workspace!
-
-  """
-  Return this workspace with a generated module client added to one SDK scope.
-
-  Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
-  """
-  withClient(
-    """
-    Explicit local path or module address to generate a client for. Installed module names are not supported.
-    """
-    module: String!
-
-    """Optional SDK name. Inspect all installed SDKs when omitted."""
-    sdk: String = ""
-
-    """
-    Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
-    """
-    settings: JSON
   ): Workspace!
 
   """Return this workspace with a named config environment created."""

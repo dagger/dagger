@@ -15637,6 +15637,15 @@ pub struct WorkspaceTerminalsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithClientOpts<'a> {
+    /// Optional SDK name. Inspect all installed SDKs when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub sdk: Option<&'a str>,
+    /// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+    #[builder(setter(into, strip_option), default)]
+    pub settings: Option<Json>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithCommitOpts<'a> {
     /// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
     #[builder(setter(into, strip_option), default)]
@@ -15656,15 +15665,6 @@ pub struct WorkspaceWithCommitsFromOpts<'a> {
     /// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
     #[builder(setter(into, strip_option), default)]
     pub max_commits: Option<isize>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceWithClientOpts<'a> {
-    /// Optional SDK name. Inspect all installed SDKs when omitted.
-    #[builder(setter(into, strip_option), default)]
-    pub sdk: Option<&'a str>,
-    /// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
-    #[builder(setter(into, strip_option), default)]
-    pub settings: Option<Json>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigEnvOpts {
