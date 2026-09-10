@@ -761,7 +761,8 @@ class Agent(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """Return the fully qualified name of the agent
+        """Return the command name of the agent. Entrypoint targets omit the
+        module prefix.
 
         Returns
         -------
@@ -1249,7 +1250,8 @@ class Check(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """Return the fully qualified name of the check
+        """Return the command name of the check. Entrypoint targets omit the
+        module prefix.
 
         Returns
         -------
@@ -7687,7 +7689,8 @@ class Generator(Type):
         return await _ctx.execute(bool)
 
     async def name(self) -> str:
-        """Return the fully qualified name of the generator
+        """Return the command name of the generator. Entrypoint targets omit the
+        module prefix.
 
         Returns
         -------
@@ -14572,7 +14575,8 @@ class TerminalTarget(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """Return the fully qualified name of the terminal target
+        """Return the command name of the terminal target. Entrypoint targets
+        omit the module prefix.
 
         Returns
         -------
@@ -15057,7 +15061,8 @@ class Up(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """Return the fully qualified name of the service
+        """Return the command name of the service. Entrypoint targets omit the
+        module prefix.
 
         Returns
         -------

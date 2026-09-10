@@ -56,7 +56,7 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the fully qualified name of the generator
+     * Return the command name of the generator. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {
