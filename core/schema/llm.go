@@ -214,9 +214,15 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Every spawn mints a distinct agent instance.").
 			Doc(`Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.`,
-				`Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.`).
+				`Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.`,
+				`The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.`,
+				`With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.`).
 			Args(
 				dagql.Arg("name").Doc("Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation."),
+				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
+				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
+					`RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.`),
+				dagql.Arg("error").Doc(`The loop error to create the agent with, for state FAILED. Refused with any other state.`),
 			),
 		// agent is deliberately cached (no DoNotCache): the runtime handle
 		// argument pins the lookup to one spawned instance, so the same
@@ -559,27 +565,32 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 	return parent.Self().Step(ctx, parent, int(args.MaxTokens.Value))
 }
 
-// spawn mints a unique agent instance from the conversation. Instance
-// identity is minted here — where instances are born — never from caller
-// entropy: the resolver generates the runtime handle, then pins it by re-exec
-// (design §9, the same trick send uses for message identity): a real Select
-// through the pure agent(handle:) lookup on the same receiver yields a handle
-// whose ID is the honest, replayable chain `…llm!agent(handle:"…", name:"…")` —
+// spawn creates a unique agent instance from the conversation. Instance
+// identity is minted here — where instances are born — unless the caller
+// supplies a handle to restore an instance under (resume-from-trace §4.1):
+// either way the resolver pins the handle by re-exec (design §9, the same
+// trick send uses for message identity): a real Select through the pure
+// agent(handle:) lookup on the same receiver yields a handle whose ID is the
+// honest, replayable chain `…llm!agent(handle:"…", name:"…")` —
 // re-addressable from any request in the session, and carrying the unique
 // runtime handle into the value's content digest, so every spawn gets a fresh
 // runtime registry entry (a dismissed name can never resolve to a
 // predecessor's tombstone). spawn is DoNotCache and ID-returning like every
-// imperative verb: lazy clients force the mint exactly once and re-hydrate
+// imperative verb: lazy clients force the create exactly once and re-hydrate
 // the handle from the ID, which replays the lookup, not the spawn.
 //
 // The registry entry is created HERE, not lazily on first use: spawn is
-// mint-create-pin, as rehydrate is adopt-create-pin. Since a registry miss on
-// send is an error rather than a constructor (resume-from-trace §4.2 — a miss
-// used to boot an amnesiac twin from the seed), the two verbs that create an
-// instance are the only two that create its entry, and every other verb
+// create-pin, whether the handle was minted (a fresh instance) or supplied
+// (a restore, which adopts the receiver as the committed history). Since a
+// registry miss on send is an error rather than a constructor
+// (resume-from-trace §4.2 — a miss used to boot an amnesiac twin from the
+// seed), spawn is the only verb that creates an entry, and every other verb
 // addresses one that exists.
 func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
-	Name dagql.Optional[dagql.String]
+	Name   dagql.Optional[dagql.String]
+	Handle dagql.Optional[dagql.String]
+	State  core.AgentState `default:"IDLE"`
+	Error  string          `default:""`
 }) (res dagql.Result[core.AgentID], _ error) {
 	name := args.Name.Value.String()
 	if name == "" {
@@ -602,13 +613,18 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
+	restored := args.Handle.Valid && args.Handle.Value.String() != ""
+	handle := identity.NewID()
+	if restored {
+		handle = args.Handle.Value.String()
+	}
 	var pinned dagql.ObjectResult[*core.Agent]
 	if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
 		Field: "agent",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "handle",
-				Value: dagql.NewString(identity.NewID()),
+				Value: dagql.NewString(handle),
 			},
 			{
 				Name:  "name",
@@ -622,7 +638,7 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
-	if _, err := agents.GetOrCreate(ctx, pinned); err != nil {
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()

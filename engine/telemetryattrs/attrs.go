@@ -81,14 +81,8 @@ const (
 	LLMMessageOriginKindAgent = "AGENT"
 	LLMMessageOriginKindEvent = "EVENT"
 
-	// LLMMessageOriginAgentIDAttr is the sending (AGENT) or observed (EVENT)
-	// agent's spawn-minted instance ID — the same identity AgentIDAttr keys
-	// the roster on, so a frontend can correlate a message with its sender's
-	// roster entry. (string)
-	LLMMessageOriginAgentIDAttr = "dagger.io/llm.origin.agent.id"
-
-	// LLMMessageOriginAgentNameAttr is the display name of the agent behind
-	// LLMMessageOriginAgentIDAttr. (string)
+	// LLMMessageOriginAgentNameAttr is the display name of the sending
+	// (AGENT) or observed (EVENT) agent. (string)
 	LLMMessageOriginAgentNameAttr = "dagger.io/llm.origin.agent.name"
 
 	// LLMMessageOriginRefAttr is the message's short ref within the receiving

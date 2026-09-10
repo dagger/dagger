@@ -24,7 +24,7 @@ import (
 //
 // Everything below the CLI is already built: internal/cloud fetches the trace,
 // engine/telemetry imports it into the live frontend's own exporters,
-// dagui.DB projects the restore plan, and Agent.rehydrate re-creates each
+// dagui.DB projects the restore plan, and LLM.spawn(handle:) re-creates each
 // instance's runtime entry from its committed conversation. This is the
 // wiring, and the order it happens in — which is load-bearing rather than
 // incidental (§3.1b, recommendation §6.2's seed race):
@@ -321,15 +321,15 @@ type sessionRestore struct {
 var _ restoreTarget = (*sessionRestore)(nil)
 
 // rehydrateQuery is design §3.2's restore chain: load the committed
-// conversation, address the instance it belonged to, and re-create its
-// runtime entry from it. Written out rather than driven through the generated
-// client because the value needed is the ENCODED handle rehydrate returns —
-// the ID LLMSession.Attach adopts the agent by — and the client would
-// re-select it as a fresh chain.
+// conversation and spawn it under the handle of the instance it belonged
+// to, which re-creates that instance's runtime entry from it. Written out
+// rather than driven through the generated client because the value needed
+// is the ENCODED handle spawn returns — the ID LLMSession.Attach adopts the
+// agent by — and the client would re-select it as a fresh chain.
 const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
   node(id: $llm) {
     ... on LLM {
-      agent(handle: $id, name: $name) { rehydrate(state: $state, error: $error) }
+      spawn(handle: $id, name: $name, state: $state, error: $error)
     }
   }
 }`
@@ -337,9 +337,7 @@ const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!,
 func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
 	var res struct {
 		Node struct {
-			Agent struct {
-				Rehydrate string
-			}
+			Spawn string
 		}
 	}
 	if err := r.dag.Do(ctx, &dagger.Request{
@@ -355,10 +353,10 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 	}, &dagger.Response{Data: &res}); err != nil {
 		return "", err
 	}
-	if res.Node.Agent.Rehydrate == "" {
+	if res.Node.Spawn == "" {
 		return "", errors.New("the engine returned no handle on the restored agent")
 	}
-	return res.Node.Agent.Rehydrate, nil
+	return res.Node.Spawn, nil
 }
 
 func (r *sessionRestore) Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error {

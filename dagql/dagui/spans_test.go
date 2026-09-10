@@ -62,13 +62,11 @@ func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
 func TestProcessAttributeLLMMessageOrigin(t *testing.T) {
 	var snapshot SpanSnapshot
 	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindAgent)
-	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentIDAttr, "agent-b")
 	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginAgentNameAttr, "scout")
 	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginRefAttr, "#3")
 	snapshot.ProcessAttribute(telemetryattrs.LLMMessageOriginReplyToAttr, "#2")
 
 	if snapshot.LLMOriginKind != "AGENT" ||
-		snapshot.LLMOriginAgentID != "agent-b" ||
 		snapshot.LLMOriginAgentName != "scout" ||
 		snapshot.LLMOriginRef != "#3" ||
 		snapshot.LLMOriginReplyTo != "#2" {

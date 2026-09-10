@@ -826,18 +826,15 @@ func TestConversationReportStylesMessageOrigins(t *testing.T) {
 	userPrompt := msg(userPromptID, 1)
 	agentMsg := msg(agentMsgID, 2)
 	agentMsg.LLMOriginKind = "AGENT"
-	agentMsg.LLMOriginAgentID = "agent-b"
 	agentMsg.LLMOriginAgentName = "scout"
 	agentMsg.LLMOriginRef = "#3"
 	replyMsg := msg(replyMsgID, 3)
 	replyMsg.LLMOriginKind = "AGENT"
-	replyMsg.LLMOriginAgentID = "agent-a"
 	replyMsg.LLMOriginAgentName = "chief"
 	replyMsg.LLMOriginRef = "#5"
 	replyMsg.LLMOriginReplyTo = "#2"
 	eventMsg := msg(eventMsgID, 4)
 	eventMsg.LLMOriginKind = "EVENT"
-	eventMsg.LLMOriginAgentID = "agent-b"
 	eventMsg.LLMOriginAgentName = "scout"
 
 	db.ImportSnapshots([]dagui.SpanSnapshot{

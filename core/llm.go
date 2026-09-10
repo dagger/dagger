@@ -445,11 +445,10 @@ func (kind LLMMessageOriginKind) ToLiteral() call.Literal {
 // deterministic attribution header at request-build time — never baked into
 // the stored prompt text.
 type LLMMessageOrigin struct {
-	Kind        LLMMessageOriginKind `field:"true" name:"kind" json:"kind" doc:"Who put this message on the record." experimental:"Agent APIs are likely to change."`
-	AgentHandle string               `field:"true" name:"agentHandle" json:"agent_handle,omitempty" doc:"The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins)." experimental:"Agent APIs are likely to change."`
-	AgentName   string               `field:"true" name:"agentName" json:"agent_name,omitempty" doc:"The display name of the agent behind agentHandle." experimental:"Agent APIs are likely to change."`
-	Ref         string               `field:"true" name:"ref" json:"ref,omitempty" doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle." experimental:"Agent APIs are likely to change."`
-	ReplyTo     string               `field:"true" name:"replyTo" json:"reply_to,omitempty" doc:"The ref of the message this one answers, in the sender's own runtime, if any." experimental:"Agent APIs are likely to change."`
+	Kind      LLMMessageOriginKind `field:"true" name:"kind" json:"kind" doc:"Who put this message on the record." experimental:"Agent APIs are likely to change."`
+	AgentName string               `field:"true" name:"agentName" json:"agent_name,omitempty" doc:"The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins)." experimental:"Agent APIs are likely to change."`
+	Ref       string               `field:"true" name:"ref" json:"ref,omitempty" doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\": the deterministic token replies name (send's replyTo) and the message lookup takes." experimental:"Agent APIs are likely to change."`
+	ReplyTo   string               `field:"true" name:"replyTo" json:"reply_to,omitempty" doc:"The ref of the message this one answers, in the sender's own runtime, if any." experimental:"Agent APIs are likely to change."`
 }
 
 func (*LLMMessageOrigin) Type() *ast.Type {
@@ -497,11 +496,10 @@ func (o *LLMMessageOrigin) AttributionHeader() string {
 // LLMMessageOriginInput is the input-object form of LLMMessageOrigin, for the
 // withPrompt selector the agent loop records when draining its mailbox.
 type LLMMessageOriginInput struct {
-	Kind        LLMMessageOriginKind `doc:"Who put this message on the record." experimental:"Agent APIs are likely to change."`
-	AgentHandle string               `name:"agentHandle" doc:"The sending or observed agent's runtime handle." default:"" experimental:"Agent APIs are likely to change."`
-	AgentName   string               `name:"agentName" doc:"The display name of the agent behind agentHandle." default:"" experimental:"Agent APIs are likely to change."`
-	Ref         string               `doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\"." default:"" experimental:"Agent APIs are likely to change."`
-	ReplyTo     string               `name:"replyTo" doc:"The ref of the message this one answers, if any." default:"" experimental:"Agent APIs are likely to change."`
+	Kind      LLMMessageOriginKind `doc:"Who put this message on the record." experimental:"Agent APIs are likely to change."`
+	AgentName string               `name:"agentName" doc:"The display name of the sending or observed agent." default:"" experimental:"Agent APIs are likely to change."`
+	Ref       string               `doc:"The message's short ref within the receiving agent's runtime, e.g. \"#3\"." default:"" experimental:"Agent APIs are likely to change."`
+	ReplyTo   string               `name:"replyTo" doc:"The ref of the message this one answers, if any." default:"" experimental:"Agent APIs are likely to change."`
 }
 
 func (LLMMessageOriginInput) TypeName() string {
@@ -516,11 +514,10 @@ func (LLMMessageOriginInput) TypeDescription() string {
 // ToLLMMessageOrigin converts the input object to an LLMMessageOrigin.
 func (in LLMMessageOriginInput) ToLLMMessageOrigin() *LLMMessageOrigin {
 	return &LLMMessageOrigin{
-		Kind:        in.Kind,
-		AgentHandle: in.AgentHandle,
-		AgentName:   in.AgentName,
-		Ref:         in.Ref,
-		ReplyTo:     in.ReplyTo,
+		Kind:      in.Kind,
+		AgentName: in.AgentName,
+		Ref:       in.Ref,
+		ReplyTo:   in.ReplyTo,
 	}
 }
 
@@ -531,11 +528,10 @@ func (in LLMMessageOriginInput) ToLLMMessageOrigin() *LLMMessageOrigin {
 func originInput(origin *LLMMessageOrigin) (dagql.InputObject[LLMMessageOriginInput], error) {
 	var zero dagql.InputObject[LLMMessageOriginInput]
 	decoded, err := (dagql.InputObject[LLMMessageOriginInput]{}).Decoder().DecodeInput(map[string]any{
-		"kind":        string(origin.Kind),
-		"agentHandle": origin.AgentHandle,
-		"agentName":   origin.AgentName,
-		"ref":         origin.Ref,
-		"replyTo":     origin.ReplyTo,
+		"kind":      string(origin.Kind),
+		"agentName": origin.AgentName,
+		"ref":       origin.Ref,
+		"replyTo":   origin.ReplyTo,
 	})
 	if err != nil {
 		return zero, fmt.Errorf("decode message origin input: %w", err)
@@ -2620,9 +2616,6 @@ func messageOriginAttrs(origin *LLMMessageOrigin) []attribute.KeyValue {
 	}
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetryattrs.LLMMessageOriginKindAttr, string(origin.Kind)),
-	}
-	if origin.AgentHandle != "" {
-		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentIDAttr, origin.AgentHandle))
 	}
 	if origin.AgentName != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMMessageOriginAgentNameAttr, origin.AgentName))

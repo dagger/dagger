@@ -2137,14 +2137,14 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 		{
 			ID: agentMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
 			Message: "received", LLMRole: "user", ParentID: rootID,
-			LLMOriginKind: "AGENT", LLMOriginAgentID: "agent-b",
+			LLMOriginKind:      "AGENT",
 			LLMOriginAgentName: "scout", LLMOriginRef: "#3",
 			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
 		},
 		{
 			ID: eventMsgID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
 			Message: "received", LLMRole: "user", ParentID: rootID,
-			LLMOriginKind: "EVENT", LLMOriginAgentID: "agent-b",
+			LLMOriginKind:      "EVENT",
 			LLMOriginAgentName: "scout",
 			StartTime:          start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
 		},

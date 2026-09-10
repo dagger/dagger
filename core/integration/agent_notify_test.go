@@ -54,7 +54,7 @@ func (AgentRuntimeSuite) TestNotifyDeliversLifecycleEvents(ctx context.Context, 
 	// receive (the roster's everyday shape — a CLI conversation's loop is
 	// started by its first submit). An unstarted subscriber would keep the
 	// event queued instead of losing it, but this test wants the wake.
-	_, err := chief.run(ctx, t, `start`)
+	_, err := chief.run(ctx, t, `resume`)
 	require.NoError(t, err)
 
 	// Task first, then subscribe — the staff ordering. The subscription is
@@ -151,7 +151,7 @@ func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t 
 	chief := spawnAgent(ctx, t, c, spawnOpts{model: chiefModel, name: "chief"})
 	worker := spawnAgent(ctx, t, c, spawnOpts{model: workerModel, name: "w"})
 
-	_, err := chief.run(ctx, t, `start`)
+	_, err := chief.run(ctx, t, `resume`)
 	require.NoError(t, err)
 
 	// Task first, then subscribe — the staff ordering (see
