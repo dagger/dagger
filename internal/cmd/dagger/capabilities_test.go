@@ -308,6 +308,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger workspace config",
 		"dagger workspace config-file",
 		"dagger workspace cwd",
+		"dagger workspace entrypoint",
 		"dagger workspace exec",
 		"dagger workspace export",
 		"dagger workspace find",
@@ -614,6 +615,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger up",
 		"dagger workspace",
 		"dagger workspace config",
+		"dagger workspace entrypoint",
 		"dagger workspace exec",
 		"dagger workspace migrate",
 		"dagger workspace update",
@@ -639,6 +641,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger uninstall",
 		"dagger workspace",
 		"dagger workspace config",
+		"dagger workspace entrypoint",
 		"dagger workspace migrate",
 	}
 	require.ElementsMatch(t, writers, commandsDeclaringCapability(rootCmd, mayWriteWorkspaceConfig))

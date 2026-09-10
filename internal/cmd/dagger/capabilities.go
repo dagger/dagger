@@ -308,6 +308,7 @@ func init() {
 		settingsCmd,
 		settingsAliasCmd,
 		workspaceConfigCmd,
+		workspaceEntrypointCmd,
 		moduleInitCmd,
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
