@@ -263,43 +263,57 @@ func TestWorkspaceConfigSkipPatterns(t *testing.T) {
 
 func TestFilterGeneratorsByInclude(t *testing.T) {
 	ctx := context.Background()
-	generators := []*core.Generator{
-		{Node: modTreeNode("hello-with-generators-java", "generate-files")},
-		{Node: modTreeNode("hello-with-generators-java", "generate-other-files")},
+	for _, test := range []struct {
+		name       string
+		entrypoint bool
+		include    []string
+		want       int
+	}{
+		{"qualified", false, []string{"app:generate-*"}, 2},
+		{"entrypoint", true, []string{"generate-*"}, 2},
+		{"entrypoint qualified alias", true, []string{"app:generate-*"}, 2},
+		{"single ordinary module requires prefix", false, []string{"generate-*"}, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			generators := []*core.Generator{
+				{Node: modTreeNode("app", "generate-files")},
+				{Node: modTreeNode("app", "generate-other-files")},
+			}
+			for _, generator := range generators {
+				generator.Node.Parent.WorkspaceEntrypoint = test.entrypoint
+			}
+			filtered, err := filterGeneratorsByInclude(ctx, generators, test.include)
+			require.NoError(t, err)
+			require.Len(t, filtered, test.want)
+		})
 	}
+}
 
-	t.Run("workspace-qualified patterns still match", func(t *testing.T) {
-		filtered, err := filterGeneratorsByInclude(
-			ctx,
-			generators,
-			[]string{"hello-with-generators-java:generate-*"},
-			false,
-		)
-		require.NoError(t, err)
-		require.Len(t, filtered, 2)
-	})
-
-	t.Run("single generator module keeps legacy include semantics", func(t *testing.T) {
-		filtered, err := filterGeneratorsByInclude(
-			ctx,
-			generators,
-			[]string{"generate-*"},
-			true,
-		)
-		require.NoError(t, err)
-		require.Len(t, filtered, 2)
-	})
-
-	t.Run("legacy include does not match without compat fallback", func(t *testing.T) {
-		filtered, err := filterGeneratorsByInclude(
-			ctx,
-			generators,
-			[]string{"generate-*"},
-			false,
-		)
-		require.NoError(t, err)
-		require.Empty(t, filtered)
-	})
+func TestWorkspaceTargetSkipNames(t *testing.T) {
+	ctx := context.Background()
+	app := modTreeNode("app", "verify")
+	app.Parent.WorkspaceEntrypoint = true
+	other := modTreeNode("other", "verify")
+	for _, test := range []struct {
+		name        string
+		exclude     []string
+		moduleLocal bool
+		want        []*core.ModTreeNode
+	}{
+		{"short skip only excludes entrypoint", []string{"verify"}, false, []*core.ModTreeNode{other}},
+		{"qualified skip", []string{"app:verify"}, false, []*core.ModTreeNode{other}},
+		{"skip other module", []string{"other:verify"}, false, []*core.ModTreeNode{app}},
+		{"explicit wildcard", []string{"*:verify"}, false, nil},
+		{"module settings use local names", []string{"verify"}, true, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			filtered, err := filterNodesByExclude(ctx, []*core.ModTreeNode{app, other}, test.exclude, test.moduleLocal,
+				func(node *core.ModTreeNode) *core.ModTreeNode { return node },
+				func(node *core.ModTreeNode) string { return node.CommandName() }, "test")
+			require.NoError(t, err)
+			require.ElementsMatch(t, test.want, filtered)
+		})
+	}
 }
 
 func TestSelectVisibleGeneratorModules(t *testing.T) {

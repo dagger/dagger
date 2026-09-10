@@ -90,7 +90,7 @@ func (t *TerminalTarget) Path() []string {
 }
 
 func (t *TerminalTarget) Name() string {
-	return t.Node.PathString()
+	return t.Node.CommandName()
 }
 
 func (t *TerminalTarget) Description() string {

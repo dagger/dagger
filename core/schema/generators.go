@@ -48,7 +48,7 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Generator]{
 		dagql.Func("name", s.name).
-			Doc("Return the fully qualified name of the generator"),
+			Doc("Return the command name of the generator. Entrypoint targets omit the module prefix."),
 
 		dagql.Func("path", s.path).
 			Doc("The path of the generator within its module"),

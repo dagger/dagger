@@ -21,7 +21,7 @@ func (s upSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Up]{
 		dagql.Func("name", s.name).
-			Doc("Return the fully qualified name of the service"),
+			Doc("Return the command name of the service. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
 			Doc("The description of the service"),
 		dagql.Func("path", s.path).

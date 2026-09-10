@@ -37,6 +37,10 @@ type ModTreeNode struct {
 	IsGenerator    bool
 	IsUp           bool
 	IsAgent        bool
+
+	// WorkspaceEntrypoint is set on the module root when its targets are
+	// exposed without a module prefix. Path retains the qualified identity.
+	WorkspaceEntrypoint bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -154,11 +158,11 @@ func (node *ModTreeNode) runAsCheck(
 					return err
 				}
 			}
-			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
+			ctx, span := Tracer(ctx).Start(ctx, n.CommandName(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.CheckNameAttr, n.PathString()),
+					attribute.String(telemetry.CheckNameAttr, n.CommandName()),
 				),
 			)
 			defer func() {
@@ -330,10 +334,10 @@ func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForwa
 	if !node.IsUp {
 		return nil, fmt.Errorf("%s is not a service function", node.PathString())
 	}
-	ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+	ctx, span := Tracer(ctx).Start(ctx, node.CommandName(),
 		trace.WithAttributes(
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.String(ServiceNameAttr, node.PathString()),
+			attribute.String(ServiceNameAttr, node.CommandName()),
 		),
 	)
 	defer func() {
@@ -381,7 +385,7 @@ func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForwa
 				portStrs = append(portStrs, fmt.Sprintf(":%d", p.port))
 			}
 		}
-		span.SetName(fmt.Sprintf("%s %s", node.PathString(), strings.Join(portStrs, ", ")))
+		span.SetName(fmt.Sprintf("%s %s", node.CommandName(), strings.Join(portStrs, ", ")))
 	}
 
 	return &preparedUp{
@@ -405,7 +409,7 @@ type preparedUp struct {
 }
 
 func (p *preparedUp) Name() string {
-	return p.node.PathString()
+	return p.node.CommandName()
 }
 
 // Abort ends the display span without starting the service — the group's
@@ -546,11 +550,11 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsGenerator },
 		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
-			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+			ctx, span := Tracer(ctx).Start(ctx, node.CommandName(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.GeneratorNameAttr, node.PathString()),
+					attribute.String(telemetry.GeneratorNameAttr, node.CommandName()),
 				),
 			)
 			defer telemetry.EndWithCause(span, &rerr)
@@ -1002,6 +1006,21 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 
 func (node *ModTreeNode) PathString() string {
 	return strings.Join(node.Path().CliCase(), ":")
+}
+
+// CommandPath is the path users type to select this target.
+func (node *ModTreeNode) CommandPath() ModTreePath {
+	path := node.Path()
+	for parent := node; parent != nil; parent = parent.Parent {
+		if parent.WorkspaceEntrypoint && len(path) > 0 {
+			return path[1:]
+		}
+	}
+	return path
+}
+
+func (node *ModTreeNode) CommandName() string {
+	return strings.Join(node.CommandPath().CliCase(), ":")
 }
 
 func (node *ModTreeNode) moduleLocalPathString() string {
