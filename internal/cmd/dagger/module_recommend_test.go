@@ -17,12 +17,15 @@ func TestModuleRecommendCommand(t *testing.T) {
 		require.NoError(t, cmd.Args(cmd, nil))
 		require.Error(t, cmd.Args(cmd, []string{"extra"}))
 		require.NoError(t, validateFlagCapabilities(root, []string{name, "recommend", "-W", "/tmp/workspace", "-y"}))
+		require.ErrorContains(t, validateFlagCapabilities(root, []string{name, "recommend", "--env", "ci"}), "flag --env is not supported")
+		require.ErrorContains(t, validateFlagCapabilities(root, []string{"--env=ci", name, "recommend", "--auto-apply"}), "flag --env is not supported")
 	}
 	require.True(t, commandShowsFinalProgress(moduleRecommendCmd))
 	require.Equal(t, workspaceFlagPolicyLocalOnly, workspaceFlagPolicy(moduleRecommendCmd, nil))
 	help := renderHelp(t, moduleRecommendCmd)
 	require.Contains(t, help, "--auto-apply")
 	require.Contains(t, help, "--workspace")
+	require.NotContains(t, help, "--env")
 }
 
 func TestSelectRecommendedModulesAutoApply(t *testing.T) {
