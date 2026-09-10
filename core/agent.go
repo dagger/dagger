@@ -15,7 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Agent is a conversation loop packaged as an addressable, long-lived entity
@@ -158,8 +158,11 @@ type AgentMessage struct {
 	AgentHandle string
 	// AgentName is the agent's display name, carried for error messages.
 	AgentName string
-	// Handle uniquely identifies the message record within the entry.
-	Handle string
+	// Ref identifies the message record within the entry: its short ref
+	// ("#3"), the deterministic enqueue ordinal the attribution header shows
+	// and a reply's replyTo names. It is the message's only public
+	// identifier — the pinned chain is …agent(handle:)!message(ref:).
+	Ref string
 }
 
 func (*AgentMessage) Type() *ast.Type {
@@ -233,11 +236,16 @@ type agentMessageRecord struct {
 	// central enqueue path; drainMailbox records it on the withPrompt
 	// selector for every non-trivial case.
 	origin *LLMMessageOrigin
+	// sender is the runtime key of the agent that sent the message, or empty
+	// for a user or a non-agent caller. Enqueue-time bookkeeping only — it
+	// tells a self-send apart when the origin is recorded on the chain —
+	// and deliberately not part of the origin, which is what the chain
+	// persists.
+	sender string
 	// seq is the record's 1-based enqueue ordinal within this runtime entry.
-	// It backs the message's short ref ("#3") — the deterministic,
-	// model-facing correlation token. The opaque message ID cannot serve
-	// there: it is minted entropy, and replay recordings compare wire text
-	// byte for byte.
+	// It IS the message's ref ("#3"): the deterministic, model-facing
+	// correlation token and the record's key. Minted entropy cannot serve
+	// there — replay recordings compare wire text byte for byte.
 	seq uint64
 	// deliveryHint preserves the provider-backed loop's enqueue-boundary
 	// classification until its existing drain boundary conclusively confirms
@@ -443,16 +451,17 @@ func agentKey(agent dagql.ObjectResult[*Agent]) (string, error) {
 // enqueue path (hack/designs/agent-messaging.md §4.1): the agent whose turn
 // the send descends from (in-process or through a module function's
 // nested calls), or the user. The message's ref is assigned later, by the
-// receiving runtime's enqueue.
-func resolveMessageOrigin(ctx context.Context) *LLMMessageOrigin {
+// receiving runtime's enqueue. The sender's runtime key rides beside the
+// origin rather than in it: the chain records who said what by name, and the
+// key is only needed at enqueue time (self-send detection, reply resolution).
+func resolveMessageOrigin(ctx context.Context) (origin *LLMMessageOrigin, senderKey string) {
 	if caller, ok := CallerAgent(ctx); ok {
 		return &LLMMessageOrigin{
-			Kind:        LLMMessageOriginAgent,
-			AgentHandle: caller.Self().Handle,
-			AgentName:   caller.Self().Name,
-		}
+			Kind:      LLMMessageOriginAgent,
+			AgentName: caller.Self().Name,
+		}, caller.Self().Handle
 	}
-	return &LLMMessageOrigin{Kind: LLMMessageOriginUser}
+	return &LLMMessageOrigin{Kind: LLMMessageOriginUser}, ""
 }
 
 // originOmittedFromChain reports whether a message's origin is deliberately
@@ -461,7 +470,7 @@ func resolveMessageOrigin(ctx context.Context) *LLMMessageOrigin {
 // byte-stable) and a self-send with nothing else to say (a tool steering its
 // own calling agent — attributing the agent's own words to itself is noise).
 // A reply marker always records, whoever sent it.
-func originOmittedFromChain(origin *LLMMessageOrigin, receiverKey string) bool {
+func originOmittedFromChain(origin *LLMMessageOrigin, senderKey, receiverKey string) bool {
 	if origin.ReplyTo != "" {
 		return false
 	}
@@ -469,7 +478,7 @@ func originOmittedFromChain(origin *LLMMessageOrigin, receiverKey string) bool {
 	case LLMMessageOriginUser:
 		return true
 	case LLMMessageOriginAgent:
-		return origin.AgentHandle == receiverKey
+		return senderKey == receiverKey
 	default:
 		return false
 	}
@@ -491,7 +500,7 @@ func (ars *AgentRuntimes) Get(ctx context.Context, agent dagql.ObjectResult[*Age
 }
 
 // Require returns the runtime entry for an agent that was explicitly created
-// by spawn or rehydrate. Runtime verbs address an existing entry; they never
+// by spawn. Runtime verbs address an existing entry; they never
 // infer creation from a reconstructed handle.
 func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[*Agent]) (*AgentRuntime, error) {
 	rt, found, err := ars.Get(ctx, agent)
@@ -504,47 +513,33 @@ func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[
 	return rt, nil
 }
 
-// GetOrCreate returns the runtime entry for the given agent value, creating
-// an inert one (loop not started, snapshot == seed) if none exists yet.
-//
-// The seed is read off the value only when the entry is CREATED. A later
-// handle for the same instance addresses the entry as it stands — its own
-// seed is not consulted, and cannot displace the conversation the loop has
-// been building. That is what makes a rebuilt handle safe to use: it names an
-// instance, it does not redefine one.
-func (ars *AgentRuntimes) GetOrCreate(ctx context.Context, agent dagql.ObjectResult[*Agent]) (*AgentRuntime, error) {
-	key, err := agentKey(agent)
-	if err != nil {
-		return nil, err
-	}
-	ars.mu.Lock()
-	defer ars.mu.Unlock()
-	if rt, found := ars.entries[key]; found {
-		return rt, nil
-	}
-	rt := newAgentRuntime(ars, key, agent)
-	ars.entries[key] = rt
-	return rt, nil
-}
-
-// Rehydrate creates the runtime entry for an instance from a conversation it
-// did not seed, without starting its loop: the receiver's snapshot becomes the
-// entry's committed history, so prompting it continues where the previous
-// session left off (hack/designs/resume-from-trace.md §4.1).
-//
-// It works for the same reason GetOrCreate is safe to call with a rebuilt
-// handle: the seed is read only when the entry is created. spawn is
-// mint-create-pin; this is adopt-create-pin, and the whole difference is which
+// Create creates the runtime entry for an instance, without starting its
+// loop: the value's conversation becomes the entry's committed history. This
+// is the one constructor behind LLM.spawn, whether the handle was minted for
+// a fresh instance or supplied to restore one from a persisted conversation
+// (hack/designs/resume-from-trace.md §4.1) — the difference is only which
 // conversation the entry begins life holding.
+//
+// The seed is read off the value only HERE, when the entry is created. A
+// later handle for the same instance addresses the entry as it stands — its
+// own seed is not consulted, and cannot displace the conversation the loop
+// has been building. That is what makes a rebuilt handle safe to use: it
+// names an instance, it does not redefine one.
 //
 // state sets FACTS, never a stored state — the projection stays a projection
 // (async-agents §3.4) — and only the states a conversation can actually be
-// restored into are accepted: nothing restores as RUNNING, because the loop
+// created into are accepted: nothing restores as RUNNING, because the loop
 // died with the session that published it, and a roster redisplaying it as
 // running would be lying. An instance that already has an entry is refused
-// rather than re-seeded: by then it may have stepped, and a late restore that
-// silently discarded that would be worse than a loud one.
-func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string) (*AgentRuntime, error) {
+// rather than re-seeded: a minted handle never collides, and a supplied one
+// that does names an instance that may already have stepped — a late
+// restore that silently discarded that would be worse than a loud one.
+//
+// restored says the handle was supplied rather than minted: the entry then
+// publishes its identity immediately (§4.5), since nothing else will until a
+// loop starts, and a restored agent that is never prompted would otherwise
+// be invisible to the roster.
+func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool) (*AgentRuntime, error) {
 	key, err := agentKey(agent)
 	if err != nil {
 		return nil, err
@@ -554,22 +549,22 @@ func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResul
 	switch state {
 	case AgentStateIdle, AgentStatePaused, AgentStateFailed, AgentStateStopped:
 	default:
-		return nil, fmt.Errorf("agent %q cannot be re-hydrated as %s: a restored agent holds a conversation, not a running loop — restore it as IDLE, and its still-pending input re-steps when it is next prompted", name, state)
+		return nil, fmt.Errorf("agent %q cannot be spawned as %s: an agent is created holding a conversation, not a running loop — spawn it as IDLE, and its still-pending input steps when it is next prompted", name, state)
 	}
 	if loopErr != "" && state != AgentStateFailed {
-		return nil, fmt.Errorf("agent %q: an error can only be restored with state FAILED, not %s", name, state)
+		return nil, fmt.Errorf("agent %q: an error can only be spawned with state FAILED, not %s", name, state)
 	}
 
 	ars.mu.Lock()
 	if _, found := ars.entries[key]; found {
 		ars.mu.Unlock()
-		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance", name)
+		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: a restore must happen before anything else addresses the instance", name)
 	}
 	rt := newAgentRuntime(ars, key, agent)
 	ars.entries[key] = rt
 	ars.mu.Unlock()
 
-	rt.rehydrate(ctx, state, loopErr)
+	rt.create(ctx, state, loopErr, restored)
 	return rt, nil
 }
 
@@ -582,13 +577,13 @@ func (ars *AgentRuntimes) Rehydrate(ctx context.Context, agent dagql.ObjectResul
 // roster entry, where a stop-and-respawn would mint a successor instance
 // under the same display name.
 //
-// It routes through Get, never GetOrCreate: a registry miss is an error, not
-// a constructor (resume-from-trace §4.2) — an instance nothing here spawned
-// or re-hydrated has no conversation to replace. rehydrate is adopt-create;
-// this is the swap on an entry that exists, and the create-vs-swap guards
-// point in opposite directions deliberately: a restore that finds an entry
-// must be loud (the instance may have stepped), and a reseed that finds none
-// must be too (the caller's bookkeeping is wrong).
+// It routes through Require, never a constructor: a registry miss is an
+// error (resume-from-trace §4.2) — an instance nothing here spawned has no
+// conversation to replace. spawn is create; this is the swap on an entry that
+// exists, and the create-vs-swap guards point in opposite directions
+// deliberately: a restore that finds an entry must be loud (the instance may
+// have stepped), and a reseed that finds none must be too (the caller's
+// bookkeeping is wrong).
 func (ars *AgentRuntimes) Reseed(ctx context.Context, agent dagql.ObjectResult[*Agent], conversation dagql.ObjectResult[*LLM]) error {
 	rt, err := ars.Require(ctx, agent)
 	if err != nil {
@@ -616,27 +611,13 @@ func newAgentRuntime(ars *AgentRuntimes, key string, agent dagql.ObjectResult[*A
 	}
 }
 
-// Start returns the running (or tombstoned) runtime entry for the given
-// agent value, launching its evaluation loop if it isn't running yet. A
-// second start of the same agent value in the same session is a no-op
-// returning the existing entry; starting a stopped agent leaves the
-// tombstone in place.
-func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*Agent]) (*AgentRuntime, error) {
-	rt, err := ars.Require(ctx, agent)
-	if err != nil {
-		return nil, err
-	}
-	rt.start(ctx)
-	return rt, nil
-}
-
 // Send is the central enqueue path (design §3.3): it enqueues a message
 // into the agent's mailbox and returns its handle, starting the agent's
 // loop if it was never started (signal-with-start, Temporal's lesson — a
 // message to an unstarted agent must start it rather than be lost).
 //
 // Sending to an instance this session holds no entry for is an ERROR, not a
-// creation. A registry miss used to route through GetOrCreate, which made a
+// creation. A registry miss used to create the entry, which made a
 // miss a constructor: a handle rebuilt from a trace whose agent this session
 // never spawned booted a second loop from the handle's own seed, answered
 // with no history, and published the same runtime handle as the original — one
@@ -667,15 +648,15 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// (a tool the loop dispatched in-process), the calling client's
 	// function-call record (module functions and their nested API calls), or
 	// the user. There is no "from" argument to forge.
-	origin := resolveMessageOrigin(ctx)
+	origin, senderKey := resolveMessageOrigin(ctx)
 	if replyTo != "" {
-		normalized, err := ars.resolveReply(origin, replyTo, text)
+		normalized, err := ars.resolveReply(senderKey, origin, replyTo, text)
 		if err != nil {
 			return nil, err
 		}
 		origin.ReplyTo = normalized
 	}
-	messageHandle, err := rt.enqueue(text, origin)
+	ref, err := rt.enqueue(text, origin, senderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +668,7 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	return &AgentMessage{
 		AgentHandle: rt.key,
 		AgentName:   rt.name,
-		Handle:      messageHandle,
+		Ref:         ref,
 	}, nil
 }
 
@@ -699,12 +680,12 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 // asker. A non-agent sender (a user relaying an answer through the API) has
 // no runtime to resolve within, so the marker passes through for the
 // recipient's pairing only.
-func (ars *AgentRuntimes) resolveReply(origin *LLMMessageOrigin, replyTo, answer string) (string, error) {
+func (ars *AgentRuntimes) resolveReply(senderKey string, origin *LLMMessageOrigin, replyTo, answer string) (string, error) {
 	if origin.Kind != LLMMessageOriginAgent {
 		return replyTo, nil
 	}
 	ars.mu.Lock()
-	sender := ars.entries[origin.AgentHandle]
+	sender := ars.entries[senderKey]
 	ars.mu.Unlock()
 	if sender == nil {
 		return replyTo, nil
@@ -728,21 +709,27 @@ func (ars *AgentRuntimes) resolveReply(origin *LLMMessageOrigin, replyTo, answer
 	return ref, nil
 }
 
-// findRecordByRefLocked resolves a message token — "#3", "3", or a full
-// message ID — to this runtime's record and its normalized ref. Must be
-// called with rt.mu held.
+// findRecordByRefLocked resolves a message token — "#3" or a bare "3" — to
+// this runtime's record and its normalized ref. Must be called with rt.mu
+// held.
 func (rt *AgentRuntime) findRecordByRefLocked(token string) (*agentMessageRecord, string) {
 	if rec, found := rt.messages[token]; found {
-		return rec, fmt.Sprintf("#%d", rec.seq)
+		return rec, token
 	}
 	if n, err := strconv.ParseUint(strings.TrimPrefix(token, "#"), 10, 64); err == nil {
-		for _, rec := range rt.messages {
-			if rec.seq == n {
-				return rec, fmt.Sprintf("#%d", n)
-			}
+		ref := messageRef(n)
+		if rec, found := rt.messages[ref]; found {
+			return rec, ref
 		}
 	}
 	return nil, ""
+}
+
+// messageRef renders a record's enqueue ordinal as its ref: the key of the
+// record, the token attribution headers show, and the argument the pinned
+// message chain carries.
+func messageRef(seq uint64) string {
+	return fmt.Sprintf("#%d", seq)
 }
 
 // MessageRef returns a message's short ref ("#3") — the deterministic token
@@ -754,7 +741,7 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rec, found := rt.messages[msg.Handle]
+	rec, found := rt.messages[msg.Ref]
 	if !found {
 		return "", fmt.Errorf("agent %q has no record of this message", rt.name)
 	}
@@ -769,8 +756,8 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 // hold both handles. Idempotent per subscriber; a re-subscribe replaces the
 // state set.
 //
-// Both entries must already exist: spawn and rehydrate are the only runtime
-// constructors. A subscriber that exists but has not started yet still has a
+// Both entries must already exist: spawn is the only runtime
+// constructor. A subscriber that exists but has not started yet still has a
 // mailbox, so an event queues until something starts it rather than being
 // dropped. (Only a STOPPED subscriber drops events: relaunch-by-notification
 // would undo a dismissal.)
@@ -924,25 +911,24 @@ func (ars *AgentRuntimes) deliverEvent(source *AgentRuntime, ev agentEvent) {
 		return
 	}
 	origin := &LLMMessageOrigin{
-		Kind:        LLMMessageOriginEvent,
-		AgentHandle: source.key,
-		AgentName:   source.name,
+		Kind:      LLMMessageOriginEvent,
+		AgentName: source.name,
 	}
-	if _, err := subscriber.enqueue(ev.text, origin); err != nil {
+	if _, err := subscriber.enqueue(ev.text, origin, source.key); err != nil {
 		// errAgentEventDropped: the subscriber is stopped, by design.
 		return
 	}
 }
 
 // LookupMessage returns the identity-only handle for a message already
-// enqueued into the given agent's permanent runtime record. This is the
-// runtime side of Agent.message — the lookup field send re-execs through to
-// pin its result's identity (design §9). Delivery is deliberately not copied
-// onto the value: the same (agent, message handle) pair always denotes the same
-// record while its evidence may still be pending. An agent with no runtime
-// entry, or an entry with no record of the handle, is a clear error: message never
-// creates anything.
-func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], messageHandle string) (*AgentMessage, error) {
+// enqueued into the given agent's permanent runtime record, by its ref. This
+// is the runtime side of Agent.message — the lookup field send re-execs
+// through to pin its result's identity (design §9). Delivery is deliberately
+// not copied onto the value: the same (agent, ref) pair always denotes the
+// same record while its evidence may still be pending. An agent with no
+// runtime entry, or an entry with no record of the ref, is a clear error:
+// message never creates anything.
+func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], token string) (*AgentMessage, error) {
 	rt, found, err := ars.Get(ctx, agent)
 	if err != nil {
 		return nil, err
@@ -952,13 +938,14 @@ func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectR
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if _, found := rt.messages[messageHandle]; !found {
-		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, messageHandle)
+	rec, ref := rt.findRecordByRefLocked(token)
+	if rec == nil {
+		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, token)
 	}
 	return &AgentMessage{
 		AgentHandle: rt.key,
 		AgentName:   rt.name,
-		Handle:      messageHandle,
+		Ref:         ref,
 	}, nil
 }
 
@@ -979,7 +966,7 @@ func (ars *AgentRuntimes) MessageDelivery(ctx context.Context, msg *AgentMessage
 	if err != nil {
 		return "", err
 	}
-	return rt.messageDelivery(ctx, msg.Handle)
+	return rt.messageDelivery(ctx, msg.Ref)
 }
 
 // MessageResponse blocks until the turn that consumed the given message ends,
@@ -989,7 +976,7 @@ func (ars *AgentRuntimes) MessageResponse(ctx context.Context, msg *AgentMessage
 	if err != nil {
 		return "", err
 	}
-	return rt.awaitMessage(ctx, msg.Handle)
+	return rt.awaitMessage(ctx, msg.Ref)
 }
 
 // KillAll cancels every running loop and waits (bounded by ctx) for them to
@@ -1328,14 +1315,13 @@ func (rt *AgentRuntime) Snapshot() dagql.ObjectResult[*LLM] {
 // message restarts the loop instead of being rejected — unless the origin is
 // an EVENT: events never relaunch (hack/designs/agent-messaging.md §4.3), so
 // a stopped subscriber reports errAgentEventDropped instead of reopening.
-func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, error) {
+func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin, senderKey string) (string, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	stopped := rt.stateLocked() == AgentStateStopped
 	if stopped && origin != nil && origin.Kind == LLMMessageOriginEvent {
 		return "", errAgentEventDropped
 	}
-	messageHandle := identity.NewID()
 	var deliveryHint AgentMessageDelivery
 	switch {
 	case stopped:
@@ -1366,17 +1352,20 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin) (string, 
 	rec := &agentMessageRecord{
 		text:          text,
 		origin:        origin,
+		sender:        senderKey,
 		deliveryHint:  deliveryHint,
 		deliveryReady: make(chan struct{}),
 		done:          make(chan struct{}),
 	}
 	rt.msgSeq++
 	rec.seq = rt.msgSeq
+	// The ref is the message's deterministic public identity within THIS
+	// runtime: the record's key, what the attribution header shows, what a
+	// reply's replyTo names, and the argument the pinned message chain
+	// carries.
+	messageHandle := messageRef(rec.seq)
 	if origin != nil {
-		// The ref is the message's deterministic public handle within THIS
-		// runtime: what the attribution header shows, and what a reply's
-		// replyTo names.
-		origin.Ref = fmt.Sprintf("#%d", rec.seq)
+		origin.Ref = messageHandle
 	}
 	if deliveryHint == AgentMessageQueued {
 		rt.finalizeDeliveryLocked(rec, deliveryHint, nil)
@@ -1581,7 +1570,7 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 		// a plain user prompt is the unmarked common case, and a self-send
 		// (a tool steering its own calling agent) attributes the agent's own
 		// words to itself — noise, not provenance.
-		if origin := rec.origin; origin != nil && !originOmittedFromChain(origin, rt.key) {
+		if origin := rec.origin; origin != nil && !originOmittedFromChain(origin, rec.sender, rt.key) {
 			originArg, err := originInput(origin)
 			if err != nil {
 				rt.failMessage(rec, err)
@@ -1633,8 +1622,8 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 	}
 }
 
-// rehydrate publishes the restored instance's identity and sets the facts
-// its restored state projects from. The entry is fresh (Rehydrate is the only
+// create sets the facts the new entry's state projects from, and for a
+// restored instance publishes its identity. The entry is fresh (Create is the only
 // caller, holding the only reference), and its loop is deliberately NOT
 // started: a restored agent spends no tokens until somebody prompts it.
 //
@@ -1648,17 +1637,26 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 // and every later transition — reach a roster. A later start opens the real
 // loop span; both carry the same dagger.io/agent.id, and a client unions
 // them into one entry by construction.
-func (rt *AgentRuntime) rehydrate(ctx context.Context, state AgentState, loopErr string) {
-	// Detached from the request: the context is retained past this call, and
-	// records emitted on a canceled one would be publishing into a corpse.
-	spanCtx, span := Tracer(ctx).Start(context.WithoutCancel(ctx),
-		fmt.Sprintf("agent: %s", rt.name),
-		agentSpanAttrs(ctx, rt.name, rt.self)...)
-	span.End()
+func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr string, restored bool) {
+	var spanCtx context.Context
+	if restored {
+		// A restored agent that is not started has no loop span in the new
+		// trace, so it publishes its identity now, or it is invisible to the
+		// roster (resume-from-trace §4.5). Detached from the request: the
+		// context is retained past this call, and records emitted on a
+		// canceled one would be publishing into a corpse.
+		var span trace.Span
+		spanCtx, span = Tracer(ctx).Start(context.WithoutCancel(ctx),
+			fmt.Sprintf("agent: %s", rt.name),
+			agentSpanAttrs(ctx, rt.name, rt.self)...)
+		span.End()
+	}
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rt.spanCtx = spanCtx
+	if spanCtx != nil {
+		rt.spanCtx = spanCtx
+	}
 	switch state {
 	case AgentStatePaused:
 		rt.paused = true
@@ -2045,8 +2043,9 @@ func (rt *AgentRuntime) resetForRelaunchLocked() {
 // the loop relaunches from the last committed snapshot — the failed step's
 // input is still pending on it, so the loop naturally retries the step, and
 // QUEUED mail drains into the turn. A STOPPED tombstone relaunches from the
-// same preserved snapshot, keeping the instance and runtime entry. On a
-// running or idle non-paused agent resume is a no-op.
+// same preserved snapshot, keeping the instance and runtime entry. A
+// never-started agent's loop is started, so a seed with pending input steps
+// it. On a running or idle non-paused agent resume is a no-op.
 func (rt *AgentRuntime) Resume(ctx context.Context) error {
 	rt.mu.Lock()
 	switch rt.stateLocked() {
@@ -2075,14 +2074,20 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 		go rt.loop(loopCtx)
 		return nil
 	}
-	if !rt.paused {
-		rt.mu.Unlock()
+	if rt.paused {
+		rt.transitionLocked(func() {
+			rt.paused = false
+		})
+	}
+	started := rt.started
+	rt.mu.Unlock()
+
+	if !started {
+		// Never started: there is no parked loop to wake. Launch it; it
+		// steps whatever input the seed holds, then idles.
+		rt.start(ctx)
 		return nil
 	}
-	rt.transitionLocked(func() {
-		rt.paused = false
-	})
-	rt.mu.Unlock()
 
 	// Wake the parked loop; it re-checks the facts (suspended turn, queued
 	// mail) and continues where the pause left off.

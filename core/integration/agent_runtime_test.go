@@ -22,8 +22,8 @@ package core
 // handle via node(id:) for every subsequent query; two spawns of an
 // identical composition are two distinct agents (TestSpawnInstances).
 // Agent.send follows the same pattern one level down: it pins each
-// enqueued message through Agent.message(handle:) — the chain
-// `…agent(handle:…)!message(handle:"…")` — which is what makes the
+// enqueued message through Agent.message(ref:) — the chain
+// `…agent(handle:…)!message(ref:"#3")` — which is what makes the
 // cancel-and-request-again contract holds across requests (TestMessageIdentity).
 // Like every imperative verb (start, pause, resume, interrupt, wait,
 // stop), spawn and send are ID-returning, sync-style: lazy clients force
@@ -199,7 +199,7 @@ func (h *agentHandle) mustRun(ctx context.Context, t *testctx.T, selection strin
 }
 
 // msgRun loads a pinned message handle by its ID — node(id:) replays the
-// …agent(handle:…)!message(handle:…) chain — and runs the given selection on it,
+// …agent(handle:…)!message(ref:…) chain — and runs the given selection on it,
 // returning the JSON subtree rooted at the node.
 func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection string) (gjson.Result, error) {
 	t.Helper()
@@ -228,7 +228,7 @@ func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection
 
 // sendID enqueues a message and returns the pinned message ID. send is
 // ID-returning (sync-style): the enqueue happens here, exactly once, and the
-// returned ID replays the message(handle:) lookup — not the send — when loaded.
+// returned ID replays the message(ref:) lookup — not the send — when loaded.
 func (h *agentHandle) sendID(ctx context.Context, t *testctx.T, message string) (string, error) {
 	t.Helper()
 	out, err := h.run(ctx, t, fmt.Sprintf(`send(message: %q)`, message))
@@ -286,7 +286,7 @@ func (h *agentHandle) state(ctx context.Context, t *testctx.T) string {
 	return state
 }
 
-// verb runs a lifecycle verb (start, pause, resume, interrupt, stop) and
+// verb runs a lifecycle verb (pause, resume, stop) and
 // returns the agent's state read just after it. The verbs are ID-returning
 // (sync-style) leaves, so the state is a follow-up query rather than a
 // sub-selection — safe because each verb returns only once its transition
@@ -361,16 +361,16 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 }
 
 // rehydrateAgent runs the restore chain of design §3.2 verbatim —
-// loadLLMFromID(<snapshot>) { agent(handle:, name:) { rehydrate(...) } } — and
+// loadLLMFromID(<snapshot>) { spawn(handle:, name:, state:, error:) } — and
 // returns a handle on the restored instance. Error-returning, because half
-// the point of rehydrate is which calls it refuses.
+// the point of a restore is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
 			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
 				node(id: $llm) { ... on LLM {
-					agent(handle: $id, name: $name) { rehydrate(state: $state, error: $error) }
+					spawn(handle: $id, name: $name, state: $state, error: $error)
 				} }
 			}`,
 			Variables: map[string]any{
@@ -389,9 +389,9 @@ func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, 
 	if err != nil {
 		return nil, err
 	}
-	out := gjson.Get(string(raw), "node.agent.rehydrate")
+	out := gjson.Get(string(raw), "node.spawn")
 	if !out.Exists() || out.String() == "" {
-		return nil, fmt.Errorf("rehydrated agent ID missing in response: %s", raw)
+		return nil, fmt.Errorf("restored agent ID missing in response: %s", raw)
 	}
 	return &agentHandle{c: c, agentID: out.String()}, nil
 }
@@ -518,9 +518,10 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 
 	h := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "lifecycle"})
 
-	// start is idempotent, and an empty seed (no pending prompt) idles.
-	require.Equal(t, "IDLE", h.mustVerb(ctx, t, "start"))
-	require.Equal(t, "IDLE", h.mustVerb(ctx, t, "start"))
+	// resume starts a never-started agent, is idempotent, and an empty seed
+	// (no pending prompt) idles.
+	require.Equal(t, "IDLE", h.mustVerb(ctx, t, "resume"))
+	require.Equal(t, "IDLE", h.mustVerb(ctx, t, "resume"))
 
 	// waitFor(IDLE) returns immediately when already there.
 	state, err := h.waitFor(ctx, t, "IDLE")
@@ -990,7 +991,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		// Suspended: an interrupt parks PAUSED with the turn still open. Reseed
 		// now deliberately abandons that consumed message and commits the
 		// replacement conversation, which is the engine half of inline edit.
-		_, err = h.verb(ctx, t, "interrupt")
+		_, err = h.verb(ctx, t, "pause(interrupt: true)")
 		require.NoError(t, err)
 		state, err := h.waitFor(ctx, t, "PAUSED")
 		require.NoError(t, err)
@@ -1058,7 +1059,7 @@ func (AgentRuntimeSuite) TestPauseQueueResume(ctx context.Context, t *testctx.T)
 	t.Run("started agent", func(ctx context.Context, t *testctx.T) {
 		h := spawnAgent(ctx, t, c, spawnOpts{model: newModel(), name: "pausable"})
 
-		require.Equal(t, "IDLE", h.mustVerb(ctx, t, "start"))
+		require.Equal(t, "IDLE", h.mustVerb(ctx, t, "resume"))
 		require.Equal(t, "PAUSED", h.mustVerb(ctx, t, "pause"))
 
 		// send never blocks: while paused it returns immediately with
@@ -1272,7 +1273,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	// Preempt the step. The state projects RUNNING until the canceled tool
 	// result is recorded, so wait for the park rather than asserting
 	// immediately.
-	_, err = h.verb(ctx, t, "interrupt")
+	_, err = h.verb(ctx, t, "pause(interrupt: true)")
 	require.NoError(t, err)
 	state, err := h.waitFor(ctx, t, "PAUSED")
 	require.NoError(t, err)
@@ -1405,7 +1406,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 	// tool call absorbs the cancellation, the canceled step never lands,
 	// PAUSED never projects, and this waitFor times out — the leak's
 	// loop-side symptom.
-	_, err = h.verb(ctx, t, "interrupt")
+	_, err = h.verb(ctx, t, "pause(interrupt: true)")
 	require.NoError(t, err)
 	parkCtx, cancelPark := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelPark()
@@ -1457,7 +1458,7 @@ func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx
 
 // TestMessageIdentity covers re-exec pinning of message handles (design §9):
 // send returns the ID of the pinned handle — the honest chain
-// …agent(handle:…)!message(handle:…) — and that ID re-addresses the SAME message record
+// …agent(handle:…)!message(ref:…) — and that ID re-addresses the SAME message record
 // from a later request. That is the cancel-and-request-again contract: a response
 // canceled mid-turn loses nothing — a fresh request re-loads the handle via
 // node(id:) and requests the response. Also locks in the lookup's clean failure
@@ -1485,7 +1486,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "STARTED", out.Get("delivery").String())
 
 	// responseByID re-addresses the pinned handle in a fresh request —
-	// node(id:) replays the …agent(handle:…)!message(handle:…) chain.
+	// node(id:) replays the …agent(handle:…)!message(ref:…) chain.
 	responseByID := func(ctx context.Context) (delivery, reply string, _ error) {
 		res := map[string]any{}
 		err := c.Do(ctx, &dagger.Request{
@@ -1529,8 +1530,8 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "STARTED", delivery)
 	require.Equal(t, slowToolReply, reply)
 
-	// Unknown message handle on an agent with a runtime entry: clear error.
-	_, err = h.run(ctx, t, `message(handle: "bogus") { delivery }`)
+	// Unknown message ref on an agent with a runtime entry: clear error.
+	_, err = h.run(ctx, t, `message(ref: "#99") { delivery }`)
 	require.ErrorContains(t, err, "no record of message")
 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
@@ -1539,7 +1540,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	// it mints (see TestSendRequiresRuntime for why a miss must never be a
 	// constructor).
 	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
-	_, err = ghost.run(ctx, t, `message(handle: "bogus") { delivery }`)
+	_, err = ghost.run(ctx, t, `message(ref: "#99") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
 }
 
@@ -2481,12 +2482,12 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 		// maps it to IDLE with the interrupted turn's input still pending;
 		// the engine refuses to be told otherwise.
 		_, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "zombie", "RUNNING", "")
-		require.ErrorContains(t, err, "cannot be re-hydrated as RUNNING")
+		require.ErrorContains(t, err, "cannot be spawned as RUNNING")
 	})
 
 	t.Run("an error without FAILED is refused", func(ctx context.Context, t *testctx.T) {
 		_, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "confused", "IDLE", "boom")
-		require.ErrorContains(t, err, "only be restored with state FAILED")
+		require.ErrorContains(t, err, "only be spawned with state FAILED")
 	})
 }
 
@@ -2504,16 +2505,12 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 	require.NoError(t, err)
 
 	tests := map[string]func(context.Context, *testctx.T, *agentHandle) error{
-		"start": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
-			_, err := ghost.run(ctx, t, `start`)
-			return err
-		},
 		"send": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
 			_, err := ghost.sendNoWait(ctx, t, "typed at an agent that was never restored")
 			return err
 		},
 		"interrupt": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
-			_, err := ghost.run(ctx, t, `interrupt`)
+			_, err := ghost.run(ctx, t, `pause(interrupt: true)`)
 			return err
 		},
 		"pause": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
@@ -2536,7 +2533,7 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 			return ghost.reseedAgent(ctx, t, string(snapshot))
 		},
 		"message lookup": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
-			_, err := ghost.run(ctx, t, `message(handle: "unknown") { delivery }`)
+			_, err := ghost.run(ctx, t, `message(ref: "#1") { delivery }`)
 			return err
 		},
 		"notify target": func(ctx context.Context, t *testctx.T, ghost *agentHandle) error {
@@ -2553,7 +2550,8 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 
 	for name, run := range tests {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
-			ghost := unmintedAgent(ctx, t, c, identity.NewID(), "ghost-"+name)
+			handle := identity.NewID()
+			ghost := unmintedAgent(ctx, t, c, handle, "ghost-"+name)
 
 			// Read projections remain useful for reconstructed trace handles.
 			require.Equal(t, "IDLE", ghost.state(ctx, t))
@@ -2563,7 +2561,7 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 
 			// The failed verb did not leave a ghost entry behind: the explicit
 			// restore constructor can still adopt this handle.
-			_, err = ghost.run(ctx, t, `rehydrate`)
+			_, err = rehydrateAgent(ctx, c, string(snapshot), handle, "ghost-"+name, "IDLE", "")
 			require.NoError(t, err)
 		})
 	}

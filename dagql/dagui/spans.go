@@ -363,12 +363,11 @@ type SpanSnapshot struct {
 
 	// LLM message origin: recorded provenance for a user-role message that
 	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
-	// vocabulary). Kind is USER, AGENT, or EVENT; the agent fields identify
-	// the sending (AGENT) or observed (EVENT) agent; Ref is the message's
+	// vocabulary). Kind is USER, AGENT, or EVENT; AgentName names the
+	// sending (AGENT) or observed (EVENT) agent; Ref is the message's
 	// short ref (e.g. "#3") and ReplyTo the ref of the message it answers.
 	// All empty for the user's own prompts, the unmarked common case.
 	LLMOriginKind      string `json:",omitempty"`
-	LLMOriginAgentID   string `json:",omitempty"`
 	LLMOriginAgentName string `json:",omitempty"`
 	LLMOriginRef       string `json:",omitempty"`
 	LLMOriginReplyTo   string `json:",omitempty"`
@@ -584,9 +583,6 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.LLMMessageOriginKindAttr:
 		snapshot.LLMOriginKind = val.(string)
-
-	case telemetryattrs.LLMMessageOriginAgentIDAttr:
-		snapshot.LLMOriginAgentID = val.(string)
 
 	case telemetryattrs.LLMMessageOriginAgentNameAttr:
 		snapshot.LLMOriginAgentName = val.(string)

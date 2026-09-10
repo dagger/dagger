@@ -75,7 +75,7 @@ var _ agentRuntime = liveAgent{}
 func (l liveAgent) SendMessage(ctx context.Context, msg string) (agentMessage, error) {
 	// Send executes eagerly (it returns an ID scalar that the SDK loads as
 	// the message) and the returned ID is pinned to the replayable
-	// `…agent(handle:…)!message(handle:…)` chain, so a response read on the handle can be
+	// `…agent(handle:…)!message(ref:…)` chain, so a response read on the handle can be
 	// canceled without losing it.
 	message, err := l.agent.Send(ctx, msg)
 	if err != nil {
@@ -90,7 +90,7 @@ func (l liveAgent) Resume(ctx context.Context) error {
 }
 
 func (l liveAgent) Interrupt(ctx context.Context) error {
-	_, err := l.agent.Interrupt(ctx)
+	_, err := l.agent.Pause(ctx, dagger.AgentPauseOpts{Interrupt: true})
 	return err
 }
 
