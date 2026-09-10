@@ -142,6 +142,7 @@ func (FileSuite) TestBlobBinaryRoundTripAndReplay(ctx context.Context, t *testct
 	require.NotEqual(t, created.Original.ID, created.Different.ID)
 	// Equivalent files may have different runtime handles; compare their content and metadata.
 	require.NotEmpty(t, created.Original.Digest)
+	require.NotEmpty(t, created.Same.Digest)
 	require.Equal(t, created.Original.Digest, created.Same.Digest)
 	require.NotEmpty(t, created.Different.Digest)
 	require.NotEqual(t, created.Original.Digest, created.Different.Digest)
