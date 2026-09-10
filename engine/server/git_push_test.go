@@ -40,13 +40,30 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 	sess := &daggerSession{sessionID: "session", attachables: newSessionAttachableManager()}
 	sess.state.Store(sessionStateInitialized)
-	owner := &daggerClient{clientID: "owner", daggerSession: sess, clientMetadata: &engine.ClientMetadata{ClientID: "owner", SessionID: "session"}}
-	module := &daggerClient{clientID: "module", daggerSession: sess, parents: []*daggerClient{owner}, mod: sessionTestModuleResult(t, "pusher")}
-	sess.clients = map[string]*daggerClient{"owner": owner, "module": module}
+	newClient := func(id string, parents ...string) *clientRuntime {
+		return &clientRuntime{clientRecord: &clientRecord{
+			clientID: id, daggerSession: sess,
+			clientMetadata:  &engine.ClientMetadata{ClientID: id, SessionID: "session"},
+			parentClientIDs: parents, metadataSealed: true, accepting: true,
+		}, state: clientStateInitialized, lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+	}
+	owner := newClient("owner")
+	module := newClient("module", "owner")
+	module.mod = sessionTestModuleResult(t, "pusher")
+	sess.clientRuntimes = map[string]*clientRuntime{"owner": owner, "module": module}
+	installTestClientRecords(sess)
 	sess.attachables.callers["owner"] = &sessionAttachableCaller{ctx: t.Context(), conn: conn}
 	srv := &Server{daggerSessions: map[string]*daggerSession{"session": sess}}
-	ownerCtx := engine.ContextWithClientMetadata(t.Context(), owner.clientMetadata)
-	moduleCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "module", SessionID: "session"})
+	clientContext := func(client *clientRuntime) context.Context {
+		scope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "git push test")
+		require.NoError(t, err)
+		t.Cleanup(scope.Lease().Release)
+		ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+		require.NoError(t, err)
+		return ctx
+	}
+	ownerCtx := clientContext(owner)
+	moduleCtx := clientContext(module)
 	const remote = "git@example.com:repo"
 	const ref = "refs/heads/main"
 	// Direct owner use is implicit authorization, including explicit leases.
@@ -56,7 +73,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	for range 2 {
 		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false)
 		require.NoError(t, err)
-		require.Same(t, owner.clientMetadata, md)
+		require.Equal(t, owner.clientMetadata, md)
 	}
 	require.Len(t, questions.requests, 1)
 	require.Equal(t, "Allow pushing to git@example.com:repo @ refs/heads/main?", questions.requests[0].Prompt)
@@ -71,12 +88,13 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, questions.requests, 3)
 	// A module-created container's nested API client is still delegated.
-	nested := &daggerClient{clientID: "nested", daggerSession: sess, parents: []*daggerClient{owner, module}}
-	sess.clients["nested"] = nested
-	nestedCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "nested", SessionID: "session"})
+	nested := newClient("nested", "owner", "module")
+	sess.clientRuntimes["nested"] = nested
+	installTestClientRecords(sess)
+	nestedCtx := clientContext(nested)
 	md, err := srv.AuthorizeGitPush(nestedCtx, remote, ref, false)
 	require.NoError(t, err)
-	require.Same(t, owner.clientMetadata, md)
+	require.Equal(t, owner.clientMetadata, md)
 	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true)
 	require.ErrorContains(t, err, "permission denied")
 	require.Len(t, questions.requests, 3)

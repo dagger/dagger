@@ -58,7 +58,7 @@ func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, as
 }
 
 func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force bool) (*engine.ClientMetadata, error) {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	// Calling push directly is implicit authorization for this exact operation.
 	// Tool execution in the owner's context is not a direct user API call.
 	if !delegated && !core.IsAgentToolCall(ctx) {
-		return owner.clientMetadata, nil
+		return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
 	}
 	key := gitPushApprovalKey{owner: owner.clientID, remote: remote, ref: ref, force: force}
 	allowed, err := client.daggerSession.gitPushApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
@@ -108,15 +108,19 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		}
 		return nil, fmt.Errorf("git %s permission denied by the owning client for %s for this session", action, ref)
 	}
-	return owner.clientMetadata, nil
+	return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
 }
 
 // A module cannot regain implicit authorization by spawning a non-module
 // nested client. Use the trusted caller immediately before the first module
 // boundary, not the nearest non-module client after that boundary.
-func gitPushOwner(client *daggerClient) (*daggerClient, bool, error) {
-	var owner *daggerClient
-	for _, parent := range client.parents {
+func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
+	var owner *clientRuntime
+	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, parent := range parents {
 		if parent.mod.Self() != nil {
 			if owner == nil {
 				return nil, true, fmt.Errorf("no owning client for git push")

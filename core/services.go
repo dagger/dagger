@@ -122,6 +122,7 @@ type RunningService struct {
 	refs                  []bkcache.Ref
 	resourceSnapshotCache bkcache.SnapshotManager
 	resourceLeaseID       string
+	clientScopeLease      *engine.ClientLifecycleLease
 
 	workspaceMu sync.Mutex
 
@@ -1040,6 +1041,8 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	svc.resourceSnapshotCache = nil
 	leaseID := svc.resourceLeaseID
 	svc.resourceLeaseID = ""
+	clientScopeLease := svc.clientScopeLease
+	svc.clientScopeLease = nil
 	svc.refsMu.Unlock()
 
 	var errs error
@@ -1049,6 +1052,10 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	if snapshotManager != nil && leaseID != "" {
 		errs = stderrors.Join(errs, snapshotManager.RemoveLease(context.WithoutCancel(ctx), leaseID))
 	}
+	// Keep executable ownership through resource cleanup: releasing the service
+	// lease is the terminal transition and may immediately reclaim a closed
+	// client runtime.
+	clientScopeLease.Release()
 	return errs
 }
 
@@ -1217,7 +1224,18 @@ func (ss *Services) startWithKey(
 			}
 			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
-			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+			svcBase, clientScopeLease, scopeErr := engine.DetachClientScope(
+				ctx,
+				engine.ClientLeaseService,
+				fmt.Sprintf("%s/%s/%s", key.Digest, key.Kind, key.InstanceID),
+			)
+			if scopeErr != nil {
+				ss.l.Unlock()
+				releaseSuppression()
+				return nil, nil, fmt.Errorf("acquire service client scope: %w", scopeErr)
+			}
+			running.clientScopeLease = clientScopeLease
+			svcCtx, cancel := context.WithCancelCause(svcBase)
 			var profOp *wcprof.Op
 			if wcprof.Enabled(svcCtx) {
 				svcCtx, profOp = wcprof.BeginOp(svcCtx, wcprof.OpKindServiceStart, "service.start", wcprof.OpOpts{

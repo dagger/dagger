@@ -140,6 +140,7 @@ const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
+var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
@@ -156,6 +157,8 @@ type cacheSessionLifecycle struct {
 	releaseMu      sync.Mutex
 	releasePlan    *cacheSessionReleasePlan
 	cleanupStarted bool
+	releaseDone    chan struct{}
+	releaseErr     error
 }
 
 type cacheSessionReleasePlan struct {
@@ -194,7 +197,7 @@ func (c *Cache) sessionLifecycle(sessionID string) *cacheSessionLifecycle {
 	if state, ok := c.sessionLifecycles.Load(sessionID); ok {
 		return state.(*cacheSessionLifecycle)
 	}
-	state := new(cacheSessionLifecycle)
+	state := &cacheSessionLifecycle{releaseDone: make(chan struct{})}
 	actual, _ := c.sessionLifecycles.LoadOrStore(sessionID, state)
 	return actual.(*cacheSessionLifecycle)
 }
@@ -1106,6 +1109,45 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	return cleanupErr
 }
 
+// WaitSessionRelease waits for cleanup started by ReleaseSession to finish.
+// Unlike ReleaseSession, its return is a completion barrier: all per-session
+// cleanup hooks have returned and no cache operation can produce more work for
+// the session. Callers must first call ReleaseSession to tombstone the session.
+func (c *Cache) WaitSessionRelease(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("wait for session release: empty session ID")
+	}
+	if c == nil {
+		return nil
+	}
+
+	state := c.sessionLifecycle(sessionID)
+	if state.lifecycle.Load()&cacheSessionReleasedBit == 0 {
+		return fmt.Errorf("%w: %q", ErrCacheSessionNotReleased, sessionID)
+	}
+
+	// Prefer an already-completed release even when ctx is also done. This
+	// makes the barrier's stored cleanup result stable for late waiters.
+	select {
+	case <-state.releaseDone:
+		state.releaseMu.Lock()
+		err := state.releaseErr
+		state.releaseMu.Unlock()
+		return err
+	default:
+	}
+
+	select {
+	case <-state.releaseDone:
+		state.releaseMu.Lock()
+		err := state.releaseErr
+		state.releaseMu.Unlock()
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
 	if state == nil || state.lifecycle.Load() != cacheSessionReleasedBit {
 		return nil
@@ -1123,6 +1165,8 @@ func (c *Cache) tryCleanupReleasedSession(state *cacheSessionLifecycle) error {
 
 	state.releaseMu.Lock()
 	state.releasePlan = nil
+	state.releaseErr = err
+	close(state.releaseDone)
 	state.releaseMu.Unlock()
 	return err
 }
@@ -1821,6 +1865,7 @@ type Cache struct {
 	testAfterSessionReleaseRecord   func()
 	testAfterHandoffHoldAcquired    func(*ongoingCall)
 	testAfterLazyEvalFinish         func(*lazyEvalAttempt)
+	testAfterCallbackWaiterCheck    func()
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
@@ -2313,14 +2358,19 @@ type ongoingCall struct {
 	handoffHoldActive          bool
 	initCompletedResultErr     error
 
-	waitCh                     chan struct{}
-	cancel                     context.CancelCauseFunc
-	waiters                    int
-	err                        error
-	val                        AnyResult
-	sharedWorkCtx              context.Context
-	releaseSharedWorkLeaseFn   func(context.Context) error
-	releaseSharedWorkLeaseOnce sync.Once
+	waitCh                      chan struct{}
+	cancel                      context.CancelCauseFunc
+	waiters                     int
+	err                         error
+	val                         AnyResult
+	sharedWorkCtx               context.Context
+	clientScopeLease            *engine.ClientLifecycleLease
+	releaseOperationLeaseFn     func(context.Context) error
+	releaseSharedWorkLeasesOnce sync.Once
+	// fnDone is set under callsMu once the callback has returned. A callback
+	// that returns successfully while waiters remain delegates publication and
+	// lease release to them, so the last waiter to leave must check it.
+	fnDone bool
 
 	// profOpID is the wcprof op for the shared execution of this call, when
 	// profiling is enabled. Waiters record wait events against it.
@@ -2341,13 +2391,16 @@ type ongoingCall struct {
 	res *sharedResult
 }
 
-func (oc *ongoingCall) releaseSharedWorkLease(ctx context.Context) error {
-	if oc == nil || oc.releaseSharedWorkLeaseFn == nil {
+func (oc *ongoingCall) releaseSharedWorkLeases(ctx context.Context) error {
+	if oc == nil {
 		return nil
 	}
 	var err error
-	oc.releaseSharedWorkLeaseOnce.Do(func() {
-		err = oc.releaseSharedWorkLeaseFn(ctx)
+	oc.releaseSharedWorkLeasesOnce.Do(func() {
+		if oc.releaseOperationLeaseFn != nil {
+			err = oc.releaseOperationLeaseFn(ctx)
+		}
+		oc.clientScopeLease.Release()
 	})
 	return err
 }
@@ -3648,11 +3701,21 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 		shared.lazyEval = currentLazyEval
 
-		attemptCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
+		attemptBase, clientScopeLease, err := engine.DetachClientScope(
+			stackCtx,
+			engine.ClientLeaseSharedWork,
+			fmt.Sprintf("lazy/%d", shared.id),
+		)
+		if err != nil {
+			shared.lazyMu.Unlock()
+			return fmt.Errorf("acquire lazy client scope: %w", err)
+		}
+		attemptCtx, cancel := context.WithCancelCause(attemptBase)
 		attemptOp, err := c.beginContextOperation(attemptCtx)
 		if err != nil {
 			shared.lazyMu.Unlock()
 			cancel(err)
+			clientScopeLease.Release()
 			return fmt.Errorf("start lazy evaluation: %w", err)
 		}
 		evalCtx := attemptCtx
@@ -3701,6 +3764,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		shared.lazyMu.Unlock()
 
 		go func() {
+			// Finish the cache operation (including any deferred ReleaseSession
+			// cleanup) before releasing the runtime that owns this work.
+			defer clientScopeLease.Release()
 			defer attemptOp.finish(false)
 			// The lazy op span and re-pointed callback context were minted under
 			// lazyMu before this attempt was published. A span created on one
@@ -4477,9 +4543,20 @@ func (c *Cache) getOrInitCallInner(
 	// to occasional redundant execution instead of a late cache hit. We accept
 	// that waste to avoid paying an extra lookup on this miss path.
 
-	// make a new call with ctx that's only canceled when all caller contexts are canceled
+	// Make a new call with a lifecycle scope that's only canceled when all
+	// caller contexts are canceled. One shared callback owns one client scope
+	// lease, regardless of how many waiters join it.
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
-	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	sharedBase, clientScopeLease, err := engine.DetachClientScope(
+		callCtx,
+		engine.ClientLeaseSharedWork,
+		"call/"+callKey,
+	)
+	if err != nil {
+		c.callsMu.Unlock()
+		return nil, fmt.Errorf("acquire shared client scope: %w", err)
+	}
+	callCtx, cancel := context.WithCancelCause(sharedBase)
 	var execOp *wcprof.Op
 	if wcprof.Enabled(ctx) {
 		// the shared execution of this call's resolver; all singleflighted
@@ -4499,10 +4576,11 @@ func (c *Cache) getOrInitCallInner(
 	if OTelProfActive(callCtx) && !req.ResultCall.ProfileSkip {
 		callCtx, execSpan = beginOTelCallExec(callCtx, callKey, profCallClass(req.ResultCall))
 	}
-	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
+	sharedWorkCtx, releaseOperationLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
 		c.callsMu.Unlock()
 		cancel(err)
+		clientScopeLease.Release()
 		execOp.End(wcprof.OutcomeError)
 		if execSpan != nil {
 			execSpan.End()
@@ -4510,14 +4588,15 @@ func (c *Cache) getOrInitCallInner(
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
 	oc := &ongoingCall{
-		callConcurrencyKeys:      callConcKeys,
-		ttlSeconds:               req.TTL,
-		waitCh:                   make(chan struct{}),
-		cancel:                   cancel,
-		waiters:                  1,
-		sharedWorkCtx:            sharedWorkCtx,
-		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
-		profOpID:                 execOp.ID(),
+		callConcurrencyKeys:     callConcKeys,
+		ttlSeconds:              req.TTL,
+		waitCh:                  make(chan struct{}),
+		cancel:                  cancel,
+		waiters:                 1,
+		clientScopeLease:        clientScopeLease,
+		sharedWorkCtx:           sharedWorkCtx,
+		releaseOperationLeaseFn: releaseOperationLease,
+		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait gating (oc.res is not
 		// set yet when joiners wait). Gating on the TARGET's flag keeps the OTel
 		// source dangle-proof: a skipped target never minted its call_exec span, so a
@@ -4546,10 +4625,14 @@ func (c *Cache) getOrInitCallInner(
 		EndProfSpan(execSpan, &err)
 
 		c.callsMu.Lock()
+		oc.fnDone = true
 		noWaiters := oc.waiters == 0
 		c.callsMu.Unlock()
+		if c.testAfterCallbackWaiterCheck != nil {
+			c.testAfterCallbackWaiterCheck()
+		}
 		if err != nil || noWaiters {
-			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
 		}
 	}()
 
@@ -4725,11 +4808,21 @@ func (c *Cache) wait(
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
 		releaseHandoff := lastWaiter && oc.handoffHoldActive
+		// The callback releases the shared leases itself only if it finishes
+		// with an error or with no waiters left. If it already finished
+		// successfully while this waiter was admitted, it delegated release to
+		// the waiters, and the last one leaving without publishing must do it
+		// or the leases are orphaned. Both sides decide under callsMu, so
+		// exactly one of them observes the other's state.
+		orphaned := lastWaiter && oc.fnDone
 		if lastWaiter {
 			delete(c.ongoingCalls, oc.callConcurrencyKeys)
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
+		if orphaned {
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
+		}
 		if releaseHandoff {
 			if relErr := c.releaseOngoingCallHandoff(ctx, oc); relErr != nil {
 				return nil, errors.Join(canceledErr, relErr)
@@ -4752,7 +4845,7 @@ func (c *Cache) wait(
 
 	oc.initCompletedResultOnce.Do(func() {
 		defer func() {
-			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
+			_ = oc.releaseSharedWorkLeases(context.WithoutCancel(oc.sharedWorkCtx))
 		}()
 		var pubOp *wcprof.Op
 		if oc.profOpID != 0 {

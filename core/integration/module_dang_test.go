@@ -17,6 +17,97 @@ func TestDang(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(DangSuite{})
 }
 
+func (DangSuite) TestSDKClientAttachables(ctx context.Context, t *testctx.T) {
+	const secretValue = "sdk-client-attachable-secret"
+
+	ctr := goGitBase(t, connect(ctx, t)).
+		WithNewFile("/work/dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"dang"}}`).
+		WithNewFile("/work/main.dang", `type Test {
+  envSecret: String! { secret(uri: "env://SDK_CLIENT_SECRET").plaintext }
+  hostFile: String! { secret(uri: "file:///host-secret").plaintext }
+  passedSecret(value: Secret!): String! { value.plaintext }
+  passedDirectory(value: Directory!): String! { value.file("allowed.txt").contents }
+  workspaceFile(ws: Workspace!): String! { ws.file("workspace.txt").contents }
+  engineFile: String! { directory.withNewFile("file.txt", "engine-dir").file("file.txt").contents }
+  engineContainer: String! { container.from("alpine:3.20").withExec(["echo", "engine-container"]).stdout }
+}`).
+		WithNewFile("/host-secret", secretValue).
+		WithNewFile("/allowed/allowed.txt", "passed-dir").
+		WithNewFile("/work/workspace.txt", "passed-workspace").
+		WithEnvVariable("SDK_CLIENT_SECRET", secretValue).
+		WithWorkdir("/work")
+
+	t.Run("rejects main client secrets", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("env-secret")).Sync(ctx)
+		requireErrOut(t, err, "SDK client access to host session attachables is denied")
+	})
+
+	t.Run("rejects main client host files", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("host-file")).Sync(ctx)
+		requireErrOut(t, err, "SDK client access to host session attachables is denied")
+	})
+
+	t.Run("allows explicitly passed values", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("passed-secret", "--value", "env://SDK_CLIENT_SECRET")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, secretValue, strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("passed-directory", "--value", "/allowed")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "passed-dir", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("workspace-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "passed-workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("allows engine graph operations", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("engine-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "engine-dir", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("engine-container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "engine-container", strings.TrimSpace(out))
+	})
+
+	// Accessing currentModule.source asks for the generated context from inside
+	// Dang evaluation. That re-enters dependency loading under the inert SDK
+	// client, where another SDK must not require host attachables just to build.
+	t.Run("allows loading a go dependency", func(ctx context.Context, t *testctx.T) {
+		depCtr := goGitBase(t, connect(ctx, t)).
+			WithNewFile("/work/dagger.json", `{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {"source": "dang"},
+  "dependencies": [{"name": "gochild", "source": "gochild"}]
+}`).
+			WithNewFile("/work/main.dang", `type Test {
+  let assets: Directory! = currentModule.source.directory("assets")
+
+  viaGo: String! { gochild.value + assets.file("marker.txt").contents }
+}`).
+			WithNewFile("/work/assets/marker.txt", "-asset").
+			WithNewFile("/work/gochild/dagger.json", `{
+  "name": "gochild",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "codegen": {"automaticGitignore": false}
+}`).
+			WithNewFile("/work/gochild/main.go", `package main
+
+type Gochild struct{}
+
+func (m *Gochild) Value() string { return "go" }
+`).
+			WithWorkdir("/work")
+
+		out, err := depCtr.With(daggerCall("via-go")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "go-asset", strings.TrimSpace(out))
+	})
+}
+
 func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 	assertEntries := func(t *testctx.T, out string, expected ...string) {
 		t.Helper()

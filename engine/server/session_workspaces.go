@@ -37,12 +37,11 @@ import (
 // Registered as core.SetWorkspaceInvalidator and triggered after a changeset
 // export writes workspace config files (e.g. a `dagger setup` migration that
 // creates dagger.toml / removes the legacy dagger.json). The per-client cache
-// would otherwise serve the pre-migration view for the client's whole lifetime;
-// under nested execution that lifetime spans multiple sessions in one process
-// (the client ID is pinned by DAGGER_SESSION_CLIENT_ID), so the post-migrate
-// recommended-module install would still see the legacy dagger.json and fail.
+// would otherwise serve the pre-migration view for the rest of that client's
+// lifetime, so subsequent work in the same session would still see the legacy
+// dagger.json and fail.
 func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -57,7 +56,7 @@ func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
 
 // CurrentWorkspace returns the cached workspace for the current client.
 func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +85,9 @@ func canonicalModuleReference(src *core.ModuleSource) string {
 
 // ensureWorkspaceLoaded detects the workspace from the client's working directory
 // and loads all configured modules onto the dagql server. Called from serveQuery
-// (not initializeDaggerClient) because it requires the client's session attachables
+// (not initializeClientRuntime) because it requires the client's session attachables
 // to access the client's filesystem for workspace detection.
-func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
+func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *clientRuntime) error {
 	mode, workspaceRef := workspaceBindingMode(client)
 	if mode == workspaceBindingInherit {
 		return srv.inheritWorkspaceBinding(ctx, client)
@@ -103,7 +102,7 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 
 	// Wait for the client's session attachables to be available.
 	// Don't mark as loaded on failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
@@ -134,7 +133,7 @@ const (
 
 // workspaceBindingMode resolves binding behavior for the current client:
 // explicit workspace declaration, own host detection, or parent inheritance.
-func workspaceBindingMode(client *daggerClient) (workspaceBindingModeType, string) {
+func workspaceBindingMode(client *clientRuntime) (workspaceBindingModeType, string) {
 	if workspaceRef, ok := workspaceRefFromClientMetadata(client.clientMetadata); ok {
 		return workspaceBindingDeclared, workspaceRef
 	}
@@ -174,7 +173,7 @@ func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
 // onto the current client. This keeps nested clients aligned with their parent
 // workspace for currentWorkspace() resolution.
-func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
+func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *clientRuntime) error {
 	client.workspaceMu.Lock()
 	if client.workspace != nil {
 		client.workspaceMu.Unlock()
@@ -182,8 +181,12 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 	}
 	client.workspaceMu.Unlock()
 
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return fmt.Errorf("resolve workspace ancestry: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		parent := ancestors[i]
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
@@ -207,12 +210,12 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 }
 
 // loadWorkspaceFromHost detects and loads the workspace from the client's host filesystem.
-func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClient) error {
+func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *clientRuntime) error {
 	return srv.loadWorkspaceFromHostPath(ctx, client, ".")
 }
 
-func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
-	bk := client.engineUtilClient
+func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *clientRuntime, hostPath string) error {
+	bk := client.daggerSession.engineUtilClient
 	cwd, err := bk.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
@@ -232,10 +235,10 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	)
 }
 
-func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
+func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *clientRuntime, workspaceRef string) error {
 	// Resolve as local path first (relative to the connecting client's cwd).
 	// If not found, fall back to parsing as a git workspace ref.
-	bk := client.engineUtilClient
+	bk := client.daggerSession.engineUtilClient
 	localPath, err := bk.AbsPath(ctx, workspaceRef)
 	if err == nil {
 		localStat, statErr := bk.StatCallerHostPath(ctx, localPath, true)
@@ -354,7 +357,7 @@ func normalizeWorkspaceRemoteSubdir(subdir string) (string, error) {
 }
 
 // loadWorkspaceFromRemote clones a git repo and detects/loads the workspace from it.
-func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerClient, remoteRef string) error {
+func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRuntime, remoteRef string) error {
 	parsedRef, err := parseWorkspaceRemoteRef(ctx, remoteRef)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
@@ -385,7 +388,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		core.NewWorkspaceSourceGitRef(gitRef.Result, gitutil.IsCommitSHA(parsedRef.version)),
 		// The workspace tree is remote, but user-level config still comes from
 		// the caller's host; the key is the declared remote itself.
-		client.engineUtilClient.ReadCallerHostFile,
+		client.daggerSession.engineUtilClient.ReadCallerHostFile,
 		workspace.NormalizeGitRemote(parsedRef.cloneRef),
 	)
 }
@@ -396,7 +399,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 //nolint:unparam
 func (srv *Server) detectAndLoadWorkspace(
 	ctx context.Context,
-	client *daggerClient,
+	client *clientRuntime,
 	statFS core.StatFS,
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
@@ -659,7 +662,7 @@ func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
 //nolint:gocyclo
 func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	ctx context.Context,
-	client *daggerClient,
+	client *clientRuntime,
 	statFS core.StatFS,
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
@@ -1149,14 +1152,14 @@ func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries b
 // generator runs. The skipped modules' failure messages are returned so the
 // caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
 // errors (batch resolution, arbitration, serving) stay fatal regardless.
-func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []core.ModuleLoadFailure, _ error) {
+func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []core.ModuleLoadFailure, _ error) {
 	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, bestEffort, nil)
 }
 
 // ensureModulesLoadedModeWithSuccess runs onSuccessLocked after a successful
 // load while modulesMu is still held. Callers use it for state transitions
 // that must be atomic with the load becoming visible to another request.
-func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []core.ModuleLoadFailure, rerr error) {
+func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []core.ModuleLoadFailure, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	defer func() {
@@ -1208,7 +1211,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return nil, fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
@@ -1261,7 +1264,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 // ensureExtraModulesLoadedLocked loads -m modules. They are explicitly
 // requested, so they load eagerly with sticky failures (unlike on-demand
 // workspace modules). client.modulesMu must be held.
-func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *daggerClient) error {
+func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *clientRuntime) error {
 	if client.extraModulesLoaded {
 		return client.extraModulesErr
 	}
@@ -1271,7 +1274,7 @@ func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *d
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
-	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+	if _, err := client.daggerSession.getClientCaller(ctx, client.clientID); err != nil {
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
@@ -1312,7 +1315,7 @@ func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *d
 // collecting per-load errors in deterministic order.
 func (srv *Server) resolveModuleLoadBatch(
 	ctx context.Context,
-	client *daggerClient,
+	client *clientRuntime,
 	loads []moduleLoadRequest,
 ) ([]resolvedModuleLoad, []error, error) {
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
@@ -1343,7 +1346,7 @@ func (srv *Server) resolveModuleLoadBatch(
 // arbitrateAmbientEntrypoints picks whether this ambient batch's entrypoint
 // candidate wins: only when none is served yet (extras outrank ambient).
 // Multiple candidates in one batch are a workspace configuration error.
-func (client *daggerClient) arbitrateAmbientEntrypoints(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+func (client *clientRuntime) arbitrateAmbientEntrypoints(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
 	collapseSameSourceEntrypointNominations(loads, resolved)
 
 	var candidates []int
@@ -1365,7 +1368,7 @@ func (client *daggerClient) arbitrateAmbientEntrypoints(loads []moduleLoadReques
 
 // markEntrypointServed flags that an entrypoint (primary or blueprint) was
 // served, so later ambient candidates are demoted. client.modulesMu must be held.
-func (client *daggerClient) markEntrypointServed(resolved []resolvedModuleLoad) {
+func (client *clientRuntime) markEntrypointServed(resolved []resolvedModuleLoad) {
 	for i := range resolved {
 		if resolved[i].primaryEntrypoint {
 			client.entrypointServed = true
@@ -1380,7 +1383,7 @@ func (client *daggerClient) markEntrypointServed(resolved []resolvedModuleLoad) 
 	}
 }
 
-func (client *daggerClient) recordFailedModule(mod pendingModule, err error) {
+func (client *clientRuntime) recordFailedModule(mod pendingModule, err error) {
 	// Cancellation/deadline is the request's fault, not the module's; keep it
 	// retriable.
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -1395,7 +1398,7 @@ func (client *daggerClient) recordFailedModule(mod pendingModule, err error) {
 // removePendingModules drops served modules from the pending set and records
 // their names so demand filters still recognize them. Failed modules stay
 // pending to keep reporting their error. client.modulesMu must be held.
-func (client *daggerClient) removePendingModules(served []pendingModule) {
+func (client *clientRuntime) removePendingModules(served []pendingModule) {
 	names := make(map[string]struct{}, len(served))
 	for _, mod := range served {
 		names[moduleProgressName(mod)] = struct{}{}
@@ -1421,7 +1424,7 @@ func (client *daggerClient) removePendingModules(served []pendingModule) {
 // of failing the operation, and their failure messages are returned for the
 // caller to surface (see ensureModulesLoadedMode).
 func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1506,7 +1509,7 @@ func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served
 // filterPendingWorkspaceModulesForRootFields selects the pending modules a
 // request's root fields reference. served modules are recognized without
 // loading. failed names modules already recorded as unloadable (see
-// daggerClient.failedModules); the unknown-field fallback skips them.
+// clientRuntime.failedModules); the unknown-field fallback skips them.
 func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string) []pendingModule {
 	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
 		return mods
@@ -1814,7 +1817,7 @@ func (srv *Server) resolveModuleLoad(
 // (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
 // each module's deps are available in its own internal schema (mod.Deps) for
 // type resolution during function calls.
-func (srv *Server) serveResolvedModuleLoadsLocked(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+func (srv *Server) serveResolvedModuleLoadsLocked(client *clientRuntime, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
 	for i := range loads {
 		load := resolved[i]
 		key := resolvedModuleLoadIdentity(load.primary)

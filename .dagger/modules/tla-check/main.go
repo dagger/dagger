@@ -2,8 +2,8 @@
 //
 // Runs every TLC configuration of CacheLifecycle.tla. Green configurations
 // are regression gates: any violation fails the check. A configuration may
-// name an expected invariant only while it deliberately tracks an accepted
-// model finding.
+// name an expected invariant only when it deliberately mutates behavior to
+// prove that the gate detects the bug, or tracks an accepted model finding.
 package main
 
 import (
@@ -24,9 +24,15 @@ const (
 	javaBaseImage   = "eclipse-temurin:21-jre"
 )
 
+// temporalOutcome is the expected outcome of a configuration that must
+// violate a temporal property. TLC does not name the violated property, so
+// a liveness mutation can only be gated on the class of failure.
+const temporalOutcome = "temporal"
+
 // expectedOutcome maps every configuration to what TLC must report:
-// "" means the run must complete with no error found; a non-empty value
-// names the one invariant that must be violated.
+// "" means the run must complete with no error found; temporalOutcome means
+// a temporal property must be violated; any other value names the one
+// invariant that must be violated.
 var expectedOutcome = map[string]string{
 	// green: regression gates over the modeled cache behavior
 	"core":              "",
@@ -50,31 +56,50 @@ var expectedOutcome = map[string]string{
 	"poisoned_restart":  "",
 	"flush_closure":     "",
 	"release_inflight":  "",
+	"release_wait":      "",
 	"drain_escape":      "",
 	"flush_inflight":    "",
 	"flush_drained":     "",
 	"lazy_release":      "",
+	// mutation: the last canceling waiter must release a completed fn's leases
+	"orphaned_lease": "SharedLeaseReleasedWhenRetired",
+}
+
+var clientExpectedOutcome = map[string]string{
+	"core":                  "",
+	"shared_work":           "",
+	"child":                 "",
+	"children":              "",
+	"grandchild":            "",
+	"teardown":              "",
+	"blocking_registration": temporalOutcome,
 }
 
 type TlaCheck struct {
 	// The dagql/tla spec directory.
 	Source *dagger.Directory
+
+	// The engine/server/tla spec directory.
+	ClientSource *dagger.Directory
 }
 
 func New(ws *dagger.Workspace) *TlaCheck {
-	return &TlaCheck{Source: ws.Directory("/dagql/tla", dagger.WorkspaceDirectoryOpts{})}
+	return &TlaCheck{
+		Source:       ws.Directory("/dagql/tla", dagger.WorkspaceDirectoryOpts{}),
+		ClientSource: ws.Directory("/engine/server/tla", dagger.WorkspaceDirectoryOpts{}),
+	}
 }
 
 // base returns a container with Java, the checksum-verified TLC jar, and
 // the spec directory mounted.
-func (m *TlaCheck) base() *dagger.Container {
+func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
 	jar := dag.HTTP(tla2toolsURL)
 	return dag.Container().
 		From(javaBaseImage).
 		WithFile("/tla2tools.jar", jar).
 		WithExec([]string{"sh", "-c",
 			fmt.Sprintf("echo '%s  /tla2tools.jar' | sha256sum -c -", tla2toolsSHA256)}).
-		WithDirectory("/spec", m.Source).
+		WithDirectory("/spec", source).
 		WithWorkdir("/spec")
 }
 
@@ -82,7 +107,7 @@ func (m *TlaCheck) base() *dagger.Container {
 // and verifies each outcome against its expectation.
 // +check
 func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
-	base := m.base()
+	base := m.base(m.Source)
 
 	names := make([]string, 0, len(expectedOutcome))
 	for name := range expectedOutcome {
@@ -92,29 +117,62 @@ func (m *TlaCheck) CacheLifecycle(ctx context.Context) error {
 
 	var (
 		mu       sync.Mutex
-		failures []string
+		failures []runFailure
 		wg       sync.WaitGroup
 	)
 	for _, name := range names {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			if msg := runOne(ctx, base, name, expectedOutcome[name]); msg != "" {
+			if failure := runOne(ctx, base, "CacheLifecycle", "CacheLifecycle_", name, expectedOutcome[name]); failure != nil {
 				mu.Lock()
-				failures = append(failures, msg)
+				failures = append(failures, *failure)
 				mu.Unlock()
 			}
 		}(name)
 	}
 	wg.Wait()
 
-	if len(failures) > 0 {
-		sort.Strings(failures)
-		return fmt.Errorf(
-			"TLA+ cache model check failed (%d of %d configurations):\n%s\n\nEach configuration's comment in dagql/tla/ describes its scenario and expected outcome.",
-			len(failures), len(names), strings.Join(failures, "\n"))
+	return reportFailures("cache", failures, len(names))
+}
+
+// ClientLifecycle model-checks client runtime reclamation, typed leases,
+// nested-client ownership, authoritative session teardown, and the final
+// telemetry barrier.
+// +check
+func (m *TlaCheck) ClientLifecycle(ctx context.Context) error {
+	base := m.base(m.ClientSource)
+
+	var (
+		mu       sync.Mutex
+		failures []runFailure
+		wg       sync.WaitGroup
+	)
+	run := func(group, specName, configPrefix, name, expect string) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if failure := runOne(ctx, base, specName, configPrefix, name, expect); failure != nil {
+				failure.name = group + "/" + failure.name
+				mu.Lock()
+				failures = append(failures, *failure)
+				mu.Unlock()
+			}
+		}()
 	}
-	return nil
+
+	clientNames := make([]string, 0, len(clientExpectedOutcome))
+	for name := range clientExpectedOutcome {
+		clientNames = append(clientNames, name)
+	}
+	sort.Strings(clientNames)
+	for _, name := range clientNames {
+		run("lifecycle", "ClientLifecycle", "ClientLifecycle_", name, clientExpectedOutcome[name])
+	}
+
+	wg.Wait()
+
+	return reportFailures("client lifecycle", failures, len(clientNames))
 }
 
 // One runs a single TLC configuration and returns the raw TLC output,
@@ -143,7 +201,7 @@ func (m *TlaCheck) One(
 	if define != "" && invariant == "" {
 		return "", fmt.Errorf("define requires invariant: name which invariant to check")
 	}
-	ctr := m.base()
+	ctr := m.base(m.Source)
 
 	if define != "" {
 		spec, err := m.Source.File("CacheLifecycle.tla").Contents(ctx)
@@ -189,17 +247,59 @@ func (m *TlaCheck) One(
 	return ctr.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 }
 
-// runOne executes one TLC configuration and returns "" on the expected
-// outcome, or a human-readable failure line. TLC exits nonzero on
-// violations, so the exec swallows the exit code and the output is parsed
-// instead.
-func runOne(ctx context.Context, base *dagger.Container, name, expect string) string {
+type runFailure struct {
+	name    string
+	summary string
+	detail  string
+}
+
+// reportFailures prints the detailed diagnostics and returns a short error
+// suitable for propagation through the check API.
+func reportFailures(model string, failures []runFailure, total int) error {
+	if len(failures) == 0 {
+		return nil
+	}
+
+	sort.Slice(failures, func(i, j int) bool {
+		return failures[i].name < failures[j].name
+	})
+
+	fmt.Printf("TLA+ %s model check failures:\n", model)
+	for _, failure := range failures {
+		fmt.Printf("- %s: %s\n", failure.name, failure.summary)
+	}
+	for _, failure := range failures {
+		if failure.detail == "" {
+			continue
+		}
+		fmt.Printf("\n--- details for %s ---\n%s", failure.name, failure.detail)
+		if !strings.HasSuffix(failure.detail, "\n") {
+			fmt.Println()
+		}
+		fmt.Printf("--- end details for %s ---\n\n", failure.name)
+	}
+
+	return fmt.Errorf("TLA+ %s model check failed: %d of %d configurations failed", model, len(failures), total)
+}
+
+// runOne executes one TLC configuration and returns nil on the expected
+// outcome, or detailed diagnostics for reportFailures to print. TLC exits
+// nonzero on violations, so the exec swallows the exit code and the output is
+// parsed instead.
+func runOne(
+	ctx context.Context,
+	base *dagger.Container,
+	specName,
+	configPrefix,
+	name,
+	expect string,
+) *runFailure {
 	cmd := fmt.Sprintf(
-		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config CacheLifecycle_%s.cfg CacheLifecycle.tla 2>&1 | tee /tmp/out.txt; true",
-		name)
+		"java -XX:+UseParallelGC -cp /tla2tools.jar tlc2.TLC -workers auto -deadlock -config %s%s.cfg %s.tla 2>&1; true",
+		configPrefix, name, specName)
 	out, err := base.WithExec([]string{"sh", "-c", cmd}).Stdout(ctx)
 	if err != nil {
-		return fmt.Sprintf("- %s: could not run TLC: %v", name, err)
+		return &runFailure{name: name, summary: "could not run TLC", detail: err.Error()}
 	}
 
 	clean := strings.Contains(out, "No error has been found")
@@ -210,24 +310,47 @@ func runOne(ctx context.Context, base *dagger.Container, name, expect string) st
 			violated = strings.TrimSuffix(violated, " is violated")
 			break
 		}
+		if strings.HasPrefix(line, "Error: Temporal properties were violated") {
+			violated = temporalOutcome
+			break
+		}
+	}
+
+	describe := func(outcome string) string {
+		if outcome == temporalOutcome {
+			return "a temporal property"
+		}
+		return "invariant " + outcome
 	}
 
 	switch {
 	case expect == "" && clean:
-		return ""
+		return nil
 	case expect == "" && violated != "":
-		return fmt.Sprintf("- %s: expected a clean pass, but invariant %s was violated — a regression in the modeled cache behavior or the spec", name, violated)
-	case expect != "" && violated == expect:
-		return ""
-	case expect != "" && clean:
-		return fmt.Sprintf("- %s: expected invariant %s to be violated (this configuration reproduces a known bug or finding), but the run came up clean — the model or config no longer reproduces it", name, expect)
-	case expect != "" && violated != "":
-		return fmt.Sprintf("- %s: expected invariant %s to be violated, but %s was violated instead — the configuration drifted", name, expect, violated)
-	default:
-		tail := out
-		if len(tail) > 400 {
-			tail = tail[len(tail)-400:]
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected a clean pass, but %s was violated — a regression in the modeled behavior or the spec", describe(violated)),
+			detail:  out,
 		}
-		return fmt.Sprintf("- %s: unrecognized TLC outcome (no clean pass, no invariant violation); output tail:\n%s", name, tail)
+	case expect != "" && violated == expect:
+		return nil
+	case expect != "" && clean:
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected %s to be violated, but the run came up clean — the model or config no longer reproduces it", describe(expect)),
+			detail:  out,
+		}
+	case expect != "" && violated != "":
+		return &runFailure{
+			name:    name,
+			summary: fmt.Sprintf("expected %s to be violated, but %s was violated instead — the configuration drifted", describe(expect), describe(violated)),
+			detail:  out,
+		}
+	default:
+		return &runFailure{
+			name:    name,
+			summary: "unrecognized TLC outcome (no clean pass, invariant violation, or temporal violation)",
+			detail:  out,
+		}
 	}
 }

@@ -1,6 +1,12 @@
 package telemetryattrs
 
 const (
+	// TelemetryOriginClientIDAttr records the immutable client identity captured
+	// from the emission context. Session-owned trace and log exporters use it to
+	// route each record to the origin client's DB and every validated ancestor
+	// DB. (string)
+	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
 	// LogRoleAttr describes a semantic role for an OTLP log record whose body

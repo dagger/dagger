@@ -36,6 +36,10 @@ type modDepEntry struct {
 // per-module install policy. It is used both for a module's own dependency
 // graph and for the set of modules served to a client session.
 type SchemaBuilder struct {
+	// root is the query value installed into derived schema servers. Query only
+	// carries the engine Server facade; runtime selection and authority come
+	// from the held ClientScope in each execution context, never from a pointer
+	// captured by the builder.
 	root    *Query
 	entries []modDepEntry
 
