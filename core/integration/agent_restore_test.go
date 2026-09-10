@@ -300,10 +300,12 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// the whole session would restore as tombstones or none of it would.
 	require.Equal(t, "STOPPED", tests.mustVerb(ctx, t, "stop"))
 
-	// The source session's trace, as its own client saw it. The dismissal's
-	// STOPPED record rides its own export, so wait for it: a capture taken
-	// before it lands plans the worker back into its pre-stop state.
-	rostered := sink.awaitAgents(t, 3)
+	// The source session's trace, as its own client saw it. Two things have
+	// to land before it is worth capturing, and each rides its own export:
+	// every anchor's payload (or the plan names conversations nothing can
+	// rebuild), and the dismissal's STOPPED record (or the plan puts the
+	// worker back into its pre-stop state).
+	rostered := sink.awaitRestorable(t, 3)
 	sink.awaitAgentState(t, "tests", "STOPPED")
 	require.Contains(t, rostered, "chief")
 	sourceTraceID := rostered["chief"].Span().TraceID.String()
@@ -367,16 +369,9 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// (5) Chained resume (§8): the resumed session's own trace has to carry
 	// the restored chains, or resuming IT would fail. Every restored agent
 	// publishes its identity and anchor into the new trace, and every anchor
-	// has to rebuild from the payloads that rode with it.
-	chained := restoredSink.awaitAgents(t, 3)
-	restoredSink.read(func(db *dagui.DB) {
-		for name, node := range chained {
-			_, err := db.CallIDForDigest(node.SnapshotDigest)
-			require.NoError(t, err,
-				"agent %q's anchor does not rebuild from the RESUMED session's own trace: "+
-					"resuming that trace in turn would fail", name)
-		}
-	})
+	// has to rebuild from the payloads that rode with it — awaitRestorable
+	// fails the test if one never does.
+	chained := restoredSink.awaitRestorable(t, 3)
 	require.Contains(t, chained, "chief")
 }
 
@@ -415,7 +410,10 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	require.NoError(t, err)
 	require.Equal(t, answer, reply)
 
-	rostered := sink.awaitAgents(t, 1)
+	// Wait for the anchor to be rebuildable BEFORE stripping, so the refusal
+	// below is caused by the strip and not by a payload that had simply not
+	// arrived yet.
+	rostered := sink.awaitRestorable(t, 1)
 	traceID := rostered["solo"].Span().TraceID.String()
 	traces, logs := sink.capture()
 
