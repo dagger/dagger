@@ -2246,7 +2246,7 @@
 			"t": "M",
 			"n": "Dagger\\AgentMiddleware::name",
 			"p": "Dagger/AgentMiddleware.html#method_name",
-			"d": "<p>Return the fully qualified name of the agent</p>"
+			"d": "<p>Return the command name of the agent. Entrypoint targets omit the module prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -2768,7 +2768,7 @@
 			"t": "M",
 			"n": "Dagger\\Check::name",
 			"p": "Dagger/Check.html#method_name",
-			"d": "<p>Return the fully qualified name of the check</p>"
+			"d": "<p>Return the command name of the check. Entrypoint targets omit the module prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -5486,7 +5486,7 @@
 			"t": "M",
 			"n": "Dagger\\Generator::name",
 			"p": "Dagger/Generator.html#method_name",
-			"d": "<p>Return the fully qualified name of the generator</p>"
+			"d": "<p>Return the command name of the generator. Entrypoint targets omit the module prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -7484,7 +7484,7 @@
 			"t": "M",
 			"n": "Dagger\\TerminalTarget::name",
 			"p": "Dagger/TerminalTarget.html#method_name",
-			"d": "<p>Return the fully qualified name of the terminal target</p>"
+			"d": "<p>Return the command name of the terminal target. Entrypoint targets omit the module prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -7646,7 +7646,7 @@
 			"t": "M",
 			"n": "Dagger\\Up::name",
 			"p": "Dagger/Up.html#method_name",
-			"d": "<p>Return the fully qualified name of the service</p>"
+			"d": "<p>Return the command name of the service. Entrypoint targets omit the module prefix.</p>"
 		},
 		{
 			"t": "M",

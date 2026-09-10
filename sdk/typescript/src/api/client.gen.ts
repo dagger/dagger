@@ -4377,7 +4377,7 @@ export class AgentMiddleware extends BaseClient {
   }
 
   /**
-   * Return the fully qualified name of the agent
+   * Return the command name of the agent. Entrypoint targets omit the module prefix.
    * @experimental
    */
   name = async (): Promise<string> => {
@@ -4845,7 +4845,7 @@ export class Check extends BaseClient {
   }
 
   /**
-   * Return the fully qualified name of the check
+   * Return the command name of the check. Entrypoint targets omit the module prefix.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -9671,7 +9671,7 @@ export class Generator extends BaseClient {
   }
 
   /**
-   * Return the fully qualified name of the generator
+   * Return the command name of the generator. Entrypoint targets omit the module prefix.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -15626,7 +15626,7 @@ export class TerminalTarget extends BaseClient {
   }
 
   /**
-   * Return the fully qualified name of the terminal target
+   * Return the command name of the terminal target. Entrypoint targets omit the module prefix.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -16023,7 +16023,7 @@ export class Up extends BaseClient {
   }
 
   /**
-   * Return the fully qualified name of the service
+   * Return the command name of the service. Entrypoint targets omit the module prefix.
    */
   name = async (): Promise<string> => {
     if (this._name) {

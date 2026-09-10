@@ -999,7 +999,7 @@ func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the agent
+// Return the command name of the agent. Entrypoint targets omit the module prefix.
 //
 // Experimental: Agent APIs are likely to change.
 func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
@@ -1631,7 +1631,7 @@ func (r *Check) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the check
+// Return the command name of the check. Entrypoint targets omit the module prefix.
 func (r *Check) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -8432,7 +8432,7 @@ func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// Return the fully qualified name of the generator
+// Return the command name of the generator. Entrypoint targets omit the module prefix.
 func (r *Generator) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -16228,7 +16228,7 @@ func (r *TerminalTarget) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the terminal target
+// Return the command name of the terminal target. Entrypoint targets omit the module prefix.
 func (r *TerminalTarget) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -16834,7 +16834,7 @@ func (r *Up) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the service
+// Return the command name of the service. Entrypoint targets omit the module prefix.
 func (r *Up) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
