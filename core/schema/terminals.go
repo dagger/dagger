@@ -25,7 +25,7 @@ func (s terminalsSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.TerminalTarget]{
 		dagql.Func("name", s.name).
-			Doc("Return the fully qualified name of the terminal target"),
+			Doc("Return the command name of the terminal target. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
 			Doc("The description of the terminal target"),
 		dagql.Func("path", s.path).

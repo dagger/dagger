@@ -16,7 +16,7 @@ import (
 
 func TestModuleMaxCommandTree(t *testing.T) {
 	require.Equal(t, []string{"mod"}, moduleCmd.Aliases)
-	for _, name := range []string{"client", "init", "install", "list", "search", "settings", "uninstall", "update"} {
+	for _, name := range []string{"client", "init", "install", "list", "recommend", "search", "settings", "uninstall", "update"} {
 		require.NotNil(t, findCommand(moduleCmd, name), name)
 	}
 	for _, name := range []string{"add", "list", "rm", "scope"} {

@@ -88,7 +88,7 @@ defmodule Dagger.Check do
   end
 
   @doc """
-  Return the fully qualified name of the check
+  Return the command name of the check. Entrypoint targets omit the module prefix.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = check) do

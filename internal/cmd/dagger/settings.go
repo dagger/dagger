@@ -101,7 +101,7 @@ var (
 func newSettingsCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "settings [module] [key] [value...]",
-		Short:  "Get, set, or unset module settings (use --env for an env overlay)",
+		Short:  "Get, set, or unset module settings",
 		Hidden: hidden,
 		Args:   cobra.ArbitraryArgs,
 		RunE:   runWorkspaceSettings,

@@ -29,7 +29,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 	// Check methods
 	dagql.Fields[*core.Check]{
 		dagql.Func("name", s.name).
-			Doc("Return the fully qualified name of the check"),
+			Doc("Return the command name of the check. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
 			Doc("The description of the check"),
 		dagql.Func("path", s.path).

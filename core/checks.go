@@ -223,7 +223,7 @@ func (c *Check) ResultEmoji() string {
 }
 
 func (c *Check) Name() string {
-	return c.Node.PathString()
+	return c.Node.CommandName()
 }
 
 func (c *Check) CheckType() string {

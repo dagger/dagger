@@ -1,8 +1,6 @@
 package daggercmd
 
 import (
-	_ "embed"
-	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -40,19 +38,6 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
 }
 
-// registryModule is one entry in the searchable module registry.
-type registryModule struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Repo        string   `json:"repo"`
-	Aliases     []string `json:"aliases,omitempty"`
-	// Recommend lists the globs (e.g. "**/go.mod") used by `dagger setup`
-	// to suggest this module based on files present in the workspace.
-	// The module is recommended when any pattern matches at least one file.
-	// An empty list means never recommended.
-	Recommend []string `json:"recommend,omitempty"`
-}
-
 func loadSearchRegistry(sdkOnly bool) ([]registryModule, error) {
 	sdks, err := loadSDKSearchRegistry()
 	if err != nil {
@@ -61,10 +46,7 @@ func loadSearchRegistry(sdkOnly bool) ([]registryModule, error) {
 	if sdkOnly {
 		return sdks, nil
 	}
-	mods, err := loadModuleRegistry()
-	if err != nil {
-		return nil, err
-	}
+	mods := loadModuleRegistry()
 	return append(mods, sdks...), nil
 }
 
@@ -81,24 +63,6 @@ func loadSDKSearchRegistry() ([]registryModule, error) {
 			Repo:        "dagger.io/sdk/" + entry.Name,
 			Aliases:     entry.Aliases,
 		})
-	}
-	return mods, nil
-}
-
-// embeddedModuleRegistry is the registry baked in at build time.
-//
-//go:embed modules.json
-var embeddedModuleRegistry []byte
-
-// loadModuleRegistry returns the embedded module registry.
-func loadModuleRegistry() ([]registryModule, error) {
-	return parseModuleRegistry(embeddedModuleRegistry)
-}
-
-func parseModuleRegistry(data []byte) ([]registryModule, error) {
-	var mods []registryModule
-	if err := json.Unmarshal(data, &mods); err != nil {
-		return nil, fmt.Errorf("parse module registry: %w", err)
 	}
 	return mods, nil
 }

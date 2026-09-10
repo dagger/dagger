@@ -37,8 +37,8 @@ A workspace is a project configured to use Dagger — a directory holding
 a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
-flag selects a different workspace (local path or git ref); --env
-applies a named overlay; dagger.toml is the source of truth.`,
+flag selects a different workspace (local path or git ref); dagger.toml is
+the source of truth.`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
@@ -121,8 +121,7 @@ With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 With one argument and --unset, removes the value at the given key.
 
-With --env, reads show the effective env-applied view while writes target that
-environment's overlay. Explicit env.* keys always address raw overlay storage.
+Explicit env.* keys address raw overlay storage.
 
 Local module source values are stored relative to dagger.toml.`,
 	Args: cobra.MaximumNArgs(2),

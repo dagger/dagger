@@ -554,7 +554,7 @@ impl Agent {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the fully qualified name of the agent
+    /// Return the command name of the agent. Entrypoint targets omit the module prefix.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
@@ -1056,7 +1056,7 @@ impl Check {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the fully qualified name of the check
+    /// Return the command name of the check. Entrypoint targets omit the module prefix.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
@@ -8202,7 +8202,7 @@ impl Generator {
         let query = self.selection.select("isEmpty");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the fully qualified name of the generator
+    /// Return the command name of the generator. Entrypoint targets omit the module prefix.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
@@ -14568,7 +14568,7 @@ impl TerminalTarget {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the fully qualified name of the terminal target
+    /// Return the command name of the terminal target. Entrypoint targets omit the module prefix.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
@@ -15227,7 +15227,7 @@ impl Up {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the fully qualified name of the service
+    /// Return the command name of the service. Entrypoint targets omit the module prefix.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await

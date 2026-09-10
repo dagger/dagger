@@ -106,6 +106,22 @@ func TestParseGitLookupRejectsConflictingEquivalentEntries(t *testing.T) {
 	require.ErrorContains(t, LockfileMergeConflictError(err), "workspace lockfile contains conflicting pins for the same Git repository")
 }
 
+func TestLookupInputs(t *testing.T) {
+	inputs := LookupInputs(
+		[]any{"github.com/dagger/sdk-helpers"},
+		LookupOption{Name: "version", Value: "v1"},
+	)
+	require.Equal(t, []any{
+		"github.com/dagger/sdk-helpers",
+		[]any{"version", "v1"},
+	}, inputs)
+
+	required, options, err := ParseLookupInputs(inputs)
+	require.NoError(t, err)
+	require.Equal(t, []any{"github.com/dagger/sdk-helpers"}, required)
+	require.Equal(t, map[string]any{"version": "v1"}, options)
+}
+
 func TestLookupConcurrentWrites(t *testing.T) {
 	t.Parallel()
 

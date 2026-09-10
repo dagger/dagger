@@ -102,6 +102,10 @@ func addFlagCapabilities(flag *pflag.Flag, annotation string, capabilities ...co
 // FlagAvailableForCommand reports whether a flag's required capabilities are
 // available on cmd. It is exported for CLI reference generation.
 func FlagAvailableForCommand(cmd *cobra.Command, flag *pflag.Flag) bool {
+	// Environment selection is temporarily disabled across the CLI.
+	if flag.Name == "env" {
+		return false
+	}
 	for _, required := range flag.Annotations[flagCapabilitiesAnnotation] {
 		if !commandHasCapability(cmd, commandCapability(required)) {
 			return false
@@ -284,6 +288,7 @@ func init() {
 		shellCmd,
 		mcpCmd,
 		moduleInitCmd,
+		moduleRecommendCmd,
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
@@ -294,6 +299,7 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		moduleDepInstallCmd,
+		moduleRecommendCmd,
 		installAliasCmd,
 		moduleDepUninstallCmd,
 		uninstallAliasCmd,
@@ -353,6 +359,7 @@ func init() {
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
 		setupCmd,
+		moduleRecommendCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)
 	}

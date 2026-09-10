@@ -49,7 +49,8 @@ defmodule Mix.Tasks.Dagger.Codegen do
         Path.join(outdir, file)
         |> File.write!(code)
       end,
-      ordered: false
+      ordered: false,
+      timeout: :infinity
     )
     |> Stream.run()
   end

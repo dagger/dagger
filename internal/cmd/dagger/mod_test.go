@@ -37,25 +37,6 @@ func TestSearchModuleRegistry(t *testing.T) {
 	}
 }
 
-func TestParseModuleRegistry(t *testing.T) {
-	data := []byte(`[
-		{"name": "go", "description": "Go toolchain", "repo": "github.com/dagger/go"},
-		{"name": "pytest", "description": "Run Python tests", "repo": "github.com/dagger/pytest"}
-	]`)
-
-	mods, err := parseModuleRegistry(data)
-	require.NoError(t, err)
-	require.Len(t, mods, 2)
-	require.Equal(t, "go", mods[0].Name)
-	require.Equal(t, "github.com/dagger/pytest", mods[1].Repo)
-}
-
-func TestEmbeddedModuleRegistryParses(t *testing.T) {
-	mods, err := parseModuleRegistry(embeddedModuleRegistry)
-	require.NoError(t, err)
-	require.NotEmpty(t, mods)
-}
-
 func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
 	all, err := loadSearchRegistry(false)
 	require.NoError(t, err)
