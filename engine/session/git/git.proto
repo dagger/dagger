@@ -191,6 +191,8 @@ message ErrorInfo {
     CHECKOUT_STATE_MISMATCH = 10;
     CAPTURE_REJECTED = 11;
     CAPTURE_FAILED = 12;
+    // The checkout is usable, but capture has no committed baseline.
+    CAPTURE_UNSUPPORTED = 13;
   }
   ErrorType type = 1;
   string message = 2;

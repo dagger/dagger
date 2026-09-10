@@ -16124,6 +16124,11 @@ class Workspace(Type):
     async def sync(self) -> Self:
         """Capture this workspace as a stable value and return its ID.
 
+        Git capture is a progressive enhancement: if the workspace has no Git
+        repository or commits, or the client cannot capture Git, return this
+        workspace unchanged. Approval rejections and capture failures remain
+        errors.
+
         Use the returned workspace for subsequent reads, edits, and module
         loading against the captured baseline. Syncing an existing stable
         value preserves its baseline; sync currentWorkspace again to capture

@@ -47,6 +47,42 @@ func TestWorkspaceChangesRendering(t *testing.T) {
 	require.False(t, (workspaceChangesPreview{HistoryError: "unavailable"}).empty())
 }
 
+func (DaggerCMDSuite) TestAgentWorkspaceWithoutGitBaseline(ctx context.Context, t *testctx.T) {
+	for _, unborn := range []bool{false, true} {
+		name := "non-repository"
+		if unborn {
+			name = "unborn-repository"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			checkout := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(checkout, "dagger.toml"), nil, 0o644))
+			if unborn {
+				cmd := exec.CommandContext(ctx, "git", "init", "-b", "main")
+				cmd.Dir = checkout
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", out)
+			}
+			dag, err := dagger.Connect(ctx, dagger.WithWorkdir(checkout))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, dag.Close()) })
+			baseline, err := syncWorkspace(ctx, dag)
+			require.NoError(t, err)
+			var changes idtui.SidebarSection
+			s, err := NewLLMSession(ctx, dag, "", nil, &idtui.FrontendMock{
+				SetSidebarContentFunc: func(section idtui.SidebarSection) { changes = section },
+				SetStatusLineFunc:     func(idtui.StatusLineData) {},
+			}, dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline))
+			require.NoError(t, err)
+			require.Empty(t, changes.Body(80))
+			s.llm = s.llm.WithWorkspace(baseline.WithNewFile("agent.txt", "agent edit"))
+			require.NoError(t, s.updateChangesPreview(s.llm))
+			require.Contains(t, changes.Body(80), "agent.txt")
+			require.NoError(t, s.ResetWorkspace(ctx))
+			require.Empty(t, changes.Body(80), "reload discards pending edits without Git capture")
+		})
+	}
+}
+
 func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.T) {
 	checkout := t.TempDir()
 	git := func(args ...string) string {

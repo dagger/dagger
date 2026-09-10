@@ -142,6 +142,63 @@ func (WorkspaceSuite) TestWorkspaceSyncFreezesLocalCheckout(ctx context.Context,
 	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(id)), "__gitDir")
 }
 
+func (WorkspaceSuite) TestWorkspaceSyncWithoutGitBaseline(ctx context.Context, t *testctx.T) {
+	for _, name := range []string{"non-repository", "unborn-repository", "removed-repository"} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), nil, 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "host.txt"), []byte("host"), 0o644))
+			if name != "non-repository" {
+				cmd := exec.CommandContext(ctx, "git", "init", "-b", "main")
+				cmd.Dir = workdir
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", out)
+			}
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			liveID, err := c.CurrentWorkspace().ID(ctx)
+			require.NoError(t, err)
+			if name == "removed-repository" {
+				require.NoError(t, os.RemoveAll(filepath.Join(workdir, ".git")))
+			}
+			for _, overlay := range []bool{false, true} {
+				ws := dagger.Ref[*dagger.Workspace](c, liveID).WithConfigEnvironment("dev").
+					WithMountedDirectory("/deps", c.Directory().WithNewFile("dep.txt", "dependency"))
+				if overlay {
+					ws = ws.WithNewFile("overlay.txt", "overlay")
+				}
+				originalID, err := ws.ID(ctx)
+				require.NoError(t, err)
+				ws = dagger.Ref[*dagger.Workspace](c, originalID)
+				synced := syncWorkspace(ctx, t, ws)
+				id, err := synced.ID(ctx)
+				require.NoError(t, err)
+				require.Equal(t, originalID, id, "fallback must preserve the exact workspace")
+				files := map[string]string{"/deps/dep.txt": "dependency"}
+				if name != "non-repository" {
+					files["host.txt"] = "host"
+				}
+				for path, want := range files {
+					got, err := synced.File(path).Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, want, got)
+				}
+				if overlay {
+					got, err := synced.File("overlay.txt").Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "overlay", got)
+				}
+				// Rootless workspaces intentionally have no host export target.
+				if overlay && name != "non-repository" {
+					require.NoError(t, synced.Export(ctx), "fallback retains direct overlay export")
+					contents, err := os.ReadFile(filepath.Join(workdir, "overlay.txt"))
+					require.NoError(t, err)
+					require.Equal(t, "overlay", string(contents))
+				}
+			}
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceSyncPortableCapture(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)
@@ -333,7 +390,7 @@ func (WorkspaceSuite) TestWorkspaceSyncReplayableValuePassesThrough(ctx context.
 	require.Equal(t, original, id)
 }
 
-func (WorkspaceSuite) TestWorkspaceSyncFreezesRootlessEffectiveTree(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestWorkspaceSyncPreservesRootlessEffectiveTree(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "host-only.txt"), []byte("must not be captured"), 0o644))
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -342,13 +399,18 @@ func (WorkspaceSuite) TestWorkspaceSyncFreezesRootlessEffectiveTree(ctx context.
 		if edited {
 			ws = ws.WithNewFile("overlay.txt", "in engine")
 		}
+		originalID, err := ws.ID(ctx)
+		require.NoError(t, err)
+		ws = dagger.Ref[*dagger.Workspace](c, originalID)
+		originalCwd, err := ws.Cwd(ctx)
+		require.NoError(t, err)
 		frozen := syncWorkspace(ctx, t, ws)
 		id, err := frozen.ID(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, id)
+		require.Equal(t, originalID, id)
 		cwd, err := frozen.Cwd(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "/", cwd)
+		require.Equal(t, originalCwd, cwd)
 		config, err := frozen.ConfigFile(ctx)
 		require.NoError(t, err)
 		require.Empty(t, config)

@@ -15,7 +15,7 @@ import (
 
 const captureGitMethod = "/dagger.git.Git/CaptureGit"
 
-// ErrGitCaptureUnsupported means the client cannot safely capture a workspace.
+// ErrGitCaptureUnsupported means capture is unavailable for this client or checkout.
 var ErrGitCaptureUnsupported = errors.New("client cannot capture git workspaces")
 
 // GitCaptureApprovalError contains only metadata for paths awaiting approval.
@@ -77,7 +77,7 @@ func (c *Client) CaptureGit(
 					return nil, &GitCaptureApprovalError{Message: errInfo.Message, Candidates: append([]*git.CaptureGitCandidate(nil), metadata.ApprovalCandidates...)}
 				case git.NOT_A_REPO:
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
-				case git.NOT_FOUND:
+				case git.NOT_FOUND, git.CAPTURE_UNSUPPORTED:
 					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCaptureUnsupported)
 				default:
 					return nil, errors.New(errInfo.Message)

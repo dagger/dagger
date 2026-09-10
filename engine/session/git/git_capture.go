@@ -137,6 +137,9 @@ func (s GitAttachable) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServ
 			FormatVersion: captureGitFormatVersion,
 			Error:         &ErrorInfo{Type: CAPTURE_FAILED, Message: err.Error()},
 		}
+		if errors.Is(err, errCaptureNoHead) {
+			metadata.Error.Type = CAPTURE_UNSUPPORTED
+		}
 		var approvalErr *captureApprovalError
 		if errors.As(err, &approvalErr) {
 			metadata.Error.Type = CAPTURE_REJECTED
@@ -155,14 +158,19 @@ func (s GitAttachable) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServ
 	return nil
 }
 
+var errCaptureNoHead = errors.New("capture requires an existing Git HEAD")
+
 func captureGitArtifacts(ctx context.Context, checkout string, policy *CaptureGitPolicy) (*captureArtifacts, error) {
 	limits, err := normalizeCaptureLimits(policy)
 	if err != nil {
 		return nil, err
 	}
 	state, err := collectCheckoutState(ctx, checkout)
-	if err != nil || state.headSHA == "" {
-		return nil, errors.New("capture requires an existing Git HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("read checkout state: %w", err)
+	}
+	if state.headSHA == "" {
+		return nil, errCaptureNoHead
 	}
 
 	remote, err := selectCaptureRemote(ctx, checkout, state.headSHA)

@@ -595,6 +595,19 @@ func TestCaptureGitRejectsUnsupportedAndUnboundedState(t *testing.T) {
 		srv := captureGit(t, t.TempDir(), &CaptureGitPolicy{})
 		require.Equal(t, NOT_A_REPO, srv.metadata(t).GetError().GetType())
 	})
+	t.Run("unborn repository", func(t *testing.T) {
+		repo, _ := initRepo(t, "main")
+		srv := captureGit(t, repo, &CaptureGitPolicy{})
+		require.Equal(t, CAPTURE_UNSUPPORTED, srv.metadata(t).GetError().GetType())
+		require.Len(t, srv.responses, 1, "unsupported capture must not send bytes")
+	})
+	t.Run("broken repository", func(t *testing.T) {
+		repo := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(repo, ".git"), []byte("gitdir: missing\n"), 0o600))
+		srv := captureGit(t, repo, &CaptureGitPolicy{})
+		require.Equal(t, CAPTURE_FAILED, srv.metadata(t).GetError().GetType())
+		require.Len(t, srv.responses, 1)
+	})
 	t.Run("no remote ancestor", func(t *testing.T) {
 		repo, _ := initRepo(t, "main")
 		commitFile(t, repo, t.TempDir(), "a", "a", "a")

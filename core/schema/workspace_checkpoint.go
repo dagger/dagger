@@ -27,13 +27,28 @@ type capturedCheckpointChunk struct {
 	data []byte
 }
 
-// sync captures a live workspace and returns the reconstructed value's ID.
-// Returning this ID (rather than the receiver's) makes subsequent SDK calls use
-// the stable source. Syncing a value never refreshes the original checkout.
+// sync captures a live workspace when possible and returns the resulting ID.
+// SDK calls use the stable source after capture, or the original workspace when
+// capture is unavailable. Syncing a value never refreshes the original checkout.
 func (s *workspaceSchema) sync(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
 	Recipe bool `default:"false" internal:"true"`
 }) (dagql.Result[dagql.ID[*core.Workspace]], error) {
-	frozen, err := s.freeze(ctx, parent)
+	frozen := parent
+	var err error
+	var rootless bool
+	if ws := parent.Self(); ws != nil {
+		_, rootless = ws.BaseSource().(*core.WorkspaceSourceRootlessLocal)
+	}
+	if !rootless {
+		frozen, err = s.freeze(ctx, parent)
+	}
+	if errors.Is(err, gitutil.ErrGitNoRepo) || errors.Is(err, engineutil.ErrGitCaptureUnsupported) {
+		// Capture is an enhancement to sync, not a prerequisite for using a
+		// workspace. Keep the original value, including any overlays and client
+		// context, when there is no capturable Git baseline. Git mutations call
+		// freeze directly and still require capture to succeed.
+		frozen, err = parent, nil
+	}
 	if err != nil {
 		return dagql.Result[dagql.ID[*core.Workspace]]{}, err
 	}

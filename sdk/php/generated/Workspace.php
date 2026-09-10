@@ -422,6 +422,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node, Sy
     /**
      * Capture this workspace as a stable value and return its ID.
      *
+     * Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+     *
      * Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Syncing an existing stable value preserves its baseline; sync currentWorkspace again to capture later checkout changes.
      *
      * Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.

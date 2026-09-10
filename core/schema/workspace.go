@@ -119,6 +119,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").
 			Doc("Capture this workspace as a stable value and return its ID.",
+				"Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.",
 				"Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Syncing an existing stable value preserves its baseline; sync currentWorkspace again to capture later checkout changes.",
 				"Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.",
 				"The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only."),
