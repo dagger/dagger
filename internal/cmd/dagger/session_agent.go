@@ -1208,10 +1208,9 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 // LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. The binding goes through
-// Workspace.reloaded so cached host reads from earlier in the session are
-// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
-// eagerly so a failure surfaces here rather than corrupting later saves.
+// accumulated changes rather than writing them out. Workspace.sync captures a
+// fresh baseline from the current checkout. Bind it eagerly so a failure
+// surfaces here rather than corrupting later saves.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) error {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")

@@ -138,9 +138,9 @@ func boundWorkspaceInput(ctx context.Context, srv *dagql.Server, arg dagql.Input
 	return val, true
 }
 
-// workspaceHostRoutingContext switches ctx to a live Workspace's owning client so
-// client-scoped resolvers use that client's served modules. Callers handle
-// value workspaces separately because they have no owning client.
+// workspaceHostRoutingContext stamps the live workspace owner metadata for
+// host routing while preserving the caller's held scope as execution authority.
+// Callers handle value workspaces separately because they have no owning client.
 //
 // This mirrors core/schema's withWorkspaceClientContext without a core→schema
 // import.

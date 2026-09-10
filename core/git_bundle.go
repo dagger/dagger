@@ -618,6 +618,13 @@ func resolveGitBundleTarget(remote *gitutil.Remote, name string) (*gitBundleTarg
 	if err != nil {
 		return nil, err
 	}
+	if name == "HEAD" && ref.Name == "" {
+		// Checkout lookup leaves detached HEAD unnamed. A bundle still needs
+		// its advertised transport name, without changing checkout semantics.
+		exact := *ref
+		exact.Name = "HEAD"
+		return &gitBundleTarget{checkout: ref, exact: &exact}, nil
+	}
 	if !strings.HasPrefix(ref.Name, "refs/tags/") {
 		return &gitBundleTarget{checkout: ref, exact: ref}, nil
 	}

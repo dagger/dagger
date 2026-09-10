@@ -35,6 +35,18 @@ func TestResolveGitBundleTargetPreservesAnnotatedTag(t *testing.T) {
 	require.Equal(t, commitSHA, tag.checkout.SHA)
 }
 
+func TestResolveGitBundleTargetDetachedHEAD(t *testing.T) {
+	const sha = "1111111111111111111111111111111111111111"
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "HEAD", SHA: sha}}}
+	target, err := resolveGitBundleTarget(remote, "HEAD")
+	require.NoError(t, err)
+	require.Empty(t, target.checkout.Name, "checkout must remain detached")
+	require.Equal(t, "HEAD", target.exact.Name, "bundle must retain its transport ref")
+	require.Equal(t, sha, target.checkout.SHA)
+	require.Equal(t, sha, target.exact.SHA)
+	require.Equal(t, "HEAD", remote.Refs[0].Name, "lookup must not mutate advertised refs")
+}
+
 func TestParseGitBundleHeader(t *testing.T) {
 	t.Run("version 2", func(t *testing.T) {
 		sha := strings.Repeat("1", sha1.Size*2)

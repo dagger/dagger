@@ -74,11 +74,22 @@ func (DaggerCMDSuite) TestAgentWorkspaceWithoutGitBaseline(ctx context.Context, 
 				SetStatusLineFunc:     func(idtui.StatusLineData) {},
 			}, dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithWorkspace(baseline))
 			require.NoError(t, err)
+			waitRefresh := func() {
+				t.Helper()
+				require.Eventually(t, func() bool {
+					a := s.Target()
+					a.refreshL.Lock()
+					defer a.refreshL.Unlock()
+					return !a.refreshInFlight
+				}, 10*time.Second, time.Millisecond)
+			}
+			waitRefresh()
 			require.Empty(t, changes.Body(80))
 			s.Target().llm = s.Target().llm.WithWorkspace(baseline.WithNewFile("agent.txt", "agent edit"))
 			require.NoError(t, s.Target().updateChangesPreview(s.Target().llm))
 			require.Contains(t, changes.Body(80), "agent.txt")
 			require.NoError(t, s.Target().ResetWorkspace(ctx))
+			waitRefresh()
 			require.Empty(t, changes.Body(80), "reload discards pending edits without Git capture")
 		})
 	}

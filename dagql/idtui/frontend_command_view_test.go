@@ -30,7 +30,8 @@ func TestPushConfirmationAboveInput(t *testing.T) {
 	question := "Allow pushing to ssh://root@172.17.0.9/qa/remote.git @ refs/heads/approval-qa?"
 	field := NewExplicitConfirm("Yes", "No", &allowed).Title(question).Inline(true)
 	form := huh.NewForm(huh.NewGroup(field))
-	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	fe.handlePromptForm(form, func(*huh.Form) {})
+	active := fe.activeForm
 	for range 5 {
 		fe.tui.Step()
 		time.Sleep(10 * time.Millisecond)
@@ -49,8 +50,8 @@ func TestPushConfirmationAboveInput(t *testing.T) {
 	if !strings.Contains(wrapped, "▶ No") || !strings.Contains(strings.ReplaceAll(wrapped, "\n", ""), "refs/heads/approval-qa?") {
 		t.Fatalf("narrow confirmation clipped the target or choices: %q", wrapped)
 	}
-	fe.removeForm(wrap)
-	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+	fe.cancelPromptForm(active.request)
+	if fe.textInput.Value() != "unfinished draft" || fe.activeForm != nil {
 		t.Fatal("dismissal must preserve the input and remove the question")
 	}
 }
@@ -81,7 +82,8 @@ func TestCheckpointSelectAboveInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	fe.handlePromptForm(form, func(*huh.Form) {})
+	active := fe.activeForm
 	for range 5 {
 		fe.tui.Step()
 		time.Sleep(10 * time.Millisecond)
@@ -102,7 +104,7 @@ func TestCheckpointSelectAboveInput(t *testing.T) {
 	if *selected != "drop" {
 		t.Fatal("up should select Drop")
 	}
-	fe.removeForm(wrap)
+	fe.cancelPromptForm(active.request)
 	if fe.textInput.Value() != "unfinished draft" {
 		t.Fatal("must preserve draft")
 	}
@@ -118,7 +120,8 @@ func TestPushPassphraseMaskedAboveInput(t *testing.T) {
 	var passphrase string
 	field := huh.NewInput().Title("SSH key passphrase").EchoMode(huh.EchoModePassword).Value(&passphrase)
 	form := huh.NewForm(huh.NewGroup(field))
-	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	fe.handlePromptForm(form, func(*huh.Form) {})
+	active := fe.activeForm
 	for range 5 {
 		fe.tui.Step()
 		time.Sleep(10 * time.Millisecond)
@@ -132,8 +135,8 @@ func TestPushPassphraseMaskedAboveInput(t *testing.T) {
 	if questionAt < 0 || inputAt < questionAt {
 		t.Fatal("passphrase form must appear above the input")
 	}
-	fe.removeForm(wrap)
-	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+	fe.cancelPromptForm(active.request)
+	if fe.textInput.Value() != "unfinished draft" || fe.activeForm != nil {
 		t.Fatal("dismissal must preserve the draft and remove the secret form")
 	}
 }
@@ -152,11 +155,11 @@ func TestPushConfirmationCancellation(t *testing.T) {
 		done <- fe.HandlePrompt(ctx, "", "Allow pushing?", &allowed)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for fe.formWrap == nil && time.Now().Before(deadline) {
+	for fe.activeForm == nil && time.Now().Before(deadline) {
 		fe.tui.Step()
 		time.Sleep(time.Millisecond)
 	}
-	if fe.formWrap == nil {
+	if fe.activeForm == nil {
 		t.Fatal("confirmation was not mounted")
 	}
 	cancel()
@@ -165,8 +168,8 @@ func TestPushConfirmationCancellation(t *testing.T) {
 		select {
 		case err := <-done:
 			fe.tui.Step() // drain dismissal queued before the handler returned
-			if !errors.Is(err, context.Canceled) || fe.formWrap != nil || fe.textInput.Value() != "keep this draft" {
-				t.Fatalf("canceled prompt: err=%v form=%v draft=%q", err, fe.formWrap, fe.textInput.Value())
+			if !errors.Is(err, context.Canceled) || fe.activeForm != nil || fe.textInput.Value() != "keep this draft" {
+				t.Fatalf("canceled prompt: err=%v form=%v draft=%q", err, fe.activeForm, fe.textInput.Value())
 			}
 			return
 		default:
