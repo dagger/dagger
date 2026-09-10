@@ -4176,7 +4176,7 @@ func collectWorkspaceModuleTargets[T any](
 		if err != nil {
 			return nil, err
 		}
-		filtered, err = filterNodesByExclude(ctx, filtered, exclude, node, name, targetLabel)
+		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, node, name, targetLabel)
 		if err != nil {
 			return nil, err
 		}
