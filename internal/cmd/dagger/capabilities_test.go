@@ -300,9 +300,15 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger uninstall",
 		"dagger up",
 		"dagger workspace",
+		"dagger workspace cat",
 		"dagger workspace config",
 		"dagger workspace config-file",
 		"dagger workspace cwd",
+		"dagger workspace exec",
+		"dagger workspace export",
+		"dagger workspace git",
+		"dagger workspace grep",
+		"dagger workspace ls",
 		"dagger workspace remotes",
 		"dagger workspace root",
 		"dagger workspace update",
@@ -427,6 +433,7 @@ func TestMayProduceOutputCommands(t *testing.T) {
 		"dagger module init",
 		"dagger module recommend",
 		"dagger setup",
+		"dagger workspace exec",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayProduceOutput))
 
@@ -583,6 +590,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger up",
 		"dagger workspace",
 		"dagger workspace config",
+		"dagger workspace exec",
 		"dagger workspace update",
 	}
 	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
@@ -611,6 +619,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"sdk":              sdkCmd,
 		"setup":            setupCmd,
 		"workspace root":   workspaceRootCmd,
+		"workspace export": workspaceExportCmd,
+		"workspace git":    workspaceGitCmd,
 		"workspace remote": workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayReadWorkspaceConfig), name)
@@ -646,6 +656,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger shell",
 		"dagger trace",
 		"dagger up",
+		"dagger workspace exec",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayRenderPipeline))
 

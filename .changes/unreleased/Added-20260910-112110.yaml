@@ -1,0 +1,6 @@
+kind: Added
+body: Add `dagger workspace ls [PATH...]`, `dagger workspace cat PATH [PATH...]`, and `dagger workspace grep PATTERN [PATH...]` to list paths, read files, and search file contents in the selected local or remote Git workspace. Add `dagger workspace git ref`, `sha`, `dirty`, `log`, and `url` to inspect its Git metadata, commit history, and resolved source URL. Add `dagger workspace exec` to execute a command in a container with the workspace mounted and preview or apply its changes. Add `dagger workspace export [PATH] -o DEST` to export a file or directory to the local client. These commands also work through the `ws` alias.
+time: 2026-09-10T11:21:10.927905-07:00
+custom:
+    Author: shykes
+    PR: "14101"

@@ -665,6 +665,27 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
+// A command can share a global flag's value under its long name while using
+// the global shorthand for another flag. Such aliases still need early parsing.
+const globalFlagAliasAnnotation = "dagger.io/global-flag-alias"
+
+// Apply the command's normal flag error handler during the early parsing
+// passes too. ExitError means that handler already printed the diagnostic.
+func commandFlagErrorStatus(cmd *cobra.Command, err error, prefix string) int {
+	if cmd != nil {
+		err = cmd.FlagErrorFunc()(cmd, err)
+	}
+	var exit idtui.ExitError
+	if errors.As(err, &exit) {
+		return exit.Code()
+	}
+	if prefix != "" {
+		fmt.Fprint(stderr, prefix, " ")
+	}
+	fmt.Fprintln(stderr, err)
+	return 1
+}
+
 func parseGlobalFlags(root *cobra.Command, args []string) []string {
 	root.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		if _, ok := flag.Value.(interface{ replay() }); ok || flag.Name == "help" {
@@ -696,13 +717,16 @@ func parseGlobalFlags(root *cobra.Command, args []string) []string {
 		}
 		global := root.PersistentFlags().Lookup(flag.Name)
 		selected := cmd.Flags().Lookup(flag.Name)
+		if global != nil && selected != nil && len(selected.Annotations[globalFlagAliasAnnotation]) > 0 {
+			flag.Value = global.Value
+			return
+		}
 		if global == nil || selected != global {
 			flag.Value = ignoredFlagValue{Value: flag.Value}
 		}
 	})
 	if err := flags.Parse(commandArgs); err != nil && !errors.Is(err, pflag.ErrHelp) {
-		fmt.Fprintln(stderr, err)
-		os.Exit(1)
+		os.Exit(commandFlagErrorStatus(cmd, err, ""))
 	}
 	globalXRelease := root.PersistentFlags().Lookup("x-release")
 	if globalXRelease == nil || cmd.Flags().Lookup("x-release") != globalXRelease || !flags.Changed("x-release") {
@@ -959,8 +983,8 @@ func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 func Main() {
 	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-		os.Exit(1)
+		cmd, _ := resolveCommand(rootCmd, os.Args[1:])
+		os.Exit(commandFlagErrorStatus(cmd, err, rootCmd.ErrPrefix()))
 	}
 
 	// Some global flags affect how the client connects, so read them before

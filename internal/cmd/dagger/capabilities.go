@@ -286,6 +286,7 @@ func init() {
 		scriptCmd,
 		shellCmd,
 		mcpCmd,
+		workspaceExecCmd,
 		moduleInitCmd,
 		moduleRecommendCmd,
 		moduleClientAddCmd,
@@ -332,6 +333,11 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		workspaceRootCmd,
 		workspaceCwdCmd,
+		workspaceLsCmd,
+		workspaceCatCmd,
+		workspaceExportCmd,
+		workspaceGitCmd,
+		workspaceGrepCmd,
 		workspaceConfigFileCmd,
 		workspaceRemotesCmd,
 		setupCmd,
@@ -359,6 +365,7 @@ func init() {
 		moduleClientUpdateCmd,
 		setupCmd,
 		moduleRecommendCmd,
+		workspaceExecCmd,
 	} {
 		setCommandCapabilities(cmd, mayProduceOutput)
 	}

@@ -2198,9 +2198,15 @@ the source of truth.
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger workspace activity](#dagger-workspace-activity)	 - Show recent activity (runs, traces, etc.) for this workspace
+* [dagger workspace cat](#dagger-workspace-cat)	 - Print files from the selected workspace
 * [dagger workspace config](#dagger-workspace-config)	 - Get or set workspace configuration
 * [dagger workspace config-file](#dagger-workspace-config-file)	 - Print the selected workspace config file
 * [dagger workspace cwd](#dagger-workspace-cwd)	 - Print the workspace cwd
+* [dagger workspace exec](#dagger-workspace-exec)	 - Execute a command in a container with the selected workspace mounted
+* [dagger workspace export](#dagger-workspace-export)	 - Export a file or directory from the selected workspace
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+* [dagger workspace grep](#dagger-workspace-grep)	 - Search file contents in the selected workspace
+* [dagger workspace ls](#dagger-workspace-ls)	 - List directories or files in the selected workspace
 * [dagger workspace remote](#dagger-workspace-remote)	 - Print the selectable remote address for the current workspace
 * [dagger workspace remotes](#dagger-workspace-remotes)	 - List selectable remote workspace addresses
 * [dagger workspace root](#dagger-workspace-root)	 - Print the workspace root
@@ -2223,6 +2229,37 @@ dagger workspace activity [flags]
 ### Options inherited from parent commands
 
 ```
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace cat
+
+Print files from the selected workspace
+
+### Synopsis
+
+Print file contents from the selected workspace in argument order.
+
+Relative paths start at the workspace's current directory.
+Absolute paths start at the workspace root.
+
+The output preserves line endings and does not add a final newline.
+
+```
+dagger workspace cat PATH [PATH...] [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2302,6 +2339,384 @@ Print the workspace cwd
 
 ```
 dagger workspace cwd [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace exec
+
+Execute a command in a container with the selected workspace mounted
+
+### Synopsis
+
+Execute a command in a container with the selected workspace mounted at /ws.
+
+Run the command in /ws/&lt;workspace cwd&gt;. The command and its arguments are
+executed directly. Use an explicit shell, such as sh -c, for shell syntax.
+The command's output is shown in Dagger's normal progress output.
+
+By default, show a prompt before applying workspace changes. Use --auto-apply
+to apply without a prompt, or --no-apply to preview changes without applying them.
+
+```
+dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
+```
+
+### Examples
+
+```
+  dagger ws exec -- go test ./...
+  dagger ws exec --from=golang:1.26 -- gofmt -w .
+  dagger ws exec --no-apply -- sh -c 'printf "hello\n" > hello.txt'
+```
+
+### Options
+
+```
+      --exclude stringArray   Exclude workspace paths that match the glob pattern (repeatable)
+      --from string           Base container address (default "alpine:3.22.1")
+      --include stringArray   Include workspace paths that match the glob pattern (repeatable)
+      --no-apply              Compute and show workspace changes without applying them
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace export
+
+Export a file or directory from the selected workspace
+
+### Synopsis
+
+Export a file or directory from the selected workspace to the local client.
+
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+For a directory, merge its contents into DEST. Use --include and --exclude
+to filter directory contents. These options can be repeated and use patterns
+relative to PATH. They cannot be used with a file.
+
+```
+dagger workspace export [PATH] -o DEST [flags]
+```
+
+### Examples
+
+```
+  dagger ws export -o ./workspace
+  dagger ws export ./dist -o ./download
+  dagger -W github.com/dagger/dagger ws export /README.md -o ./README.md
+```
+
+### Options
+
+```
+      --exclude stringArray   Exclude directory paths that match the glob pattern (repeatable)
+      --include stringArray   Include directory paths that match the glob pattern (repeatable)
+  -o, --output string         Local destination path
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace git
+
+Inspect Git metadata for the selected workspace
+
+### Synopsis
+
+Inspect Git metadata for the selected local or remote workspace.
+
+These commands use the workspace's selected Git ref and repository.
+They do not load installed modules.
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+* [dagger workspace git dirty](#dagger-workspace-git-dirty)	 - Print whether the workspace has uncommitted changes
+* [dagger workspace git log](#dagger-workspace-git-log)	 - Print the workspace commit history
+* [dagger workspace git ref](#dagger-workspace-git-ref)	 - Print the resolved ref name, or commit hash if unnamed
+* [dagger workspace git sha](#dagger-workspace-git-sha)	 - Print the full commit hash
+* [dagger workspace git url](#dagger-workspace-git-url)	 - Print the resolved Git URL, including the selected subdirectory
+
+## dagger workspace git dirty
+
+Print whether the workspace has uncommitted changes
+
+### Synopsis
+
+Print true if the workspace has uncommitted changes, or false if it is clean.
+
+Changes include staged files, unstaged files, and untracked files.
+Git ignore rules apply to untracked files.
+Both true and false return exit status 0.
+
+```
+dagger workspace git dirty [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace git log
+
+Print the workspace commit history
+
+### Synopsis
+
+Print commit history from the workspace's selected Git ref.
+
+Each line contains a short commit hash and the first line of its message.
+The default limit is 10 commits. The history covers the whole repository.
+
+Use --json to print an array with full commit hashes, short hashes, author
+and committer names, email addresses, dates, messages, and parent hashes.
+Dates use RFC3339 format.
+
+```
+dagger workspace git log [flags]
+```
+
+### Options
+
+```
+      --json        Print commit metadata as JSON
+      --limit int   Maximum number of commits (must be greater than zero) (default 10)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace git ref
+
+Print the resolved ref name, or commit hash if unnamed
+
+```
+dagger workspace git ref [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace git sha
+
+Print the full commit hash
+
+```
+dagger workspace git sha [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace git url
+
+Print the resolved Git URL, including the selected subdirectory
+
+### Synopsis
+
+Print the resolved Git URL, including the selected subdirectory.
+
+Use the repository and ref loaded for the selected workspace.
+The output has the form protocol://repository#ref:subdirectory.
+Omit the subdirectory when the workspace is at the repository root.
+
+For local workspaces, use the origin remote and the loaded ref.
+A local workspace must have an origin remote.
+
+Use the output with dagger -W to select the same remote location.
+
+```
+dagger workspace git url [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
+
+## dagger workspace grep
+
+Search file contents in the selected workspace
+
+### Synopsis
+
+Search file contents in the selected workspace, including subdirectories.
+
+PATTERN is a case-sensitive regular expression. Use -F for a literal string.
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Honor .gitignore, .ignore, and .rgignore files by default. Include hidden files.
+Use --all to include ignored files. Use -g to filter paths with glob patterns.
+
+Print each full matching line as path:line:text, with no surrounding lines.
+Output paths are relative to the workspace's current directory.
+Highlight matches when stdout is a terminal, unless NO_COLOR is set.
+Use -l for paths only, or --json for a JSON array of structured matches.
+The -l and --json options cannot be combined.
+
+Exit status is 0 if a match is found, 1 if no matches are found, and 2 on error.
+
+```
+dagger workspace grep PATTERN [PATH...] [flags]
+```
+
+### Examples
+
+```
+  dagger ws grep 'CurrentWorkspace' sdk/go core
+  dagger -W github.com/dagger/dagger ws grep -i -g '*.md' 'workspace'
+  dagger ws grep -l -F 'TODO'
+```
+
+### Options
+
+```
+      --all                  Include ignored files
+  -l, --files-with-matches   Print only paths of matching files
+  -F, --fixed-strings        Treat PATTERN as a literal string
+  -g, --glob stringArray     Include or exclude paths with a glob pattern (repeatable; prefix ! to exclude)
+  -i, --ignore-case          Ignore case when matching
+      --json                 Print a JSON array of structured matches
+      --multiline            Allow matches to span multiple lines
+      --shell-on-error       Open a shell when a container exec fails (needs an interactive terminal)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace ls
+
+List directories or files in the selected workspace
+
+### Synopsis
+
+List directories or files in the selected workspace, one entry per line.
+
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Directory listings include hidden entries and end directory names with /.
+For a file, print the supplied path.
+With multiple paths, list targets in argument order and label directories.
+
+```
+dagger workspace ls [PATH...] [flags]
 ```
 
 ### Options inherited from parent commands
