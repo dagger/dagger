@@ -73,15 +73,15 @@ func TestOriginOmittedFromChain(t *testing.T) {
 	t.Parallel()
 
 	// The unmarked common case: a plain user prompt.
-	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser}, "self"))
+	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser}, "", "self"))
 	// A plain self-send: an agent steering itself.
-	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "self"}, "self"))
+	require.True(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent}, "self", "self"))
 	// Another agent's message records.
-	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "other"}, "self"))
+	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginAgent}, "other", "self"))
 	// A reply marker always records, whoever sent it.
-	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser, ReplyTo: "#2"}, "self"))
+	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginUser, ReplyTo: "#2"}, "", "self"))
 	// Events always record.
-	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginEvent, AgentHandle: "other"}, "self"))
+	require.False(t, originOmittedFromChain(&LLMMessageOrigin{Kind: LLMMessageOriginEvent}, "other", "self"))
 }
 
 // twoAgentRegistry builds a registry holding runtimes for two named agents
@@ -99,9 +99,9 @@ func twoAgentRegistry(t *testing.T) (ars *AgentRuntimes, rtA, rtB *AgentRuntime,
 
 	ars = NewAgentRuntimes()
 	var err error
-	rtA, err = ars.GetOrCreate(base, agentA)
+	rtA, err = ars.Create(base, agentA, AgentStateIdle, "", false)
 	require.NoError(t, err)
-	rtB, err = ars.GetOrCreate(base, agentB)
+	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false)
 	require.NoError(t, err)
 	return ars, rtA, rtB, ctxA, ctxB
 }
@@ -152,8 +152,8 @@ func TestResolveReply(t *testing.T) {
 
 	// A question from scout sits consumed in chief's runtime, mid-turn.
 	msgID, err := rtA.enqueue("what branch?", &LLMMessageOrigin{
-		Kind: LLMMessageOriginAgent, AgentHandle: "agent-b", AgentName: "scout",
-	})
+		Kind: LLMMessageOriginAgent, AgentName: "scout",
+	}, "agent-b")
 	require.NoError(t, err)
 	rtA.mu.Lock()
 	rec := rtA.messages[msgID]
@@ -163,8 +163,8 @@ func TestResolveReply(t *testing.T) {
 
 	// The chief replies: the record resolves with the reply text, so an
 	// awaiter of the question gets the direct answer, not the turn end.
-	chiefOrigin := &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentHandle: "agent-a", AgentName: "chief"}
-	ref, err := ars.resolveReply(chiefOrigin, "#1", "main")
+	chiefOrigin := &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentName: "chief"}
+	ref, err := ars.resolveReply("agent-a", chiefOrigin, "#1", "main")
 	require.NoError(t, err)
 	require.Equal(t, "#1", ref)
 	rtA.mu.Lock()
@@ -172,21 +172,21 @@ func TestResolveReply(t *testing.T) {
 	require.Equal(t, "main", rec.reply)
 	rtA.mu.Unlock()
 
-	// Token forms: bare ordinal and full message ID both resolve.
-	ref, err = ars.resolveReply(chiefOrigin, "1", "again")
+	// Token forms: bare ordinal and the ref itself both resolve.
+	ref, err = ars.resolveReply("agent-a", chiefOrigin, "1", "again")
 	require.NoError(t, err)
 	require.Equal(t, "#1", ref)
-	ref, err = ars.resolveReply(chiefOrigin, msgID, "again")
+	ref, err = ars.resolveReply("agent-a", chiefOrigin, msgID, "again")
 	require.NoError(t, err)
 	require.Equal(t, "#1", ref)
 
 	// A ref naming nothing is a model mistyping — refused loudly.
-	_, err = ars.resolveReply(chiefOrigin, "#7", "answer")
+	_, err = ars.resolveReply("agent-a", chiefOrigin, "#7", "answer")
 	require.ErrorContains(t, err, `agent "chief" has no message #7 to reply to`)
 
 	// A non-agent sender has no runtime to resolve within: the marker
 	// passes through for the recipient's pairing only.
-	ref, err = ars.resolveReply(&LLMMessageOrigin{Kind: LLMMessageOriginUser}, "#9", "answer")
+	ref, err = ars.resolveReply("", &LLMMessageOrigin{Kind: LLMMessageOriginUser}, "#9", "answer")
 	require.NoError(t, err)
 	require.Equal(t, "#9", ref)
 }
@@ -208,9 +208,9 @@ func TestEventDelivery(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	chief, err := ars.GetOrCreate(base, agentA)
+	chief, err := ars.Create(base, agentA, AgentStateIdle, "", false)
 	require.NoError(t, err)
-	scout, err := ars.GetOrCreate(base, agentB)
+	scout, err := ars.Create(base, agentB, AgentStateIdle, "", false)
 	require.NoError(t, err)
 
 	// Subscribe the chief to scout completions. Scout is inert (projects
@@ -221,7 +221,7 @@ func TestEventDelivery(t *testing.T) {
 	chief.mu.Lock()
 	rec := chief.messages[chief.mailbox[0]]
 	require.Equal(t, LLMMessageOriginEvent, rec.origin.Kind)
-	require.Equal(t, "agent-b", rec.origin.AgentHandle)
+	require.Equal(t, "agent-b", rec.sender)
 	require.Equal(t, "scout", rec.origin.AgentName)
 	require.Contains(t, rec.text, `Agent "scout" is now idle.`)
 	chief.mu.Unlock()
@@ -282,7 +282,7 @@ func TestDrainWindowProjectsRunning(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	rt, err := ars.GetOrCreate(base, agent)
+	rt, err := ars.Create(base, agent, AgentStateIdle, "", false)
 	require.NoError(t, err)
 
 	rt.mu.Lock()
@@ -334,7 +334,7 @@ func TestEmitUserMessageSpanRecordsOrigin(t *testing.T) {
 		Role:    LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "what branch?"}},
 		Origin: &LLMMessageOrigin{
-			Kind: LLMMessageOriginAgent, AgentHandle: "agent-b", AgentName: "scout", Ref: "#3",
+			Kind: LLMMessageOriginAgent, AgentName: "scout", Ref: "#3",
 		},
 	}, "")
 	emitUserMessageSpan(ctx, &LLMMessage{
@@ -355,7 +355,6 @@ func TestEmitUserMessageSpanRecordsOrigin(t *testing.T) {
 
 	attributed := attrsOf(ended[0])
 	require.Equal(t, telemetryattrs.LLMMessageOriginKindAgent, attributed[telemetryattrs.LLMMessageOriginKindAttr])
-	require.Equal(t, "agent-b", attributed[telemetryattrs.LLMMessageOriginAgentIDAttr])
 	require.Equal(t, "scout", attributed[telemetryattrs.LLMMessageOriginAgentNameAttr])
 	require.Equal(t, "#3", attributed[telemetryattrs.LLMMessageOriginRefAttr])
 	require.NotContains(t, attributed, telemetryattrs.LLMMessageOriginReplyToAttr)

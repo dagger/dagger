@@ -1358,3 +1358,43 @@ differs where it does.
   `core/workspace.go` and `dagql/dagui/checks.go`/`generators.go`, three
   `gocyclo`, two `unparam`, two `gocritic`, and a `nolintlint` pair in
   `core/schema/directory.go`. Nothing this slice touched contributes to it.
+
+### 13.7 API consolidation — the restore surface folded into what already existed
+
+A pass over the SDL diff against `main` found that restore had grown the
+public surface in places where an existing verb already covered the case,
+and folded them:
+
+- **`Agent.rehydrate` is gone; `LLM.spawn` gained `handle:`, `state:` and
+  `error:`.** Both verbs created an inert entry from the receiver
+  conversation and pinned it through `agent(handle:, name:)`; the only
+  differences were who supplied the handle and the state facts. The restore
+  chain (§3.2, `internal/cmd/dagger/restore.go`) is now
+  `loadLLMFromID(<snapshot>) { spawn(handle:, name:, state:, error:) }`.
+  The existence guard survives unchanged — a supplied handle that already
+  has an entry is refused — and a minted one can never collide, so the
+  registry has one constructor, `AgentRuntimes.Create`. Only a spawn WITH a
+  handle publishes the §4.5 identity span: a fresh spawn is held by whoever
+  spawned it and its loop span follows on first use.
+- **`LLMMessageOrigin.agentHandle` (and its input twin) is gone.** Nothing
+  read it back after the origin was recorded on the chain — self-send
+  suppression and reply resolution both happen at enqueue time, and now use
+  the sender's key carried on the message record instead. The attribution
+  header, the only consumer that matters for byte-stable replay, renders
+  from `agentName`. The `dagger.io/llm.origin.agent.id` span attribute went
+  with it.
+- **`Agent.message(handle:)` became `Agent.message(ref:)`, and the opaque
+  message handle left the API.** The ref (`"#3"`) was already the
+  deterministic identifier the header shows and `replyTo` names; it is now
+  also the record's key, so the pinned chain reads
+  `…agent(handle:)!message(ref: "#3")`.
+- **`Agent.interrupt` became `Agent.pause(interrupt: true)`**, mirroring the
+  flag shape `stop(kill:)` already had.
+- **`Agent.start` is gone; `Agent.resume` starts a never-started agent.**
+  `send` already covered signal-with-start, and `resume` was documented as a
+  no-op on IDLE — which a never-started agent projects — so `start` only
+  existed to step a seed's pending input.
+
+`reseed` stays argument-shaped and separate: the create-vs-swap guards still
+point in opposite directions (§6), and with creation living on `LLM` the
+split reads as "creation on the conversation, mutation on the agent".
