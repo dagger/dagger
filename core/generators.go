@@ -67,7 +67,7 @@ func (g *Generator) Name() string {
 	if g.Synthetic != nil {
 		return g.Synthetic.Name
 	}
-	return g.Node.PathString()
+	return g.Node.CommandName()
 }
 
 func (g *Generator) OriginalModule() *Module {

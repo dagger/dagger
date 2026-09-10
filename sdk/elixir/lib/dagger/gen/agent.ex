@@ -38,7 +38,7 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Return the fully qualified name of the agent
+  Return the command name of the agent. Entrypoint targets omit the module prefix.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = agent) do

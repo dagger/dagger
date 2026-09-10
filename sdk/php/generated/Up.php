@@ -29,7 +29,7 @@ class Up extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the fully qualified name of the service
+     * Return the command name of the service. Entrypoint targets omit the module prefix.
      */
     public function name(): string
     {

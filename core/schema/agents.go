@@ -30,7 +30,7 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Agent]{
 		dagql.Func("name", s.name).
-			Doc("Return the fully qualified name of the agent"),
+			Doc("Return the command name of the agent. Entrypoint targets omit the module prefix."),
 		dagql.Func("description", s.description).
 			Doc("The description of the agent"),
 		dagql.Func("path", s.path).

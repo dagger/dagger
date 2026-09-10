@@ -145,6 +145,17 @@ func (b *SchemaBuilder) PrimaryMods() []Mod {
 	return mods
 }
 
+// EntrypointMods returns the modules whose fields are exposed at the root.
+func (b *SchemaBuilder) EntrypointMods() []Mod {
+	var mods []Mod
+	for _, entry := range b.entries {
+		if entry.opts.Entrypoint {
+			mods = append(mods, entry.mod)
+		}
+	}
+	return mods
+}
+
 func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	srv, err := b.lazilyLoadSchema(ctx)
 	if err != nil {

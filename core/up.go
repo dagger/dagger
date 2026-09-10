@@ -224,7 +224,7 @@ func (*Up) Type() *ast.Type {
 }
 
 func (u *Up) Name() string {
-	return u.Node.PathString()
+	return u.Node.CommandName()
 }
 
 func (u *Up) Clone() *Up {

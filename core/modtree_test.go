@@ -33,6 +33,20 @@ func TestModTreeNode(t *testing.T) {
 	testctx.New(t).RunTests(ModTreeNodeTestSuite{})
 }
 
+func TestModTreeCommandNamePreservesQualifiedPath(t *testing.T) {
+	root := &ModTreeNode{
+		Parent:              &ModTreeNode{},
+		Name:                "myProjectDev",
+		WorkspaceEntrypoint: true,
+	}
+	node := &ModTreeNode{Parent: &ModTreeNode{Parent: root, Name: "unitTests"}, Name: "verify"}
+	require.Equal(t, "unit-tests:verify", node.CommandName())
+	require.Equal(t, "my-project-dev:unit-tests:verify", node.PathString())
+	require.Equal(t, "unit-tests:verify", node.Clone().CommandName())
+	root.WorkspaceEntrypoint = false
+	require.Equal(t, "my-project-dev:unit-tests:verify", node.CommandName())
+}
+
 func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryForModuleLoadedFromDirectory(ctx context.Context, t *testctx.T) {
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
