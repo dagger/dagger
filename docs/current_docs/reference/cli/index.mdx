@@ -30,7 +30,7 @@ dagger [options] [subcommand | file...]
 * [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
-* [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
+* [dagger settings](#dagger-settings)	 - Get, set, or unset module settings
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
@@ -74,7 +74,6 @@ dagger agent [options] [name...]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -142,7 +141,6 @@ dagger api call [options] [function]...
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -193,7 +191,6 @@ dagger api functions [options] [function]...
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -255,7 +252,6 @@ EOF
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -316,7 +312,6 @@ dagger api with-session python main.py
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -369,7 +364,6 @@ dagger check [options] [pattern...]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1009,7 +1003,6 @@ dagger generate [options] [pattern...]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1035,9 +1028,6 @@ Install a module into the current workspace.
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.
 
-With --env the module is recorded in that env's overlay (env.&lt;name&gt;.modules.*)
-and the env is created if missing.
-
 ```
 dagger install [options] <module>
 ```
@@ -1060,7 +1050,6 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1253,8 +1242,9 @@ dagger module
 * [dagger module init](#dagger-module-init)	 - Initialize a new module for development with an SDK
 * [dagger module install](#dagger-module-install)	 - Install a module into your workspace
 * [dagger module list](#dagger-module-list)	 - List installed modules
+* [dagger module recommend](#dagger-module-recommend)	 - Find recommended modules and select which modules to install
 * [dagger module search](#dagger-module-search)	 - Search for modules you can install
-* [dagger module settings](#dagger-module-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
+* [dagger module settings](#dagger-module-settings)	 - Get, set, or unset module settings
 * [dagger module uninstall](#dagger-module-uninstall)	 - Uninstall a module from your workspace
 * [dagger module update](#dagger-module-update)	 - Refresh lockfile state for installed modules
 
@@ -1311,7 +1301,6 @@ dagger module client add <module> [--sdk=SDK]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1353,7 +1342,6 @@ dagger module client list [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1392,7 +1380,6 @@ dagger module client rm <module> [--sdk=SDK]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1426,7 +1413,6 @@ dagger module client scope [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1470,7 +1456,6 @@ dagger module client update
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1510,7 +1495,6 @@ dagger module init SDK [flags]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -1536,9 +1520,6 @@ Install a module into the current workspace.
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.
 
-With --env the module is recorded in that env's overlay (env.&lt;name&gt;.modules.*)
-and the env is created if missing.
-
 ```
 dagger module install [options] <module> [flags]
 ```
@@ -1561,7 +1542,6 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1584,9 +1564,44 @@ dagger module list [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
+
+## dagger module recommend
+
+Find recommended modules and select which modules to install
+
+### Synopsis
+
+Find modules for the current workspace and select which modules to install.
+Already installed modules are skipped.
+
+Use --auto-apply to install all recommended modules without a prompt.
+Without --auto-apply, installation is skipped in non-interactive mode.
+
+```
+dagger module recommend [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
@@ -1632,7 +1647,7 @@ dagger module search wolfi
 
 ## dagger module settings
 
-Get, set, or unset module settings (use --env for an env overlay)
+Get, set, or unset module settings
 
 ```
 dagger module settings [module] [key] [value...] [flags]
@@ -1651,7 +1666,6 @@ dagger module settings [module] [key] [value...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1668,8 +1682,6 @@ Uninstall a module from your workspace
 ### Synopsis
 
 Uninstall a module from the current workspace, removing it from dagger.toml.
-
-With --env only the env's overlay entry is removed, never the base module.
 
 ```
 dagger module uninstall [options] <module> [flags]
@@ -1692,7 +1704,6 @@ dagger module uninstall hello
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1724,7 +1735,6 @@ dagger module update [module...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1767,7 +1777,6 @@ dagger sdk list [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1828,7 +1837,6 @@ dagger sdk scope is-module [BOOL] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1860,7 +1868,6 @@ dagger sdk scope list [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1890,7 +1897,6 @@ dagger sdk scope name [NAME] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1920,7 +1926,6 @@ dagger sdk scope sdk [SDK] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1933,7 +1938,7 @@ dagger sdk scope sdk [SDK] [flags]
 
 ## dagger settings
 
-Get, set, or unset module settings (use --env for an env overlay)
+Get, set, or unset module settings
 
 ```
 dagger settings [module] [key] [value...]
@@ -1952,7 +1957,6 @@ dagger settings [module] [key] [value...]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2045,7 +2049,6 @@ dagger shell [options] [pattern]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -2068,8 +2071,6 @@ Uninstall a module from your workspace
 
 Uninstall a module from the current workspace, removing it from dagger.toml.
 
-With --env only the env's overlay entry is removed, never the base module.
-
 ```
 dagger uninstall [options] <module>
 ```
@@ -2091,7 +2092,6 @@ dagger module uninstall hello
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2130,7 +2130,6 @@ dagger up [options] [pattern...]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
@@ -2182,15 +2181,14 @@ A workspace is a project configured to use Dagger — a directory holding
 a dagger.toml that records installed modules, environment overlays, and
 settings. Most commands (install, check, generate, up, settings, ...)
 operate on the workspace reachable from the current directory. The -W
-flag selects a different workspace (local path or git ref); --env
-applies a named overlay; dagger.toml is the source of truth.
+flag selects a different workspace (local path or git ref); dagger.toml is
+the source of truth.
 
 ### Options inherited from parent commands
 
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2246,8 +2244,7 @@ With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
 With one argument and --unset, removes the value at the given key.
 
-With --env, reads show the effective env-applied view while writes target that
-environment's overlay. Explicit env.* keys always address raw overlay storage.
+Explicit env.* keys address raw overlay storage.
 
 Local module source values are stored relative to dagger.toml.
 
@@ -2268,7 +2265,6 @@ dagger workspace config [key] [value] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2414,7 +2410,6 @@ dagger workspace update [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)

@@ -108,12 +108,18 @@ source = "github.com/acme/personal"
 		require.NoError(t, err)
 		require.Contains(t, string(out), "personal")
 
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=staging", "module", "list")
-		require.NoError(t, err)
-		require.Contains(t, string(out), "personal")
+		t.Run("selected environment", func(ctx context.Context, t *testctx.T) {
+			t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
+			out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=staging", "module", "list")
+			require.NoError(t, err)
+			require.Contains(t, string(out), "personal")
+		})
 	})
 
 	t.Run("repo writes into a user-only env still print the creation notice", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		// The env exists only user-level, so the effective env list knows it —
 		// but a repo-level env-scoped write still adds [env.personal] to
 		// dagger.toml, and that creation must not happen silently.
@@ -152,6 +158,8 @@ profile = "alice-dev"
 	})
 
 	t.Run("user config can add a personal env", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
 			"git@github.com:acme/user-config-test.git", `
 [workspaces."github.com/acme/user-config-test".env.dev.modules.aws.settings]
@@ -172,6 +180,8 @@ region = "us-west-2"
 	})
 
 	t.Run("user env merges over repo env", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
 			"git@github.com:acme/user-config-test.git", `
 [workspaces."github.com/acme/user-config-test".env.staging.modules.aws.settings]
@@ -237,10 +247,14 @@ region = "eu-west-1"
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-		// The selected env overlay still layers over the user-level value.
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
-		require.NoError(t, err)
-		require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
+		t.Run("selected environment", func(ctx context.Context, t *testctx.T) {
+			t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
+			// The selected env overlay still layers over the user-level value.
+			out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
+			require.NoError(t, err)
+			require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
+		})
 	})
 
 	t.Run("missing user config file behaves as before", func(ctx context.Context, t *testctx.T) {
@@ -285,6 +299,8 @@ func (WorkspaceSuite) TestWorkspaceUserConfigWrites(ctx context.Context, t *test
 	})
 
 	t.Run("workspace config --global with --env targets a personal env", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
 			"git@github.com:acme/user-config-test.git", "")
 
@@ -352,12 +368,16 @@ region = "us-east-1"
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-		// --env scoping composes with --global.
-		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "-g", "aws", "region", "eu-west-1")
-		require.NoError(t, err)
-		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
-		require.NoError(t, err)
-		require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
+		t.Run("global settings with selected environment", func(ctx context.Context, t *testctx.T) {
+			t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
+			// --env scoping composes with --global.
+			_, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "-g", "aws", "region", "eu-west-1")
+			require.NoError(t, err)
+			out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=dev", "module", "settings", "aws", "region")
+			require.NoError(t, err)
+			require.Equal(t, "eu-west-1", strings.TrimSpace(string(out)))
+		})
 
 		// Unset targets only the user-level value.
 		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "module", "settings", "-g", "-u", "aws", "region")

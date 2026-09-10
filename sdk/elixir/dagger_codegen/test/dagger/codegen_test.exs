@@ -10,6 +10,29 @@ defmodule Dagger.CodegenTest do
     def format(value), do: value
   end
 
+  defmodule SlowGenerator do
+    def generate_object(_type) do
+      Process.sleep(5_100)
+      "generated"
+    end
+
+    def filename(_type), do: "type"
+    def format(value), do: value
+  end
+
+  test "generation can exceed the default task timeout" do
+    schema =
+      Schema.from_map(%{
+        "__schema" => %{
+          "queryType" => %{"name" => "Query"},
+          "types" => [%{"kind" => "OBJECT", "name" => "Query"}]
+        }
+      })
+
+    assert [ok: {"type", "generated"}] =
+             Dagger.Codegen.generate(SlowGenerator, schema) |> Enum.to_list()
+  end
+
   test "reads the schema version" do
     schema =
       Schema.from_map(%{

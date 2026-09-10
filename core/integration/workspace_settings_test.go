@@ -185,6 +185,8 @@ secret = "env://TOKEN"
 	})
 
 	t.Run("settings MODULE in env scope shows effective values after overlay", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -236,6 +238,8 @@ region = "us-west-2"
 	})
 
 	t.Run("settings MODULE KEY with env reads the effective env value with base fallback", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -257,6 +261,8 @@ region = "us-east-1"
 	})
 
 	t.Run("missing env fails clearly instead of silently falling back to base", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -314,6 +320,8 @@ region = "us-west-2"
 	})
 
 	t.Run("env-scoped writes update env.<name>.modules.<alias>.settings and leave base unchanged", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -340,6 +348,8 @@ region = "us-west-2"
 	})
 
 	t.Run("typed settings work on a module the env itself installed", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		// The module exists only in the env overlay, so discovery has to run
 		// with the env applied to see it at all.
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules]
@@ -368,6 +378,8 @@ region = "us-west-2"
 	})
 
 	t.Run("env-scoped writes create a missing env with a notice", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -482,6 +494,8 @@ region = "us-west-2"
 	})
 
 	t.Run("env-scoped unset removes only the overlay value and leaves base intact", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 
@@ -582,11 +596,15 @@ region = "us-east-1"
 		require.NoError(t, err)
 		require.Equal(t, strings.TrimSpace(string(configBase)), strings.TrimSpace(string(settingsBase)))
 
-		settingsEnv, err := hostDaggerExec(ctx, t, workdir, "--env=ci", "module", "settings", "aws", "region")
-		require.NoError(t, err)
-		configEnv, err := hostDaggerExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
-		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(string(configEnv)), strings.TrimSpace(string(settingsEnv)))
+		t.Run("selected environment", func(ctx context.Context, t *testctx.T) {
+			t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
+			settingsEnv, err := hostDaggerExec(ctx, t, workdir, "--env=ci", "module", "settings", "aws", "region")
+			require.NoError(t, err)
+			configEnv, err := hostDaggerExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
+			require.NoError(t, err)
+			require.Equal(t, strings.TrimSpace(string(configEnv)), strings.TrimSpace(string(settingsEnv)))
+		})
 	})
 
 	t.Run("writes through settings are visible immediately through config and runtime behavior", func(ctx context.Context, t *testctx.T) {

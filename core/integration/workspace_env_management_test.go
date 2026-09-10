@@ -64,6 +64,8 @@ func hostDaggerEnvExec(ctx context.Context, t *testctx.T, workdir string, args .
 // not a raw TOML browser, so env-scoped reads should default to effective
 // merged values.
 func (WorkspaceSuite) TestWorkspaceEnvConfigReadSemantics(ctx context.Context, t *testctx.T) {
+	t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 	t.Run("whole-file read with env shows the effective active config", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, workspaceEnvConfigFixture)
 
@@ -169,6 +171,8 @@ source = "github.com/dagger/aws"
 // selected. Reads are effective in the selected scope; writes mutate that same
 // scope's underlying storage.
 func (WorkspaceSuite) TestWorkspaceEnvConfigWriteSemantics(ctx context.Context, t *testctx.T) {
+	t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 	t.Run("write with env stores the override under env scope and leaves base unchanged", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
 source = "github.com/dagger/aws"
@@ -300,9 +304,13 @@ region = "us-east-1"
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
-		require.NoError(t, err)
-		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
+		t.Run("selected environment", func(ctx context.Context, t *testctx.T) {
+			t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
+			out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
+			require.NoError(t, err)
+			require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
+		})
 	})
 
 	t.Run("explicit env-prefixed writes edit raw stored overlays directly", func(ctx context.Context, t *testctx.T) {
@@ -350,6 +358,8 @@ source = "github.com/dagger/aws"
 	})
 
 	t.Run("explicit env-prefixed keys remain raw even when a current env is selected", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
 source = "github.com/dagger/aws"
 
@@ -373,6 +383,8 @@ region = "eu-central-1"
 // `dagger workspace config` reflects what runtime commands will actually use under the
 // same env selection.
 func (WorkspaceSuite) TestWorkspaceEnvConfigRuntimeConsistency(ctx context.Context, t *testctx.T) {
+	t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 	t.Run("effective config reads match the defaults used by runtime commands", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
@@ -450,6 +462,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	}
 
 	t.Run("env-scoped install creates the env and records the module in its overlay", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
 
@@ -471,6 +485,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	})
 
 	t.Run("env install with no dagger.toml creates config and env", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, "")
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--env=dev", "module", "install", "./dep")
@@ -486,6 +502,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	})
 
 	t.Run("--here install writes the env module into the subdirectory config", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		// The workspace root defines env.dev, but the subdirectory config the
 		// --here install targets does not: both the Created-env notice and the
 		// overlay entry belong to the here-target, not the selected config.
@@ -509,6 +527,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	})
 
 	t.Run("settings on an env-added module can be written and unset", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
 
@@ -531,6 +551,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	})
 
 	t.Run("env-scoped modules are listed only under their env", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
 
@@ -552,6 +574,8 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 	})
 
 	t.Run("env-scoped uninstall removes the overlay entry and leaves base alone", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 
@@ -579,6 +603,8 @@ source = "dep"
 	})
 
 	t.Run("env uninstall drops the install but keeps settings overrides", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 `)
@@ -604,6 +630,8 @@ source = "dep"
 	})
 
 	t.Run("env install over a base module announces the source override", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 `)
@@ -631,6 +659,8 @@ source = "dep"
 	})
 
 	t.Run("SDK installs reject an env selection", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
 		sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
@@ -642,6 +672,8 @@ source = "dep"
 	})
 
 	t.Run("SDK uninstall rejects an env selection", func(ctx context.Context, t *testctx.T) {
+		t.Skip("--env is temporarily disabled in the CLI; re-enable this test when environment selection returns")
+
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
 source = "dep"
 

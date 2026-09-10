@@ -230,15 +230,30 @@ func TestWorkspaceConfigFlags(t *testing.T) {
 		string(mayReadWorkspaceConfig),
 		string(mayWriteWorkspaceConfig),
 	}, flag.Annotations[flagAnyCapabilitiesAnnotation])
-	require.False(t, flag.Hidden)
+	require.True(t, flag.Hidden)
 
 	read := &cobra.Command{Use: "read"}
 	setCommandCapabilities(read, mayReadWorkspaceConfig)
-	require.True(t, FlagAvailableForCommand(read, flag))
+	require.False(t, FlagAvailableForCommand(read, flag))
 	write := &cobra.Command{Use: "write"}
 	setCommandCapabilities(write, mayWriteWorkspaceConfig)
-	require.True(t, FlagAvailableForCommand(write, flag))
+	require.False(t, FlagAvailableForCommand(write, flag))
 	require.False(t, FlagAvailableForCommand(&cobra.Command{Use: "plain"}, flag))
+}
+
+func TestEnvFlagDisabled(t *testing.T) {
+	root := testRootCommand()
+	for _, args := range [][]string{
+		{"--env=ci", "check"},
+		{"module", "install", "--env", "ci", "github.com/dagger/go"},
+		{"module", "settings", "--env=ci", "go"},
+		{"workspace", "config", "--env=ci"},
+		{"api", "call", "--env=ci"},
+	} {
+		require.ErrorContains(t, validateFlagCapabilities(root, args), "flag --env is not supported", args)
+		cmd, _ := resolveCommand(root, args)
+		require.NotContains(t, renderHelp(t, cmd), "--env", args)
+	}
 }
 
 func TestMayCallEngineCommands(t *testing.T) {
@@ -266,6 +281,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger module init",
 		"dagger module install",
 		"dagger module list",
+		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
 		"dagger module update",
@@ -409,6 +425,7 @@ func TestMayProduceOutputCommands(t *testing.T) {
 		"dagger module client rm",
 		"dagger module client update",
 		"dagger module init",
+		"dagger module recommend",
 		"dagger setup",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayProduceOutput))
@@ -516,8 +533,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	installGlobalFlags(flags)
 	envFlag := flags.Lookup("env")
 	require.NotNil(t, envFlag)
-	require.True(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
-	require.True(t, FlagAvailableForCommand(sdkListCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(moduleInitCmd, envFlag))
+	require.False(t, FlagAvailableForCommand(sdkListCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(rootCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(setupCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(sdkCmd, envFlag))
@@ -547,6 +564,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger module init",
 		"dagger module install",
 		"dagger module list",
+		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
 		"dagger module update",
@@ -576,6 +594,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger module client update",
 		"dagger module init",
 		"dagger module install",
+		"dagger module recommend",
 		"dagger module settings",
 		"dagger module uninstall",
 		"dagger sdk scope is-module",
@@ -619,6 +638,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger module client rm",
 		"dagger module client update",
 		"dagger module init",
+		"dagger module recommend",
 		"dagger query",
 		"dagger run",
 		"dagger session",
