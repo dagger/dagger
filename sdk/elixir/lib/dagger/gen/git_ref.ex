@@ -130,9 +130,11 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
-  Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+  Push this ref's commit and history to a remote repository using the destination's credentials.
 
-  Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+  The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+
+  A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
   """
   @spec push(t(), [
           {:to, Dagger.GitRepository.t() | nil},

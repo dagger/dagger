@@ -5630,7 +5630,7 @@
 			"t": "M",
 			"n": "Dagger\\GitRef::push",
 			"p": "Dagger/GitRef.html#method_push",
-			"d": "<p>Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.</p>"
+			"d": "<p>Push this ref's commit and history to a remote repository using the destination's credentials.</p>"
 		},
 		{
 			"t": "M",
@@ -7544,7 +7544,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::commitsFrom",
 			"p": "Dagger/Workspace.html#method_commitsFrom",
-			"d": "<p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.</p>"
+			"d": "<p>Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.</p>"
 		},
 		{
 			"t": "M",
@@ -7586,7 +7586,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::export",
 			"p": "Dagger/Workspace.html#method_export",
-			"d": "<p>Write this workspace's commits and uncommitted changes to a local Git checkout.</p>"
+			"d": "<p>Write this workspace's changes to a local Git checkout on the calling client.</p>"
 		},
 		{
 			"t": "M",
@@ -7706,13 +7706,13 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withCommit",
 			"p": "Dagger/Workspace.html#method_withCommit",
-			"d": "<p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p>"
+			"d": "<p>Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::withCommitsFrom",
 			"p": "Dagger/Workspace.html#method_withCommitsFrom",
-			"d": "<p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.</p>"
+			"d": "<p>Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.</p>"
 		},
 		{
 			"t": "M",
@@ -7790,7 +7790,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::withReset",
 			"p": "Dagger/Workspace.html#method_withReset",
-			"d": "<p>Reset Git HEAD to a commit and return a frozen workspace.</p>"
+			"d": "<p>Move this workspace's Git HEAD to a commit and return the resulting stable workspace.</p>"
 		},
 		{
 			"t": "M",

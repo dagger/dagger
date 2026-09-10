@@ -466,7 +466,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_commitsFrom">
 <abbr title="Dagger\Workspace">Workspace</abbr>::commitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace cwd, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -698,7 +698,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::envList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List named environments defined in the workspace configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_export">
 <abbr title="Dagger\Workspace">Workspace</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Write this workspace's commits and uncommitted changes to a local Git checkout.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
+                    <dd><p>Write this workspace's changes to a local Git checkout on the calling client.</p></dd><dt><a href="Dagger/WorkspaceModule.html#method_entrypoint">
 <abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr>::entrypoint</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a></em></dt>
                     <dd><p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p></dd>        </dl><h2 id="letterF">F</h2>
         <dl id="indexF"><dt><a href="Dagger/Address.html#method_file">
@@ -1375,7 +1375,7 @@
 <abbr title="Dagger\GitPushResult">GitPushResult</abbr>::previousSHA</a>() &mdash; <em>Method in class <a href="Dagger/GitPushResult.html"><abbr title="Dagger\GitPushResult">GitPushResult</abbr></a></em></dt>
                     <dd><p>The previous remote object ID; empty when the ref was created.</p></dd><dt><a href="Dagger/GitRef.html#method_push">
 <abbr title="Dagger\GitRef">GitRef</abbr>::push</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
-                    <dd><p>Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
+                    <dd><p>Push this ref's commit and history to a remote repository using the destination's credentials.</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
 <abbr title="Dagger\LLM">LLM</abbr>::portableID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
 <abbr title="Dagger\LLM">LLM</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -2260,9 +2260,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a generated module client added to one SDK scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withCommit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommitsFrom">
+                    <dd><p>Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.</p></dd><dt><a href="Dagger/Workspace.html#method_withCommitsFrom">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withCommitsFrom</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
+                    <dd><p>Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnv">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnv</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a named config environment created.</p></dd><dt><a href="Dagger/Workspace.html#method_withConfigEnvironment">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withConfigEnvironment</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -2288,7 +2288,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a new or replaced file, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withReset">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withReset</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Reset Git HEAD to a commit and return a frozen workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
+                    <dd><p>Move this workspace's Git HEAD to a commit and return the resulting stable workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_withSDK">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with an SDK installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withUpdatedClients">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withUpdatedClients</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

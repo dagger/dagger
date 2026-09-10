@@ -8889,7 +8889,7 @@ pub struct GitRefPushOpts<'a> {
     /// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
     #[builder(setter(into, strip_option), default)]
     pub expected_remote_sha: Option<&'a str>,
-    /// Destination remote repository. Defaults to this ref's repository URL.
+    /// Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
     #[builder(setter(into, strip_option), default)]
     pub to: Option<Id>,
 }
@@ -9052,8 +9052,9 @@ impl GitRef {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
-    /// Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+    /// Push this ref's commit and history to a remote repository using the destination's credentials.
+    /// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+    /// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
     ///
     /// # Arguments
     ///
@@ -9066,8 +9067,9 @@ impl GitRef {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
-    /// Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
+    /// Push this ref's commit and history to a remote repository using the destination's credentials.
+    /// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+    /// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
     ///
     /// # Arguments
     ///
@@ -15895,12 +15897,13 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
-    /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+    /// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+    /// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+    /// A local receiver is synced automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
-    /// * `source` - Frozen source workspace.
+    /// * `source` - Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn commits_from(
         &self,
@@ -15928,12 +15931,13 @@ impl Workspace {
             })
             .collect())
     }
-    /// Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
-    /// Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
+    /// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+    /// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+    /// A local receiver is synced automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
-    /// * `source` - Frozen source workspace.
+    /// * `source` - Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn commits_from_opts<'a>(
         &self,
@@ -16070,8 +16074,9 @@ impl Workspace {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write this workspace's commits and uncommitted changes to a local Git checkout.
-    /// Integrate frozen commits with currentWorkspace.withCommitsFrom first. Export validates the prepared integration against the live checkout, preserving unrelated local edits and refusing stale or conflicting writes. History is never rewritten.
+    /// Write this workspace's changes to a local Git checkout on the calling client.
+    /// Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+    /// For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
     /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
@@ -16439,8 +16444,8 @@ impl Workspace {
         }
     }
     /// Capture this workspace as a stable value and return its ID.
-    /// Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
-    /// Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+    /// Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Syncing an existing stable value preserves its baseline; sync currentWorkspace again to capture later checkout changes.
+    /// Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
     /// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
     pub async fn sync(&self) -> Result<Workspace, DaggerError> {
         let query = self.selection.select("sync");
@@ -16546,8 +16551,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
-    /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+    /// A local workspace is synced automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
     /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
@@ -16565,8 +16570,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
-    /// The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+    /// A local workspace is synced automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
     /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
     ///
     /// # Arguments
@@ -16598,13 +16603,14 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
-    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
-    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// A local receiver is synced automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
-    /// * `source` - Frozen source workspace.
+    /// * `source` - Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_commits_from(&self, source: impl IntoID<Id>) -> Workspace {
         let mut query = self.selection.select("withCommitsFrom");
@@ -16621,13 +16627,14 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
-    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
-    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
+    /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// A local receiver is synced automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
     /// # Arguments
     ///
-    /// * `source` - Frozen source workspace.
+    /// * `source` - Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_commits_from_opts<'a>(
         &self,
@@ -17055,8 +17062,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Reset Git HEAD to a commit and return a frozen workspace.
-    /// The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+    /// A local workspace is synced automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
     /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
     /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
     ///
@@ -17073,8 +17080,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Reset Git HEAD to a commit and return a frozen workspace.
-    /// The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+    /// A local workspace is synced automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
     /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
     /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
     ///

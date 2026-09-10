@@ -1902,7 +1902,7 @@ export type GitRefLogOpts = {
 
 export type GitRefPushOpts = {
   /**
-   * Destination remote repository. Defaults to this ref's repository URL.
+   * Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
    */
   to?: GitRepository
 
@@ -10098,10 +10098,12 @@ export class GitRef extends BaseClient {
   }
 
   /**
-   * Push this ref engine-side, using the destination's credentials. Checkout hooks do not run. A missing remote ref is created.
+   * Push this ref's commit and history to a remote repository using the destination's credentials.
    *
-   * Without a lease, Git's normal non-force rules apply. This operation is never cached. The returned receipt can be replayed without pushing again.
-   * @param opts.to Destination remote repository. Defaults to this ref's repository URL.
+   * The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+   *
+   * A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+   * @param opts.to Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
    * @param opts.branch Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
    * @param opts.expectedRemoteSHA Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
    */
@@ -15749,10 +15751,12 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Classify frozen source commits oldest first, as if earlier pickable commits had been applied. Local receivers are frozen first.
+   * Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
    *
-   * Planning is bounded and fails rather than truncating. Source uncommitted changes are ignored. Divergent merge commits require manual integration.
-   * @param source Frozen source workspace.
+   * Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+   *
+   * A local receiver is synced automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+   * @param source Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
    * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
@@ -15876,9 +15880,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write this workspace's commits and uncommitted changes to a local Git checkout.
+   * Write this workspace's changes to a local Git checkout on the calling client.
    *
-   * Integrate frozen commits with currentWorkspace.withCommitsFrom first. Export validates the prepared integration against the live checkout, preserving unrelated local edits and refusing stale or conflicting writes. History is never rewritten.
+   * Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+   *
+   * For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
    *
    * Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
    */
@@ -16102,9 +16108,9 @@ export class Workspace extends BaseClient {
   /**
    * Capture this workspace as a stable value and return its ID.
    *
-   * Use the returned workspace for subsequent operations. Tracked changes are captured automatically; untracked paths require interactive approval. Git refs are pinned.
+   * Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Syncing an existing stable value preserves its baseline; sync currentWorkspace again to capture later checkout changes.
    *
-   * Syncing a stable value preserves its baseline. Sync currentWorkspace again to capture later checkout changes.
+   * Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
    *
    * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
    */
@@ -16151,9 +16157,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Commit uncommitted changes and return a frozen workspace with Git HEAD advanced.
+   * Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
    *
-   * The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+   * A local workspace is synced automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
    *
    * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
    * @param message Commit message.
@@ -16168,12 +16174,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Pull commits from a frozen workspace, preserving this workspace's uncommitted changes and metadata. A local receiver is frozen first and retains its checkout destination for export; the checkout is not modified until export.
+   * Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
    *
-   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick in order with origin trailers, skipping already-picked or redundant commits. Any conflict fails the whole pull. Source uncommitted changes are not pulled.
+   * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
    *
-   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Divergent merge commits require manual integration.
-   * @param source Frozen source workspace.
+   * A local receiver is synced automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+   *
+   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+   * @param source Git-backed source workspace. For a local checkout, call sync on the source first and pass the returned workspace.
    * @param opts.commits Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
    */
@@ -16344,9 +16352,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Reset Git HEAD to a commit and return a frozen workspace.
+   * Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
    *
-   * The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+   * A local workspace is synced automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
    *
    * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
    *
