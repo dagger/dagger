@@ -306,6 +306,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger workspace cwd",
 		"dagger workspace exec",
 		"dagger workspace export",
+		"dagger workspace find",
 		"dagger workspace git",
 		"dagger workspace grep",
 		"dagger workspace ls",
