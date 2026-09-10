@@ -241,14 +241,28 @@ defmodule Dagger.LLM do
 
   Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
 
+  The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
+
+  With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
+
   > #### Experimental {: .warning}
   >
   > "Agent APIs are likely to change."
   """
-  @spec spawn(t(), [{:name, String.t() | nil}]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
+  @spec spawn(t(), [
+          {:name, String.t() | nil},
+          {:handle, String.t() | nil},
+          {:state, Dagger.AgentState.t() | nil},
+          {:error, String.t() | nil}
+        ]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
   def spawn(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
-      llm.query_builder |> QB.select("spawn") |> QB.maybe_put_arg("name", optional_args[:name])
+      llm.query_builder
+      |> QB.select("spawn")
+      |> QB.maybe_put_arg("name", optional_args[:name])
+      |> QB.maybe_put_arg("handle", optional_args[:handle])
+      |> QB.maybe_put_arg("state", optional_args[:state])
+      |> QB.maybe_put_arg("error", optional_args[:error])
 
     with {:ok, id} <- Client.execute(llm.client, query_builder) do
       {:ok,

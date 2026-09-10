@@ -173,22 +173,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_interrupt">interrupt</a>()
-        
-                                            <p><p>Preempt the in-flight step, keeping all completed steps, and pause.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_message">message</a>(string $handle)
+                    <a href="#method_message">message</a>(string $ref)
         
-                                            <p><p>Look up a previously sent message by its opaque handle.</p></p>                </div>
+                                            <p><p>Look up a previously sent message by its ref.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -216,19 +206,9 @@
                     <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_pause">pause</a>()
+                    <a href="#method_pause">pause</a>(bool|null $interrupt = false)
         
-                                            <p><p>Stop draining the mailbox once the in-flight step completes.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_rehydrate">rehydrate</a>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null, string|null $error = &#039;&#039;)
-        
-                                            <p><p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p></p>                </div>
+                                            <p><p>Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -269,16 +249,6 @@
                     <a href="#method_snapshot">snapshot</a>()
         
                                             <p><p>The conversation as of the last committed step: immutable, branchable, persistable.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_start">start</a>()
-        
-                                            <p><p>Start the agent's evaluation loop. No-op if it is already running.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -503,43 +473,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_interrupt">
-        <div class="location">at line 56</div>
-        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>interrupt</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Preempt the in-flight step, keeping all completed steps, and pause.</p></p>                <p><p>The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.</p>
-<p>On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_message">
-        <div class="location">at line 70</div>
+        <div class="location">at line 56</div>
         <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
-    <strong>message</strong>(string $handle)
+    <strong>message</strong>(string $ref)
         </code>
     </h3>
     <div class="details">    
@@ -547,8 +484,8 @@
             
 
         <div class="method-description">
-                            <p><p>Look up a previously sent message by its opaque handle.</p></p>                <p><p>This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).</p>
-<p>Fails if the agent has no runtime entry in this session, or no record of the given handle.</p></p>        
+                            <p><p>Look up a previously sent message by its ref.</p></p>                <p><p>This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).</p>
+<p>Fails if the agent has no runtime entry in this session, or no record of the given ref.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -556,7 +493,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$handle</td>
+                <td>$ref</td>
                 <td></td>
             </tr>
             </table>
@@ -580,7 +517,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 80</div>
+        <div class="location">at line 66</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -612,7 +549,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_notify">
-        <div class="location">at line 95</div>
+        <div class="location">at line 81</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>notify</strong>(<a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a> $subscriber, array|null $on = null)
         </code>
@@ -661,9 +598,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_pause">
-        <div class="location">at line 113</div>
+        <div class="location">at line 99</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>pause</strong>()
+    <strong>pause</strong>(bool|null $interrupt = false)
         </code>
     </h3>
     <div class="details">    
@@ -671,55 +608,16 @@
             
 
         <div class="method-description">
-                            <p><p>Stop draining the mailbox once the in-flight step completes.</p></p>                <p><p>Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.</p>
-<p>Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_rehydrate">
-        <div class="location">at line 129</div>
-        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>rehydrate</strong>(<abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null $state = null, string|null $error = &#039;&#039;)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p></p>                <p><p>The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.</p>
-<p>The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.</p>
-<p>Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.</p></p>        
+                            <p><p>Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.</p></p>                <p><p>Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.</p>
+<p>Pausing a never-started agent leaves it paused for its eventual resume; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\Dagger\AgentState">AgentState</abbr>|null</td>
-                <td>$state</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$error</td>
+                <td>bool|null</td>
+                <td>$interrupt</td>
                 <td></td>
             </tr>
             </table>
@@ -743,7 +641,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reseed">
-        <div class="location">at line 151</div>
+        <div class="location">at line 118</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>reseed</strong>(<a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a> $conversation)
         </code>
@@ -787,7 +685,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_resume">
-        <div class="location">at line 166</div>
+        <div class="location">at line 133</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>resume</strong>()
         </code>
@@ -797,7 +695,7 @@
             
 
         <div class="method-description">
-                            <p><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></p>                <p><p>Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.</p>
+                            <p><p>Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.</p></p>                <p><p>Resuming a never-started agent starts its evaluation loop, detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations. Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.</p>
 <p>No-op on a running or idle agent.</p></p>        
         </div>
         <div class="tags">
@@ -820,7 +718,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_send">
-        <div class="location">at line 182</div>
+        <div class="location">at line 149</div>
         <code>                    <a href="../Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a>
     <strong>send</strong>(string $message, string|null $replyTo = &#039;&#039;)
         </code>
@@ -869,7 +767,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_snapshot">
-        <div class="location">at line 200</div>
+        <div class="location">at line 167</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>snapshot</strong>()
         </code>
@@ -901,40 +799,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_start">
-        <div class="location">at line 211</div>
-        <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
-    <strong>start</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Start the agent's evaluation loop. No-op if it is already running.</p></p>                <p><p>The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_state">
-        <div class="location">at line 223</div>
+        <div class="location">at line 178</div>
         <code>                    <abbr title="Dagger\AgentState">AgentState</abbr>
     <strong>state</strong>()
         </code>
@@ -966,7 +832,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stop">
-        <div class="location">at line 232</div>
+        <div class="location">at line 187</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>stop</strong>(bool|null $kill = false)
         </code>
@@ -1008,7 +874,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_wait">
-        <div class="location">at line 247</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a>
     <strong>wait</strong>()
         </code>

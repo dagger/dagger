@@ -2124,15 +2124,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Agent::interrupt",
-			"p": "Dagger/Agent.html#method_interrupt",
-			"d": "<p>Preempt the in-flight step, keeping all completed steps, and pause.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Agent::message",
 			"p": "Dagger/Agent.html#method_message",
-			"d": "<p>Look up a previously sent message by its opaque handle.</p>"
+			"d": "<p>Look up a previously sent message by its ref.</p>"
 		},
 		{
 			"t": "M",
@@ -2150,13 +2144,7 @@
 			"t": "M",
 			"n": "Dagger\\Agent::pause",
 			"p": "Dagger/Agent.html#method_pause",
-			"d": "<p>Stop draining the mailbox once the in-flight step completes.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Agent::rehydrate",
-			"p": "Dagger/Agent.html#method_rehydrate",
-			"d": "<p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p>"
+			"d": "<p>Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.</p>"
 		},
 		{
 			"t": "M",
@@ -2181,12 +2169,6 @@
 			"n": "Dagger\\Agent::snapshot",
 			"p": "Dagger/Agent.html#method_snapshot",
 			"d": "<p>The conversation as of the last committed step: immutable, branchable, persistable.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Agent::start",
-			"p": "Dagger/Agent.html#method_start",
-			"d": "<p>Start the agent's evaluation loop. No-op if it is already running.</p>"
 		},
 		{
 			"t": "M",
@@ -6408,15 +6390,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLMMessageOrigin::agentHandle",
-			"p": "Dagger/LLMMessageOrigin.html#method_agentHandle",
-			"d": "<p>The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLMMessageOrigin::agentName",
 			"p": "Dagger/LLMMessageOrigin.html#method_agentName",
-			"d": "<p>The display name of the agent behind agentHandle.</p>"
+			"d": "<p>The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).</p>"
 		},
 		{
 			"t": "M",
@@ -6434,7 +6410,7 @@
 			"t": "M",
 			"n": "Dagger\\LLMMessageOrigin::ref",
 			"p": "Dagger/LLMMessageOrigin.html#method_ref",
-			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.</p>"
+			"d": "<p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo) and the message lookup takes.</p>"
 		},
 		{
 			"t": "M",

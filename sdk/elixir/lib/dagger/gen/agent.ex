@@ -63,49 +63,20 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Preempt the in-flight step, keeping all completed steps, and pause.
-
-  The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
-
-  On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec interrupt(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
-  def interrupt(%__MODULE__{} = agent) do
-    query_builder =
-      agent.query_builder |> QB.select("interrupt")
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
-  end
-
-  @doc """
-  Look up a previously sent message by its opaque handle.
+  Look up a previously sent message by its ref.
 
   This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
 
-  Fails if the agent has no runtime entry in this session, or no record of the given handle.
+  Fails if the agent has no runtime entry in this session, or no record of the given ref.
 
   > #### Experimental {: .warning}
   >
   > "Agent APIs are likely to change."
   """
   @spec message(t(), String.t()) :: Dagger.AgentMessage.t()
-  def message(%__MODULE__{} = agent, handle) do
+  def message(%__MODULE__{} = agent, ref) do
     query_builder =
-      agent.query_builder |> QB.select("message") |> QB.put_arg("handle", handle)
+      agent.query_builder |> QB.select("message") |> QB.put_arg("ref", ref)
 
     %Dagger.AgentMessage{
       query_builder: query_builder,
@@ -164,55 +135,22 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  Stop draining the mailbox once the in-flight step completes.
+  Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
 
   Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
 
-  Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+  Pausing a never-started agent leaves it paused for its eventual resume; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
 
   > #### Experimental {: .warning}
   >
   > "Agent APIs are likely to change."
   """
-  @spec pause(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
-  def pause(%__MODULE__{} = agent) do
-    query_builder =
-      agent.query_builder |> QB.select("pause")
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
-  end
-
-  @doc """
-  Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
-
-  The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
-
-  The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
-
-  Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec rehydrate(t(), [{:state, Dagger.AgentState.t() | nil}, {:error, String.t() | nil}]) ::
-          {:ok, Dagger.Agent.t()} | {:error, term()}
-  def rehydrate(%__MODULE__{} = agent, optional_args \\ []) do
+  @spec pause(t(), [{:interrupt, boolean() | nil}]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
+  def pause(%__MODULE__{} = agent, optional_args \\ []) do
     query_builder =
       agent.query_builder
-      |> QB.select("rehydrate")
-      |> QB.maybe_put_arg("state", optional_args[:state])
-      |> QB.maybe_put_arg("error", optional_args[:error])
+      |> QB.select("pause")
+      |> QB.maybe_put_arg("interrupt", optional_args[:interrupt])
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,
@@ -263,7 +201,7 @@ defmodule Dagger.Agent do
   @doc """
   Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
 
-  Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+  Resuming a never-started agent starts its evaluation loop, detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations. Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
 
   No-op on a running or idle agent.
 
@@ -344,33 +282,6 @@ defmodule Dagger.Agent do
       query_builder: query_builder,
       client: agent.client
     }
-  end
-
-  @doc """
-  Start the agent's evaluation loop. No-op if it is already running.
-
-  The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec start(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
-  def start(%__MODULE__{} = agent) do
-    query_builder =
-      agent.query_builder |> QB.select("start")
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
   end
 
   @doc """

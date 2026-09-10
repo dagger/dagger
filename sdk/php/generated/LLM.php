@@ -164,12 +164,29 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
      * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
      *
      * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+     *
+     * The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
+     *
+     * With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
      */
-    public function spawn(?string $name = null): Agent
-    {
+    public function spawn(
+        ?string $name = null,
+        ?string $handle = null,
+        ?AgentState $state = null,
+        ?string $error = '',
+    ): Agent {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
         if (null !== $name) {
         $leafQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $handle) {
+        $leafQueryBuilder->setArgument('handle', $handle);
+        }
+        if (null !== $state) {
+        $leafQueryBuilder->setArgument('state', $state);
+        }
+        if (null !== $error) {
+        $leafQueryBuilder->setArgument('error', $error);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'spawn');
         return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');

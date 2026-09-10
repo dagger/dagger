@@ -18,22 +18,7 @@ defmodule Dagger.LLMMessageOrigin do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec agent_handle(t()) :: {:ok, String.t()} | {:error, term()}
-  def agent_handle(%__MODULE__{} = llm_message_origin) do
-    query_builder =
-      llm_message_origin.query_builder |> QB.select("agentHandle")
-
-    Client.execute(llm_message_origin.client, query_builder)
-  end
-
-  @doc """
-  The display name of the agent behind agentHandle.
+  The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).
 
   > #### Experimental {: .warning}
   >
@@ -77,7 +62,7 @@ defmodule Dagger.LLMMessageOrigin do
   end
 
   @doc """
-  The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.
+  The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo) and the message lookup takes.
 
   > #### Experimental {: .warning}
   >
