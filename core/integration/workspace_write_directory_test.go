@@ -385,5 +385,4 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryDoesNotPinHostContent(ctx contex
 		require.NoError(t, err)
 		require.NotContains(t, modified, "target/keep.txt")
 	})
-
 }
