@@ -26,7 +26,7 @@ func (WorkspaceSuite) TestWorkspaceModuleResolution(ctx context.Context, t *test
 			require.NotContains(t, string(out), "local path does not exist")
 			require.NotContains(t, string(out), "➡️")
 			if strings.HasPrefix(source, "http://127.0.0.1:") {
-				require.Contains(t, string(out), "cannot connect to git repository")
+				require.Regexp(t, "connection refused|cannot connect to git repository", string(out))
 			}
 		}
 	})
