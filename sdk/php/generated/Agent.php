@@ -47,30 +47,16 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Preempt the in-flight step, keeping all completed steps, and pause.
-     *
-     * The interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step.
-     *
-     * On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
-     */
-    public function interrupt(): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interrupt');
-        $id = $this->queryLeaf($leafQueryBuilder, 'interrupt');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
-     * Look up a previously sent message by its opaque handle.
+     * Look up a previously sent message by its ref.
      *
      * This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
      *
-     * Fails if the agent has no runtime entry in this session, or no record of the given handle.
+     * Fails if the agent has no runtime entry in this session, or no record of the given ref.
      */
-    public function message(string $handle): AgentMessage
+    public function message(string $ref): AgentMessage
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('message');
-        $innerQueryBuilder->setArgument('handle', $handle);
+        $innerQueryBuilder->setArgument('ref', $ref);
         return new \Dagger\AgentMessage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -104,38 +90,19 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Stop draining the mailbox once the in-flight step completes.
+     * Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
      *
      * Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
      *
-     * Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+     * Pausing a never-started agent leaves it paused for its eventual resume; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
      */
-    public function pause(): Agent
+    public function pause(?bool $interrupt = false): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pause');
+        if (null !== $interrupt) {
+        $leafQueryBuilder->setArgument('interrupt', $interrupt);
+        }
         $id = $this->queryLeaf($leafQueryBuilder, 'pause');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
-     * Recreate this instance's runtime entry from a persisted conversation, without starting its loop.
-     *
-     * The receiver's snapshot becomes the entry's committed history, so prompting it continues where it left off — the restore verb: rebuild a conversation's ID from a trace, load it, and re-hydrate the instance it belonged to.
-     *
-     * The loop is deliberately not started: a restored agent spends nothing until it is prompted, and any input still pending on its snapshot is stepped then.
-     *
-     * Fails if the instance already has a runtime entry in this session: re-hydration must happen before anything else addresses the instance, since by then it may have stepped.
-     */
-    public function rehydrate(?AgentState $state = null, ?string $error = ''): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('rehydrate');
-        if (null !== $state) {
-        $leafQueryBuilder->setArgument('state', $state);
-        }
-        if (null !== $error) {
-        $leafQueryBuilder->setArgument('error', $error);
-        }
-        $id = $this->queryLeaf($leafQueryBuilder, 'rehydrate');
         return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
@@ -159,7 +126,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
      *
-     * Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+     * Resuming a never-started agent starts its evaluation loop, detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations. Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
      *
      * No-op on a running or idle agent.
      */
@@ -201,18 +168,6 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('snapshot');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Start the agent's evaluation loop. No-op if it is already running.
-     *
-     * The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
-     */
-    public function start(): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
-        $id = $this->queryLeaf($leafQueryBuilder, 'start');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 
     /**

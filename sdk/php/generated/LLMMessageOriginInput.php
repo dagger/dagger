@@ -17,7 +17,6 @@ class LLMMessageOriginInput extends Client\AbstractInputObject
 {
     public function __construct(
         public LLMMessageOriginKind $kind,
-        public ?string $agentHandle = '',
         public ?string $agentName = '',
         public ?string $ref = '',
         public ?string $replyTo = '',

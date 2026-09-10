@@ -273,11 +273,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::agent</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Reconstruct a spawned agent from its runtime handle.</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_arguments">
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::arguments</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
-                    <dd><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_agentHandle">
-<abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::agentHandle</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
-                    <dd><p>The sending agent's runtime handle (for AGENT origins) or the observed agent's runtime handle (for EVENT origins).</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_agentName">
+                    <dd><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_agentName">
 <abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::agentName</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
-                    <dd><p>The display name of the agent behind agentHandle.</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
+                    <dd><p>The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p></dd><dt><a href="Dagger/ModuleSource.html#method_asString">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -861,9 +859,7 @@
 <abbr title="Dagger\Address">Address</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Address.</p></dd><dt><a href="Dagger/Agent.html#method_id">
 <abbr title="Dagger\Agent">Agent</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Agent.</p></dd><dt><a href="Dagger/Agent.html#method_interrupt">
-<abbr title="Dagger\Agent">Agent</abbr>::interrupt</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Preempt the in-flight step, keeping all completed steps, and pause.</p></dd><dt><a href="Dagger/AgentGroup.html#method_id">
+                    <dd><p>A unique identifier for this Agent.</p></dd><dt><a href="Dagger/AgentGroup.html#method_id">
 <abbr title="Dagger\AgentGroup">AgentGroup</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a></em></dt>
                     <dd><p>A unique identifier for this AgentGroup.</p></dd><dt><a href="Dagger/AgentMessage.html#method_id">
 <abbr title="Dagger\AgentMessage">AgentMessage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/AgentMessage.html"><abbr title="Dagger\AgentMessage">AgentMessage</abbr></a></em></dt>
@@ -1184,7 +1180,7 @@
                     <dd><p>Return a list of individual services and their details</p></dd>        </dl><h2 id="letterM">M</h2>
         <dl id="indexM"><dt><a href="Dagger/Agent.html#method_message">
 <abbr title="Dagger\Agent">Agent</abbr>::message</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Look up a previously sent message by its opaque handle.</p></dd><dt><a href="Dagger/Changeset.html#method_modifiedPaths">
+                    <dd><p>Look up a previously sent message by its ref.</p></dd><dt><a href="Dagger/Changeset.html#method_modifiedPaths">
 <abbr title="Dagger\Changeset">Changeset</abbr>::modifiedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Files and directories that existed before and were updated in the newer directory.</p></dd><dt><a href="Dagger/Client.html#method_module">
 <abbr title="Dagger\Client">Client</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1377,7 +1373,7 @@
                     <dd><p>The original module in which the service has been defined</p></dd>        </dl><h2 id="letterP">P</h2>
         <dl id="indexP"><dt><a href="Dagger/Agent.html#method_pause">
 <abbr title="Dagger\Agent">Agent</abbr>::pause</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Stop draining the mailbox once the in-flight step completes.</p></dd><dt><a href="Dagger/AgentMiddleware.html#method_path">
+                    <dd><p>Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.</p></dd><dt><a href="Dagger/AgentMiddleware.html#method_path">
 <abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/AgentMiddleware.html"><abbr title="Dagger\AgentMiddleware">AgentMiddleware</abbr></a></em></dt>
                     <dd><p>The path of the agent within its module</p></dd><dt><a href="Dagger/ChangesetDiffStatEntry.html#method_path">
 <abbr title="Dagger\ChangesetDiffStatEntry">ChangesetDiffStatEntry</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/ChangesetDiffStatEntry.html"><abbr title="Dagger\ChangesetDiffStatEntry">ChangesetDiffStatEntry</abbr></a></em></dt>
@@ -1442,9 +1438,7 @@
                     <dd></dd><dt><a href="Dagger/Client/QueryBuilder.html"><abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/QueryId.html"><abbr title="Dagger\QueryId">QueryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p></dd>        </dl><h2 id="letterR">R</h2>
-        <dl id="indexR"><dt><a href="Dagger/Agent.html#method_rehydrate">
-<abbr title="Dagger\Agent">Agent</abbr>::rehydrate</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Recreate this instance's runtime entry from a persisted conversation, without starting its loop.</p></dd><dt><a href="Dagger/Agent.html#method_reseed">
+        <dl id="indexR"><dt><a href="Dagger/Agent.html#method_reseed">
 <abbr title="Dagger\Agent">Agent</abbr>::reseed</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
                     <dd><p>Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.</p></dd><dt><a href="Dagger/Agent.html#method_resume">
 <abbr title="Dagger\Agent">Agent</abbr>::resume</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
@@ -1505,7 +1499,7 @@
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::role</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
                     <dd><p>The role that produced this message.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_ref">
 <abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
-                    <dd><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo). Distinct from the opaque message handle.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_replyTo">
+                    <dd><p>The message's short ref within the receiving agent's runtime, e.g. &quot;#3&quot;: the deterministic token replies name (send's replyTo) and the message lookup takes.</p></dd><dt><a href="Dagger/LLMMessageOrigin.html#method_replyTo">
 <abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr>::replyTo</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessageOrigin.html"><abbr title="Dagger\LLMMessageOrigin">LLMMessageOrigin</abbr></a></em></dt>
                     <dd><p>The ref of the message this one answers, in the sender's own runtime, if any.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
 <abbr title="Dagger\Module">Module</abbr>::runtime</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1534,9 +1528,7 @@
 <abbr title="Dagger\Agent">Agent</abbr>::send</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
                     <dd><p>Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.</p></dd><dt><a href="Dagger/Agent.html#method_snapshot">
 <abbr title="Dagger\Agent">Agent</abbr>::snapshot</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>The conversation as of the last committed step: immutable, branchable, persistable.</p></dd><dt><a href="Dagger/Agent.html#method_start">
-<abbr title="Dagger\Agent">Agent</abbr>::start</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
-                    <dd><p>Start the agent's evaluation loop. No-op if it is already running.</p></dd><dt><a href="Dagger/Agent.html#method_state">
+                    <dd><p>The conversation as of the last committed step: immutable, branchable, persistable.</p></dd><dt><a href="Dagger/Agent.html#method_state">
 <abbr title="Dagger\Agent">Agent</abbr>::state</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
                     <dd><p>Computed lifecycle state; never stored.</p></dd><dt><a href="Dagger/Agent.html#method_stop">
 <abbr title="Dagger\Agent">Agent</abbr>::stop</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
