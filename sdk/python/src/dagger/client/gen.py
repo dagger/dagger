@@ -15451,8 +15451,8 @@ class Workspace(Type):
         return Directory(_ctx)
 
     async def entrypoint(self) -> str:
-        """Installed name of the module selected as the workspace entrypoint,
-        or an empty string when none is selected.
+        """Installed name of the module selected as the workspace entrypoint, or
+        an empty string when none is selected.
 
         Reflects the selected env's effective view. Fails if several modules
         are selected.
