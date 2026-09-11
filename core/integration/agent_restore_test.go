@@ -7,7 +7,7 @@ package core
 //
 // Everything under test here is only true once telemetry has crossed a wire
 // twice. A chief's conversation has to survive being published as spans and
-// call payloads, fetched back as protojson over SSE, folded into a fresh DB,
+// call payloads, fetched back as framed binary OTLP, folded into a fresh DB,
 // projected into a plan, rebuilt into an ID and re-hydrated — and what proves
 // it is not an assertion about records but the replay provider itself: the
 // restored chief's next turn only resolves if its history is the one the
@@ -34,16 +34,15 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cloud/otlpstream"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"golang.org/x/oauth2"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -57,10 +56,9 @@ func TestAgentRestore(t *testing.T) {
 //
 //	GET /v1/traces/{id}   GET /v1/logs/{id}   GET /v1/metrics/{id}
 //
-// each an SSE stream of protojson-encoded OTLP export requests. The wire shape
-// is the one measured against api.dagger.cloud in slice 5 (dagql/idtui/
-// trace_live_test.go): a named, data-less preamble event, then payloads as
-// unnamed events.
+// each a binary OTLP stream in the otlpstream framing Cloud deploys
+// (dagger.io#5226): data frames of binary-protobuf export requests, ended by
+// a terminal frame.
 type fakeCloudTrace struct {
 	traceID string
 	traces  []*coltracepb.ExportTraceServiceRequest
@@ -86,33 +84,32 @@ func (f *fakeCloudTrace) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "metrics":
 		// The capture carries no metrics: the sink the session forwards to
-		// only stands up the span and log endpoints. An empty stream is a
-		// legitimate answer, and one Cloud gave for real on the trace §13.5
-		// probed.
+		// only stands up the span and log endpoints. An empty stream — just
+		// the terminal frame — is a legitimate answer.
 	default:
 		http.Error(w, "no such stream", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Content-Type", otlpstream.ContentType)
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)
-	_ = sse.Event{Name: "connected"}.Write(w)
-	if flusher != nil {
-		flusher.Flush()
-	}
+	fw := otlpstream.NewFrameWriter(w)
 	for _, payload := range payloads {
-		data, err := protojson.Marshal(payload)
+		data, err := proto.Marshal(payload)
 		if err != nil {
 			return
 		}
-		if err := (sse.Event{Data: data}).Write(w); err != nil {
+		if err := fw.WriteData(data); err != nil {
 			return
 		}
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}
+	// The terminal frame is the end of trace; a connection that merely
+	// closes reads as truncation, and the client fails the restore on it.
+	_ = fw.WriteTerminal()
 }
 
 // serveCapture stands the fake Cloud up and returns an OTLP client pointed at
