@@ -10,99 +10,48 @@ description: "Convert a legacy dagger.json project to a workspace"
 If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
 :::
 
-A workspace separates two things that a legacy `dagger.json` used to hold at once:
+In Dagger 0.x, `dagger.json` served two roles:
 
-- A module, described by `dagger-module.toml`, is a package of code.
-- A workspace, described by `dagger.toml`, is your project's Dagger configuration: which modules to use, and how they're configured.
+1. A manifest for your *module*: a package of code that the Dagger engine can load and execute
+2. A configuration file for your *workspace*: the software repository which you want to use Dagger in
 
-## Run the migration
+In Dagger 1.0, these two roles are filled by two different files:
 
-Dagger can still load legacy configuration. To migrate the selected workspace:
+| Role | 0.x file | 1.0 file |
+| -- | -- | -- |
+| Manifest for a module | `dagger.json` | `dagger-module.toml` |
+| Configuration for a workspace | `dagger.json` | `dagger.toml` |
+
+## Backwards compatibility
+
+Dagger 1.0 can still load `dagger.json` in both roles, so you don't have to rush a migration. But, we recommend you migrate to take advantage of all the features of 1.0.
+
+## Migrating your workspace
+
+To migrate your workspace:
 
 ```shell
 dagger workspace migrate
 ```
 
-`dagger setup` is deprecated and hidden from help. It only prints guidance to use `dagger init` for a new configuration or `dagger ws migrate` for an existing configuration. It does not change files.
+This will interpret your `dagger.json` as a workspace configuration, and translate it to an equivalent `dagger.toml`.
 
-Workspace migration converts workspace fields to `dagger.toml` and migrates installed local modules and their local dependencies in place. Module configuration becomes `dagger-module.toml`. SDK registration, scope clients, SDK reference corrections, and removal of obsolete generated-file ignore rules are included in the same preview.
+| `dagger.json` field | Translation |
+| -- | -- |
+| `sdk` | Create a module at `.dagger/modules/<name>`, install it in `dagger.toml`, make it the workspace entrypoint |
+| `toolchains` | Each installed toolchain is migrated as a 1.0 module (see "migrating a module") then installed in `dagger.toml`. Its customizations are converted to module settings, when possible |
+| `blueprint` | This field cannot be migrated |
 
-If a required local module cannot migrate, the command fails before applying changes or offering onboarding. The error identifies the module and its dependency path. Fix or migrate that module before retrying workspace migration.
+## Migration report
 
-Other `dagger.json` files are optional module candidates. These can include fixtures. Candidates start unselected, and you can skip all of them. Non-interactive mode skips them, including with `--auto-apply`, and prints commands for explicit migration.
+After migration, a report is written to `.dagger/migration-report.md`. Read it to know which parts of your `dagger.json` may not have been successfully migrated.
 
-To migrate one module, with or without an existing workspace:
+## Migrating a module
+
+To migrate a module from `dagger.json` to `dagger-module.toml`:
 
 ```shell
 dagger module migrate ./path/to/module
 ```
 
-This command converts only that module. If a `dagger.toml` exists, it also updates the module's SDK scope in the selected workspace. Otherwise, it does not create a workspace config or change a parent legacy workspace. It does not migrate dependencies or optional candidates, or offer onboarding. If the configuration contains unhandled workspace fields, it stops and directs you to workspace migration. Existing destination files and conflicting SDK scopes are preserved.
-
-Both commands accept `--no-apply` for a preview and `--auto-apply` to apply without a prompt. These options do not select additional module candidates.
-
-After successful workspace migration, Dagger offers module recommendations and optional Cloud checks, in that order. In non-interactive mode, it prints the commands to run. A preview does not start these steps. If `init` detects a legacy workspace, it stops without changing files and directs you to `dagger workspace migrate`.
-
-Migration preserves module paths, runtime and dependency pins, and code generation settings. Legacy toolchains visible to module code become module dependencies and SDK scope clients. Unsupported settings require manual changes; migration reports the affected configuration.
-
-Modules now store generated code in the repository. After migration, run `dagger generate`, review the output and `.gitignore`, and commit the generated files.
-
-## Where your configuration lands
-
-**Toolchains are modules.** Install one with `dagger module install github.com/foo/bar` and `dagger.toml` records it. Same functionality, one concept instead of two.
-
-**Blueprints are an entrypoint flag.** A workspace module marked `entrypoint = true` plays the role a blueprint used to.
-
-**Customizations are settings.** The deprecated `customizations` array becomes `[modules.*.settings]`:
-
-```toml
-[modules.go]
-source = "dagger.io/go"
-
-[modules.go.settings]
-goVersion = "1.22"
-```
-
-**Modules are managed with `dagger module`.** `dagger module search` finds them; `dagger module install` and `dagger module uninstall` update `dagger.toml`. A module's own source metadata lives in `dagger-module.toml`. Use `dagger module client add <ref> --sdk=<SDK>` from the module directory to add a code dependency. The SDK records it in the generated module configuration.
-
-## Workspace arguments in generated Go bindings
-
-A `*dagger.Workspace` argument that isn't marked `// +optional` used to be published as optional in the module's API, because Dagger fills it in automatically. It is now published as required, matching the declaration. Nothing changes when you call such a function from the CLI, a check, or a generator — Dagger still supplies the current workspace.
-
-What does change is calling that function **from another module's Go code**. The Go SDK puts required arguments in the function signature and optional ones in an `Opts` struct, so after `dagger generate` the workspace moves out of the options struct and into the argument list. Code that used to pass it through `Opts` (or not at all) fails to compile with errors like:
-
-```
-unknown field Workspace in struct literal of type dagger.FooOpts
-cannot use dagger.FooOpts{…} (value of struct type dagger.FooOpts) as *dagger.Workspace value in argument to dag.Foo
-not enough arguments in call to dag.Foo
-```
-
-To fix it, pass the workspace positionally. Take a `*dagger.Workspace` in your own constructor and hand it to the dependency:
-
-```go
-func New(ws *dagger.Workspace) *MyModule {
-	return &MyModule{Workspace: ws}
-}
-
-func (m *MyModule) Build(ctx context.Context) (string, error) {
-	// Before: dag.Foo(dagger.FooOpts{Workspace: m.Workspace})
-	// or:     dag.Foo()
-	return dag.Foo(m.Workspace).Build(ctx)
-}
-```
-
-If `Foo` has other optional arguments, they stay in the options struct: `dag.Foo(m.Workspace, dagger.FooOpts{...})`.
-
-This only surfaces at compile time what was already true at runtime: a workspace is never inherited across a module-to-module call, so a dependency that needs one has to be given it explicitly.
-
-## Quick reference
-
-| Before | Now |
-|---|---|
-| `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
-| `dagger toolchain install <module>` | `dagger module install <module>` |
-| `dagger install <dep>` (module code dependency) | `dagger module client add <ref> --sdk=<SDK>` from the module directory |
-| `toolchains` array in `dagger.json` | `[modules.*]` in `dagger.toml` |
-| `blueprint` in `dagger.json` | `entrypoint = true` in `dagger.toml` |
-| `customizations` in `dagger.json` | `[modules.*.settings]` in `dagger.toml` |
-| `.env` for constructor defaults | `[modules.*.settings]` in `dagger.toml` |
+This will translate only the selected module, without migrating the surrounding workspace.
