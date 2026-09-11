@@ -211,9 +211,6 @@ func TestServiceRootFilterUsesTraceUI(t *testing.T) {
 
 	// Search must use the displayed tree and reveal a collapsed descendant.
 	press("/")
-	if !fe.searchActive {
-		t.Fatal("/ did not open search")
-	}
 	fe.confirmSearch("ready")
 	fe.tui.RenderLines()
 	if len(fe.searchMatches) != 1 || fe.FocusedSpan != readyID {

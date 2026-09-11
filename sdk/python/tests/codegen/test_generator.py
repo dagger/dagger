@@ -76,6 +76,12 @@ _EXPECTED_TYPE_SCHEMA = build_schema("""
         | ARGUMENT_DEFINITION
         | INPUT_FIELD_DEFINITION
     type Foo { sync: ID! @expectedType(name: "Foo") }
+    interface Syncer { sync: ID! @expectedType(name: "Syncer") }
+    type Agent { id: ID! @expectedType(name: "Agent") }
+    type LLM {
+        spawn: ID! @expectedType(name: "Agent")
+        syncer: ID! @expectedType(name: "Syncer")
+    }
     type Secret { plaintext: String! }
     type Query {
         fn(secret: ID! @expectedType(name: "Secret")): String
@@ -284,6 +290,36 @@ def test_core_sync(ctx: Context):
 
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "sync", _args)'
+    )
+
+
+def _llm_field(name: str) -> _ObjectField:
+    llm_type = _EXPECTED_TYPE_SCHEMA.type_map["LLM"]
+    return _ObjectField(
+        Context(schema=_EXPECTED_TYPE_SCHEMA),
+        name,
+        llm_type.fields[name],
+        llm_type,
+    )
+
+
+def test_core_id_handle():
+    # An ID naming another object is loaded as that object.
+    handler = _llm_field("spawn")
+
+    assert handler.func_signature() == "async def spawn(self) -> Agent:"
+    assert str(handler.func_body()).endswith(
+        'return await self._ctx.execute_sync(self, "spawn", _args, Agent)'
+    )
+
+
+def test_core_id_handle_interface():
+    # An ID naming an interface is loaded through the interface's client.
+    handler = _llm_field("syncer")
+
+    assert handler.func_signature() == "async def syncer(self) -> Syncer:"
+    assert str(handler.func_body()).endswith(
+        'return await self._ctx.execute_sync(self, "syncer", _args, _SyncerClient)'
     )
 
 

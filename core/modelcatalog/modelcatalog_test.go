@@ -44,6 +44,25 @@ func TestLookup(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestDefaultSmallModel(t *testing.T) {
+	for provider, want := range map[string]string{
+		"anthropic":    "claude-haiku-4-5-20251001",
+		"openai":       "gpt-5.6-luna",
+		"openai-codex": "gpt-5.6-luna",
+		"google":       "gemini-3-flash-preview",
+	} {
+		got, ok := modelcatalog.DefaultSmallModel(provider)
+		require.True(t, ok, "expected %q to have a small-model default", provider)
+		assert.Equal(t, want, got)
+	}
+
+	for _, provider := range []string{"local", "other", "unknown"} {
+		model, ok := modelcatalog.DefaultSmallModel(provider)
+		assert.False(t, ok)
+		assert.Empty(t, model)
+	}
+}
+
 func TestCost(t *testing.T) {
 	// claude-sonnet-4-5: $3/1M in, $15/1M out, $3.75/1M cache-write, $0.30/1M
 	// cache-read. 1M of each exercises the per-field mapping directly.

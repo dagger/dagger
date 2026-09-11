@@ -95,6 +95,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 	return template.FuncMap{
 		// common
 		"FormatReturnType":          funcs.FormatReturnType,
+		"IDHandleType":              funcs.IDHandleType,
+		"IDHandleClient":            funcs.idHandleClient,
 		"FormatInputType":           funcs.FormatInputType,
 		"FormatOutputType":          funcs.FormatOutputType,
 		"FormatFieldOutputType":     funcs.FormatFieldOutputType,
@@ -458,8 +460,10 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	case supportsVoid && f.TypeRef.IsVoid():
 		retType = "error"
 	case convertID:
-		// ConvertID fields return the parent object type as a pointer.
-		retType = fmt.Sprintf("(*%s, error)", retType)
+		retType, err = funcs.idHandleReturnType(f, scopes...)
+		if err != nil {
+			return "", err
+		}
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
 	case funcs.isNullableObject(f.TypeRef):
@@ -532,6 +536,46 @@ func (funcs goTemplateFuncs) interfaceClientName(name string) string {
 		return formatName(name)
 	}
 	return formatName(name) + "Client"
+}
+
+// isInterfaceHandle reports whether an ID-handle field loads an interface
+// rather than an object. The parent is consulted first so interface methods
+// resolve even when the interface is not registered in the render schema.
+func (funcs goTemplateFuncs) isInterfaceHandle(f introspection.Field) bool {
+	handle := funcs.IDHandleType(f)
+	if f.ParentObject != nil && handle == f.ParentObject.Name {
+		return f.ParentObject.Kind == introspection.TypeKindInterface
+	}
+	t := funcs.fullSchema.Types.Get(handle)
+	return t != nil && t.Kind == introspection.TypeKindInterface
+}
+
+// idHandleClient is the Go type an ID-handle field instantiates: the loaded
+// object, or the interface's client struct for interface handles.
+func (funcs goTemplateFuncs) idHandleClient(f introspection.Field) string {
+	handle := funcs.IDHandleType(f)
+	if funcs.isInterfaceHandle(f) {
+		return funcs.interfaceClientName(handle)
+	}
+	return formatName(handle)
+}
+
+// idHandleReturnType formats the (result, error) return of an ID-handle
+// field: a pointer to the loaded object, or the interface type for
+// interface handles.
+func (funcs goTemplateFuncs) idHandleReturnType(f introspection.Field, scopes ...string) (string, error) {
+	if funcs.isInterfaceHandle(f) {
+		retType, err := funcs.interfaceReturnType(funcs.IDHandleType(f), scopes...)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("(%s, error)", retType), nil
+	}
+	retType, err := funcs.FormatReturnType(f, scopes...)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("(*%s, error)", retType), nil
 }
 
 func (funcs goTemplateFuncs) interfaceReturnType(name string, scopes ...string) (string, error) {
@@ -630,11 +674,11 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 	case supportsVoid && f.TypeRef.IsVoid():
 		sig += " error"
 	case convertID:
-		retType, err = funcs.interfaceReturnType(f.ParentObject.Name)
+		retType, err = funcs.idHandleReturnType(f)
 		if err != nil {
 			return "", err
 		}
-		sig += fmt.Sprintf(" (%s, error)", retType)
+		sig += " " + retType
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		sig += fmt.Sprintf(" (%s, error)", retType)
 	case funcs.isNullableObject(f.TypeRef):
@@ -698,11 +742,11 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 	case supportsVoid && f.TypeRef.IsVoid():
 		sig += " error"
 	case convertID:
-		retType, err = funcs.interfaceReturnType(f.ParentObject.Name)
+		retType, err = funcs.idHandleReturnType(f)
 		if err != nil {
 			return "", err
 		}
-		sig += fmt.Sprintf(" (%s, error)", retType)
+		sig += " " + retType
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		sig += fmt.Sprintf(" (%s, error)", retType)
 	case funcs.isNullableObject(f.TypeRef):

@@ -16,6 +16,9 @@ import (
 
 var agentListMode bool
 var agentResume agentSessionFlag
+var agentTrace string
+var agentFocus string
+var agentPartial bool
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -26,12 +29,22 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
+With --trace, a past session is restored from the trace it published to Dagger
+Cloud: every agent it ran comes back under the same identity, with the
+conversation and lifecycle state it had, and the old session's whole progress
+view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
+agents are still running FORKS them — the restored instances are new runtimes
+in this session, not a hand-off of the live ones. And messages that were
+enqueued but never consumed are not in the trace at all, so they are not
+restored; anything a turn actually consumed is part of its conversation and is.
+
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
   dagger agent -r                 # Resume a saved session (interactive picker)
   dagger agent -r=<session>       # Resume a specific saved session
+  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -41,30 +54,59 @@ Examples:
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		resume := cmd.Flags().Changed("resume")
+		// Refuse the combinations that have no meaning before any engine work
+		// happens (hack/designs/resume-from-trace.md §5.4).
+		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
+			return err
+		}
 		return withEngine(
 			cmd.Context(),
 			client.Params{
-				LoadWorkspaceModules: true,
+				// A trace carries the workspace and module recipes needed to restore
+				// its agents. Loading modules from the destination checkout would
+				// both be unnecessary and make cold restore depend on that checkout.
+				LoadWorkspaceModules: agentTrace == "" || agentListMode,
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				// Compose all selected agents onto a fresh workspace-bound LLM,
+				// Compose all selected agents onto a frozen workspace-bound LLM,
 				// then hand the composed LLM to the interactive prompt. A module
 				// function returning LLM already lands in prompt mode today.
-				llmID, err := composeAgents(ctx, dag, args)
+				//
+				// Trace restore deliberately starts from an unbound base instead:
+				// the restored recipes carry their own frozen workspaces and must not
+				// read or load modules from the destination checkout.
+				var llmID string
+				var err error
+				if agentTrace != "" {
+					llmID, err = freshAgentBase(ctx, dag)
+				} else {
+					llmID, err = composeAgents(ctx, dag, args)
+				}
 				if err != nil {
 					return err
 				}
 				// -r/--resume optionally restores a saved session before the
 				// prompt starts: a session id resumes it directly, the picker
 				// keyword (what a bare -r resolves to) opens the interactive
-				// picker.
-				resume := cmd.Flags().Changed("resume")
+				// picker. --trace restores a past session from its published
+				// trace instead.
 				sessionID := agentResume.SessionID()
-				return startInteractivePromptModeWithResume(ctx, dag, llmID, sessionID, resume)
+				restore := traceRestore{
+					traceID: agentTrace,
+					agent:   agentFocus,
+					partial: agentPartial,
+				}
+				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
+					sessionID:            sessionID,
+					resume:               resume,
+					restore:              restore,
+					generateSessionTitle: true,
+				})
 			},
 		)
 	},
@@ -108,6 +150,12 @@ func init() {
 	// flags require '=' to attach a value — a space-separated one would be
 	// parsed as a positional agent name.)
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
+	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
+		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
+	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
+		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
+	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
+		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
@@ -117,6 +165,27 @@ func agentIncludeVars(include []string) map[string]any {
 		return map[string]any{"include": nil}
 	}
 	return map[string]any{"include": include}
+}
+
+const freshAgentBaseQuery = `query AgentBase {
+  llm {
+    id
+  }
+}`
+
+func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
+	var res struct {
+		LLM struct {
+			ID string
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:  freshAgentBaseQuery,
+		OpName: "AgentBase",
+	}, &dagger.Response{Data: &res}); err != nil {
+		return "", err
+	}
+	return res.LLM.ID, nil
 }
 
 const composeAgentsQuery = `query ComposeAgents($include: [String!]) {

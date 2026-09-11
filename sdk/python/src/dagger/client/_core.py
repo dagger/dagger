@@ -257,15 +257,38 @@ class Context:
         gql_name = object_type._graphql_name()  # noqa: SLF001
         return object_type(ctx.select_id(gql_name, id_))
 
+    @overload
     async def execute_sync(
         self,
         obj: Obj_T,
+        field_name: str = ...,
+        args: typing.Sequence[Arg] = ...,
+    ) -> Obj_T: ...
+
+    @overload
+    async def execute_sync(
+        self,
+        obj: Type,
+        field_name: str,
+        args: typing.Sequence[Arg],
+        object_type: type[Obj_T],
+    ) -> Obj_T: ...
+
+    async def execute_sync(
+        self,
+        obj: Type,
         field_name: str = "sync",
         args: typing.Sequence[Arg] = (),
-    ) -> Obj_T:
+        object_type: type[Type] | None = None,
+    ) -> Type:
+        """Execute an ID-returning field and load the object it identifies.
+
+        Sync-like fields reload ``obj``'s own type; ``object_type`` names the
+        type for a field whose expected type is another object.
+        """
         ctx = obj._select(field_name, args)  # noqa: SLF001
         id_ = await ctx.execute(Scalar)
-        cls = obj.__class__
+        cls = object_type or obj.__class__
         ctx = self.select_id(cls._graphql_name(), id_)
         return cls(ctx)
 

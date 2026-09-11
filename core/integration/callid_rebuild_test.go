@@ -36,14 +36,14 @@ func TestCallIDRebuild(t *testing.T) {
 }
 
 // awaitSpanNamed blocks until a span with the given name has been folded into
-// the sink's DB, and runs fn against it with ingest held off.
-func awaitSpanNamed(t *testctx.T, sink *agentTraceSink, name string, fn func(db *dagui.DB, span *dagui.Span)) {
+// the sink's DB and fn's assertions pass, running fn with ingest held off.
+func awaitSpanNamed(t *testctx.T, sink *agentTraceSink, name string, fn func(ct *assert.CollectT, db *dagui.DB, span *dagui.Span)) {
 	t.Helper()
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		sink.read(func(db *dagui.DB) {
 			for _, span := range db.Spans.Map {
 				if span.Name == name && span.CallDigest != "" {
-					fn(db, span)
+					fn(ct, db, span)
 					return
 				}
 			}
@@ -52,38 +52,20 @@ func awaitSpanNamed(t *testctx.T, sink *agentTraceSink, name string, fn func(db 
 	}, 120*time.Second, 100*time.Millisecond)
 }
 
-// TestArrayMemberSubSelection covers the second shape of the payload gap: a
-// sub-selection against a MEMBER of an array result.
+// TestArrayMemberSubSelection covers a sub-selection against a member of an
+// array result.
 //
 // Reading a list of objects is the most ordinary thing a client does —
 // `{ envVariables { name value } }` — and dagql resolves it by taking the
 // nth value of the array and selecting against it. The nth value is a real
-// frame in the resulting ID (Call.Nth), but nothing ever selects it, so no
-// span is emitted for it and its payload never ships. The sub-selection's own
-// span arrives fine and names that frame as its receiver — a digest the
-// client can never resolve.
+// frame in the resulting ID (Call.Nth), but nothing ever selects it, so it has
+// no span of its own. Its payload must instead arrive in the transitive closure
+// published through call-payload logs.
 //
-// The consequence is not cosmetic: every ID whose chain passes through an
-// array member is unrebuildable, so a client cannot address anything it read
-// out of a list.
-//
-// PARKED, and skipped rather than deleted so the shape stays recorded. The
-// call-payload log channel (core/dag_call_telemetry.go) closed the other known
-// gap -- frames behind an ID-literal argument -- but NOT this one: measured
-// with that channel in, this test fails unchanged. Leading hypothesis, not yet
-// confirmed: recordCallPayloads reaches the closure through
-// ResultCall.RecipeID, which for an array-member receiver either fails to
-// rebuild (there is a whole traceRecipeIDRebuildFailed facility in
-// dagql/cache_debug.go for that shape) or yields a handle-form ID, and both
-// paths return silently at Debug level. The fix sketched but not built --
-// walking the ResultCall frame graph and calling callPB per frame, whose
-// recipe digests are memoized on the frame -- would sidestep RecipeID
-// entirely and is where the next attempt should start.
+// Spans and logs are batched independently, so seeing the sub-selection span
+// does not imply its receiver payload has arrived. The assertion deliberately
+// waits for both before rebuilding the ID.
 func (CallIDRebuildSuite) TestArrayMemberSubSelection(ctx context.Context, t *testctx.T) {
-	t.Skip("known-broken: array members get no span, and the call payload log " +
-		"channel does not cover them either; parked deliberately -- see the " +
-		"comment above for what was measured and where to start")
-
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		// An inherited session is already attached to somebody else's
 		// frontend; only a CLI session this test starts can be pointed at
@@ -119,28 +101,30 @@ func (CallIDRebuildSuite) TestArrayMemberSubSelection(ctx context.Context, t *te
 	// test.
 	var (
 		rebuilt        *call.ID
-		rebuildErr     error
 		receiverDigest string
-		receiverCall   bool
 	)
-	awaitSpanNamed(t, sink, "EnvVariable.value", func(db *dagui.DB, span *dagui.Span) {
-		receiverDigest = span.Call().GetReceiverDigest()
-		receiverCall = db.Call(receiverDigest) != nil
-		rebuilt, rebuildErr = span.CallID()
+	awaitSpanNamed(t, sink, "EnvVariable.value", func(ct *assert.CollectT, db *dagui.DB, span *dagui.Span) {
+		spanCall := span.Call()
+		if !assert.NotNil(ct, spanCall, "the sub-selection's payload has not reached this client yet") {
+			return
+		}
+		digest := spanCall.GetReceiverDigest()
+		if !assert.NotEmpty(ct, digest, "the sub-selection's receiver is the array member frame") {
+			return
+		}
+		if !assert.NotNil(ct, db.Call(digest), "the array member's payload has not reached this client yet") {
+			return
+		}
+		id, err := span.CallID()
+		if !assert.NoError(ct, err, "rebuilding the sub-selection's ID") ||
+			!assert.NotNil(ct, id, "the rebuilt sub-selection ID") {
+			return
+		}
+		receiverDigest = digest
+		rebuilt = id
 	})
 
-	require.NotEmpty(t, receiverDigest,
-		"the sub-selection's receiver is the array member frame")
-	// The gap itself, stated directly: the member frame's payload never
-	// reached this client, so nothing can resolve it — and the rebuild that
-	// depends on it therefore fails. Both facts ride one message, since the
-	// first failure is the only one that gets printed.
-	require.True(t, receiverCall,
-		"the array member's call payload never reached this client (digest %s); "+
-			"rebuilding the sub-selection's ID fails with: %v",
-		receiverDigest, rebuildErr)
-	// ... and therefore the chain does not rebuild.
-	require.NoError(t, rebuildErr, "rebuilding the sub-selection's ID")
+	require.NotEmpty(t, receiverDigest)
 	require.NotNil(t, rebuilt)
 
 	// The rebuilt chain is the honest one: a sub-selection against the nth

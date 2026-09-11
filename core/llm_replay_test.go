@@ -8,13 +8,17 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -41,8 +45,137 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	return attribute.Value{}, false
 }
 
+func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
+
+	emitMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "Please review this."}},
+	}, "", nil, nil)
+	emitMessageSpan(ctx, &LLMMessage{
+		Role:    LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "On it."}},
+	}, "", nil, nil)
+
+	byName := map[string]sdktrace.ReadOnlySpan{}
+	for _, span := range sr.Ended() {
+		byName[span.Name()] = span
+	}
+	for _, name := range []string{"LLM prompt", "LLM response"} {
+		span, ok := byName[name]
+		require.True(t, ok, "missing %q span", name)
+
+		id, ok := spanAttr(span, string(semconv.GenAIAgentIDKey))
+		require.True(t, ok, "%s: missing GenAI agent ID", name)
+		require.Equal(t, "agent-123", id.AsString())
+
+		agentName, ok := spanAttr(span, string(semconv.GenAIAgentNameKey))
+		require.True(t, ok, "%s: missing GenAI agent name", name)
+		require.Equal(t, "reviewer", agentName.AsString())
+	}
+}
+
+func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
+	for _, args := range []string{"{}", "{}\n"} {
+		t.Run(fmt.Sprintf("trailing-newline-%t", strings.HasSuffix(args, "\n")), func(t *testing.T) {
+			_, ctx := replayTestRecorder(t)
+			recorder := &stateRecorder{}
+			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+			ctx = telemetry.WithLoggerProvider(ctx, provider)
+
+			dp := newDisplayPhases(ctx, "")
+			dp.EmitToolCall(0, "call_1", "read", args)
+
+			recorder.mu.Lock()
+			defer recorder.mu.Unlock()
+			var body strings.Builder
+			for _, record := range recorder.records {
+				body.WriteString(record.body)
+			}
+			require.Equal(t, "{}\n", body.String())
+		})
+	}
+}
+
+func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
+	sr, ctx := replayTestRecorder(t)
+	recorder := &stateRecorder{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+	ctx = telemetry.WithLoggerProvider(ctx, provider)
+	args := `{"path":"main.go","offset":20,"limit":10,"args":["foo","bar"]}`
+
+	emitMessageSpan(ctx, &LLMMessage{
+		Role: LLMMessageRoleAssistant,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(args),
+		}},
+	}, "", nil, nil)
+
+	ended := sr.Ended()
+	require.NotEmpty(t, ended)
+	span := ended[len(ended)-1]
+	names, ok := spanAttr(span, telemetry.LLMToolArgNamesAttr)
+	require.True(t, ok)
+	values, ok := spanAttr(span, telemetry.LLMToolArgValuesAttr)
+	require.True(t, ok)
+	require.Equal(t, []string{"args", "limit", "offset", "path"}, names.AsStringSlice())
+	require.Equal(t, []string{"foo bar", "10", "20", "main.go"}, values.AsStringSlice())
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	require.Condition(t, func() bool {
+		for _, record := range recorder.records {
+			if record.body == args+"\n" {
+				return true
+			}
+		}
+		return false
+	}, "replayed tool JSON was not newline-terminated")
+}
+
+func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
+	_, ctx := replayTestRecorder(t)
+	recorder := &stateRecorder{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+	ctx = telemetry.WithLoggerProvider(ctx, provider)
+
+	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n"
+	llm := &LLM{Messages: []*LLMMessage{
+		{
+			Role: LLMMessageRoleAssistant,
+			Content: []*LLMContentBlock{{
+				Kind:      LLMContentToolCall,
+				CallID:    "call_1",
+				ToolName:  "edit",
+				Arguments: JSON(`{"filePath":"main.go"}`),
+			}},
+		},
+		{
+			Role: LLMMessageRoleUser,
+			Content: []*LLMContentBlock{{
+				Kind:   LLMContentToolResult,
+				CallID: "call_1",
+				Text:   patch,
+			}},
+		},
+	}}
+	llm.Replay(ctx)
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	for _, record := range recorder.records {
+		if record.body == patch+"\n" {
+			require.Equal(t, gitDiffContentType, record.contentType)
+			return
+		}
+	}
+	t.Fatal("replayed patch result was not emitted")
+}
+
 func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 	sr, ctx := replayTestRecorder(t)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
 
 	replayer := newHistoryReplay([]*LLMMessage{
 		{
@@ -115,6 +248,14 @@ func TestReplaySendQueryEmitsPerToolCallDisplaySpans(t *testing.T) {
 		v, ok = spanAttr(s, telemetryattrs.LLMCallDigestAttr)
 		require.True(t, ok, "%s: missing call digest attr", toolName)
 		require.Equal(t, "sha256:deadbeef", v.AsString())
+
+		v, ok = spanAttr(s, string(semconv.GenAIAgentIDKey))
+		require.True(t, ok, "%s: missing GenAI agent ID", toolName)
+		require.Equal(t, "agent-123", v.AsString())
+
+		v, ok = spanAttr(s, string(semconv.GenAIAgentNameKey))
+		require.True(t, ok, "%s: missing GenAI agent name", toolName)
+		require.Equal(t, "reviewer", v.AsString())
 
 		// Tool calls hang off the assistant text that introduced them, the
 		// same anchoring the streaming providers use.

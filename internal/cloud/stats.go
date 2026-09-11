@@ -18,9 +18,9 @@ type clientStats struct {
 }
 
 type opStat struct {
-	requests int   // SSE round trips
-	events   int   // non-empty "next" events
-	bytes    int64 // raw event payload bytes
+	requests int   // HTTP/SSE round trips
+	events   int   // payload-carrying stream events/frames
+	bytes    int64 // raw payload bytes
 	records  int   // decoded spans / log messages
 }
 

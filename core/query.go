@@ -138,6 +138,9 @@ type Server interface {
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
 
+	// The agent runtimes for the current client's session
+	Agents(context.Context) (*AgentRuntimes, error)
+
 	// The default platform for the engine as a whole
 	Platform() Platform
 
