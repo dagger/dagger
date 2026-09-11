@@ -14,15 +14,14 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cloud/otlpstream"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	"github.com/vito/go-sse/sse"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,14 +29,14 @@ import (
 // `dagger agent --trace <id>` streaming a past session's whole trace out of
 // Dagger Cloud and into the live frontend's DB.
 //
-// The Cloud endpoints are UNDEPLOYED, so the fake server below is the entire
-// risk of this slice: it is built to the wire shape §5.1 specifies and the
-// reference implementation (cmd/dagger/trace.go at 1492469b) reads — GET
-// /v1/{traces,logs,metrics}/{trace-id}, each an SSE stream whose events carry
-// protojson-encoded OTLP export requests, authenticated with a Basic
-// Authorization header. §12's two curls could not be run (no Cloud
-// credentials, nothing deployed to curl); when they can be, this fixture is
-// where what came back gets encoded.
+// The fake server below is built to the wire shape Cloud actually deploys —
+// GET /v1/{traces,logs,metrics}/{trace-id}, each a binary OTLP stream in the
+// otlpstream framing (dagger.io#5226), authenticated with a Basic
+// Authorization header. §5.1 and the reference implementation
+// (cmd/dagger/trace.go at 1492469b) described the earlier SSE-of-protojson
+// protocol, which Cloud replaced before this client shipped; the framing
+// constants live in internal/cloud/otlpstream, mirrored from the server's
+// api/otlpstream package.
 //
 // The payload is the canned capture trace_import_test.go already drives slice
 // 4 with, served over the wire instead of handed to the importer directly: the
@@ -89,16 +88,14 @@ type fakeCloud struct {
 	logs    []*collogspb.ExportLogsServiceRequest
 	metrics []*colmetricspb.ExportMetricsServiceRequest
 
-	// eventName is put on every SSE event carrying a payload. The real
-	// endpoints leave it EMPTY (verified in trace_live_test.go), which is the
-	// default here; a test sets it to prove the client does not read it,
-	// since Cloud's vocabulary is not a promise anyone has made.
-	eventName string
 	// status, when set, is returned instead of a stream for the named kind.
 	status map[string]int
-	// garbage, when set for a kind, serves one event that is not an OTLP
-	// export request.
+	// garbage, when set for a kind, serves one data frame whose payload is
+	// not a decodable OTLP export request.
 	garbage map[string]bool
+	// truncate, when set for a kind, ends the connection after the payloads
+	// WITHOUT the terminal frame — the shape a dropped connection leaves.
+	truncate map[string]bool
 
 	mu       sync.Mutex
 	requests []string // "<method> <path>", in arrival order
@@ -147,37 +144,45 @@ func (f *fakeCloud) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Content-Type", otlpstream.ContentType)
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)
-
-	// The real endpoints open with a named, data-less preamble event, and
-	// send their payloads as UNNAMED events — both verified against
-	// api.dagger.cloud (see trace_live_test.go and §13.5). Modelling the
-	// preamble here keeps the client's "an event with no data is not a
-	// payload" path under test, since it is the first thing Cloud sends.
-	_ = sse.Event{Name: "connected"}.Write(w)
-	if flusher != nil {
-		flusher.Flush()
-	}
-
-	if f.garbage[kind] {
-		_ = sse.Event{Name: f.eventName, Data: []byte(`{"this":"is not an OTLP export request"}`)}.Write(w)
-		return
-	}
-
-	for _, payload := range payloads {
-		data, err := protojson.Marshal(payload)
-		if err != nil {
-			panic(err)
-		}
-		if err := (sse.Event{Name: f.eventName, Data: data}).Write(w); err != nil {
-			return
-		}
+	flush := func() {
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}
+	fw := otlpstream.NewFrameWriter(w)
+
+	// The real endpoints keep quiet connections alive with heartbeat frames —
+	// data frames with an EMPTY payload. Opening with one keeps the client's
+	// "an empty data frame is not a payload" path under test everywhere: a
+	// client that handed it to the sink would fail the exact call-sequence
+	// assertion in TestFetchSealsOnceAfterTheSpanStream.
+	_ = fw.WriteHeartbeat()
+	flush()
+
+	if f.garbage[kind] {
+		_ = fw.WriteData([]byte("\xff\xff\xff\xff this is not an OTLP export request"))
+		_ = fw.WriteTerminal()
+		return
+	}
+
+	for _, payload := range payloads {
+		data, err := proto.Marshal(payload)
+		if err != nil {
+			panic(err)
+		}
+		if err := fw.WriteData(data); err != nil {
+			return
+		}
+		flush()
+	}
+	if f.truncate[kind] {
+		// no terminal frame: the connection just ends
+		return
+	}
+	_ = fw.WriteTerminal()
 }
 
 func (f *fakeCloud) paths() []string {
@@ -387,17 +392,21 @@ func TestFetchSendsTheCloudAuthHeader(t *testing.T) {
 	}
 }
 
-// TestFetchIgnoresTheSSEEventName is the hedge §12's undeployed endpoints
-// demand: the event vocabulary is unverified, so the client reads payloads,
-// not names. Tightening it to a name nobody has promised would turn a whole
-// trace into silence.
-func TestFetchIgnoresTheSSEEventName(t *testing.T) {
+// TestFetchFailsOnATruncatedStream pins the protocol's biggest upgrade over
+// the SSE era, where end-of-connection WAS end-of-trace and a dropped
+// connection restored half a session silently. The terminal frame is the only
+// end of trace; a stream that merely closes is a hole, and §12 settled that a
+// hole fails the restore.
+func TestFetchFailsOnATruncatedStream(t *testing.T) {
 	srv := cannedCloud(false)
-	srv.eventName = "next"
-	db, _ := fetchIntoDB(t, srv)
+	srv.truncate = map[string]bool{"logs": true}
+	_, sink := fetchTargets(t)
+	srv.start(t)
 
-	require.NotNil(t, db.Spans.Map[prettyTestSpanID(foreignTurnSpanID)],
-		"a named event was skipped")
+	err := fetchClient(t).FetchTrace(t.Context(), srv.traceID, sink)
+	require.ErrorContains(t, err, "truncated")
+	require.NotContains(t, sink.calls, "metrics",
+		"the fetch carried on past a stream that never finished")
 }
 
 // TestFetchFailsOnAnUndecodablePayload: a payload this client cannot decode is

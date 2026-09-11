@@ -5,33 +5,48 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
-	"github.com/vito/go-sse/sse"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/cloud/otlpstream"
 )
 
 // Fetching a published trace back OUT of Dagger Cloud as OTLP
 // (hack/designs/resume-from-trace.md §5.1) — the transport half of
 // `dagger agent --trace <id>`.
 //
-// Three endpoints, each an SSE stream whose events are protojson-encoded OTLP
-// export requests:
+// Three endpoints, each a binary OTLP stream (the otlpstream framing —
+// dagger.io#5226, which replaced the SSE-of-protojson protocol §5.1 and the
+// reference implementation were written against):
 //
 //	GET {DAGGER_CLOUD_URL}/v1/traces/{trace-id}   ExportTraceServiceRequest
 //	GET {DAGGER_CLOUD_URL}/v1/logs/{trace-id}     ExportLogsServiceRequest
 //	GET {DAGGER_CLOUD_URL}/v1/metrics/{trace-id}  ExportMetricsServiceRequest
+//
+// Each stream is a sequence of frames: data frames carrying binary-protobuf
+// export requests (empty ones are heartbeats), then a terminal frame — a real
+// end-of-trace marker, which the SSE protocol never had. The framing matters
+// beyond ceremony: a log record's BODY may itself contain SSE-shaped text
+// (an agent trace captures its LLM provider's `data: {...}` stream verbatim),
+// so a delimiter-based protocol read with an SSE parser finds "events" inside
+// the payloads it failed to frame. That is not hypothetical; it is how the
+// protocol mismatch actually surfaced ("unmarshal logs: unknown field
+// \"type\"" — an Anthropic frame inside a log body, misread as Cloud's).
+// Hence the Content-Type check below: a server that does not speak the framed
+// protocol is refused up front, not misparsed.
 //
 // The fetch is UNFILTERED and whole-trace on purpose: §1's promise is the old
 // session's whole TUI beside a live prompt, not a private reconstruction of
@@ -96,20 +111,22 @@ type OTLPClient struct {
 // It exists because the observable failure mode without it is the worst one
 // the CLI has: `dagger agent --trace` runs the fetch before the interactive
 // loop starts, so a connection Cloud's edge drops without a FIN or RST —
-// measured on a real agent trace, whose logs stream also reproducibly dies
-// with an h2 INTERNAL_ERROR — leaves the command wedged on "restoring trace"
-// forever, spinner live, prompt never arriving. A stored trace is a bounded
-// download that should always be actively transferring, so a full minute of
-// total silence means the stream is dead, not slow.
+// measured on a real agent trace, whose logs stream reproducibly died with an
+// h2 INTERNAL_ERROR — leaves the command wedged on "restoring trace" forever,
+// spinner live, prompt never arriving. A stored trace is a bounded download
+// that should always be actively transferring, so a full minute of total
+// silence means the stream is dead, not slow.
 //
-// The watchdog is byte-level, not event-level, on purpose: an SSE server
-// may space real events arbitrarily far apart while keeping the connection
-// audibly alive with comment keepalives, which never surface as events but
-// do count as bytes.
+// The framed protocol's terminal frame catches the CLOSED-early cases (a
+// dropped connection surfaces as truncation), but a connection that stays
+// open and silent still needs a clock. The watchdog is byte-level, not
+// frame-level, on purpose: the server may space real payloads arbitrarily
+// far apart while keeping the connection audibly alive with heartbeat
+// frames, which never reach the sink but do count as bytes.
 const defaultStallTimeout = 60 * time.Second
 
-// NewOTLPClient returns a client for the OTLP-over-SSE endpoints, reading the
-// base URL from DAGGER_CLOUD_URL exactly as NewClient does.
+// NewOTLPClient returns a client for the binary OTLP stream endpoints,
+// reading the base URL from DAGGER_CLOUD_URL exactly as NewClient does.
 //
 // cloudAuth comes from auth.GetCloudAuth, the same value NewClient takes —
 // passing it in rather than fetching it keeps the one interactive/credential
@@ -235,9 +252,9 @@ func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceI
 }
 
 func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeSSE(ctx, otlpTraces, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpTraces, traceID, func(data []byte) error {
 		var req coltracepb.ExportTraceServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal traces: %w", err)
 		}
 		c.stats.addRecords(otlpTraces, countSpans(&req))
@@ -246,9 +263,9 @@ func (c *OTLPClient) streamTraces(ctx context.Context, traceID string, sink Trac
 }
 
 func (c *OTLPClient) streamLogs(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeSSE(ctx, otlpLogs, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpLogs, traceID, func(data []byte) error {
 		var req collogspb.ExportLogsServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal logs: %w", err)
 		}
 		c.stats.addRecords(otlpLogs, countLogRecords(&req))
@@ -257,9 +274,9 @@ func (c *OTLPClient) streamLogs(ctx context.Context, traceID string, sink TraceI
 }
 
 func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink TraceImportSink) error {
-	return c.consumeSSE(ctx, otlpMetrics, traceID, func(data []byte) error {
+	return c.consumeStream(ctx, otlpMetrics, traceID, func(data []byte) error {
 		var req colmetricspb.ExportMetricsServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := proto.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
 		c.stats.addRecords(otlpMetrics, countMetrics(&req))
@@ -267,29 +284,29 @@ func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink Tra
 	})
 }
 
-// consumeSSE connects to one of the OTLP endpoints and feeds every event's
-// payload to cb.
+// consumeStream connects to one of the OTLP endpoints and feeds every data
+// frame's payload to cb.
 //
-// The event NAME is ignored, exactly as the reference implementation ignores
-// it: these endpoints are undeployed, so their event vocabulary is unverified
-// (§12), and reading a name nobody has promised would be the one assumption
-// that turns a whole trace into silence. Any event carrying data is a payload;
-// end of stream is end of trace.
-func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb func([]byte) error) error {
+// End of trace is the TERMINAL frame, and only the terminal frame: a
+// connection that ends without one was truncated — half a trace must fail
+// the restore (§12) rather than be restored from silently — and a server
+// that answers in some other protocol entirely is refused by Content-Type
+// before a byte of it is parsed.
+func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, cb func([]byte) error) error {
 	// JoinPath, not an assignment to u.Path: a DAGGER_CLOUD_URL with a path
 	// prefix (a proxy, a test server on a subpath) would otherwise have its
 	// prefix silently dropped.
 	endpoint := c.u.JoinPath("/v1/", kind, traceID).String()
 
 	c.stats.addRequest(kind)
-	slog.Debug("connecting to cloud OTLP SSE", "url", endpoint, "kind", kind)
+	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("create request for %s: %w", kind, err)
 	}
 	req.Header.Set("Authorization", c.authHeader)
-	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Accept", otlpstream.ContentType)
 
 	resp, err := c.h.Do(req) //nolint:bodyclose // closed by the defer below; the stall watchdog may close it early
 	if err != nil {
@@ -302,7 +319,19 @@ func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb fu
 		return fmt.Errorf("fetch %s: %s: %s", endpoint, resp.Status, strings.TrimSpace(string(body)))
 	}
 
-	slog.Debug("connected to cloud OTLP SSE", "kind", kind)
+	// The tripwire the SSE-era client lacked: a server that does not speak
+	// the framed protocol (an old deployment, a proxy's error page) must be
+	// refused HERE. Scanning a mis-negotiated body for frames is how this
+	// client once "found" its trace's own captured LLM stream and reported
+	// an unmarshal error three layers away from the real mismatch.
+	contentType := resp.Header.Get("Content-Type")
+	if mediaType, _, err := mime.ParseMediaType(contentType); err != nil || mediaType != otlpstream.ContentType {
+		return fmt.Errorf("fetch %s: server sent Content-Type %q, want %q: "+
+			"it does not speak the binary OTLP stream protocol this client expects",
+			endpoint, contentType, otlpstream.ContentType)
+	}
+
+	slog.Debug("connected to cloud OTLP stream", "kind", kind)
 
 	// The watchdog: a stored trace should always be transferring, so a body
 	// that goes silent for the whole stall window is a dead connection —
@@ -333,58 +362,78 @@ func (c *OTLPClient) consumeSSE(ctx context.Context, kind, traceID string, cb fu
 		}()
 	}
 
-	reader := sse.NewReadCloser(body)
-	defer reader.Close()
+	// payloads/bytes so far: context every failure below carries, because a
+	// mid-stream death (h2 reset, stall, truncation) is a CLOUD incident, and
+	// "how far did it get" is the first question its report needs answered.
+	var payloads, bytes int
 
-	// events/bytes so far: context every failure below carries, because a
-	// mid-stream death (h2 reset, stall) is a CLOUD incident, and "how far
-	// did it get" is the first question its report needs answered.
-	var events, bytes int
+	var lastCursor uint64
+	var haveCursor bool
 
 	for {
-		event, err := reader.Next()
+		frame, err := otlpstream.ReadFrame(body)
 		if err != nil {
 			// Check the watchdog before anything else: it closes the body,
 			// and what that surfaces as (a closed-body error, sometimes even
-			// EOF) must not be mistaken for the end of the trace.
+			// EOF) must not be mistaken for anything the server said.
 			if stalled.Load() {
-				return fmt.Errorf("fetch %s stalled: no data for %s (after %d events, %d bytes): "+
-					"the server stopped sending without ending the stream", endpoint, c.stall, events, bytes)
+				return fmt.Errorf("fetch %s stalled: no data for %s (after %d payloads, %d bytes): "+
+					"the server stopped sending without ending the stream", endpoint, c.stall, payloads, bytes)
 			}
-			if errors.Is(err, io.EOF) {
-				slog.Debug("cloud OTLP SSE stream ended", "kind", kind)
-				return nil
-			}
-			// A canceled fetch is NOT an end of stream. The reference client
-			// treats it as one, which for a renderer is harmless and for a
-			// restore is not: half a trace would be restored from silently,
-			// and §5.3 fails the command on a hole rather than guessing past
-			// it.
+			// A canceled fetch is NOT a server failure; report the caller's
+			// cancellation as itself.
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
-			return fmt.Errorf("read SSE event from %s (after %d events, %d bytes): %w", endpoint, events, bytes, err)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return fmt.Errorf("fetch %s truncated (after %d payloads, %d bytes): "+
+					"the connection ended before the stream's terminal frame", endpoint, payloads, bytes)
+			}
+			return fmt.Errorf("read OTLP stream frame from %s (after %d payloads, %d bytes): %w",
+				endpoint, payloads, bytes, err)
 		}
+		if haveCursor && frame.Cursor <= lastCursor {
+			return fmt.Errorf("fetch %s: stream cursor went backwards (%d after %d)",
+				endpoint, frame.Cursor, lastCursor)
+		}
+		lastCursor, haveCursor = frame.Cursor, true
 
-		if len(event.Data) == 0 {
-			continue
-		}
-		events++
-		bytes += len(event.Data)
-		c.stats.addEvent(kind, len(event.Data))
+		switch frame.Kind {
+		case otlpstream.FrameTerminal:
+			if len(frame.Payload) != 0 {
+				return fmt.Errorf("fetch %s: terminal frame has a %d-byte payload", endpoint, len(frame.Payload))
+			}
+			slog.Debug("cloud OTLP stream ended", "kind", kind, "payloads", payloads, "bytes", bytes)
+			return nil
+		case otlpstream.FrameError:
+			if !utf8.Valid(frame.Payload) {
+				return fmt.Errorf("fetch %s: the server reported an error the client could not decode", endpoint)
+			}
+			return fmt.Errorf("fetch %s: server error (after %d payloads, %d bytes): %s",
+				endpoint, payloads, bytes, string(frame.Payload))
+		case otlpstream.FrameData:
+			// An empty data frame is a heartbeat: connection liveness, not a
+			// payload. Its bytes already reset the stall clock via body.
+			if len(frame.Payload) == 0 {
+				continue
+			}
+			payloads++
+			bytes += len(frame.Payload)
+			c.stats.addEvent(kind, len(frame.Payload))
 
-		// A payload this client cannot decode is a LOST FACT — an agent's
-		// state record, a call payload, a whole subtree — and §12 settled
-		// that a trace which cannot be rebuilt fails the restore instead of
-		// degrading. So an error here aborts the stream; the reference client
-		// warns and carries on, which is right for a view and wrong for a
-		// restore.
-		if err := cb(event.Data); err != nil {
-			return fmt.Errorf("%s stream: %w", kind, err)
+			// A payload this client cannot decode is a LOST FACT — an agent's
+			// state record, a call payload, a whole subtree — and §12 settled
+			// that a trace which cannot be rebuilt fails the restore instead
+			// of degrading. So an error here aborts the stream; the reference
+			// client warns and carries on, which is right for a view and
+			// wrong for a restore.
+			if err := cb(frame.Payload); err != nil {
+				return fmt.Errorf("%s stream: %w", kind, err)
+			}
+			// The sink consumed time the socket could not: don't bill it to
+			// the server's stall budget.
+			body.touch()
 		}
-		// The sink consumed time the socket could not: don't bill it to the
-		// server's stall budget.
-		body.touch()
 	}
 }
 
