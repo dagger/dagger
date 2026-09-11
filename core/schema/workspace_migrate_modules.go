@@ -571,7 +571,16 @@ func (p *moduleMigrationPlanner) registerSDK(dir string, cfg *modules.ModuleConf
 	preferredInstallName := ""
 	base, version, _ := strings.Cut(sdkSource, "@")
 	if !strings.ContainsAny(base, "/\\") {
-		if resolved, installName, _, err := sdkmeta.ResolveInstall(base); err == nil {
+		if _, installed := p.config.SDKs[base]; installed && version == "" {
+			// An unversioned runtime name selects the workspace's named SDK.
+			// Preserve its provider and pin instead of resolving the name again
+			// through the registry and conflicting with its existing scopes.
+			_, _, source, err := installedSDKSource(p.config, base)
+			if err != nil {
+				return fmt.Errorf("resolve installed SDK for %s: %w", dir, err)
+			}
+			sdkSource = source
+		} else if resolved, installName, _, err := sdkmeta.ResolveInstall(base); err == nil {
 			sdkSource = resolved
 			preferredInstallName = installName
 			if version != "" {
