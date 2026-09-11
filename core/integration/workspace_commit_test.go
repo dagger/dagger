@@ -27,30 +27,54 @@ type workspaceCommitState struct {
 	}
 }
 
-func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, message string, paths []string) (workspaceCommitState, error) {
-	var got struct {
-		Node struct{ WithCommit workspaceCommitState }
-	}
-	id, err := ws.ID(ctx)
+func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, message string, paths []string) (got workspaceCommitState, err error) {
+	got.ID, err = ws.WithCommit(message, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: paths}).ID(ctx)
 	if err != nil {
-		return got.Node.WithCommit, err
+		return got, err
 	}
-	if paths == nil {
-		paths = []string{}
+	// Resolve the result once before reading its fields: metadata reads must
+	// not repeat the workspace's host capture or commit operation.
+	committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+	head := committed.Git().Head()
+	meta := head.TargetCommit()
+	for _, field := range []struct {
+		target *string
+		read   func(context.Context) (string, error)
+	}{
+		{&got.Git.Head.Commit, head.CommitSHA},
+		{&got.Git.Head.TargetCommit.Message, meta.Message},
+		{&got.Git.Head.TargetCommit.AuthorName, meta.AuthorName},
+		{&got.Git.Head.TargetCommit.AuthorEmail, meta.AuthorEmail},
+		{&got.Git.Head.TargetCommit.AuthoredDate, meta.AuthoredDate},
+		{&got.Git.Head.TargetCommit.CommittedDate, meta.CommittedDate},
+	} {
+		*field.target, err = field.read(ctx)
+		if err != nil {
+			return got, err
+		}
 	}
-	err = c.Do(ctx, &dagger.Request{
-		Query: `query($id: ID!, $message: String!, $paths: [String!]!, $date: String!) {
-			node(id: $id) { ... on Workspace { withCommit(message: $message, paths: $paths, date: $date) {
-				id git {
-					repository: __repository { url }
-					head { commit targetCommit { message authorName authorEmail authoredDate committedDate } }
-					uncommitted { addedPaths modifiedPaths removedPaths }
-				}
-			} } }
-		}`,
-		Variables: map[string]any{"id": id, "message": message, "paths": paths, "date": workspaceCommitDate},
-	}, &dagger.Response{Data: &got})
-	return got.Node.WithCommit, err
+	url, err := head.AsRepository().URL(ctx)
+	if err != nil {
+		return got, err
+	}
+	if url != "" {
+		got.Git.Repository.URL = &url
+	}
+	pending := committed.Git().Uncommitted()
+	for _, field := range []struct {
+		target *[]string
+		read   func(context.Context) ([]string, error)
+	}{
+		{&got.Git.Uncommitted.AddedPaths, pending.AddedPaths},
+		{&got.Git.Uncommitted.ModifiedPaths, pending.ModifiedPaths},
+		{&got.Git.Uncommitted.RemovedPaths, pending.RemovedPaths},
+	} {
+		*field.target, err = field.read(ctx)
+		if err != nil {
+			return got, err
+		}
+	}
+	return got, nil
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
@@ -58,25 +82,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b").
 		WithNewFile("keep.txt", "untouched"))
-	// Even keepGitDir:false must support commits; commit materialization needs
-	// a full-history repository, independently of ordinary tree-read options.
-	serviceID, err := daemon.ID(ctx)
-	require.NoError(t, err)
-	var source struct {
-		Git struct {
-			Branch struct{ AsWorkspace struct{ ID dagger.ID } }
-		}
-	}
-	// Use GraphQL directly: the Go SDK omits zero-valued optional booleans.
-	require.NoError(t, c.Do(ctx, &dagger.Request{
-		Query: `query($url: String!, $service: ID!) {
-			git(url: $url, experimentalServiceHost: $service, keepGitDir: false) {
-				branch(name: "main") { asWorkspace(cwd: "src") { id } }
-			}
-		}`,
-		Variables: map[string]any{"url": url, "service": serviceID},
-	}, &dagger.Response{Data: &source}))
-	ws := dagger.Ref[*dagger.Workspace](c, source.Git.Branch.AsWorkspace.ID).
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
+		Branch("main").AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "src"}).
 		WithNewFile("a.txt", "new-a").WithNewFile("b.txt", "new-b")
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -348,7 +355,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Co
 func (WorkspaceSuite) TestWorkspaceWithCommitDirectoryRepository(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	directory := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon, KeepGitDir: true}).
+	directory := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
 		Branch("main").Tree().WithNewFile("base.txt", "changed")
 	committed, err := commitWorkspace(ctx, c, directory.AsWorkspace(), "directory repo", nil)
 	require.NoError(t, err)
@@ -382,4 +389,20 @@ func (*Probe) Committed() error { return nil }
 	name, err := checks[0].Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "probe:committed", name)
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitLiteralPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("a*.txt", "old").WithNewFile("abc.txt", "old").WithNewFile("dir[1]/file", "old"))
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace().
+		WithNewFile("a*.txt", "literal").WithNewFile("abc.txt", "unselected").WithNewFile("dir[1]/file", "selected directory")
+	result := ws.WithCommit("literal paths", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: []string{"a*.txt", "dir[1]"}})
+	for file, want := range map[string]string{"a*.txt": "literal", "abc.txt": "old", "dir[1]/file": "selected directory"} {
+		got, err := result.Git().Head().Tree().File(file).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	modified, err := result.Git().Uncommitted().ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"abc.txt"}, modified)
 }
