@@ -981,10 +981,6 @@ func changesetDispositionForAutoApply(autoApply bool) changesetDisposition {
 	return changesetDispositionPrompt
 }
 
-func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, autoApply bool) (bool, error) {
-	return handleWorkspaceResponseWithDisposition(ctx, dag, before, workspace, changesetDispositionForAutoApply(autoApply), nil)
-}
-
 func handleWorkspaceResponseWithDisposition(ctx context.Context, dag *dagger.Client, before, workspace *dagger.Workspace, disposition changesetDisposition, previewOut io.Writer) (bool, error) {
 	workspace, err := materializeWorkspace(ctx, dag, workspace)
 	if err != nil {
