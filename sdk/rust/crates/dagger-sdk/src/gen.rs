@@ -8795,6 +8795,69 @@ impl Node for GitCommit {
     }
 }
 #[derive(Clone)]
+pub struct GitPushResult {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitPushResult {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitPushResult {
+    fn graphql_type() -> &'static str {
+        "GitPushResult"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitPushResult {
+    /// How the remote ref was updated.
+    pub async fn disposition(&self) -> Result<GitPushDisposition, DaggerError> {
+        let query = self.selection.select("disposition");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this GitPushResult.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The previous remote object ID; empty when the ref was created.
+    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("previousSHA");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The fully qualified remote ref.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The object ID pushed to the remote.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitPushResult {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -8817,6 +8880,18 @@ pub struct GitRefLogOpts<'a> {
     /// Only include commits touching these paths, relative to the root of the repository.
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRefPushOpts<'a> {
+    /// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+    #[builder(setter(into, strip_option), default)]
+    pub branch: Option<&'a str>,
+    /// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+    #[builder(setter(into, strip_option), default)]
+    pub expected_remote_sha: Option<&'a str>,
+    /// Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
+    #[builder(setter(into, strip_option), default)]
+    pub to: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
@@ -8976,6 +9051,45 @@ impl GitRef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Push this ref's commit and history to a remote repository using the destination's credentials.
+    /// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+    /// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn push(&self) -> GitPushResult {
+        let query = self.selection.select("push");
+        GitPushResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Push this ref's commit and history to a remote repository using the destination's credentials.
+    /// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+    /// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn push_opts<'a>(&self, opts: GitRefPushOpts<'a>) -> GitPushResult {
+        let mut query = self.selection.select("push");
+        if let Some(to) = opts.to {
+            query = query.arg("to", to);
+        }
+        if let Some(branch) = opts.branch {
+            query = query.arg("branch", branch);
+        }
+        if let Some(expected_remote_sha) = opts.expected_remote_sha {
+            query = query.arg("expectedRemoteSHA", expected_remote_sha);
+        }
+        GitPushResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The resolved ref name at this ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
@@ -15414,6 +15528,15 @@ pub struct WorkspaceChecksOpts<'a> {
     pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceCommitsFromOpts<'a> {
+    /// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+    #[builder(setter(into, strip_option), default)]
+    pub commits: Option<Vec<&'a str>>,
+    /// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub max_commits: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
     /// Dotted key path (e.g. modules.greeter.source). Empty for full config.
     #[builder(setter(into, strip_option), default)]
@@ -15519,6 +15642,27 @@ pub struct WorkspaceWithClientOpts<'a> {
     pub settings: Option<Json>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithCommitOpts<'a> {
+    /// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+    #[builder(setter(into, strip_option), default)]
+    pub author_email: Option<&'a str>,
+    /// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+    #[builder(setter(into, strip_option), default)]
+    pub author_name: Option<&'a str>,
+    /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithCommitsFromOpts<'a> {
+    /// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+    #[builder(setter(into, strip_option), default)]
+    pub commits: Option<Vec<&'a str>>,
+    /// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub max_commits: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigEnvOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -15571,6 +15715,12 @@ pub struct WorkspaceWithNewFileOpts {
     /// Permissions of the new file.
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithResetOpts {
+    /// Discard uncommitted changes, resetting the working tree to the commit.
+    #[builder(setter(into, strip_option), default)]
+    pub hard: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithSdkOpts<'a> {
@@ -15768,6 +15918,81 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+    /// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn commits_from(
+        &self,
+        source: impl IntoID<Id>,
+    ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
+        let mut query = self.selection.select("commitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceCommitPick {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceCommitPick"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+    /// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn commits_from_opts<'a>(
+        &self,
+        source: impl IntoID<Id>,
+        opts: WorkspaceCommitsFromOpts<'a>,
+    ) -> Result<Vec<WorkspaceCommitPick>, DaggerError> {
+        let mut query = self.selection.select("commitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(commits) = opts.commits {
+            query = query.arg("commits", commits);
+        }
+        if let Some(max_commits) = opts.max_commits {
+            query = query.arg("maxCommits", max_commits);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceCommitPick {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceCommitPick"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
     /// Selected native workspace config file relative to the workspace cwd, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configFile");
@@ -15876,8 +16101,10 @@ impl Workspace {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write this workspace's pending changes to its local Git workspace on the current client's host.
-    /// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+    /// Write this workspace's changes to a local Git checkout on the calling client.
+    /// Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+    /// For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
+    /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
         query.execute(self.graphql_client.clone()).await
@@ -16153,15 +16380,6 @@ impl Workspace {
             })
             .collect())
     }
-    /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-    pub fn reloaded(&self) -> Workspace {
-        let query = self.selection.select("reloaded");
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// An installed SDK, by name.
     ///
     /// # Arguments
@@ -16309,6 +16527,19 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot of this workspace as a stable value.
+    /// Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+    /// Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+    /// Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+    /// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+    pub fn snapshot(&self) -> Workspace {
+        let query = self.selection.select("snapshot");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all terminal targets from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -16400,6 +16631,116 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit(&self, message: impl Into<String>, date: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+    /// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+    /// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required for reproducible commits.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit_opts<'a>(
+        &self,
+        message: impl Into<String>,
+        date: impl Into<String>,
+        opts: WorkspaceWithCommitOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(author_name) = opts.author_name {
+            query = query.arg("authorName", author_name);
+        }
+        if let Some(author_email) = opts.author_email {
+            query = query.arg("authorEmail", author_email);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commits_from(&self, source: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withCommitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+    /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commits_from_opts<'a>(
+        &self,
+        source: impl IntoID<Id>,
+        opts: WorkspaceWithCommitsFromOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withCommitsFrom");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(commits) = opts.commits {
+            query = query.arg("commits", commits);
+        }
+        if let Some(max_commits) = opts.max_commits {
+            query = query.arg("maxCommits", max_commits);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a named config environment created.
     ///
     /// # Arguments
@@ -16431,6 +16772,40 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select the config environment carried by this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name, or empty to clear the selection.
+    pub fn with_config_environment(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withConfigEnvironment");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+    ///
+    /// # Arguments
+    ///
+    /// * `config_file` - Config file path.
+    /// * `lock_file` - Lockfile path.
+    pub fn with_config_paths(
+        &self,
+        config_file: impl Into<String>,
+        lock_file: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withConfigPaths");
+        query = query.arg("configFile", config_file.into());
+        query = query.arg("lockFile", lock_file.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -16791,6 +17166,49 @@ impl Workspace {
         query = query.arg("contents", contents.into());
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+    /// A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+    /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+    ///
+    /// # Arguments
+    ///
+    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_reset(&self, commit: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withReset");
+        query = query.arg("commit", commit.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+    /// A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+    /// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+    /// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+    ///
+    /// # Arguments
+    ///
+    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_reset_opts(
+        &self,
+        commit: impl Into<String>,
+        opts: WorkspaceWithResetOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReset");
+        query = query.arg("commit", commit.into());
+        if let Some(hard) = opts.hard {
+            query = query.arg("hard", hard);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -17199,6 +17617,73 @@ impl Workspace {
     }
 }
 impl Node for Workspace {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceCommitPick {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceCommitPick {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceCommitPick {
+    fn graphql_type() -> &'static str {
+        "WorkspaceCommitPick"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceCommitPick {
+    /// The commit in the source workspace.
+    pub fn commit(&self) -> GitCommit {
+        let query = self.selection.select("commit");
+        GitCommit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+    pub async fn conflict_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("conflictPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this WorkspaceCommitPick.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Why the commit conflicts, or NONE.
+    pub async fn reason(&self) -> Result<WorkspaceCommitPickReason, DaggerError> {
+        let query = self.selection.select("reason");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether this commit can be applied.
+    pub async fn status(&self) -> Result<WorkspaceCommitPickStatus, DaggerError> {
+        let query = self.selection.select("status");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for WorkspaceCommitPick {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -17723,6 +18208,17 @@ pub enum FunctionCachePolicy {
     PerSession,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum GitPushDisposition {
+    #[serde(rename = "CREATED")]
+    Created,
+    #[serde(rename = "FAST_FORWARD")]
+    FastForward,
+    #[serde(rename = "FORCED")]
+    Forced,
+    #[serde(rename = "UP_TO_DATE")]
+    UpToDate,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {
     #[serde(rename = "EStarGZ")]
     EStarGz,
@@ -17862,4 +18358,24 @@ pub enum TypeDefKind {
     Void,
     #[serde(rename = "VOID_KIND")]
     VoidKind,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum WorkspaceCommitPickReason {
+    #[serde(rename = "CONTENT")]
+    Content,
+    #[serde(rename = "DIRTY")]
+    Dirty,
+    #[serde(rename = "NONE")]
+    None,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum WorkspaceCommitPickStatus {
+    #[serde(rename = "CONFLICT")]
+    Conflict,
+    #[serde(rename = "PICKABLE")]
+    Pickable,
+    #[serde(rename = "PICKED")]
+    Picked,
+    #[serde(rename = "REDUNDANT")]
+    Redundant,
 }
