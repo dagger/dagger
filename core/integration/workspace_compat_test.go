@@ -832,7 +832,10 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
     }
   ]
 }`).
-		With(compatDaggerExec("workspace", "migrate", "--auto-apply"))
+		With(compatDaggerExec("workspace", "migrate", "--auto-apply")).
+		WithWorkdir("/work").
+		With(compatDaggerExec("generate", "dagger-go-sdk:generate", "-y")).
+		WithWorkdir("/work/modules/app")
 
 	// The selected config sits in a subdirectory of the repo, so its
 	// toolchains hoist into a dagger.toml at the repo root (never a nested
@@ -896,7 +899,10 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
     }
   ]
 }`).
-		With(compatDaggerExec("workspace", "migrate", "--auto-apply"))
+		With(compatDaggerExec("workspace", "migrate", "--auto-apply")).
+		WithWorkdir("/work").
+		With(compatDaggerExec("generate", "dagger-go-sdk:generate", "-y")).
+		WithWorkdir("/work/modules/app")
 
 	// The subdirectory config's toolchains (and their port mappings) hoist
 	// into a dagger.toml at the repo root — nested workspace configs are
