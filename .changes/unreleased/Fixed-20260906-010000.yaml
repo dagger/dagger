@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Strip trailing LF and CRLF line endings from cmd:// secrets, matching
+  command-substitution behavior for commands such as gh auth token. Spaces
+  and embedded newlines are preserved; other secret providers are unchanged.
+time: 2026-09-06T01:00:00Z
+custom:
+  Author: vito
+  PR: ""
