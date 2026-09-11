@@ -98,6 +98,43 @@ func schemaArgument(t *testing.T, field *codegenintrospection.Field, name string
 	return nil
 }
 
+func TestWorkspaceSnapshotSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "snapshot-schema-client", SessionID: "snapshot-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, view := range []call.View{baseSchemaView(), "v1.0.0"} {
+		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
+		require.NoError(t, err)
+		data, err := getSchemaJSON(nil, nil, view, dag)
+		require.NoError(t, err)
+		ws := decodeSchemaResponse(t, data).Schema.Types.Get("Workspace")
+		if ws == nil {
+			require.Equal(t, baseSchemaView(), view)
+			continue
+		}
+		require.Nil(t, schemaField(ws, "sync"))
+		for _, iface := range ws.Interfaces {
+			require.NotEqual(t, "Syncer", iface.Name, "workspace capture must be explicit")
+		}
+		field := schemaField(ws, "snapshot")
+		if view == baseSchemaView() {
+			require.Nil(t, field)
+			continue
+		}
+		require.NotNil(t, field)
+		require.Empty(t, field.Args)
+		require.Equal(t, codegenintrospection.TypeKindNonNull, field.TypeRef.Kind)
+		require.Equal(t, "Workspace", field.TypeRef.OfType.Name)
+	}
+}
+
 func TestWorkspaceClientSDKSchema(t *testing.T) {
 	ctx := context.Background()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)

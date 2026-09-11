@@ -44,6 +44,10 @@ const (
 	PACK_FAILED                 ErrorInfo_ErrorType = 8
 	UNCOMMITTED_UNSUPPORTED     ErrorInfo_ErrorType = 9
 	CHECKOUT_STATE_MISMATCH     ErrorInfo_ErrorType = 10
+	CAPTURE_REJECTED            ErrorInfo_ErrorType = 11
+	CAPTURE_FAILED              ErrorInfo_ErrorType = 12
+	// The checkout is usable, but capture has no committed baseline.
+	CAPTURE_UNSUPPORTED ErrorInfo_ErrorType = 13
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
@@ -58,6 +62,9 @@ var ErrorInfo_ErrorType_name = map[int32]string{
 	8:  "PACK_FAILED",
 	9:  "UNCOMMITTED_UNSUPPORTED",
 	10: "CHECKOUT_STATE_MISMATCH",
+	11: "CAPTURE_REJECTED",
+	12: "CAPTURE_FAILED",
+	13: "CAPTURE_UNSUPPORTED",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -72,10 +79,260 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"PACK_FAILED":                 8,
 	"UNCOMMITTED_UNSUPPORTED":     9,
 	"CHECKOUT_STATE_MISMATCH":     10,
+	"CAPTURE_REJECTED":            11,
+	"CAPTURE_FAILED":              12,
+	"CAPTURE_UNSUPPORTED":         13,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{15, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{18, 0}
+}
+
+type CaptureGitChunk_Kind int32
+
+const (
+	CAPTURE_CHUNK_UNKNOWN CaptureGitChunk_Kind = 0
+	CAPTURE_CHUNK_BUNDLE  CaptureGitChunk_Kind = 1
+)
+
+var CaptureGitChunk_Kind_name = map[int32]string{
+	0: "CAPTURE_CHUNK_UNKNOWN",
+	1: "CAPTURE_CHUNK_BUNDLE",
+}
+
+var CaptureGitChunk_Kind_value = map[string]int32{
+	"CAPTURE_CHUNK_UNKNOWN": 0,
+	"CAPTURE_CHUNK_BUNDLE":  1,
+}
+
+func (CaptureGitChunk_Kind) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{22, 0}
+}
+
+// Import a workspace's committed HEAD and fast-forward the destination under
+// a lease. A failed fast-forward leaves the commits on a hand-off ref; it never
+// rebases, resets, or writes the workspace's uncommitted overlay.
+type ApplyBundleRequest struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*ApplyBundleRequest_Metadata
+	//	*ApplyBundleRequest_Chunk
+	Msg isApplyBundleRequest_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *ApplyBundleRequest) Reset()      { *m = ApplyBundleRequest{} }
+func (*ApplyBundleRequest) ProtoMessage() {}
+func (*ApplyBundleRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{0}
+}
+func (m *ApplyBundleRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApplyBundleRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApplyBundleRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApplyBundleRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApplyBundleRequest.Merge(m, src)
+}
+func (m *ApplyBundleRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApplyBundleRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApplyBundleRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApplyBundleRequest proto.InternalMessageInfo
+
+type isApplyBundleRequest_Msg interface {
+	isApplyBundleRequest_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type ApplyBundleRequest_Metadata struct {
+	Metadata *ApplyBundleMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type ApplyBundleRequest_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*ApplyBundleRequest_Metadata) isApplyBundleRequest_Msg() {}
+func (*ApplyBundleRequest_Chunk) isApplyBundleRequest_Msg()    {}
+
+func (m *ApplyBundleRequest) GetMsg() isApplyBundleRequest_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *ApplyBundleRequest) GetMetadata() *ApplyBundleMetadata {
+	if x, ok := m.GetMsg().(*ApplyBundleRequest_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *ApplyBundleRequest) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*ApplyBundleRequest_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*ApplyBundleRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*ApplyBundleRequest_Metadata)(nil),
+		(*ApplyBundleRequest_Chunk)(nil),
+	}
+}
+
+type ApplyBundleMetadata struct {
+	CheckoutPath        string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	TargetSha           string `protobuf:"bytes,2,opt,name=target_sha,json=targetSha,proto3" json:"target_sha,omitempty"`
+	ExpectedStateDigest string `protobuf:"bytes,3,opt,name=expected_state_digest,json=expectedStateDigest,proto3" json:"expected_state_digest,omitempty"`
+	BundleRef           string `protobuf:"bytes,4,opt,name=bundle_ref,json=bundleRef,proto3" json:"bundle_ref,omitempty"`
+	// Prepared integration: bundle_ref advertises this transport commit, whose
+	// parents are target_sha and a before-worktree snapshot (parented by the
+	// expected checkout HEAD). Its tree is the desired final worktree.
+	IntegrationWorktreeSha string `protobuf:"bytes,5,opt,name=integration_worktree_sha,json=integrationWorktreeSha,proto3" json:"integration_worktree_sha,omitempty"`
+}
+
+func (m *ApplyBundleMetadata) Reset()      { *m = ApplyBundleMetadata{} }
+func (*ApplyBundleMetadata) ProtoMessage() {}
+func (*ApplyBundleMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{1}
+}
+func (m *ApplyBundleMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApplyBundleMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApplyBundleMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApplyBundleMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApplyBundleMetadata.Merge(m, src)
+}
+func (m *ApplyBundleMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApplyBundleMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApplyBundleMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApplyBundleMetadata proto.InternalMessageInfo
+
+func (m *ApplyBundleMetadata) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
+func (m *ApplyBundleMetadata) GetTargetSha() string {
+	if m != nil {
+		return m.TargetSha
+	}
+	return ""
+}
+
+func (m *ApplyBundleMetadata) GetExpectedStateDigest() string {
+	if m != nil {
+		return m.ExpectedStateDigest
+	}
+	return ""
+}
+
+func (m *ApplyBundleMetadata) GetBundleRef() string {
+	if m != nil {
+		return m.BundleRef
+	}
+	return ""
+}
+
+func (m *ApplyBundleMetadata) GetIntegrationWorktreeSha() string {
+	if m != nil {
+		return m.IntegrationWorktreeSha
+	}
+	return ""
+}
+
+type ApplyBundleResponse struct {
+	HeadSha   string     `protobuf:"bytes,1,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	ParkedRef string     `protobuf:"bytes,2,opt,name=parked_ref,json=parkedRef,proto3" json:"parked_ref,omitempty"`
+	Error     *ErrorInfo `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+}
+
+func (m *ApplyBundleResponse) Reset()      { *m = ApplyBundleResponse{} }
+func (*ApplyBundleResponse) ProtoMessage() {}
+func (*ApplyBundleResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{2}
+}
+func (m *ApplyBundleResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApplyBundleResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApplyBundleResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApplyBundleResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApplyBundleResponse.Merge(m, src)
+}
+func (m *ApplyBundleResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApplyBundleResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApplyBundleResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApplyBundleResponse proto.InternalMessageInfo
+
+func (m *ApplyBundleResponse) GetHeadSha() string {
+	if m != nil {
+		return m.HeadSha
+	}
+	return ""
+}
+
+func (m *ApplyBundleResponse) GetParkedRef() string {
+	if m != nil {
+		return m.ParkedRef
+	}
+	return ""
+}
+
+func (m *ApplyBundleResponse) GetError() *ErrorInfo {
+	if m != nil {
+		return m.Error
+	}
+	return nil
 }
 
 type GitCredentialRequest struct {
@@ -87,7 +344,7 @@ type GitCredentialRequest struct {
 func (m *GitCredentialRequest) Reset()      { *m = GitCredentialRequest{} }
 func (*GitCredentialRequest) ProtoMessage() {}
 func (*GitCredentialRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{3}
 }
 func (m *GitCredentialRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -148,7 +405,7 @@ type GitCredentialResponse struct {
 func (m *GitCredentialResponse) Reset()      { *m = GitCredentialResponse{} }
 func (*GitCredentialResponse) ProtoMessage() {}
 func (*GitCredentialResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{1}
+	return fileDescriptor_0d2ecb6e8d788208, []int{4}
 }
 func (m *GitCredentialResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -233,7 +490,7 @@ type CredentialInfo struct {
 func (m *CredentialInfo) Reset()      { *m = CredentialInfo{} }
 func (*CredentialInfo) ProtoMessage() {}
 func (*CredentialInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{2}
+	return fileDescriptor_0d2ecb6e8d788208, []int{5}
 }
 func (m *CredentialInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -291,12 +548,15 @@ func (m *CredentialInfo) GetPassword() string {
 }
 
 type GitConfigRequest struct {
+	// Optional checkout for effective repository-local config (including worktrees).
+	// Empty retains the system/global-only config query.
+	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
 }
 
 func (m *GitConfigRequest) Reset()      { *m = GitConfigRequest{} }
 func (*GitConfigRequest) ProtoMessage() {}
 func (*GitConfigRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{3}
+	return fileDescriptor_0d2ecb6e8d788208, []int{6}
 }
 func (m *GitConfigRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -325,6 +585,13 @@ func (m *GitConfigRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_GitConfigRequest proto.InternalMessageInfo
 
+func (m *GitConfigRequest) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
 type GitConfigResponse struct {
 	// Types that are valid to be assigned to Result:
 	//
@@ -336,7 +603,7 @@ type GitConfigResponse struct {
 func (m *GitConfigResponse) Reset()      { *m = GitConfigResponse{} }
 func (*GitConfigResponse) ProtoMessage() {}
 func (*GitConfigResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{4}
+	return fileDescriptor_0d2ecb6e8d788208, []int{7}
 }
 func (m *GitConfigResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -418,7 +685,7 @@ type GitConfig struct {
 func (m *GitConfig) Reset()      { *m = GitConfig{} }
 func (*GitConfig) ProtoMessage() {}
 func (*GitConfig) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{5}
+	return fileDescriptor_0d2ecb6e8d788208, []int{8}
 }
 func (m *GitConfig) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -462,7 +729,7 @@ type GitConfigEntry struct {
 func (m *GitConfigEntry) Reset()      { *m = GitConfigEntry{} }
 func (*GitConfigEntry) ProtoMessage() {}
 func (*GitConfigEntry) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{6}
+	return fileDescriptor_0d2ecb6e8d788208, []int{9}
 }
 func (m *GitConfigEntry) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -516,7 +783,7 @@ type CheckoutStateRequest struct {
 func (m *CheckoutStateRequest) Reset()      { *m = CheckoutStateRequest{} }
 func (*CheckoutStateRequest) ProtoMessage() {}
 func (*CheckoutStateRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{7}
+	return fileDescriptor_0d2ecb6e8d788208, []int{10}
 }
 func (m *CheckoutStateRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -563,7 +830,7 @@ type CheckoutStateResponse struct {
 func (m *CheckoutStateResponse) Reset()      { *m = CheckoutStateResponse{} }
 func (*CheckoutStateResponse) ProtoMessage() {}
 func (*CheckoutStateResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{8}
+	return fileDescriptor_0d2ecb6e8d788208, []int{11}
 }
 func (m *CheckoutStateResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -655,7 +922,7 @@ type PackCheckoutRequest struct {
 func (m *PackCheckoutRequest) Reset()      { *m = PackCheckoutRequest{} }
 func (*PackCheckoutRequest) ProtoMessage() {}
 func (*PackCheckoutRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{9}
+	return fileDescriptor_0d2ecb6e8d788208, []int{12}
 }
 func (m *PackCheckoutRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -711,7 +978,7 @@ type PackCheckoutResponse struct {
 func (m *PackCheckoutResponse) Reset()      { *m = PackCheckoutResponse{} }
 func (*PackCheckoutResponse) ProtoMessage() {}
 func (*PackCheckoutResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{10}
+	return fileDescriptor_0d2ecb6e8d788208, []int{13}
 }
 func (m *PackCheckoutResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -807,7 +1074,7 @@ type PackCheckoutMetadata struct {
 func (m *PackCheckoutMetadata) Reset()      { *m = PackCheckoutMetadata{} }
 func (*PackCheckoutMetadata) ProtoMessage() {}
 func (*PackCheckoutMetadata) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{11}
+	return fileDescriptor_0d2ecb6e8d788208, []int{14}
 }
 func (m *PackCheckoutMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -887,7 +1154,7 @@ type PackUncommittedRequest struct {
 func (m *PackUncommittedRequest) Reset()      { *m = PackUncommittedRequest{} }
 func (*PackUncommittedRequest) ProtoMessage() {}
 func (*PackUncommittedRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{12}
+	return fileDescriptor_0d2ecb6e8d788208, []int{15}
 }
 func (m *PackUncommittedRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -943,7 +1210,7 @@ type PackUncommittedResponse struct {
 func (m *PackUncommittedResponse) Reset()      { *m = PackUncommittedResponse{} }
 func (*PackUncommittedResponse) ProtoMessage() {}
 func (*PackUncommittedResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{13}
+	return fileDescriptor_0d2ecb6e8d788208, []int{16}
 }
 func (m *PackUncommittedResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1032,7 +1299,7 @@ type PackUncommittedMetadata struct {
 func (m *PackUncommittedMetadata) Reset()      { *m = PackUncommittedMetadata{} }
 func (*PackUncommittedMetadata) ProtoMessage() {}
 func (*PackUncommittedMetadata) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{14}
+	return fileDescriptor_0d2ecb6e8d788208, []int{17}
 }
 func (m *PackUncommittedMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1090,7 +1357,7 @@ type ErrorInfo struct {
 func (m *ErrorInfo) Reset()      { *m = ErrorInfo{} }
 func (*ErrorInfo) ProtoMessage() {}
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{15}
+	return fileDescriptor_0d2ecb6e8d788208, []int{18}
 }
 func (m *ErrorInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1133,8 +1400,653 @@ func (m *ErrorInfo) GetMessage() string {
 	return ""
 }
 
+// CaptureGit performs the security-sensitive host half of a portable Git
+// workspace checkpoint. It discovers a currently advertised remote ancestor,
+// scans the selected dirty set, and then emits a version-3 two-ref bundle.
+// Without a usable remote ancestor, HEAD is the prerequisite and the engine
+// must reconstruct the repository from this client's checkout.
+type CaptureGitRequest struct {
+	CheckoutPath string            `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	Policy       *CaptureGitPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+}
+
+func (m *CaptureGitRequest) Reset()      { *m = CaptureGitRequest{} }
+func (*CaptureGitRequest) ProtoMessage() {}
+func (*CaptureGitRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{19}
+}
+func (m *CaptureGitRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitRequest.Merge(m, src)
+}
+func (m *CaptureGitRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitRequest proto.InternalMessageInfo
+
+func (m *CaptureGitRequest) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
+func (m *CaptureGitRequest) GetPolicy() *CaptureGitPolicy {
+	if m != nil {
+		return m.Policy
+	}
+	return nil
+}
+
+// Tracked changes are included automatically. Untracked changes need explicit
+// approval. approval_tokens are opaque fingerprints returned
+// with an aggregate prompt and bind its retry to the exact reviewed state;
+// include patterns approve matching ordinary nonignored untracked
+// paths for noninteractive use. Patterns use Git path separators and path.Match.
+type CaptureGitPolicy struct {
+	Include                []string `protobuf:"bytes,1,rep,name=include,proto3" json:"include,omitempty"`
+	Exclude                []string `protobuf:"bytes,2,rep,name=exclude,proto3" json:"exclude,omitempty"`
+	ApprovalTokens         []string `protobuf:"bytes,3,rep,name=approval_tokens,json=approvalTokens,proto3" json:"approval_tokens,omitempty"`
+	MaxUntrackedFileBytes  int64    `protobuf:"varint,4,opt,name=max_untracked_file_bytes,json=maxUntrackedFileBytes,proto3" json:"max_untracked_file_bytes,omitempty"`
+	MaxUntrackedTotalBytes int64    `protobuf:"varint,5,opt,name=max_untracked_total_bytes,json=maxUntrackedTotalBytes,proto3" json:"max_untracked_total_bytes,omitempty"`
+	MaxUntrackedFiles      int32    `protobuf:"varint,6,opt,name=max_untracked_files,json=maxUntrackedFiles,proto3" json:"max_untracked_files,omitempty"`
+	MaxTrackedFileBytes    int64    `protobuf:"varint,7,opt,name=max_tracked_file_bytes,json=maxTrackedFileBytes,proto3" json:"max_tracked_file_bytes,omitempty"`
+	MaxTotalBytes          int64    `protobuf:"varint,8,opt,name=max_total_bytes,json=maxTotalBytes,proto3" json:"max_total_bytes,omitempty"`
+	// Omit all untracked paths before inspecting their contents. Host files are
+	// never deleted. Tracked changes remain subject to the usual capture policy.
+	DropUntracked bool `protobuf:"varint,9,opt,name=drop_untracked,json=dropUntracked,proto3" json:"drop_untracked,omitempty"`
+}
+
+func (m *CaptureGitPolicy) Reset()      { *m = CaptureGitPolicy{} }
+func (*CaptureGitPolicy) ProtoMessage() {}
+func (*CaptureGitPolicy) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+}
+func (m *CaptureGitPolicy) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitPolicy) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitPolicy.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitPolicy) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitPolicy.Merge(m, src)
+}
+func (m *CaptureGitPolicy) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitPolicy) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitPolicy.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitPolicy proto.InternalMessageInfo
+
+func (m *CaptureGitPolicy) GetInclude() []string {
+	if m != nil {
+		return m.Include
+	}
+	return nil
+}
+
+func (m *CaptureGitPolicy) GetExclude() []string {
+	if m != nil {
+		return m.Exclude
+	}
+	return nil
+}
+
+func (m *CaptureGitPolicy) GetApprovalTokens() []string {
+	if m != nil {
+		return m.ApprovalTokens
+	}
+	return nil
+}
+
+func (m *CaptureGitPolicy) GetMaxUntrackedFileBytes() int64 {
+	if m != nil {
+		return m.MaxUntrackedFileBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitPolicy) GetMaxUntrackedTotalBytes() int64 {
+	if m != nil {
+		return m.MaxUntrackedTotalBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitPolicy) GetMaxUntrackedFiles() int32 {
+	if m != nil {
+		return m.MaxUntrackedFiles
+	}
+	return 0
+}
+
+func (m *CaptureGitPolicy) GetMaxTrackedFileBytes() int64 {
+	if m != nil {
+		return m.MaxTrackedFileBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitPolicy) GetMaxTotalBytes() int64 {
+	if m != nil {
+		return m.MaxTotalBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitPolicy) GetDropUntracked() bool {
+	if m != nil {
+		return m.DropUntracked
+	}
+	return false
+}
+
+type CaptureGitResponse struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*CaptureGitResponse_Metadata
+	//	*CaptureGitResponse_Chunk
+	Msg isCaptureGitResponse_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *CaptureGitResponse) Reset()      { *m = CaptureGitResponse{} }
+func (*CaptureGitResponse) ProtoMessage() {}
+func (*CaptureGitResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{21}
+}
+func (m *CaptureGitResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitResponse.Merge(m, src)
+}
+func (m *CaptureGitResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitResponse proto.InternalMessageInfo
+
+type isCaptureGitResponse_Msg interface {
+	isCaptureGitResponse_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type CaptureGitResponse_Metadata struct {
+	Metadata *CaptureGitMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type CaptureGitResponse_Chunk struct {
+	Chunk *CaptureGitChunk `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*CaptureGitResponse_Metadata) isCaptureGitResponse_Msg() {}
+func (*CaptureGitResponse_Chunk) isCaptureGitResponse_Msg()    {}
+
+func (m *CaptureGitResponse) GetMsg() isCaptureGitResponse_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *CaptureGitResponse) GetMetadata() *CaptureGitMetadata {
+	if x, ok := m.GetMsg().(*CaptureGitResponse_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *CaptureGitResponse) GetChunk() *CaptureGitChunk {
+	if x, ok := m.GetMsg().(*CaptureGitResponse_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*CaptureGitResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*CaptureGitResponse_Metadata)(nil),
+		(*CaptureGitResponse_Chunk)(nil),
+	}
+}
+
+type CaptureGitChunk struct {
+	Kind CaptureGitChunk_Kind `protobuf:"varint,1,opt,name=kind,proto3,enum=dagger.git.CaptureGitChunk_Kind" json:"kind,omitempty"`
+	Data []byte               `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+}
+
+func (m *CaptureGitChunk) Reset()      { *m = CaptureGitChunk{} }
+func (*CaptureGitChunk) ProtoMessage() {}
+func (*CaptureGitChunk) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{22}
+}
+func (m *CaptureGitChunk) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitChunk) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitChunk.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitChunk) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitChunk.Merge(m, src)
+}
+func (m *CaptureGitChunk) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitChunk) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitChunk.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitChunk proto.InternalMessageInfo
+
+func (m *CaptureGitChunk) GetKind() CaptureGitChunk_Kind {
+	if m != nil {
+		return m.Kind
+	}
+	return CAPTURE_CHUNK_UNKNOWN
+}
+
+func (m *CaptureGitChunk) GetData() []byte {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
+type CaptureGitMetadata struct {
+	FormatVersion uint32 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ObjectFormat  string `protobuf:"bytes,2,opt,name=object_format,json=objectFormat,proto3" json:"object_format,omitempty"`
+	RemoteUrl     string `protobuf:"bytes,3,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
+	RemoteRef     string `protobuf:"bytes,4,opt,name=remote_ref,json=remoteRef,proto3" json:"remote_ref,omitempty"`
+	BaseSha       string `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	HeadSha       string `protobuf:"bytes,6,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	BundleSha256  string `protobuf:"bytes,8,opt,name=bundle_sha256,json=bundleSha256,proto3" json:"bundle_sha256,omitempty"`
+	BundleBytes   int64  `protobuf:"varint,9,opt,name=bundle_bytes,json=bundleBytes,proto3" json:"bundle_bytes,omitempty"`
+	// worktree_sha is the optional synthetic snapshot commit S. Its parent is
+	// head_sha and its tree is the complete approved dirty state.
+	WorktreeSha    string     `protobuf:"bytes,10,opt,name=worktree_sha,json=worktreeSha,proto3" json:"worktree_sha,omitempty"`
+	TrackedFiles   int32      `protobuf:"varint,12,opt,name=tracked_files,json=trackedFiles,proto3" json:"tracked_files,omitempty"`
+	UntrackedFiles int32      `protobuf:"varint,13,opt,name=untracked_files,json=untrackedFiles,proto3" json:"untracked_files,omitempty"`
+	SelectedBytes  int64      `protobuf:"varint,14,opt,name=selected_bytes,json=selectedBytes,proto3" json:"selected_bytes,omitempty"`
+	Error          *ErrorInfo `protobuf:"bytes,15,opt,name=error,proto3" json:"error,omitempty"`
+	// approval_candidates is populated only on a fail-closed preflight. It
+	// lists the complete selected dirty set for one local aggregate prompt,
+	// retaining suspicious classifications but never candidate bytes.
+	ApprovalCandidates []*CaptureGitCandidate `protobuf:"bytes,16,rep,name=approval_candidates,json=approvalCandidates,proto3" json:"approval_candidates,omitempty"`
+	// Pins a session-only host reconstruction to the captured checkout state.
+	CheckoutStateDigest string `protobuf:"bytes,17,opt,name=checkout_state_digest,json=checkoutStateDigest,proto3" json:"checkout_state_digest,omitempty"`
+	// Effective push destinations computed by the owner's Git configuration.
+	// Routing metadata only, never authorization. Empty means remote_url.
+	RemotePushUrls []string `protobuf:"bytes,18,rep,name=remote_push_urls,json=remotePushUrls,proto3" json:"remote_push_urls,omitempty"`
+}
+
+func (m *CaptureGitMetadata) Reset()      { *m = CaptureGitMetadata{} }
+func (*CaptureGitMetadata) ProtoMessage() {}
+func (*CaptureGitMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{23}
+}
+func (m *CaptureGitMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitMetadata.Merge(m, src)
+}
+func (m *CaptureGitMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitMetadata proto.InternalMessageInfo
+
+func (m *CaptureGitMetadata) GetFormatVersion() uint32 {
+	if m != nil {
+		return m.FormatVersion
+	}
+	return 0
+}
+
+func (m *CaptureGitMetadata) GetObjectFormat() string {
+	if m != nil {
+		return m.ObjectFormat
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetRemoteUrl() string {
+	if m != nil {
+		return m.RemoteUrl
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetRemoteRef() string {
+	if m != nil {
+		return m.RemoteRef
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetBaseSha() string {
+	if m != nil {
+		return m.BaseSha
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetHeadSha() string {
+	if m != nil {
+		return m.HeadSha
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetBundleSha256() string {
+	if m != nil {
+		return m.BundleSha256
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetBundleBytes() int64 {
+	if m != nil {
+		return m.BundleBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitMetadata) GetWorktreeSha() string {
+	if m != nil {
+		return m.WorktreeSha
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetTrackedFiles() int32 {
+	if m != nil {
+		return m.TrackedFiles
+	}
+	return 0
+}
+
+func (m *CaptureGitMetadata) GetUntrackedFiles() int32 {
+	if m != nil {
+		return m.UntrackedFiles
+	}
+	return 0
+}
+
+func (m *CaptureGitMetadata) GetSelectedBytes() int64 {
+	if m != nil {
+		return m.SelectedBytes
+	}
+	return 0
+}
+
+func (m *CaptureGitMetadata) GetError() *ErrorInfo {
+	if m != nil {
+		return m.Error
+	}
+	return nil
+}
+
+func (m *CaptureGitMetadata) GetApprovalCandidates() []*CaptureGitCandidate {
+	if m != nil {
+		return m.ApprovalCandidates
+	}
+	return nil
+}
+
+func (m *CaptureGitMetadata) GetCheckoutStateDigest() string {
+	if m != nil {
+		return m.CheckoutStateDigest
+	}
+	return ""
+}
+
+func (m *CaptureGitMetadata) GetRemotePushUrls() []string {
+	if m != nil {
+		return m.RemotePushUrls
+	}
+	return nil
+}
+
+type CaptureGitCandidate struct {
+	Path           string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Classification string `protobuf:"bytes,2,opt,name=classification,proto3" json:"classification,omitempty"`
+	Tracked        bool   `protobuf:"varint,3,opt,name=tracked,proto3" json:"tracked,omitempty"`
+	Bytes          int64  `protobuf:"varint,4,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	// approval_token binds approval to the path's reviewed type, mode, and bytes.
+	ApprovalToken string `protobuf:"bytes,5,opt,name=approval_token,json=approvalToken,proto3" json:"approval_token,omitempty"`
+}
+
+func (m *CaptureGitCandidate) Reset()      { *m = CaptureGitCandidate{} }
+func (*CaptureGitCandidate) ProtoMessage() {}
+func (*CaptureGitCandidate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{24}
+}
+func (m *CaptureGitCandidate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CaptureGitCandidate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CaptureGitCandidate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CaptureGitCandidate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CaptureGitCandidate.Merge(m, src)
+}
+func (m *CaptureGitCandidate) XXX_Size() int {
+	return m.Size()
+}
+func (m *CaptureGitCandidate) XXX_DiscardUnknown() {
+	xxx_messageInfo_CaptureGitCandidate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CaptureGitCandidate proto.InternalMessageInfo
+
+func (m *CaptureGitCandidate) GetPath() string {
+	if m != nil {
+		return m.Path
+	}
+	return ""
+}
+
+func (m *CaptureGitCandidate) GetClassification() string {
+	if m != nil {
+		return m.Classification
+	}
+	return ""
+}
+
+func (m *CaptureGitCandidate) GetTracked() bool {
+	if m != nil {
+		return m.Tracked
+	}
+	return false
+}
+
+func (m *CaptureGitCandidate) GetBytes() int64 {
+	if m != nil {
+		return m.Bytes
+	}
+	return 0
+}
+
+func (m *CaptureGitCandidate) GetApprovalToken() string {
+	if m != nil {
+		return m.ApprovalToken
+	}
+	return ""
+}
+
+type PreparePushSSHAuthRequest struct {
+	Remote string `protobuf:"bytes,1,opt,name=remote,proto3" json:"remote,omitempty"`
+}
+
+func (m *PreparePushSSHAuthRequest) Reset()      { *m = PreparePushSSHAuthRequest{} }
+func (*PreparePushSSHAuthRequest) ProtoMessage() {}
+func (*PreparePushSSHAuthRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{25}
+}
+func (m *PreparePushSSHAuthRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PreparePushSSHAuthRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PreparePushSSHAuthRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PreparePushSSHAuthRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PreparePushSSHAuthRequest.Merge(m, src)
+}
+func (m *PreparePushSSHAuthRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *PreparePushSSHAuthRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_PreparePushSSHAuthRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PreparePushSSHAuthRequest proto.InternalMessageInfo
+
+func (m *PreparePushSSHAuthRequest) GetRemote() string {
+	if m != nil {
+		return m.Remote
+	}
+	return ""
+}
+
+type PreparePushSSHAuthResponse struct {
+	// Operation-local socket; never publish it as a module capability.
+	SocketPath string `protobuf:"bytes,1,opt,name=socket_path,json=socketPath,proto3" json:"socket_path,omitempty"`
+}
+
+func (m *PreparePushSSHAuthResponse) Reset()      { *m = PreparePushSSHAuthResponse{} }
+func (*PreparePushSSHAuthResponse) ProtoMessage() {}
+func (*PreparePushSSHAuthResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{26}
+}
+func (m *PreparePushSSHAuthResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PreparePushSSHAuthResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PreparePushSSHAuthResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PreparePushSSHAuthResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PreparePushSSHAuthResponse.Merge(m, src)
+}
+func (m *PreparePushSSHAuthResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *PreparePushSSHAuthResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_PreparePushSSHAuthResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PreparePushSSHAuthResponse proto.InternalMessageInfo
+
+func (m *PreparePushSSHAuthResponse) GetSocketPath() string {
+	if m != nil {
+		return m.SocketPath
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterEnum("dagger.git.ErrorInfo_ErrorType", ErrorInfo_ErrorType_name, ErrorInfo_ErrorType_value)
+	proto.RegisterEnum("dagger.git.CaptureGitChunk_Kind", CaptureGitChunk_Kind_name, CaptureGitChunk_Kind_value)
+	proto.RegisterType((*ApplyBundleRequest)(nil), "dagger.git.ApplyBundleRequest")
+	proto.RegisterType((*ApplyBundleMetadata)(nil), "dagger.git.ApplyBundleMetadata")
+	proto.RegisterType((*ApplyBundleResponse)(nil), "dagger.git.ApplyBundleResponse")
 	proto.RegisterType((*GitCredentialRequest)(nil), "dagger.git.GitCredentialRequest")
 	proto.RegisterType((*GitCredentialResponse)(nil), "dagger.git.GitCredentialResponse")
 	proto.RegisterType((*CredentialInfo)(nil), "dagger.git.CredentialInfo")
@@ -1151,76 +2063,140 @@ func init() {
 	proto.RegisterType((*PackUncommittedResponse)(nil), "dagger.git.PackUncommittedResponse")
 	proto.RegisterType((*PackUncommittedMetadata)(nil), "dagger.git.PackUncommittedMetadata")
 	proto.RegisterType((*ErrorInfo)(nil), "dagger.git.ErrorInfo")
+	proto.RegisterType((*CaptureGitRequest)(nil), "dagger.git.CaptureGitRequest")
+	proto.RegisterType((*CaptureGitPolicy)(nil), "dagger.git.CaptureGitPolicy")
+	proto.RegisterType((*CaptureGitResponse)(nil), "dagger.git.CaptureGitResponse")
+	proto.RegisterType((*CaptureGitChunk)(nil), "dagger.git.CaptureGitChunk")
+	proto.RegisterType((*CaptureGitMetadata)(nil), "dagger.git.CaptureGitMetadata")
+	proto.RegisterType((*CaptureGitCandidate)(nil), "dagger.git.CaptureGitCandidate")
+	proto.RegisterType((*PreparePushSSHAuthRequest)(nil), "dagger.git.PreparePushSSHAuthRequest")
+	proto.RegisterType((*PreparePushSSHAuthResponse)(nil), "dagger.git.PreparePushSSHAuthResponse")
 }
 
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 1017 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4d, 0x6f, 0xe3, 0x44,
-	0x18, 0xb6, 0xeb, 0xa6, 0x4d, 0xde, 0x7e, 0xb9, 0xd3, 0x76, 0x37, 0x74, 0xc1, 0xcd, 0xba, 0x97,
-	0x15, 0x88, 0x2e, 0xca, 0x72, 0x00, 0x81, 0x90, 0xdc, 0xc4, 0x6d, 0xac, 0x36, 0x4e, 0x70, 0x9c,
-	0x45, 0x5a, 0x21, 0x59, 0x5e, 0x67, 0x92, 0x98, 0x36, 0x76, 0xb0, 0x27, 0xb0, 0x15, 0x42, 0xe2,
-	0x17, 0x20, 0xc4, 0xaf, 0xe0, 0xc4, 0x7f, 0xe0, 0xc6, 0xb1, 0xe2, 0xb4, 0x47, 0x9a, 0x5e, 0x38,
-	0xee, 0x85, 0x3b, 0xf2, 0x78, 0xec, 0x38, 0xe9, 0x07, 0xdb, 0xde, 0xe6, 0xfd, 0x7a, 0xde, 0x8f,
-	0x67, 0xe6, 0xb5, 0xa1, 0xd0, 0x73, 0xc9, 0xde, 0x30, 0xf0, 0x89, 0x8f, 0xa0, 0x63, 0xf7, 0x7a,
-	0x38, 0xd8, 0xeb, 0xb9, 0x44, 0x7e, 0x01, 0x9b, 0x87, 0x2e, 0xa9, 0x04, 0xb8, 0x83, 0x3d, 0xe2,
-	0xda, 0xa7, 0x06, 0xfe, 0x76, 0x84, 0x43, 0x82, 0xb6, 0x21, 0x4f, 0x9d, 0x1d, 0xff, 0xb4, 0xc8,
-	0x97, 0xf8, 0x27, 0x05, 0x23, 0x95, 0x11, 0x82, 0xf9, 0xbe, 0x1f, 0x92, 0xe2, 0x1c, 0xd5, 0xd3,
-	0x73, 0xa4, 0x1b, 0xda, 0xa4, 0x5f, 0x14, 0x62, 0x5d, 0x74, 0x96, 0x7f, 0xe6, 0x61, 0x6b, 0x06,
-	0x3c, 0x1c, 0xfa, 0x5e, 0x88, 0xd1, 0xe7, 0x00, 0x4e, 0xaa, 0xa5, 0xf8, 0x4b, 0xe5, 0xed, 0xbd,
-	0x49, 0x59, 0x7b, 0x93, 0x18, 0xcd, 0xeb, 0xfa, 0x35, 0xce, 0xc8, 0xf8, 0xa3, 0x0f, 0x21, 0x87,
-	0x83, 0xc0, 0x0f, 0x68, 0x01, 0x4b, 0xe5, 0xad, 0x6c, 0xa0, 0x1a, 0x19, 0x58, 0x4c, 0xec, 0xb5,
-	0x9f, 0x87, 0x85, 0x00, 0x87, 0xa3, 0x53, 0x22, 0xbf, 0x82, 0xd5, 0x69, 0xe0, 0x3b, 0xb7, 0xb9,
-	0x0d, 0xf9, 0x51, 0x88, 0x03, 0xcf, 0x1e, 0x60, 0xd6, 0x6a, 0x2a, 0x53, 0x2c, 0x3b, 0x0c, 0xbf,
-	0xf7, 0x83, 0x4e, 0x71, 0x9e, 0x61, 0x31, 0x59, 0x46, 0x20, 0x46, 0x93, 0xf0, 0xbd, 0xae, 0xdb,
-	0x63, 0x23, 0x96, 0x7f, 0x84, 0xf5, 0x8c, 0x8e, 0x4d, 0xe6, 0x29, 0x2c, 0x38, 0x54, 0xc3, 0xa6,
-	0x32, 0xd5, 0x5c, 0xea, 0x5e, 0xe3, 0x0c, 0xe6, 0x76, 0xff, 0x61, 0x28, 0x50, 0x48, 0xf1, 0xd0,
-	0xc7, 0xb0, 0x88, 0x3d, 0x12, 0xb8, 0x38, 0x2c, 0xf2, 0x25, 0x61, 0x96, 0x8d, 0xd4, 0x4f, 0xf5,
-	0x48, 0x70, 0x66, 0x24, 0xae, 0xf2, 0x27, 0xb0, 0x3a, 0x6d, 0x42, 0x22, 0x08, 0x27, 0xf8, 0x8c,
-	0x8d, 0x32, 0x3a, 0xa2, 0x4d, 0xc8, 0x7d, 0x67, 0x9f, 0x8e, 0x30, 0x1b, 0x63, 0x2c, 0xc8, 0x9f,
-	0xc1, 0x66, 0xa5, 0x8f, 0x9d, 0x13, 0x7f, 0x44, 0x5a, 0xc4, 0x26, 0x38, 0xb9, 0x76, 0xbb, 0xb0,
-	0xe2, 0x30, 0xbd, 0x45, 0xef, 0x53, 0x8c, 0xb4, 0x9c, 0x28, 0x9b, 0xd1, 0xbd, 0x1a, 0xc1, 0xd6,
-	0x4c, 0x30, 0x1b, 0xde, 0x2e, 0x2c, 0x87, 0x91, 0xc2, 0xea, 0xb8, 0x3d, 0x1c, 0x92, 0x38, 0xb8,
-	0xc6, 0x19, 0x4b, 0x54, 0x5b, 0xa5, 0xca, 0xfb, 0x0f, 0xcc, 0x83, 0x8d, 0xa6, 0xed, 0x9c, 0x24,
-	0xa9, 0xef, 0x52, 0x32, 0x2a, 0xc3, 0x16, 0x7e, 0x35, 0xc4, 0x0e, 0xc1, 0x1d, 0x6b, 0xaa, 0xc4,
-	0x78, 0x2a, 0x1b, 0x89, 0xb1, 0x35, 0x29, 0x54, 0x1e, 0xc1, 0xe6, 0x74, 0x3e, 0xd6, 0xe5, 0x17,
-	0x90, 0x1f, 0x60, 0x62, 0x77, 0x6c, 0x62, 0xb3, 0x4b, 0x52, 0xca, 0xf6, 0x90, 0x8d, 0xa9, 0x33,
-	0xbf, 0x1a, 0x67, 0xa4, 0x31, 0xe8, 0x01, 0xe4, 0x9c, 0xfe, 0xc8, 0x3b, 0xa1, 0xb9, 0x97, 0xa3,
-	0x4e, 0xa9, 0xb8, 0x9f, 0x03, 0x61, 0x10, 0xf6, 0xe4, 0x3f, 0xf8, 0xe9, 0xbc, 0x09, 0x06, 0x7a,
-	0x07, 0xf2, 0x7d, 0x6c, 0x77, 0xac, 0xb0, 0x6f, 0xb3, 0x1e, 0x17, 0x23, 0xb9, 0xd5, 0x9f, 0x98,
-	0x02, 0xdc, 0x65, 0x1d, 0x51, 0x93, 0x81, 0xbb, 0xd1, 0x78, 0xfc, 0x97, 0xdf, 0x60, 0x87, 0x58,
-	0x5d, 0x3f, 0x18, 0xd8, 0x84, 0x3d, 0x9b, 0xe5, 0x58, 0x79, 0x40, 0x75, 0xe8, 0x83, 0x84, 0x93,
-	0xf9, 0x5b, 0x38, 0x61, 0x8c, 0xa0, 0xc7, 0x33, 0x2c, 0xe7, 0x28, 0x60, 0x96, 0x63, 0xd9, 0x85,
-	0x07, 0x51, 0x0b, 0x6d, 0xcf, 0xf1, 0x07, 0x03, 0x97, 0x10, 0xdc, 0xb9, 0x13, 0x5b, 0xef, 0xc3,
-	0x7a, 0xca, 0x56, 0xda, 0x72, 0xdc, 0xd7, 0x5a, 0x62, 0xa8, 0xc5, 0xad, 0xcb, 0x3f, 0xc0, 0xc3,
-	0x2b, 0xa9, 0x18, 0x51, 0xca, 0x15, 0xa2, 0x76, 0x67, 0x89, 0xca, 0x84, 0xdd, 0x87, 0xab, 0x5f,
-	0xf9, 0x2b, 0xd9, 0xdf, 0x86, 0xae, 0xa7, 0xb0, 0xe1, 0xe1, 0x30, 0xea, 0x2e, 0xc0, 0x43, 0x3f,
-	0x74, 0x89, 0x4f, 0x5f, 0xfe, 0x5c, 0x49, 0x78, 0x52, 0x30, 0x50, 0x6c, 0x32, 0x32, 0x96, 0x09,
-	0x3f, 0xc2, 0xff, 0xf3, 0x23, 0xff, 0x35, 0x07, 0x85, 0x54, 0x89, 0x9e, 0xc1, 0x3c, 0x39, 0x1b,
-	0x62, 0x5a, 0xc2, 0x6a, 0x79, 0xe7, 0xda, 0xc8, 0xf8, 0x64, 0x9e, 0x0d, 0xb1, 0x41, 0x9d, 0x51,
-	0x11, 0x16, 0x07, 0x38, 0x0c, 0xed, 0x5e, 0xb2, 0x36, 0x12, 0x51, 0xfe, 0x97, 0x67, 0xe0, 0x91,
-	0x37, 0x5a, 0x82, 0xc5, 0xb6, 0x7e, 0xa4, 0x37, 0xbe, 0xd2, 0x45, 0x0e, 0x6d, 0xc0, 0x9a, 0xa6,
-	0x3f, 0x57, 0x8e, 0xb5, 0xaa, 0x65, 0xa8, 0x5f, 0xb6, 0xd5, 0x96, 0x29, 0xf2, 0x68, 0x05, 0x0a,
-	0x7a, 0xc3, 0xb4, 0x0e, 0x1a, 0x6d, 0xbd, 0x2a, 0xce, 0x45, 0x01, 0xa6, 0x56, 0x57, 0x1b, 0x6d,
-	0x53, 0x14, 0xd0, 0x0e, 0x3c, 0xaa, 0x18, 0x6a, 0x55, 0xd5, 0x4d, 0x4d, 0x39, 0xb6, 0x0c, 0xd5,
-	0x34, 0x34, 0xf5, 0xb9, 0x72, 0x6c, 0x1d, 0x28, 0xda, 0xb1, 0x5a, 0x15, 0xe7, 0xd1, 0x23, 0x78,
-	0x58, 0x69, 0xe8, 0x07, 0xda, 0xe1, 0x55, 0x63, 0x0e, 0xad, 0xc3, 0x4a, 0x4d, 0x55, 0xaa, 0x56,
-	0x5d, 0x6b, 0xd5, 0x15, 0xb3, 0x52, 0x13, 0x17, 0xd0, 0x2a, 0x40, 0x94, 0x4c, 0xb1, 0x0c, 0xb5,
-	0xd9, 0x10, 0x17, 0xd1, 0x1a, 0x2c, 0x35, 0x95, 0xca, 0x51, 0x12, 0x93, 0x8f, 0x00, 0xdb, 0x7a,
-	0xa5, 0x51, 0xaf, 0x6b, 0xa6, 0xa9, 0x56, 0xad, 0xb6, 0xde, 0x6a, 0x37, 0x9b, 0x0d, 0xc3, 0x54,
-	0xab, 0x62, 0x81, 0x66, 0xab, 0xa9, 0x95, 0xa3, 0x46, 0xdb, 0xb4, 0x5a, 0xa6, 0x62, 0xaa, 0x13,
-	0x68, 0x28, 0xff, 0x2e, 0x80, 0x70, 0xe8, 0x12, 0x64, 0xc2, 0xca, 0x21, 0xce, 0x7c, 0x52, 0x51,
-	0x69, 0x76, 0x51, 0xcf, 0x7e, 0xca, 0xb7, 0x1f, 0xdf, 0xe2, 0xc1, 0x6e, 0x6a, 0x0d, 0x0a, 0x11,
-	0x6a, 0xfc, 0x2d, 0x78, 0xf7, 0xda, 0xd5, 0x9f, 0xa0, 0xbd, 0x77, 0x83, 0x95, 0x21, 0x99, 0xb0,
-	0x32, 0xb5, 0x9b, 0xa7, 0xeb, 0xbb, 0x6e, 0xe7, 0x4f, 0xd7, 0x77, 0xfd, 0x62, 0x6f, 0xc1, 0x72,
-	0x76, 0x25, 0xa1, 0x9d, 0x9b, 0x16, 0x5e, 0x82, 0x59, 0xba, 0xd9, 0x21, 0x86, 0xfc, 0x88, 0x47,
-	0x5f, 0xc3, 0xda, 0xcc, 0xdb, 0x41, 0xf2, 0x2d, 0xef, 0x33, 0x81, 0xde, 0xbd, 0xd5, 0x27, 0x41,
-	0xdf, 0xff, 0xf4, 0xfc, 0x42, 0xe2, 0x5e, 0x5f, 0x48, 0xdc, 0x9b, 0x0b, 0x89, 0xff, 0x69, 0x2c,
-	0xf1, 0xbf, 0x8d, 0x25, 0xfe, 0xcf, 0xb1, 0xc4, 0x9f, 0x8f, 0x25, 0xfe, 0xef, 0xb1, 0xc4, 0xff,
-	0x33, 0x96, 0xb8, 0x37, 0x63, 0x89, 0xff, 0xe5, 0x52, 0xe2, 0xce, 0x2f, 0x25, 0xee, 0xf5, 0xa5,
-	0xc4, 0xbd, 0x10, 0x7a, 0x2e, 0x79, 0xb9, 0x40, 0x7f, 0x41, 0x9e, 0xfd, 0x17, 0x00, 0x00, 0xff,
-	0xff, 0xb4, 0xac, 0x93, 0x11, 0xb3, 0x09, 0x00, 0x00,
+	// 1912 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x58, 0xcd, 0x6f, 0xdb, 0xc8,
+	0x15, 0x17, 0x2d, 0xc9, 0x96, 0x9e, 0x3e, 0x2c, 0x8f, 0x3f, 0x22, 0x3b, 0x6b, 0x59, 0xa1, 0x91,
+	0xac, 0xd1, 0xa2, 0xde, 0xc2, 0x4e, 0xbb, 0xbb, 0x68, 0xb7, 0x80, 0x2c, 0xd3, 0x96, 0x62, 0x5b,
+	0x56, 0x29, 0x2a, 0x0b, 0x2c, 0x0a, 0x10, 0x34, 0x35, 0x96, 0x58, 0x4b, 0xa4, 0x4a, 0x8e, 0x12,
+	0x1b, 0x6d, 0x81, 0xfe, 0x05, 0x45, 0x51, 0xa0, 0xe8, 0xad, 0xe7, 0xbd, 0xf4, 0xd6, 0x43, 0xaf,
+	0xbd, 0xf5, 0x98, 0xe3, 0x1e, 0x1b, 0x07, 0x28, 0x7a, 0xdc, 0x3f, 0xa1, 0x98, 0x0f, 0x52, 0xa4,
+	0x2c, 0x39, 0x71, 0x6e, 0x9c, 0xf7, 0x35, 0xef, 0xcd, 0x9b, 0xf9, 0xbd, 0xf7, 0x08, 0xe9, 0xae,
+	0x45, 0x76, 0x87, 0xae, 0x43, 0x1c, 0x04, 0x1d, 0xa3, 0xdb, 0xc5, 0xee, 0x6e, 0xd7, 0x22, 0xb2,
+	0x0b, 0xa8, 0x32, 0x1c, 0xf6, 0x6f, 0x0e, 0x46, 0x76, 0xa7, 0x8f, 0x55, 0xfc, 0x9b, 0x11, 0xf6,
+	0x08, 0xfa, 0x0a, 0x52, 0x03, 0x4c, 0x8c, 0x8e, 0x41, 0x8c, 0xa2, 0x54, 0x96, 0x76, 0x32, 0x7b,
+	0x5b, 0xbb, 0x63, 0xa5, 0xdd, 0x90, 0xc6, 0x99, 0x10, 0xab, 0xc5, 0xd4, 0x40, 0x05, 0xad, 0x41,
+	0xd2, 0xec, 0x8d, 0xec, 0xab, 0xe2, 0x5c, 0x59, 0xda, 0xc9, 0xd6, 0x62, 0x2a, 0x5f, 0x1e, 0x24,
+	0x21, 0x3e, 0xf0, 0xba, 0xf2, 0x7f, 0x25, 0x58, 0x9e, 0x62, 0x02, 0x6d, 0x43, 0xce, 0xec, 0x61,
+	0xf3, 0xca, 0x19, 0x11, 0x7d, 0x68, 0x90, 0x1e, 0xdb, 0x3a, 0xad, 0x66, 0x7d, 0x62, 0xd3, 0x20,
+	0x3d, 0xb4, 0x09, 0x40, 0x0c, 0xb7, 0x8b, 0x89, 0xee, 0xf5, 0x0c, 0xb6, 0x41, 0x5a, 0x4d, 0x73,
+	0x4a, 0xab, 0x67, 0xa0, 0x3d, 0x58, 0xc5, 0xd7, 0x43, 0x6c, 0x12, 0xdc, 0xd1, 0x3d, 0x62, 0x10,
+	0xac, 0x77, 0xac, 0x2e, 0xf6, 0x48, 0x31, 0xce, 0x24, 0x97, 0x7d, 0x66, 0x8b, 0xf2, 0x0e, 0x19,
+	0x8b, 0x9a, 0xbc, 0x60, 0x9e, 0xe8, 0x2e, 0xbe, 0x2c, 0x26, 0xb8, 0xc9, 0x0b, 0x71, 0x20, 0x97,
+	0xe8, 0x0b, 0x28, 0x5a, 0x36, 0xc1, 0x5d, 0xd7, 0x20, 0x96, 0x63, 0xeb, 0xaf, 0x1d, 0xf7, 0x8a,
+	0xb8, 0x18, 0xb3, 0xfd, 0x93, 0x4c, 0x78, 0x2d, 0xc4, 0xff, 0x5a, 0xb0, 0x5b, 0x3d, 0x43, 0xfe,
+	0x5d, 0x24, 0x4e, 0x15, 0x7b, 0x43, 0xc7, 0xf6, 0x30, 0x5a, 0x87, 0x54, 0x0f, 0x1b, 0x1d, 0x66,
+	0x80, 0x87, 0xb8, 0x40, 0xd7, 0xd4, 0xfd, 0x4d, 0x80, 0xa1, 0xe1, 0x5e, 0xe1, 0x0e, 0x73, 0x45,
+	0x44, 0xc7, 0x29, 0xd4, 0x95, 0x1f, 0x42, 0x12, 0xbb, 0xae, 0xe3, 0xb2, 0x68, 0x32, 0x7b, 0xab,
+	0xe1, 0xa4, 0x28, 0x94, 0x51, 0xb7, 0x2f, 0x1d, 0x95, 0xcb, 0xc8, 0xdf, 0xc0, 0xca, 0xb1, 0x45,
+	0xaa, 0x2e, 0xee, 0x60, 0x9b, 0x58, 0x46, 0xdf, 0x4f, 0xee, 0x06, 0xa4, 0xd8, 0x3d, 0x30, 0x9d,
+	0xbe, 0xd8, 0x3e, 0x58, 0x23, 0x04, 0x89, 0x9e, 0xe3, 0x11, 0xb1, 0x33, 0xfb, 0xa6, 0x34, 0x96,
+	0x0d, 0x7e, 0x82, 0xec, 0x5b, 0xfe, 0xa3, 0x04, 0xab, 0x13, 0xc6, 0x45, 0x70, 0x3f, 0x07, 0x30,
+	0x03, 0xaa, 0xb8, 0x3c, 0x1b, 0x61, 0x3f, 0xc7, 0x3a, 0xd4, 0xd9, 0x5a, 0x4c, 0x0d, 0xc9, 0xa3,
+	0x1f, 0xf9, 0x01, 0xce, 0xdd, 0x13, 0x20, 0xbd, 0x50, 0x4c, 0xea, 0x20, 0x05, 0xf3, 0x2e, 0xf6,
+	0x46, 0x7d, 0x22, 0x5f, 0x43, 0x3e, 0x6a, 0xf8, 0xc1, 0x61, 0x6e, 0x40, 0x6a, 0xe4, 0x61, 0xd7,
+	0x36, 0x06, 0x58, 0x84, 0x1a, 0xac, 0x99, 0x2d, 0xc3, 0xf3, 0x5e, 0x3b, 0x6e, 0x47, 0xdc, 0x8f,
+	0x60, 0x2d, 0x7f, 0x0e, 0x05, 0x7a, 0x12, 0x8e, 0x7d, 0x69, 0x75, 0xfd, 0x23, 0xfe, 0x90, 0x9b,
+	0x2c, 0xff, 0x1e, 0x96, 0x42, 0x8a, 0xe2, 0xf8, 0x3e, 0x83, 0x79, 0x93, 0x51, 0xc4, 0xd1, 0x45,
+	0x4e, 0x20, 0x10, 0xaf, 0xc5, 0x54, 0x21, 0xf6, 0xf1, 0x27, 0x56, 0x81, 0x74, 0x60, 0x0f, 0x3d,
+	0x87, 0x05, 0x6c, 0x13, 0xd7, 0xc2, 0x5e, 0x51, 0x2a, 0xc7, 0x27, 0x53, 0x16, 0xc8, 0x29, 0x36,
+	0x71, 0x6f, 0x54, 0x5f, 0x54, 0xfe, 0x02, 0xf2, 0x51, 0x16, 0x2a, 0x40, 0xfc, 0x0a, 0xdf, 0x88,
+	0x70, 0xe9, 0x27, 0x5a, 0x81, 0xe4, 0x2b, 0xa3, 0x3f, 0xc2, 0xe2, 0xac, 0xf9, 0x42, 0xfe, 0x19,
+	0xac, 0x54, 0xc5, 0x59, 0xb0, 0x97, 0xf8, 0xa0, 0x83, 0x1b, 0xc1, 0xea, 0x84, 0xb2, 0x38, 0xbc,
+	0x6d, 0xc8, 0x46, 0xde, 0x3c, 0x53, 0xae, 0xc5, 0xd4, 0x8c, 0x17, 0x7a, 0xed, 0x1f, 0x7d, 0x60,
+	0x36, 0x2c, 0x37, 0x0d, 0xf3, 0xca, 0xdf, 0xfa, 0x21, 0x2e, 0xcf, 0x86, 0xa5, 0xb9, 0x99, 0xb0,
+	0x24, 0x8f, 0x60, 0x25, 0xba, 0x9f, 0x88, 0xf2, 0x17, 0x77, 0xc0, 0xb9, 0x1c, 0x8e, 0x21, 0xac,
+	0xf3, 0x31, 0xe8, 0xfc, 0x2f, 0x29, 0xba, 0x6f, 0x00, 0xcf, 0xf7, 0xc0, 0x96, 0xcf, 0x1a, 0x83,
+	0x16, 0x63, 0x51, 0xc8, 0xda, 0x86, 0x9c, 0x73, 0xf1, 0x6b, 0x6c, 0x12, 0xfd, 0xd2, 0x71, 0x07,
+	0x86, 0x0f, 0xc4, 0x59, 0x4e, 0x3c, 0x62, 0xb4, 0x31, 0xae, 0x25, 0xde, 0x8f, 0x6b, 0xe8, 0xc9,
+	0x44, 0x96, 0x39, 0x06, 0x87, 0x73, 0x2c, 0x5b, 0xb0, 0x46, 0x43, 0x68, 0xdb, 0xa6, 0x33, 0x18,
+	0x58, 0x84, 0x50, 0xf4, 0x7c, 0x40, 0xb6, 0x7e, 0x00, 0x4b, 0x41, 0xb6, 0x82, 0x90, 0x79, 0x5c,
+	0x8b, 0x3e, 0xa3, 0xc6, 0x43, 0x97, 0x7f, 0x0b, 0x8f, 0xee, 0x6c, 0x25, 0x12, 0x55, 0xb9, 0x93,
+	0xa8, 0xed, 0xc9, 0x44, 0x85, 0xd4, 0x3e, 0x26, 0x57, 0x7f, 0x96, 0xee, 0xec, 0xfe, 0x21, 0xe9,
+	0xfa, 0x0c, 0x96, 0x6d, 0xec, 0x11, 0x56, 0x65, 0x86, 0x8e, 0x67, 0x11, 0x87, 0xbd, 0xfc, 0xb9,
+	0x72, 0x7c, 0x27, 0xad, 0x22, 0xce, 0x52, 0x43, 0x9c, 0x87, 0xd5, 0x9d, 0xbf, 0xc4, 0x21, 0x1d,
+	0x10, 0xd1, 0x3e, 0x24, 0xc8, 0xcd, 0x10, 0x33, 0x17, 0xf2, 0xd1, 0x36, 0x22, 0x10, 0xe2, 0x5f,
+	0xda, 0xcd, 0x10, 0xab, 0x4c, 0x18, 0x15, 0x61, 0x61, 0x80, 0x3d, 0xcf, 0xe8, 0xfa, 0xb0, 0xe1,
+	0x2f, 0xe5, 0x7f, 0xce, 0x09, 0xe3, 0x54, 0x1a, 0x65, 0x60, 0xa1, 0xdd, 0x38, 0x69, 0x9c, 0x7f,
+	0xdd, 0x28, 0xc4, 0xd0, 0x32, 0x2c, 0xd6, 0x1b, 0x2f, 0x2b, 0xa7, 0xf5, 0x43, 0x5d, 0x55, 0x7e,
+	0xd9, 0x56, 0x5a, 0x5a, 0x41, 0x42, 0x39, 0x48, 0x37, 0xce, 0x35, 0xfd, 0xe8, 0xbc, 0xdd, 0x38,
+	0x2c, 0xcc, 0x51, 0x05, 0xad, 0x7e, 0xa6, 0x9c, 0xb7, 0xb5, 0x42, 0x1c, 0x6d, 0xc1, 0xe3, 0xaa,
+	0xaa, 0x1c, 0x2a, 0x0d, 0xad, 0x5e, 0x39, 0xd5, 0x55, 0x45, 0x53, 0xeb, 0xca, 0xcb, 0xca, 0xa9,
+	0x7e, 0x54, 0xa9, 0x9f, 0x2a, 0x87, 0x85, 0x04, 0x7a, 0x0c, 0x8f, 0xaa, 0xe7, 0x8d, 0xa3, 0xfa,
+	0xf1, 0x5d, 0x66, 0x12, 0x2d, 0x41, 0xae, 0xa6, 0x54, 0x0e, 0xf5, 0xb3, 0x7a, 0xeb, 0xac, 0xa2,
+	0x55, 0x6b, 0x85, 0x79, 0x94, 0x07, 0xa0, 0x9b, 0x55, 0x74, 0x55, 0x69, 0x9e, 0x17, 0x16, 0xd0,
+	0x22, 0x64, 0x9a, 0x95, 0xea, 0x89, 0xaf, 0x93, 0xa2, 0x06, 0xdb, 0x8d, 0xea, 0xf9, 0xd9, 0x59,
+	0x5d, 0xd3, 0x94, 0x43, 0xbd, 0xdd, 0x68, 0xb5, 0x9b, 0xcd, 0x73, 0x55, 0x53, 0x0e, 0x0b, 0x69,
+	0xb6, 0x5b, 0x4d, 0xa9, 0x9e, 0x9c, 0xb7, 0x35, 0xbd, 0xa5, 0x55, 0x34, 0x65, 0x6c, 0x1a, 0xd0,
+	0x0a, 0x14, 0xaa, 0x95, 0xa6, 0xd6, 0x56, 0x15, 0x5d, 0x55, 0x5e, 0x28, 0x55, 0xaa, 0x92, 0x41,
+	0x08, 0xf2, 0x3e, 0x55, 0xec, 0x91, 0x45, 0x8f, 0x60, 0xd9, 0xa7, 0x85, 0xed, 0xe7, 0x64, 0x1b,
+	0x96, 0xaa, 0xc6, 0x90, 0x8c, 0x5c, 0x7c, 0x6c, 0x3d, 0x0c, 0xbd, 0x9e, 0xc3, 0xfc, 0xd0, 0xe9,
+	0x5b, 0xe6, 0x8d, 0xc0, 0xcc, 0x4f, 0x22, 0xf5, 0x3c, 0xb0, 0xd9, 0x64, 0x32, 0xaa, 0x90, 0x95,
+	0xff, 0x1a, 0x87, 0xc2, 0x24, 0x93, 0x66, 0xd6, 0xb2, 0xcd, 0xfe, 0xa8, 0x83, 0x59, 0xa1, 0x49,
+	0xab, 0xfe, 0x92, 0x72, 0xf0, 0x35, 0xe7, 0xf0, 0x8b, 0xe8, 0x2f, 0xd1, 0xa7, 0xb0, 0x68, 0x0c,
+	0x87, 0xae, 0xf3, 0xca, 0xe8, 0xeb, 0xc4, 0xb9, 0xc2, 0xb6, 0x57, 0x8c, 0x33, 0x89, 0xbc, 0x4f,
+	0xd6, 0x18, 0x15, 0x7d, 0x0e, 0xc5, 0x81, 0x71, 0xad, 0x8f, 0x6c, 0xe2, 0x1a, 0x26, 0x6d, 0xa2,
+	0x2e, 0xad, 0x3e, 0xd6, 0x2f, 0x6e, 0x08, 0xf6, 0x18, 0xb2, 0xc4, 0xd5, 0xd5, 0x81, 0x71, 0xdd,
+	0xf6, 0xd9, 0x47, 0x56, 0x1f, 0x1f, 0x50, 0x26, 0xfa, 0x12, 0xd6, 0xa3, 0x8a, 0xc4, 0x21, 0x46,
+	0x5f, 0x68, 0x26, 0x99, 0xe6, 0x5a, 0x58, 0x53, 0xa3, 0x6c, 0xae, 0xba, 0x0b, 0xcb, 0x77, 0xf7,
+	0xf4, 0x8a, 0xf3, 0x65, 0x69, 0x27, 0xa9, 0x2e, 0x4d, 0x6e, 0xe7, 0xa1, 0x7d, 0xa0, 0x96, 0xf4,
+	0x29, 0x1e, 0x2e, 0xb0, 0x7d, 0xa8, 0x35, 0x6d, 0xd2, 0xbf, 0x67, 0xb0, 0xc8, 0x94, 0x42, 0x5e,
+	0xa5, 0x98, 0x74, 0x8e, 0x4a, 0x8f, 0x9d, 0x79, 0x0a, 0xf9, 0x8e, 0xeb, 0x0c, 0xc7, 0xde, 0x14,
+	0xd3, 0x65, 0x69, 0x27, 0xa5, 0xe6, 0x28, 0x35, 0x70, 0x84, 0x76, 0x6f, 0x28, 0x7c, 0x15, 0x82,
+	0xd6, 0x6d, 0x12, 0xaf, 0x4a, 0xd3, 0x13, 0x3d, 0x15, 0xaa, 0xf6, 0xc3, 0x50, 0x95, 0xd9, 0x7b,
+	0x3c, 0x5d, 0xb5, 0x4a, 0x45, 0xee, 0xe0, 0xd8, 0xdf, 0x24, 0x58, 0x9c, 0x90, 0x41, 0xcf, 0x21,
+	0x71, 0x65, 0xd9, 0x1d, 0x01, 0x1c, 0xe5, 0x7b, 0xcc, 0xed, 0x9e, 0x58, 0x76, 0x47, 0x65, 0xd2,
+	0xb4, 0xb3, 0x63, 0xfe, 0x33, 0xbc, 0x54, 0xd9, 0xb7, 0x5c, 0x81, 0x04, 0x95, 0x40, 0xeb, 0xb0,
+	0xea, 0xbf, 0x8c, 0x6a, 0xad, 0xdd, 0x38, 0xd1, 0xc7, 0xd8, 0x51, 0x84, 0x95, 0x28, 0xeb, 0xa0,
+	0xdd, 0x38, 0x3c, 0x55, 0x0a, 0x92, 0x9c, 0x48, 0xcd, 0x15, 0xe6, 0xe4, 0xbf, 0x27, 0xc3, 0x27,
+	0x16, 0x60, 0xec, 0x53, 0xc8, 0xf3, 0xaa, 0xa6, 0xbf, 0xc2, 0xae, 0x67, 0x39, 0x36, 0xf3, 0x36,
+	0xa7, 0xe6, 0x38, 0xf5, 0x25, 0x27, 0xde, 0xad, 0x81, 0x73, 0x53, 0x6a, 0xe0, 0x26, 0x80, 0x8b,
+	0x07, 0x0e, 0xc1, 0xfa, 0xc8, 0xed, 0x8b, 0x2a, 0x99, 0xe6, 0x94, 0xb6, 0xdb, 0x0f, 0xb1, 0x43,
+	0x43, 0x0a, 0xa7, 0xd0, 0x32, 0xbb, 0x0e, 0xa9, 0x0b, 0xc3, 0x0b, 0x0f, 0x25, 0x0b, 0x74, 0x1d,
+	0x2e, 0xce, 0x94, 0x35, 0x1f, 0x2d, 0x04, 0xdb, 0x90, 0x13, 0x93, 0x8f, 0xd7, 0x33, 0xf6, 0x7e,
+	0xf2, 0x53, 0x76, 0xab, 0xd2, 0x6a, 0x96, 0x13, 0x5b, 0x8c, 0x46, 0xeb, 0xad, 0x10, 0xe2, 0x37,
+	0x2f, 0xcd, 0x6e, 0x5e, 0x86, 0xd3, 0xf8, 0xbd, 0x7b, 0x02, 0xd9, 0xc8, 0x58, 0x04, 0xbc, 0x24,
+	0xbf, 0x1e, 0xcf, 0x42, 0x74, 0xab, 0xe8, 0x0b, 0xc9, 0xb2, 0x17, 0x92, 0x8d, 0x3c, 0x8e, 0x4f,
+	0x61, 0x71, 0xf2, 0x21, 0xe5, 0x98, 0x58, 0x7e, 0x14, 0x7d, 0x45, 0x4f, 0x21, 0xef, 0xe1, 0x3e,
+	0xaf, 0xd0, 0xdc, 0xab, 0x3c, 0x7f, 0x0f, 0x3e, 0x95, 0xfb, 0x15, 0xd4, 0xad, 0xc5, 0x0f, 0xe8,
+	0x2b, 0x9a, 0xb0, 0x1c, 0xc0, 0x8c, 0x69, 0xd8, 0x1d, 0xab, 0x63, 0x50, 0xc3, 0x05, 0xd6, 0x0f,
+	0x6f, 0xcd, 0xb8, 0x7f, 0xbe, 0x9c, 0x8a, 0x7c, 0xdd, 0x80, 0xe4, 0xd1, 0xae, 0x2f, 0x00, 0xd7,
+	0x48, 0xcb, 0xb2, 0xc4, 0xbb, 0x3e, 0x33, 0xdc, 0xc5, 0x8a, 0xf6, 0x74, 0x07, 0x0a, 0x22, 0xcf,
+	0xc3, 0x91, 0xd7, 0xa3, 0x77, 0xc1, 0x2b, 0x22, 0x8e, 0x76, 0x9c, 0xde, 0x1c, 0x79, 0xbd, 0xb6,
+	0xdb, 0xf7, 0x5e, 0x24, 0x52, 0x0b, 0x85, 0xd4, 0x8b, 0x44, 0x2a, 0x53, 0xc8, 0xaa, 0xf9, 0xe0,
+	0xf8, 0xd9, 0x69, 0xc8, 0xdf, 0x4a, 0xb0, 0x3c, 0xc5, 0xcb, 0x60, 0x96, 0x93, 0xc6, 0xb3, 0x1c,
+	0x7a, 0x06, 0x79, 0xb3, 0x6f, 0x78, 0x9e, 0x75, 0x69, 0x99, 0x6c, 0x84, 0x15, 0xd7, 0x73, 0x82,
+	0x4a, 0x01, 0xda, 0x47, 0x95, 0x38, 0x43, 0x15, 0x7f, 0x49, 0x7b, 0xfc, 0x30, 0xc8, 0xf2, 0x05,
+	0xcd, 0x51, 0x14, 0xb6, 0xc5, 0xc5, 0xcc, 0x45, 0x50, 0x5b, 0xde, 0x87, 0xf5, 0xa6, 0x8b, 0x87,
+	0x86, 0xcb, 0x22, 0x6b, 0xb5, 0x6a, 0x95, 0x11, 0xe9, 0xf9, 0xe5, 0x69, 0x8d, 0x76, 0xdf, 0x34,
+	0x6a, 0xe1, 0xb1, 0x58, 0xc9, 0x5f, 0xc1, 0xc6, 0x34, 0x25, 0x01, 0x64, 0x5b, 0x90, 0xf1, 0x1c,
+	0xf3, 0x0a, 0x47, 0x4a, 0x1a, 0x70, 0x12, 0x2d, 0x68, 0x7b, 0xff, 0x48, 0x42, 0xfc, 0xd8, 0x22,
+	0xc8, 0x04, 0x74, 0xd7, 0x0c, 0x7a, 0x1a, 0xe9, 0xd2, 0x66, 0xf9, 0xb6, 0xf1, 0xec, 0x7d, 0x62,
+	0xc2, 0x1b, 0x0d, 0x72, 0xc7, 0x38, 0x34, 0x2a, 0xa3, 0xf2, 0xe4, 0x6c, 0x35, 0x39, 0xa2, 0x6f,
+	0x3c, 0xb9, 0x47, 0x42, 0x58, 0xad, 0x41, 0x9a, 0x5a, 0xe5, 0xe3, 0xdb, 0x27, 0x53, 0xa7, 0x35,
+	0xdf, 0xda, 0xe6, 0x0c, 0xee, 0xd8, 0xbf, 0xc8, 0x38, 0x15, 0xf5, 0x6f, 0xda, 0x98, 0x16, 0xf5,
+	0x6f, 0xfa, 0x2c, 0xd6, 0x82, 0x6c, 0x78, 0x8a, 0x40, 0x5b, 0xb3, 0x66, 0x14, 0xdf, 0x66, 0x79,
+	0xb6, 0x00, 0x37, 0xf9, 0x63, 0x09, 0xfd, 0x0a, 0x16, 0x27, 0xda, 0x5d, 0x24, 0xdf, 0xd3, 0x52,
+	0xfb, 0xa6, 0xb7, 0xef, 0x95, 0x09, 0xac, 0x9f, 0x01, 0x8c, 0xdf, 0x0c, 0xda, 0x9c, 0xfe, 0xe2,
+	0x7d, 0x9b, 0xa5, 0x59, 0xec, 0xc0, 0x5c, 0x13, 0x32, 0xa1, 0xbf, 0x3f, 0xa8, 0x34, 0xe3, 0x0f,
+	0x9a, 0x6f, 0x70, 0x6b, 0x26, 0x9f, 0x5b, 0xdc, 0x91, 0x0e, 0xbe, 0x7c, 0xf3, 0xb6, 0x14, 0xfb,
+	0xee, 0x6d, 0x29, 0xf6, 0xfd, 0xdb, 0x92, 0xf4, 0x87, 0xdb, 0x92, 0xf4, 0xed, 0x6d, 0x49, 0xfa,
+	0xf7, 0x6d, 0x49, 0x7a, 0x73, 0x5b, 0x92, 0xfe, 0x73, 0x5b, 0x92, 0xfe, 0x77, 0x5b, 0x8a, 0x7d,
+	0x7f, 0x5b, 0x92, 0xfe, 0xf4, 0xae, 0x14, 0x7b, 0xf3, 0xae, 0x14, 0xfb, 0xee, 0x5d, 0x29, 0xf6,
+	0x4d, 0xbc, 0x6b, 0x91, 0x8b, 0x79, 0xf6, 0xef, 0x63, 0xff, 0xff, 0x01, 0x00, 0x00, 0xff, 0xff,
+	0x27, 0xac, 0xc3, 0x89, 0x07, 0x14, 0x00, 0x00,
 }
 
 func (x ErrorInfo_ErrorType) String() string {
@@ -1229,6 +2205,157 @@ func (x ErrorInfo_ErrorType) String() string {
 		return s
 	}
 	return strconv.Itoa(int(x))
+}
+func (x CaptureGitChunk_Kind) String() string {
+	s, ok := CaptureGitChunk_Kind_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
+func (this *ApplyBundleRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApplyBundleRequest)
+	if !ok {
+		that2, ok := that.(ApplyBundleRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *ApplyBundleRequest_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApplyBundleRequest_Metadata)
+	if !ok {
+		that2, ok := that.(ApplyBundleRequest_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *ApplyBundleRequest_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApplyBundleRequest_Chunk)
+	if !ok {
+		that2, ok := that.(ApplyBundleRequest_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *ApplyBundleMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApplyBundleMetadata)
+	if !ok {
+		that2, ok := that.(ApplyBundleMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
+		return false
+	}
+	if this.TargetSha != that1.TargetSha {
+		return false
+	}
+	if this.ExpectedStateDigest != that1.ExpectedStateDigest {
+		return false
+	}
+	if this.BundleRef != that1.BundleRef {
+		return false
+	}
+	if this.IntegrationWorktreeSha != that1.IntegrationWorktreeSha {
+		return false
+	}
+	return true
+}
+func (this *ApplyBundleResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApplyBundleResponse)
+	if !ok {
+		that2, ok := that.(ApplyBundleResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.HeadSha != that1.HeadSha {
+		return false
+	}
+	if this.ParkedRef != that1.ParkedRef {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	return true
 }
 func (this *GitCredentialRequest) Equal(that interface{}) bool {
 	if that == nil {
@@ -1388,6 +2515,9 @@ func (this *GitConfigRequest) Equal(that interface{}) bool {
 	if that1 == nil {
 		return this == nil
 	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
 		return false
 	}
 	return true
@@ -1936,6 +3066,420 @@ func (this *ErrorInfo) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *CaptureGitRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitRequest)
+	if !ok {
+		that2, ok := that.(CaptureGitRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
+		return false
+	}
+	if !this.Policy.Equal(that1.Policy) {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitPolicy) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitPolicy)
+	if !ok {
+		that2, ok := that.(CaptureGitPolicy)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Include) != len(that1.Include) {
+		return false
+	}
+	for i := range this.Include {
+		if this.Include[i] != that1.Include[i] {
+			return false
+		}
+	}
+	if len(this.Exclude) != len(that1.Exclude) {
+		return false
+	}
+	for i := range this.Exclude {
+		if this.Exclude[i] != that1.Exclude[i] {
+			return false
+		}
+	}
+	if len(this.ApprovalTokens) != len(that1.ApprovalTokens) {
+		return false
+	}
+	for i := range this.ApprovalTokens {
+		if this.ApprovalTokens[i] != that1.ApprovalTokens[i] {
+			return false
+		}
+	}
+	if this.MaxUntrackedFileBytes != that1.MaxUntrackedFileBytes {
+		return false
+	}
+	if this.MaxUntrackedTotalBytes != that1.MaxUntrackedTotalBytes {
+		return false
+	}
+	if this.MaxUntrackedFiles != that1.MaxUntrackedFiles {
+		return false
+	}
+	if this.MaxTrackedFileBytes != that1.MaxTrackedFileBytes {
+		return false
+	}
+	if this.MaxTotalBytes != that1.MaxTotalBytes {
+		return false
+	}
+	if this.DropUntracked != that1.DropUntracked {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitResponse)
+	if !ok {
+		that2, ok := that.(CaptureGitResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitResponse_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitResponse_Metadata)
+	if !ok {
+		that2, ok := that.(CaptureGitResponse_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitResponse_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitResponse_Chunk)
+	if !ok {
+		that2, ok := that.(CaptureGitResponse_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Chunk.Equal(that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitChunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitChunk)
+	if !ok {
+		that2, ok := that.(CaptureGitChunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Kind != that1.Kind {
+		return false
+	}
+	if !bytes.Equal(this.Data, that1.Data) {
+		return false
+	}
+	return true
+}
+func (this *CaptureGitMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitMetadata)
+	if !ok {
+		that2, ok := that.(CaptureGitMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.FormatVersion != that1.FormatVersion {
+		return false
+	}
+	if this.ObjectFormat != that1.ObjectFormat {
+		return false
+	}
+	if this.RemoteUrl != that1.RemoteUrl {
+		return false
+	}
+	if this.RemoteRef != that1.RemoteRef {
+		return false
+	}
+	if this.BaseSha != that1.BaseSha {
+		return false
+	}
+	if this.HeadSha != that1.HeadSha {
+		return false
+	}
+	if this.BundleSha256 != that1.BundleSha256 {
+		return false
+	}
+	if this.BundleBytes != that1.BundleBytes {
+		return false
+	}
+	if this.WorktreeSha != that1.WorktreeSha {
+		return false
+	}
+	if this.TrackedFiles != that1.TrackedFiles {
+		return false
+	}
+	if this.UntrackedFiles != that1.UntrackedFiles {
+		return false
+	}
+	if this.SelectedBytes != that1.SelectedBytes {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	if len(this.ApprovalCandidates) != len(that1.ApprovalCandidates) {
+		return false
+	}
+	for i := range this.ApprovalCandidates {
+		if !this.ApprovalCandidates[i].Equal(that1.ApprovalCandidates[i]) {
+			return false
+		}
+	}
+	if this.CheckoutStateDigest != that1.CheckoutStateDigest {
+		return false
+	}
+	if len(this.RemotePushUrls) != len(that1.RemotePushUrls) {
+		return false
+	}
+	for i := range this.RemotePushUrls {
+		if this.RemotePushUrls[i] != that1.RemotePushUrls[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *CaptureGitCandidate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CaptureGitCandidate)
+	if !ok {
+		that2, ok := that.(CaptureGitCandidate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Path != that1.Path {
+		return false
+	}
+	if this.Classification != that1.Classification {
+		return false
+	}
+	if this.Tracked != that1.Tracked {
+		return false
+	}
+	if this.Bytes != that1.Bytes {
+		return false
+	}
+	if this.ApprovalToken != that1.ApprovalToken {
+		return false
+	}
+	return true
+}
+func (this *PreparePushSSHAuthRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PreparePushSSHAuthRequest)
+	if !ok {
+		that2, ok := that.(PreparePushSSHAuthRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Remote != that1.Remote {
+		return false
+	}
+	return true
+}
+func (this *PreparePushSSHAuthResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PreparePushSSHAuthResponse)
+	if !ok {
+		that2, ok := that.(PreparePushSSHAuthResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SocketPath != that1.SocketPath {
+		return false
+	}
+	return true
+}
+func (this *ApplyBundleRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.ApplyBundleRequest{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ApplyBundleRequest_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.ApplyBundleRequest_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *ApplyBundleRequest_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.ApplyBundleRequest_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *ApplyBundleMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&git.ApplyBundleMetadata{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
+	s = append(s, "TargetSha: "+fmt.Sprintf("%#v", this.TargetSha)+",\n")
+	s = append(s, "ExpectedStateDigest: "+fmt.Sprintf("%#v", this.ExpectedStateDigest)+",\n")
+	s = append(s, "BundleRef: "+fmt.Sprintf("%#v", this.BundleRef)+",\n")
+	s = append(s, "IntegrationWorktreeSha: "+fmt.Sprintf("%#v", this.IntegrationWorktreeSha)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ApplyBundleResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&git.ApplyBundleResponse{")
+	s = append(s, "HeadSha: "+fmt.Sprintf("%#v", this.HeadSha)+",\n")
+	s = append(s, "ParkedRef: "+fmt.Sprintf("%#v", this.ParkedRef)+",\n")
+	if this.Error != nil {
+		s = append(s, "Error: "+fmt.Sprintf("%#v", this.Error)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *GitCredentialRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -1993,8 +3537,9 @@ func (this *GitConfigRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 4)
+	s := make([]string, 0, 5)
 	s = append(s, "&git.GitConfigRequest{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -2206,6 +3751,139 @@ func (this *ErrorInfo) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *CaptureGitRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.CaptureGitRequest{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
+	if this.Policy != nil {
+		s = append(s, "Policy: "+fmt.Sprintf("%#v", this.Policy)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *CaptureGitPolicy) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 13)
+	s = append(s, "&git.CaptureGitPolicy{")
+	s = append(s, "Include: "+fmt.Sprintf("%#v", this.Include)+",\n")
+	s = append(s, "Exclude: "+fmt.Sprintf("%#v", this.Exclude)+",\n")
+	s = append(s, "ApprovalTokens: "+fmt.Sprintf("%#v", this.ApprovalTokens)+",\n")
+	s = append(s, "MaxUntrackedFileBytes: "+fmt.Sprintf("%#v", this.MaxUntrackedFileBytes)+",\n")
+	s = append(s, "MaxUntrackedTotalBytes: "+fmt.Sprintf("%#v", this.MaxUntrackedTotalBytes)+",\n")
+	s = append(s, "MaxUntrackedFiles: "+fmt.Sprintf("%#v", this.MaxUntrackedFiles)+",\n")
+	s = append(s, "MaxTrackedFileBytes: "+fmt.Sprintf("%#v", this.MaxTrackedFileBytes)+",\n")
+	s = append(s, "MaxTotalBytes: "+fmt.Sprintf("%#v", this.MaxTotalBytes)+",\n")
+	s = append(s, "DropUntracked: "+fmt.Sprintf("%#v", this.DropUntracked)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *CaptureGitResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.CaptureGitResponse{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *CaptureGitResponse_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.CaptureGitResponse_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *CaptureGitResponse_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.CaptureGitResponse_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *CaptureGitChunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.CaptureGitChunk{")
+	s = append(s, "Kind: "+fmt.Sprintf("%#v", this.Kind)+",\n")
+	s = append(s, "Data: "+fmt.Sprintf("%#v", this.Data)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *CaptureGitMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 20)
+	s = append(s, "&git.CaptureGitMetadata{")
+	s = append(s, "FormatVersion: "+fmt.Sprintf("%#v", this.FormatVersion)+",\n")
+	s = append(s, "ObjectFormat: "+fmt.Sprintf("%#v", this.ObjectFormat)+",\n")
+	s = append(s, "RemoteUrl: "+fmt.Sprintf("%#v", this.RemoteUrl)+",\n")
+	s = append(s, "RemoteRef: "+fmt.Sprintf("%#v", this.RemoteRef)+",\n")
+	s = append(s, "BaseSha: "+fmt.Sprintf("%#v", this.BaseSha)+",\n")
+	s = append(s, "HeadSha: "+fmt.Sprintf("%#v", this.HeadSha)+",\n")
+	s = append(s, "BundleSha256: "+fmt.Sprintf("%#v", this.BundleSha256)+",\n")
+	s = append(s, "BundleBytes: "+fmt.Sprintf("%#v", this.BundleBytes)+",\n")
+	s = append(s, "WorktreeSha: "+fmt.Sprintf("%#v", this.WorktreeSha)+",\n")
+	s = append(s, "TrackedFiles: "+fmt.Sprintf("%#v", this.TrackedFiles)+",\n")
+	s = append(s, "UntrackedFiles: "+fmt.Sprintf("%#v", this.UntrackedFiles)+",\n")
+	s = append(s, "SelectedBytes: "+fmt.Sprintf("%#v", this.SelectedBytes)+",\n")
+	if this.Error != nil {
+		s = append(s, "Error: "+fmt.Sprintf("%#v", this.Error)+",\n")
+	}
+	if this.ApprovalCandidates != nil {
+		s = append(s, "ApprovalCandidates: "+fmt.Sprintf("%#v", this.ApprovalCandidates)+",\n")
+	}
+	s = append(s, "CheckoutStateDigest: "+fmt.Sprintf("%#v", this.CheckoutStateDigest)+",\n")
+	s = append(s, "RemotePushUrls: "+fmt.Sprintf("%#v", this.RemotePushUrls)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *CaptureGitCandidate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&git.CaptureGitCandidate{")
+	s = append(s, "Path: "+fmt.Sprintf("%#v", this.Path)+",\n")
+	s = append(s, "Classification: "+fmt.Sprintf("%#v", this.Classification)+",\n")
+	s = append(s, "Tracked: "+fmt.Sprintf("%#v", this.Tracked)+",\n")
+	s = append(s, "Bytes: "+fmt.Sprintf("%#v", this.Bytes)+",\n")
+	s = append(s, "ApprovalToken: "+fmt.Sprintf("%#v", this.ApprovalToken)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PreparePushSSHAuthRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&git.PreparePushSSHAuthRequest{")
+	s = append(s, "Remote: "+fmt.Sprintf("%#v", this.Remote)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PreparePushSSHAuthResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&git.PreparePushSSHAuthResponse{")
+	s = append(s, "SocketPath: "+fmt.Sprintf("%#v", this.SocketPath)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringGit(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -2227,11 +3905,15 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type GitClient interface {
+	// Engine-internal: call only after push authorization, never for Git reads.
+	PreparePushSSHAuth(ctx context.Context, in *PreparePushSSHAuthRequest, opts ...grpc.CallOption) (*PreparePushSSHAuthResponse, error)
 	GetCredential(ctx context.Context, in *GitCredentialRequest, opts ...grpc.CallOption) (*GitCredentialResponse, error)
 	GetConfig(ctx context.Context, in *GitConfigRequest, opts ...grpc.CallOption) (*GitConfigResponse, error)
 	CheckoutState(ctx context.Context, in *CheckoutStateRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error)
 	PackCheckout(ctx context.Context, in *PackCheckoutRequest, opts ...grpc.CallOption) (Git_PackCheckoutClient, error)
 	PackUncommitted(ctx context.Context, in *PackUncommittedRequest, opts ...grpc.CallOption) (Git_PackUncommittedClient, error)
+	CaptureGit(ctx context.Context, in *CaptureGitRequest, opts ...grpc.CallOption) (Git_CaptureGitClient, error)
+	ApplyBundle(ctx context.Context, opts ...grpc.CallOption) (Git_ApplyBundleClient, error)
 }
 
 type gitClient struct {
@@ -2240,6 +3922,15 @@ type gitClient struct {
 
 func NewGitClient(cc *grpc.ClientConn) GitClient {
 	return &gitClient{cc}
+}
+
+func (c *gitClient) PreparePushSSHAuth(ctx context.Context, in *PreparePushSSHAuthRequest, opts ...grpc.CallOption) (*PreparePushSSHAuthResponse, error) {
+	out := new(PreparePushSSHAuthResponse)
+	err := c.cc.Invoke(ctx, "/dagger.git.Git/PreparePushSSHAuth", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *gitClient) GetCredential(ctx context.Context, in *GitCredentialRequest, opts ...grpc.CallOption) (*GitCredentialResponse, error) {
@@ -2333,19 +4024,92 @@ func (x *gitPackUncommittedClient) Recv() (*PackUncommittedResponse, error) {
 	return m, nil
 }
 
+func (c *gitClient) CaptureGit(ctx context.Context, in *CaptureGitRequest, opts ...grpc.CallOption) (Git_CaptureGitClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[2], "/dagger.git.Git/CaptureGit", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitCaptureGitClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Git_CaptureGitClient interface {
+	Recv() (*CaptureGitResponse, error)
+	grpc.ClientStream
+}
+
+type gitCaptureGitClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitCaptureGitClient) Recv() (*CaptureGitResponse, error) {
+	m := new(CaptureGitResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gitClient) ApplyBundle(ctx context.Context, opts ...grpc.CallOption) (Git_ApplyBundleClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[3], "/dagger.git.Git/ApplyBundle", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitApplyBundleClient{stream}
+	return x, nil
+}
+
+type Git_ApplyBundleClient interface {
+	Send(*ApplyBundleRequest) error
+	CloseAndRecv() (*ApplyBundleResponse, error)
+	grpc.ClientStream
+}
+
+type gitApplyBundleClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitApplyBundleClient) Send(m *ApplyBundleRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *gitApplyBundleClient) CloseAndRecv() (*ApplyBundleResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(ApplyBundleResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GitServer is the server API for Git service.
 type GitServer interface {
+	// Engine-internal: call only after push authorization, never for Git reads.
+	PreparePushSSHAuth(context.Context, *PreparePushSSHAuthRequest) (*PreparePushSSHAuthResponse, error)
 	GetCredential(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error)
 	GetConfig(context.Context, *GitConfigRequest) (*GitConfigResponse, error)
 	CheckoutState(context.Context, *CheckoutStateRequest) (*CheckoutStateResponse, error)
 	PackCheckout(*PackCheckoutRequest, Git_PackCheckoutServer) error
 	PackUncommitted(*PackUncommittedRequest, Git_PackUncommittedServer) error
+	CaptureGit(*CaptureGitRequest, Git_CaptureGitServer) error
+	ApplyBundle(Git_ApplyBundleServer) error
 }
 
 // UnimplementedGitServer can be embedded to have forward compatible implementations.
 type UnimplementedGitServer struct {
 }
 
+func (*UnimplementedGitServer) PreparePushSSHAuth(ctx context.Context, req *PreparePushSSHAuthRequest) (*PreparePushSSHAuthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreparePushSSHAuth not implemented")
+}
 func (*UnimplementedGitServer) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCredential not implemented")
 }
@@ -2361,9 +4125,33 @@ func (*UnimplementedGitServer) PackCheckout(req *PackCheckoutRequest, srv Git_Pa
 func (*UnimplementedGitServer) PackUncommitted(req *PackUncommittedRequest, srv Git_PackUncommittedServer) error {
 	return status.Errorf(codes.Unimplemented, "method PackUncommitted not implemented")
 }
+func (*UnimplementedGitServer) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServer) error {
+	return status.Errorf(codes.Unimplemented, "method CaptureGit not implemented")
+}
+func (*UnimplementedGitServer) ApplyBundle(srv Git_ApplyBundleServer) error {
+	return status.Errorf(codes.Unimplemented, "method ApplyBundle not implemented")
+}
 
 func RegisterGitServer(s *grpc.Server, srv GitServer) {
 	s.RegisterService(&_Git_serviceDesc, srv)
+}
+
+func _Git_PreparePushSSHAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreparePushSSHAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitServer).PreparePushSSHAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dagger.git.Git/PreparePushSSHAuth",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitServer).PreparePushSSHAuth(ctx, req.(*PreparePushSSHAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Git_GetCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2462,10 +4250,61 @@ func (x *gitPackUncommittedServer) Send(m *PackUncommittedResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Git_CaptureGit_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CaptureGitRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GitServer).CaptureGit(m, &gitCaptureGitServer{stream})
+}
+
+type Git_CaptureGitServer interface {
+	Send(*CaptureGitResponse) error
+	grpc.ServerStream
+}
+
+type gitCaptureGitServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitCaptureGitServer) Send(m *CaptureGitResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Git_ApplyBundle_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GitServer).ApplyBundle(&gitApplyBundleServer{stream})
+}
+
+type Git_ApplyBundleServer interface {
+	SendAndClose(*ApplyBundleResponse) error
+	Recv() (*ApplyBundleRequest, error)
+	grpc.ServerStream
+}
+
+type gitApplyBundleServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitApplyBundleServer) SendAndClose(m *ApplyBundleResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *gitApplyBundleServer) Recv() (*ApplyBundleRequest, error) {
+	m := new(ApplyBundleRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 var _Git_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.git.Git",
 	HandlerType: (*GitServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PreparePushSSHAuth",
+			Handler:    _Git_PreparePushSSHAuth_Handler,
+		},
 		{
 			MethodName: "GetCredential",
 			Handler:    _Git_GetCredential_Handler,
@@ -2490,8 +4329,194 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 			Handler:       _Git_PackUncommitted_Handler,
 			ServerStreams: true,
 		},
+		{
+			StreamName:    "CaptureGit",
+			Handler:       _Git_CaptureGit_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ApplyBundle",
+			Handler:       _Git_ApplyBundle_Handler,
+			ClientStreams: true,
+		},
 	},
 	Metadata: "git.proto",
+}
+
+func (m *ApplyBundleRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplyBundleRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApplyBundleRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ApplyBundleRequest_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApplyBundleRequest_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *ApplyBundleRequest_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApplyBundleRequest_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *ApplyBundleMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplyBundleMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApplyBundleMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.IntegrationWorktreeSha) > 0 {
+		i -= len(m.IntegrationWorktreeSha)
+		copy(dAtA[i:], m.IntegrationWorktreeSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.IntegrationWorktreeSha)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.BundleRef) > 0 {
+		i -= len(m.BundleRef)
+		copy(dAtA[i:], m.BundleRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BundleRef)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.ExpectedStateDigest) > 0 {
+		i -= len(m.ExpectedStateDigest)
+		copy(dAtA[i:], m.ExpectedStateDigest)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ExpectedStateDigest)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.TargetSha) > 0 {
+		i -= len(m.TargetSha)
+		copy(dAtA[i:], m.TargetSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.TargetSha)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ApplyBundleResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplyBundleResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApplyBundleResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.ParkedRef) > 0 {
+		i -= len(m.ParkedRef)
+		copy(dAtA[i:], m.ParkedRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ParkedRef)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.HeadSha) > 0 {
+		i -= len(m.HeadSha)
+		copy(dAtA[i:], m.HeadSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.HeadSha)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *GitCredentialRequest) Marshal() (dAtA []byte, err error) {
@@ -2683,6 +4708,13 @@ func (m *GitConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -3292,6 +5324,506 @@ func (m *ErrorInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *CaptureGitRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Policy != nil {
+		{
+			size, err := m.Policy.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CaptureGitPolicy) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitPolicy) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitPolicy) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.DropUntracked {
+		i--
+		if m.DropUntracked {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x48
+	}
+	if m.MaxTotalBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.MaxTotalBytes))
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.MaxTrackedFileBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.MaxTrackedFileBytes))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.MaxUntrackedFiles != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.MaxUntrackedFiles))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.MaxUntrackedTotalBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.MaxUntrackedTotalBytes))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.MaxUntrackedFileBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.MaxUntrackedFileBytes))
+		i--
+		dAtA[i] = 0x20
+	}
+	if len(m.ApprovalTokens) > 0 {
+		for iNdEx := len(m.ApprovalTokens) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ApprovalTokens[iNdEx])
+			copy(dAtA[i:], m.ApprovalTokens[iNdEx])
+			i = encodeVarintGit(dAtA, i, uint64(len(m.ApprovalTokens[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.Exclude) > 0 {
+		for iNdEx := len(m.Exclude) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Exclude[iNdEx])
+			copy(dAtA[i:], m.Exclude[iNdEx])
+			i = encodeVarintGit(dAtA, i, uint64(len(m.Exclude[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Include) > 0 {
+		for iNdEx := len(m.Include) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Include[iNdEx])
+			copy(dAtA[i:], m.Include[iNdEx])
+			i = encodeVarintGit(dAtA, i, uint64(len(m.Include[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CaptureGitResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CaptureGitResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *CaptureGitResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		{
+			size, err := m.Chunk.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *CaptureGitChunk) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitChunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Data) > 0 {
+		i -= len(m.Data)
+		copy(dAtA[i:], m.Data)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Data)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Kind != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.Kind))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CaptureGitMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.RemotePushUrls) > 0 {
+		for iNdEx := len(m.RemotePushUrls) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.RemotePushUrls[iNdEx])
+			copy(dAtA[i:], m.RemotePushUrls[iNdEx])
+			i = encodeVarintGit(dAtA, i, uint64(len(m.RemotePushUrls[iNdEx])))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x92
+		}
+	}
+	if len(m.CheckoutStateDigest) > 0 {
+		i -= len(m.CheckoutStateDigest)
+		copy(dAtA[i:], m.CheckoutStateDigest)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutStateDigest)))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x8a
+	}
+	if len(m.ApprovalCandidates) > 0 {
+		for iNdEx := len(m.ApprovalCandidates) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ApprovalCandidates[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGit(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x82
+		}
+	}
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x7a
+	}
+	if m.SelectedBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.SelectedBytes))
+		i--
+		dAtA[i] = 0x70
+	}
+	if m.UntrackedFiles != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.UntrackedFiles))
+		i--
+		dAtA[i] = 0x68
+	}
+	if m.TrackedFiles != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.TrackedFiles))
+		i--
+		dAtA[i] = 0x60
+	}
+	if len(m.WorktreeSha) > 0 {
+		i -= len(m.WorktreeSha)
+		copy(dAtA[i:], m.WorktreeSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.WorktreeSha)))
+		i--
+		dAtA[i] = 0x52
+	}
+	if m.BundleBytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.BundleBytes))
+		i--
+		dAtA[i] = 0x48
+	}
+	if len(m.BundleSha256) > 0 {
+		i -= len(m.BundleSha256)
+		copy(dAtA[i:], m.BundleSha256)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BundleSha256)))
+		i--
+		dAtA[i] = 0x42
+	}
+	if len(m.HeadSha) > 0 {
+		i -= len(m.HeadSha)
+		copy(dAtA[i:], m.HeadSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.HeadSha)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if len(m.BaseSha) > 0 {
+		i -= len(m.BaseSha)
+		copy(dAtA[i:], m.BaseSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BaseSha)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.RemoteRef) > 0 {
+		i -= len(m.RemoteRef)
+		copy(dAtA[i:], m.RemoteRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.RemoteRef)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.RemoteUrl) > 0 {
+		i -= len(m.RemoteUrl)
+		copy(dAtA[i:], m.RemoteUrl)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.RemoteUrl)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.ObjectFormat) > 0 {
+		i -= len(m.ObjectFormat)
+		copy(dAtA[i:], m.ObjectFormat)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ObjectFormat)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.FormatVersion != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.FormatVersion))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CaptureGitCandidate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CaptureGitCandidate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CaptureGitCandidate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ApprovalToken) > 0 {
+		i -= len(m.ApprovalToken)
+		copy(dAtA[i:], m.ApprovalToken)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ApprovalToken)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.Bytes != 0 {
+		i = encodeVarintGit(dAtA, i, uint64(m.Bytes))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Tracked {
+		i--
+		if m.Tracked {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Classification) > 0 {
+		i -= len(m.Classification)
+		copy(dAtA[i:], m.Classification)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Classification)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Path) > 0 {
+		i -= len(m.Path)
+		copy(dAtA[i:], m.Path)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Path)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PreparePushSSHAuthRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PreparePushSSHAuthRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PreparePushSSHAuthRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Remote) > 0 {
+		i -= len(m.Remote)
+		copy(dAtA[i:], m.Remote)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Remote)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PreparePushSSHAuthResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PreparePushSSHAuthResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PreparePushSSHAuthResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.SocketPath) > 0 {
+		i -= len(m.SocketPath)
+		copy(dAtA[i:], m.SocketPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.SocketPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintGit(dAtA []byte, offset int, v uint64) int {
 	offset -= sovGit(v)
 	base := offset
@@ -3303,6 +5835,92 @@ func encodeVarintGit(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+func (m *ApplyBundleRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *ApplyBundleRequest_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *ApplyBundleRequest_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *ApplyBundleMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.TargetSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.ExpectedStateDigest)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.BundleRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.IntegrationWorktreeSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *ApplyBundleResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.HeadSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.ParkedRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
 func (m *GitCredentialRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -3391,6 +6009,10 @@ func (m *GitConfigRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
 	return n
 }
 
@@ -3683,11 +6305,306 @@ func (m *ErrorInfo) Size() (n int) {
 	return n
 }
 
+func (m *CaptureGitRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.Policy != nil {
+		l = m.Policy.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *CaptureGitPolicy) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Include) > 0 {
+		for _, s := range m.Include {
+			l = len(s)
+			n += 1 + l + sovGit(uint64(l))
+		}
+	}
+	if len(m.Exclude) > 0 {
+		for _, s := range m.Exclude {
+			l = len(s)
+			n += 1 + l + sovGit(uint64(l))
+		}
+	}
+	if len(m.ApprovalTokens) > 0 {
+		for _, s := range m.ApprovalTokens {
+			l = len(s)
+			n += 1 + l + sovGit(uint64(l))
+		}
+	}
+	if m.MaxUntrackedFileBytes != 0 {
+		n += 1 + sovGit(uint64(m.MaxUntrackedFileBytes))
+	}
+	if m.MaxUntrackedTotalBytes != 0 {
+		n += 1 + sovGit(uint64(m.MaxUntrackedTotalBytes))
+	}
+	if m.MaxUntrackedFiles != 0 {
+		n += 1 + sovGit(uint64(m.MaxUntrackedFiles))
+	}
+	if m.MaxTrackedFileBytes != 0 {
+		n += 1 + sovGit(uint64(m.MaxTrackedFileBytes))
+	}
+	if m.MaxTotalBytes != 0 {
+		n += 1 + sovGit(uint64(m.MaxTotalBytes))
+	}
+	if m.DropUntracked {
+		n += 2
+	}
+	return n
+}
+
+func (m *CaptureGitResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *CaptureGitResponse_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *CaptureGitResponse_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = m.Chunk.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *CaptureGitChunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Kind != 0 {
+		n += 1 + sovGit(uint64(m.Kind))
+	}
+	l = len(m.Data)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *CaptureGitMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.FormatVersion != 0 {
+		n += 1 + sovGit(uint64(m.FormatVersion))
+	}
+	l = len(m.ObjectFormat)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.RemoteUrl)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.RemoteRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.BaseSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.HeadSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.BundleSha256)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.BundleBytes != 0 {
+		n += 1 + sovGit(uint64(m.BundleBytes))
+	}
+	l = len(m.WorktreeSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.TrackedFiles != 0 {
+		n += 1 + sovGit(uint64(m.TrackedFiles))
+	}
+	if m.UntrackedFiles != 0 {
+		n += 1 + sovGit(uint64(m.UntrackedFiles))
+	}
+	if m.SelectedBytes != 0 {
+		n += 1 + sovGit(uint64(m.SelectedBytes))
+	}
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if len(m.ApprovalCandidates) > 0 {
+		for _, e := range m.ApprovalCandidates {
+			l = e.Size()
+			n += 2 + l + sovGit(uint64(l))
+		}
+	}
+	l = len(m.CheckoutStateDigest)
+	if l > 0 {
+		n += 2 + l + sovGit(uint64(l))
+	}
+	if len(m.RemotePushUrls) > 0 {
+		for _, s := range m.RemotePushUrls {
+			l = len(s)
+			n += 2 + l + sovGit(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *CaptureGitCandidate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Path)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.Classification)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.Tracked {
+		n += 2
+	}
+	if m.Bytes != 0 {
+		n += 1 + sovGit(uint64(m.Bytes))
+	}
+	l = len(m.ApprovalToken)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *PreparePushSSHAuthRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Remote)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *PreparePushSSHAuthResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.SocketPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
 func sovGit(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozGit(x uint64) (n int) {
 	return sovGit(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+func (this *ApplyBundleRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApplyBundleRequest{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApplyBundleRequest_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApplyBundleRequest_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "ApplyBundleMetadata", "ApplyBundleMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApplyBundleRequest_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApplyBundleRequest_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApplyBundleMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApplyBundleMetadata{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
+		`TargetSha:` + fmt.Sprintf("%v", this.TargetSha) + `,`,
+		`ExpectedStateDigest:` + fmt.Sprintf("%v", this.ExpectedStateDigest) + `,`,
+		`BundleRef:` + fmt.Sprintf("%v", this.BundleRef) + `,`,
+		`IntegrationWorktreeSha:` + fmt.Sprintf("%v", this.IntegrationWorktreeSha) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApplyBundleResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApplyBundleResponse{`,
+		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
+		`ParkedRef:` + fmt.Sprintf("%v", this.ParkedRef) + `,`,
+		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 func (this *GitCredentialRequest) String() string {
 	if this == nil {
@@ -3749,6 +6666,7 @@ func (this *GitConfigRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&GitConfigRequest{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3968,6 +6886,140 @@ func (this *ErrorInfo) String() string {
 	}, "")
 	return s
 }
+func (this *CaptureGitRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitRequest{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
+		`Policy:` + strings.Replace(this.Policy.String(), "CaptureGitPolicy", "CaptureGitPolicy", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitPolicy) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitPolicy{`,
+		`Include:` + fmt.Sprintf("%v", this.Include) + `,`,
+		`Exclude:` + fmt.Sprintf("%v", this.Exclude) + `,`,
+		`ApprovalTokens:` + fmt.Sprintf("%v", this.ApprovalTokens) + `,`,
+		`MaxUntrackedFileBytes:` + fmt.Sprintf("%v", this.MaxUntrackedFileBytes) + `,`,
+		`MaxUntrackedTotalBytes:` + fmt.Sprintf("%v", this.MaxUntrackedTotalBytes) + `,`,
+		`MaxUntrackedFiles:` + fmt.Sprintf("%v", this.MaxUntrackedFiles) + `,`,
+		`MaxTrackedFileBytes:` + fmt.Sprintf("%v", this.MaxTrackedFileBytes) + `,`,
+		`MaxTotalBytes:` + fmt.Sprintf("%v", this.MaxTotalBytes) + `,`,
+		`DropUntracked:` + fmt.Sprintf("%v", this.DropUntracked) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitResponse{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitResponse_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitResponse_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "CaptureGitMetadata", "CaptureGitMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitResponse_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitResponse_Chunk{`,
+		`Chunk:` + strings.Replace(fmt.Sprintf("%v", this.Chunk), "CaptureGitChunk", "CaptureGitChunk", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitChunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitChunk{`,
+		`Kind:` + fmt.Sprintf("%v", this.Kind) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForApprovalCandidates := "[]*CaptureGitCandidate{"
+	for _, f := range this.ApprovalCandidates {
+		repeatedStringForApprovalCandidates += strings.Replace(f.String(), "CaptureGitCandidate", "CaptureGitCandidate", 1) + ","
+	}
+	repeatedStringForApprovalCandidates += "}"
+	s := strings.Join([]string{`&CaptureGitMetadata{`,
+		`FormatVersion:` + fmt.Sprintf("%v", this.FormatVersion) + `,`,
+		`ObjectFormat:` + fmt.Sprintf("%v", this.ObjectFormat) + `,`,
+		`RemoteUrl:` + fmt.Sprintf("%v", this.RemoteUrl) + `,`,
+		`RemoteRef:` + fmt.Sprintf("%v", this.RemoteRef) + `,`,
+		`BaseSha:` + fmt.Sprintf("%v", this.BaseSha) + `,`,
+		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
+		`BundleSha256:` + fmt.Sprintf("%v", this.BundleSha256) + `,`,
+		`BundleBytes:` + fmt.Sprintf("%v", this.BundleBytes) + `,`,
+		`WorktreeSha:` + fmt.Sprintf("%v", this.WorktreeSha) + `,`,
+		`TrackedFiles:` + fmt.Sprintf("%v", this.TrackedFiles) + `,`,
+		`UntrackedFiles:` + fmt.Sprintf("%v", this.UntrackedFiles) + `,`,
+		`SelectedBytes:` + fmt.Sprintf("%v", this.SelectedBytes) + `,`,
+		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`ApprovalCandidates:` + repeatedStringForApprovalCandidates + `,`,
+		`CheckoutStateDigest:` + fmt.Sprintf("%v", this.CheckoutStateDigest) + `,`,
+		`RemotePushUrls:` + fmt.Sprintf("%v", this.RemotePushUrls) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CaptureGitCandidate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CaptureGitCandidate{`,
+		`Path:` + fmt.Sprintf("%v", this.Path) + `,`,
+		`Classification:` + fmt.Sprintf("%v", this.Classification) + `,`,
+		`Tracked:` + fmt.Sprintf("%v", this.Tracked) + `,`,
+		`Bytes:` + fmt.Sprintf("%v", this.Bytes) + `,`,
+		`ApprovalToken:` + fmt.Sprintf("%v", this.ApprovalToken) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PreparePushSSHAuthRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PreparePushSSHAuthRequest{`,
+		`Remote:` + fmt.Sprintf("%v", this.Remote) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PreparePushSSHAuthResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PreparePushSSHAuthResponse{`,
+		`SocketPath:` + fmt.Sprintf("%v", this.SocketPath) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func valueToStringGit(v interface{}) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -3975,6 +7027,484 @@ func valueToStringGit(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
+}
+func (m *ApplyBundleRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplyBundleRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplyBundleRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &ApplyBundleMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &ApplyBundleRequest_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &ApplyBundleRequest_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplyBundleMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplyBundleMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplyBundleMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TargetSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TargetSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExpectedStateDigest", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ExpectedStateDigest = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BundleRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BundleRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntegrationWorktreeSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IntegrationWorktreeSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplyBundleResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplyBundleResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplyBundleResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HeadSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.HeadSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ParkedRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ParkedRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &ErrorInfo{}
+			}
+			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 func (m *GitCredentialRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
@@ -4449,6 +7979,38 @@ func (m *GitConfigRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: GitConfigRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipGit(dAtA[iNdEx:])
@@ -5894,6 +9456,1460 @@ func (m *ErrorInfo) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Message = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Policy", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Policy == nil {
+				m.Policy = &CaptureGitPolicy{}
+			}
+			if err := m.Policy.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitPolicy) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitPolicy: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitPolicy: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Include", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Include = append(m.Include, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Exclude", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Exclude = append(m.Exclude, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ApprovalTokens", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ApprovalTokens = append(m.ApprovalTokens, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxUntrackedFileBytes", wireType)
+			}
+			m.MaxUntrackedFileBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxUntrackedFileBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxUntrackedTotalBytes", wireType)
+			}
+			m.MaxUntrackedTotalBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxUntrackedTotalBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxUntrackedFiles", wireType)
+			}
+			m.MaxUntrackedFiles = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxUntrackedFiles |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxTrackedFileBytes", wireType)
+			}
+			m.MaxTrackedFileBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxTrackedFileBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxTotalBytes", wireType)
+			}
+			m.MaxTotalBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxTotalBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DropUntracked", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.DropUntracked = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &CaptureGitMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &CaptureGitResponse_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &CaptureGitChunk{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &CaptureGitResponse_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitChunk) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitChunk: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitChunk: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Kind", wireType)
+			}
+			m.Kind = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Kind |= CaptureGitChunk_Kind(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Data = append(m.Data[:0], dAtA[iNdEx:postIndex]...)
+			if m.Data == nil {
+				m.Data = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FormatVersion", wireType)
+			}
+			m.FormatVersion = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FormatVersion |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ObjectFormat", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ObjectFormat = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RemoteUrl", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.RemoteUrl = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RemoteRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.RemoteRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BaseSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BaseSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HeadSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.HeadSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BundleSha256", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BundleSha256 = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BundleBytes", wireType)
+			}
+			m.BundleBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BundleBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WorktreeSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.WorktreeSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 12:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TrackedFiles", wireType)
+			}
+			m.TrackedFiles = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TrackedFiles |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 13:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UntrackedFiles", wireType)
+			}
+			m.UntrackedFiles = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.UntrackedFiles |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 14:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SelectedBytes", wireType)
+			}
+			m.SelectedBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SelectedBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 15:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &ErrorInfo{}
+			}
+			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 16:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ApprovalCandidates", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ApprovalCandidates = append(m.ApprovalCandidates, &CaptureGitCandidate{})
+			if err := m.ApprovalCandidates[len(m.ApprovalCandidates)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutStateDigest", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutStateDigest = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RemotePushUrls", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.RemotePushUrls = append(m.RemotePushUrls, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CaptureGitCandidate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CaptureGitCandidate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CaptureGitCandidate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Path", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Path = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Classification", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Classification = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Tracked", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Tracked = bool(v != 0)
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Bytes", wireType)
+			}
+			m.Bytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Bytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ApprovalToken", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ApprovalToken = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PreparePushSSHAuthRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PreparePushSSHAuthRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PreparePushSSHAuthRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Remote", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Remote = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PreparePushSSHAuthResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PreparePushSSHAuthResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PreparePushSSHAuthResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SocketPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SocketPath = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

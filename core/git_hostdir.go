@@ -45,8 +45,7 @@ var ErrNoGitContext = errors.New("module context has no git checkout")
 // for a module context, resolved fresh per load. A caller that wants the
 // reconstruction pinned to a session's cached view of the checkout -- so a
 // checkout that advances mid-session is not silently re-read -- passes a stable
-// token instead (a workspace passes its read epoch, which bumps on
-// export/reload). The token only selects a cache entry; the pack itself is
+// token instead (an unsynced workspace uses a fixed session-local token). The token only selects a cache entry; the pack itself is
 // always taken from the live checkout when a new entry is computed.
 //
 // A checkout that is not a git repository reports ErrNoGitContext with the
@@ -85,7 +84,7 @@ func MaterializeHostGitCheckout(
 
 		// The live ref-state digest keys the reconstruction unless the caller
 		// pinned it to a stable token of its own. Only a live digest is also an
-		// expected pack state; an epoch-pinned workspace accepts whichever
+		// expected pack state; a session-pinned workspace accepts whichever
 		// stable state is first materialized in its cache slot.
 		stateDigest := state
 		validateState := true

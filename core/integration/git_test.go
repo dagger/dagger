@@ -2136,6 +2136,8 @@ replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
+		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
+		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
 		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
 		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
 

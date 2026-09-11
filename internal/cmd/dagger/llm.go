@@ -520,7 +520,7 @@ func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Reloaded()).Sync(ctx)
+	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Snapshot()).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}

@@ -125,28 +125,26 @@ withDirectory(".git", host.__gitDir(...))`, then hand the composed tree to
 `LocalGitRepository` exactly as before. Downstream (`head`, `uncommitted`,
 `Cleaned`) is unchanged.
 
-## 5. Cache keying: live vs. epoch-pinned
+## 5. Cache keying: live vs. session-pinned
 
 Two callers, two keying policies:
 
 - **Module contexts** (`ModuleSource.LoadContextGit`) pass an empty cache
   key → the live `CheckoutState` digest. A context is resolved fresh per
   load; its git view should track the checkout.
-- **Workspaces** (`materializeWorkspaceGit`, `core/schema/workspace.go`)
-  pin the key to the workspace **read epoch** (`"epoch:"+N`). A checkout
-  that advances mid-session must *not* be silently re-read: everything a
-  session derives from the workspace assumes one coherent view of the
-  checkout. The epoch bumps on export/reload — the same scoping
-  `Workspace.file` / `.directory` host reads already use. `CheckoutState` still runs per
-  materialization (it is also the repo-ness probe); only the *cache slot*
-  is pinned.
+- **Unsynced workspaces** (`materializeWorkspaceGit`, `core/schema/workspace.go`)
+  use a fixed session-local key (`"workspace"`). `CheckoutState` still runs per
+  materialization as the repo-ness probe; only the cache slot is pinned.
+  Call `currentWorkspace.snapshot()` to capture a fresh stable value. The capture
+  constructs its own Git source and bypasses cached host reads, so existing
+  values retain their baseline without read epochs or cache invalidation.
 
 ## 6. Fast path: HEAD checkout + uncommitted patch
 
 `Workspace.git` on a host-backed workspace does not sync the checkout's
 directory at all. `materializeWorkspaceGitUncommitted`
 (`core/schema/workspace.go`) builds the repository view from packs alone:
-reconstruct the canonical `.git` (§4, epoch-keyed per §5), check out
+reconstruct the canonical `.git` (§4, session-keyed per §5), check out
 HEAD's tree from it engine-side, then apply the checkout's uncommitted
 changes via `Directory.__withGitUncommitted(checkoutPath,
 expectedHeadSHA)` (internal-only), which runs `PackUncommitted` and
@@ -161,7 +159,7 @@ predate the RPC degrade (`ErrGitUncommittedUnsupported`) to the
 full-directory path: sync the rootfs and swap in the canonical `.git`
 (§4). Keeping the patch application behind a DAG field gives the result a
 call identity without the patch bytes in it; its cache slot rides the
-epoch-pinned chain from §5.
+session-pinned chain from §5.
 
 ## 7. Neutralization: pointer files never enter contexts
 

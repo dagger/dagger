@@ -16856,15 +16856,6 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
-// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-func (r *Workspace) Reloaded() *Workspace {
-	q := r.query.Select("reloaded")
-
-	return &Workspace{
-		query: q,
-	}
-}
-
 // An installed SDK, by name.
 func (r *Workspace) SDK(name string) *WorkspaceSDK {
 	q := r.query.Select("sdk")
@@ -17033,6 +17024,23 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 }
 
+// Return a snapshot of this workspace as a stable value.
+//
+// Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+//
+// Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+//
+// Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+//
+// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+func (r *Workspace) Snapshot() *Workspace {
+	q := r.query.Select("snapshot")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceTerminalsOpts contains options for Workspace.Terminals
 type WorkspaceTerminalsOpts struct {
 	// Only include terminal targets matching the specified patterns
@@ -17111,6 +17119,27 @@ func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpt
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select the config environment carried by this workspace.
+func (r *Workspace) WithConfigEnvironment(name string) *Workspace {
+	q := r.query.Select("withConfigEnvironment")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+func (r *Workspace) WithConfigPaths(configFile string, lockFile string) *Workspace {
+	q := r.query.Select("withConfigPaths")
+	q = q.Arg("configFile", configFile)
+	q = q.Arg("lockFile", lockFile)
 
 	return &Workspace{
 		query: q,
