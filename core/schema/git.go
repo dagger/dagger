@@ -705,7 +705,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 			if sshAuthSocketPath == "" {
-				return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+				// A credential-free destination can be used by push, which asks
+				// before borrowing the owner's agent. Reads still fail in setup.
+				break
 			}
 
 			// Scope that client's default SSH auth socket and reinvoke so it appears in the DAG.
