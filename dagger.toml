@@ -136,92 +136,178 @@ source = "github.com/vito/editor"
 
 # TODO: Migrate this repository to [sdks.*] after that schema is available in
 # the released CLI used to bootstrap CI.
-[modules.dagger-dang-sdk.as-sdk]
-name = "dang"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "cmd/codegen"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "modules/markdownlint"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/changelog"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/ci"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/dotnet-client-dev"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/elixir-client-dev"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/go-client-dev"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/java-client-dev"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/security"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/test-split"
 
-[[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/typescript-client-dev"
 
-[modules.dagger-go-sdk.as-sdk]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[sdks.dang]
+module = "dagger-dang-sdk"
+
+[sdks.dang.scopes.".dagger/modules/changelog"]
+is-module = true
+name = "changelog"
+
+[sdks.dang.scopes.".dagger/modules/ci"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "ci"
+
+[sdks.dang.scopes.".dagger/modules/dotnet-client-dev"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/elixir-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/go"]
+name = "elixir-client-dev"
+
+[sdks.dang.scopes.".dagger/modules/go-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser", "./.dagger/modules/go"]
+name = "go-client-dev"
+
+[sdks.dang.scopes.".dagger/modules/java-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "java-client-dev"
+
+[sdks.dang.scopes.".dagger/modules/security"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "security"
+
+[sdks.dang.scopes.".dagger/modules/test-split"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "test-split"
+
+[sdks.dang.scopes.".dagger/modules/typescript-client-dev"]
+is-module = true
+clients = ["./cmd/codegen", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]
+name = "typescript-client-dev"
+
+[sdks.dang.scopes."cmd/codegen"]
+is-module = true
+clients = ["./.dagger/modules/go"]
+name = "codegen"
+
+[sdks.dang.scopes."modules/markdownlint"]
+is-module = true
+name = "markdown-lint"
+
+[sdks.go]
+module = "dagger-go-sdk"
+
+[sdks.go.scopes.".dagger/modules/cli-dev"]
+is-module = true
+clients = ["./modules/alpine", "./.dagger/modules/go"]
+name = "cli-dev"
+
+[sdks.go.scopes.".dagger/modules/docs-dev"]
+is-module = true
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]
+name = "docs-dev"
+
+[sdks.go.scopes.".dagger/modules/docs-dev/docusaurus"]
+is-module = true
+name = "docusaurus"
+
+[sdks.go.scopes.".dagger/modules/engine-dev"]
+is-module = true
+clients = ["./modules/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "./modules/wolfi", "./.dagger/modules/engine-dev/notify"]
+name = "engine-dev"
+
+[sdks.go.scopes.".dagger/modules/engine-dev/notify"]
+is-module = true
+name = "notify"
+
+[sdks.go.scopes.".dagger/modules/php-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
+name = "php-client-dev"
+
+[sdks.go.scopes.".dagger/modules/python-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "./modules/wolfi"]
+name = "python-client-dev"
+
+[sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
+is-module = true
+name = "dockerd"
+
+[sdks.go.scopes.".dagger/modules/release"]
+is-module = true
+clients = ["./.dagger/modules/changelog", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/release/gh", "./.dagger/modules/go-client-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
+name = "release"
+
+[sdks.go.scopes.".dagger/modules/release/apko"]
+is-module = true
+clients = ["./.dagger/modules/release/registry-config"]
+name = "apko"
+
+[sdks.go.scopes.".dagger/modules/release/gh"]
+is-module = true
+clients = ["./.dagger/modules/release/apko"]
+name = "gh"
+
+[sdks.go.scopes.".dagger/modules/release/registry-config"]
+is-module = true
+name = "registry-config"
+
+[sdks.go.scopes.".dagger/modules/rust-client-dev"]
+is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "rust-client-dev"
+
+[sdks.go.scopes.".dagger/modules/tla-check"]
+is-module = true
+name = "tla-check"
+
+[sdks.go.scopes."modules/alpine"]
+is-module = true
+name = "alpine"
+
+[sdks.go.scopes."modules/git-releaser"]
+is-module = true
+clients = ["./modules/alpine"]
+name = "git-releaser"
+
+[sdks.go.scopes."modules/wolfi"]
+is-module = true
+clients = ["./modules/alpine"]
+name = "wolfi"
+
+[sdks.dang.scopes.".dagger/modules/dev"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
+is-module = true
+name = "dev"
+
+[sdks.go.scopes.".dagger/modules/go"]
+clients = ["./modules/wolfi"]
+is-module = true
 name = "go"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/alpine"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/git-releaser"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "modules/wolfi"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/cli-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/docs-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/docs-dev/docusaurus"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/engine-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/engine-dev/notify"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/php-client-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-client-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-client-dev/dockerd"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/apko"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/gh"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/release/registry-config"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/rust-client-dev"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/tla-check"
