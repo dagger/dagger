@@ -14,12 +14,12 @@ namespace Dagger;
 class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The total disk space used by the cache entries in this set.
+     * A unique identifier for this EngineCacheEntrySet.
      */
-    public function diskSpaceBytes(): int
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diskSpaceBytes');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'diskSpaceBytes');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -41,11 +41,11 @@ class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this EngineCacheEntrySet.
+     * The total disk space used by the cache entries in this set.
      */
-    public function id(): Id
+    public function diskSpaceBytes(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diskSpaceBytes');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'diskSpaceBytes');
     }
 }

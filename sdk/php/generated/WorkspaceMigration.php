@@ -14,6 +14,15 @@ namespace Dagger;
 class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this WorkspaceMigration.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * Filesystem changes for the full migration plan.
      */
     public function changes(): Changeset
@@ -23,21 +32,12 @@ class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble,
     }
 
     /**
-     * Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+     * Logical migration steps, each identified by a stable code.
      */
-    public function configFile(): string
+    public function steps(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configFile');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'configFile');
-    }
-
-    /**
-     * A unique identifier for this WorkspaceMigration.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('steps');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'steps');
     }
 
     /**
@@ -50,11 +50,11 @@ class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble,
     }
 
     /**
-     * Logical migration steps, each identified by a stable code.
+     * Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
      */
-    public function steps(): array
+    public function configFile(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('steps');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'steps');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configFile');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configFile');
     }
 }

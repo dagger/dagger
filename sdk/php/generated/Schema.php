@@ -14,21 +14,21 @@ namespace Dagger;
 class Schema extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Serialize the schema back to introspection JSON.
-     */
-    public function contents(): Json
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'contents'));
-    }
-
-    /**
      * A unique identifier for this Schema.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Serialize the schema back to introspection JSON.
+     */
+    public function contents(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'contents'));
     }
 
     /**

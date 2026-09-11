@@ -14,30 +14,12 @@ namespace Dagger;
 class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Clients generated with this SDK.
-     */
-    public function clients(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
-    }
-
-    /**
      * A unique identifier for this WorkspaceSDK.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Modules authored with this SDK.
-     */
-    public function modules(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
     }
 
     /**
@@ -56,5 +38,23 @@ class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
         return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
+    }
+
+    /**
+     * Modules authored with this SDK.
+     */
+    public function modules(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+    }
+
+    /**
+     * Clients generated with this SDK.
+     */
+    public function clients(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
     }
 }

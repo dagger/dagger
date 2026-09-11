@@ -14,15 +14,6 @@ namespace Dagger;
 class Engine extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The list of connected client IDs
-     */
-    public function clients(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
-    }
-
-    /**
      * A unique identifier for this Engine.
      */
     public function id(): Id
@@ -32,12 +23,12 @@ class Engine extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The local engine cache state tracked by dagql
+     * The list of connected client IDs
      */
-    public function localCache(): EngineCache
+    public function clients(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('localCache');
-        return new \Dagger\EngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
     }
 
     /**
@@ -47,5 +38,14 @@ class Engine extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The local engine cache state tracked by dagql
+     */
+    public function localCache(): EngineCache
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('localCache');
+        return new \Dagger\EngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

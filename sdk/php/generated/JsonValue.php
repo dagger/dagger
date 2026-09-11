@@ -11,39 +11,12 @@ namespace Dagger;
 class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Decode an array from json
+     * A unique identifier for this JSONValue.
      */
-    public function asArray(): array
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asArray');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'asArray');
-    }
-
-    /**
-     * Decode a boolean from json
-     */
-    public function asBoolean(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asBoolean');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'asBoolean');
-    }
-
-    /**
-     * Decode an integer from json
-     */
-    public function asInteger(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asInteger');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'asInteger');
-    }
-
-    /**
-     * Decode a string from json
-     */
-    public function asString(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -62,40 +35,12 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Lookup the field at the given path, and return its value.
+     * Return a new json value, decoded from the given content
      */
-    public function field(array $path): JsonValue
+    public function withContents(Json $contents): JsonValue
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('field');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * List fields of the encoded object
-     */
-    public function fields(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
-    }
-
-    /**
-     * A unique identifier for this JSONValue.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Encode a boolean to json
-     */
-    public function newBoolean(bool $value): JsonValue
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('newBoolean');
-        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContents');
+        $innerQueryBuilder->setArgument('contents', $contents);
         return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -110,6 +55,15 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Decode an integer from json
+     */
+    public function asInteger(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asInteger');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'asInteger');
+    }
+
+    /**
      * Encode a string to json
      */
     public function newString(string $value): JsonValue
@@ -120,12 +74,58 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return a new json value, decoded from the given content
+     * Decode a string from json
      */
-    public function withContents(Json $contents): JsonValue
+    public function asString(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContents');
-        $innerQueryBuilder->setArgument('contents', $contents);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+    }
+
+    /**
+     * Encode a boolean to json
+     */
+    public function newBoolean(bool $value): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('newBoolean');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Decode a boolean from json
+     */
+    public function asBoolean(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asBoolean');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'asBoolean');
+    }
+
+    /**
+     * Decode an array from json
+     */
+    public function asArray(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asArray');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asArray');
+    }
+
+    /**
+     * List fields of the encoded object
+     */
+    public function fields(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
+    }
+
+    /**
+     * Lookup the field at the given path, and return its value.
+     */
+    public function field(array $path): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('field');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

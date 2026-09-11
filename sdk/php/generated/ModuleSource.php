@@ -14,95 +14,40 @@ namespace Dagger;
 class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+     * A unique identifier for this ModuleSource.
      */
-    public function asModule(): Module
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * A human readable ref string representation of this module source.
+     * Forces evaluation of the module source, including any loading into the engine and associated validation.
      */
-    public function asString(): string
+    public function sync(): ModuleSource
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
-     * The blueprint referenced by the module source.
+     * The path to the directory containing the module's source code, relative to the context directory.
      */
-    public function blueprint(): ModuleSource
+    public function sourceSubpath(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
     }
 
     /**
-     * The client-facing introspection schema JSON file for this module source.
-     *
-     * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+     * The original subpath used when instantiating this module source, relative to the context directory.
      */
-    public function clientSchemaIntrospectionJSON(): File
+    public function originalSubpath(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientSchemaIntrospectionJSON');
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The ref to clone the root of the git repo from. Only valid for git sources.
-     */
-    public function cloneRef(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneRef');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneRef');
-    }
-
-    /**
-     * The resolved commit of the git repo this source points to.
-     */
-    public function commit(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
-    }
-
-    /**
-     * The clients generated for the module.
-     */
-    public function configClients(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configClients');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'configClients');
-    }
-
-    /**
-     * Whether an existing module config file was found.
-     */
-    public function configExists(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configExists');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'configExists');
-    }
-
-    /**
-     * The full directory loaded for the module source, including the source code as a subdirectory.
-     */
-    public function contextDirectory(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('contextDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The dependencies of the module source.
-     */
-    public function dependencies(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('originalSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'originalSubpath');
     }
 
     /**
@@ -115,22 +60,190 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The directory containing the module configuration and source code (source code may be in a subdir).
+     * Update the module source with a new source subpath.
      */
-    public function directory(string $path): Directory
+    public function withSourceSubpath(string $path): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceSubpath');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new name.
+     */
+    public function withName(string $name): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with additional include patterns for files+directories from its context that are required for building it
+     */
+    public function withIncludes(array $patterns): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withIncludes');
+        $innerQueryBuilder->setArgument('patterns', $patterns);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new SDK.
+     */
+    public function withSDK(string $source): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Upgrade the engine version of the module to the given value.
+     */
+    public function withEngineVersion(string $version): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEngineVersion');
+        $innerQueryBuilder->setArgument('version', $version);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append the provided dependencies to the module source's dependency list.
+     */
+    public function withDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update one or more module dependencies.
+     */
+    public function withUpdateDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the provided dependencies from the module source's dependency list.
+     */
+    public function withoutDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set a blueprint for the module source.
+     */
+    public function withBlueprint(ModuleSource $blueprint): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
+        $innerQueryBuilder->setArgument('blueprint', $blueprint);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add toolchains to the module source.
+     */
+    public function withToolchains(array $toolchains): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolchains');
+        $innerQueryBuilder->setArgument('toolchains', $toolchains);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update one or more toolchains.
+     */
+    public function withUpdateToolchains(array $toolchains): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateToolchains');
+        $innerQueryBuilder->setArgument('toolchains', $toolchains);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the provided toolchains from the module source.
+     */
+    public function withoutToolchains(array $toolchains): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutToolchains');
+        $innerQueryBuilder->setArgument('toolchains', $toolchains);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the blueprint module to the latest version.
+     */
+    public function withUpdateBlueprint(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateBlueprint');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the current blueprint from the module source.
+     */
+    public function withoutBlueprint(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutBlueprint');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Enable the experimental features for the module source.
+     */
+    public function withExperimentalFeatures(array $features): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExperimentalFeatures');
+        $innerQueryBuilder->setArgument('features', $features);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Disable experimental features for the module source.
+     */
+    public function withoutExperimentalFeatures(array $features): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExperimentalFeatures');
+        $innerQueryBuilder->setArgument('features', $features);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The generated files and directories made on top of the module source's context directory.
+     */
+    public function generatedContextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The engine version of the module.
+     * The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+     *
+     * Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
      */
-    public function engineVersion(): string
+    public function updatedConfigDirectory(): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('engineVersion');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'engineVersion');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('updatedConfigDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+     */
+    public function generatedContextChangeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextChangeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -146,48 +259,39 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+     * A human readable ref string representation of this module source.
      */
-    public function generatedContextChangeset(): Changeset
+    public function asString(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextChangeset');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
     }
 
     /**
-     * The generated files and directories made on top of the module source's context directory.
+     * The pinned version of this module source.
      */
-    public function generatedContextDirectory(): Directory
+    public function pin(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pin');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'pin');
     }
 
     /**
-     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
+     * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
      */
-    public function htmlRepoURL(): string
+    public function localContextDirectoryPath(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlRepoURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlRepoURL');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('localContextDirectoryPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'localContextDirectoryPath');
     }
 
     /**
-     * The URL to the source's git repo in a web browser. Only valid for git sources.
+     * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
      */
-    public function htmlURL(): string
+    public function asModule(): Module
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlURL');
-    }
-
-    /**
-     * A unique identifier for this ModuleSource.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -204,21 +308,118 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The kind of module source (currently local, git or dir).
+     * The client-facing introspection schema JSON file for this module source.
+     *
+     * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
      */
-    public function kind(): ModuleSourceKind
+    public function clientSchemaIntrospectionJSON(): File
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\ModuleSourceKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientSchemaIntrospectionJSON');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
+     * The directory containing the module configuration and source code (source code may be in a subdir).
      */
-    public function localContextDirectoryPath(): string
+    public function directory(string $path): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('localContextDirectoryPath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'localContextDirectoryPath');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The ref to clone the root of the git repo from. Only valid for git sources.
+     */
+    public function cloneRef(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneRef');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneRef');
+    }
+
+    /**
+     * The URL to the source's git repo in a web browser. Only valid for git sources.
+     */
+    public function htmlURL(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlURL');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlURL');
+    }
+
+    /**
+     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
+     */
+    public function htmlRepoURL(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlRepoURL');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlRepoURL');
+    }
+
+    /**
+     * The specified version of the git repo this source points to.
+     */
+    public function version(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
+    }
+
+    /**
+     * The resolved commit of the git repo this source points to.
+     */
+    public function commit(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
+    }
+
+    /**
+     * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
+     */
+    public function repoRootPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('repoRootPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'repoRootPath');
+    }
+
+    /**
+     * Update the module source with a new client to generate.
+     */
+    public function withClient(string $generator, string $outputDir): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
+        $innerQueryBuilder->setArgument('generator', $generator);
+        $innerQueryBuilder->setArgument('outputDir', $outputDir);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update one or more clients.
+     */
+    public function withUpdatedClients(array $clients): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedClients');
+        $innerQueryBuilder->setArgument('clients', $clients);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove a client from the module source.
+     */
+    public function withoutClient(string $path): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutClient');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether an existing module config file was found.
+     */
+    public function configExists(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configExists');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'configExists');
     }
 
     /**
@@ -240,30 +441,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The original subpath used when instantiating this module source, relative to the context directory.
+     * The engine version of the module.
      */
-    public function originalSubpath(): string
+    public function engineVersion(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('originalSubpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'originalSubpath');
-    }
-
-    /**
-     * The pinned version of this module source.
-     */
-    public function pin(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pin');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'pin');
-    }
-
-    /**
-     * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
-     */
-    public function repoRootPath(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('repoRootPath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'repoRootPath');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('engineVersion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'engineVersion');
     }
 
     /**
@@ -281,31 +464,21 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The path, relative to the context directory, that contains the module config.
+     * The dependencies of the module source.
      */
-    public function sourceRootSubpath(): string
+    public function dependencies(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceRootSubpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceRootSubpath');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
     /**
-     * The path to the directory containing the module's source code, relative to the context directory.
+     * The blueprint referenced by the module source.
      */
-    public function sourceSubpath(): string
+    public function blueprint(): ModuleSource
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
-    }
-
-    /**
-     * Forces evaluation of the module source, including any loading into the engine and associated validation.
-     */
-    public function sync(): ModuleSource
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -318,17 +491,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
-     *
-     * Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
-     */
-    public function updatedConfigDirectory(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('updatedConfigDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * User-defined defaults read from local .env files
      */
     public function userDefaults(): EnvFile
@@ -338,200 +500,38 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The specified version of the git repo this source points to.
+     * The clients generated for the module.
      */
-    public function version(): string
+    public function configClients(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configClients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'configClients');
     }
 
     /**
-     * Set a blueprint for the module source.
+     * The path, relative to the context directory, that contains the module config.
      */
-    public function withBlueprint(ModuleSource $blueprint): ModuleSource
+    public function sourceRootSubpath(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
-        $innerQueryBuilder->setArgument('blueprint', $blueprint);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceRootSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceRootSubpath');
     }
 
     /**
-     * Update the module source with a new client to generate.
+     * The full directory loaded for the module source, including the source code as a subdirectory.
      */
-    public function withClient(string $generator, string $outputDir): ModuleSource
+    public function contextDirectory(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
-        $innerQueryBuilder->setArgument('generator', $generator);
-        $innerQueryBuilder->setArgument('outputDir', $outputDir);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('contextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Append the provided dependencies to the module source's dependency list.
+     * The kind of module source (currently local, git or dir).
      */
-    public function withDependencies(array $dependencies): ModuleSource
+    public function kind(): ModuleSourceKind
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
-        $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Upgrade the engine version of the module to the given value.
-     */
-    public function withEngineVersion(string $version): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEngineVersion');
-        $innerQueryBuilder->setArgument('version', $version);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Enable the experimental features for the module source.
-     */
-    public function withExperimentalFeatures(array $features): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExperimentalFeatures');
-        $innerQueryBuilder->setArgument('features', $features);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with additional include patterns for files+directories from its context that are required for building it
-     */
-    public function withIncludes(array $patterns): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withIncludes');
-        $innerQueryBuilder->setArgument('patterns', $patterns);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with a new name.
-     */
-    public function withName(string $name): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with a new SDK.
-     */
-    public function withSDK(string $source): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
-        $innerQueryBuilder->setArgument('source', $source);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with a new source subpath.
-     */
-    public function withSourceSubpath(string $path): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceSubpath');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Add toolchains to the module source.
-     */
-    public function withToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the blueprint module to the latest version.
-     */
-    public function withUpdateBlueprint(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateBlueprint');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update one or more module dependencies.
-     */
-    public function withUpdateDependencies(array $dependencies): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateDependencies');
-        $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update one or more toolchains.
-     */
-    public function withUpdateToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update one or more clients.
-     */
-    public function withUpdatedClients(array $clients): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedClients');
-        $innerQueryBuilder->setArgument('clients', $clients);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the current blueprint from the module source.
-     */
-    public function withoutBlueprint(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutBlueprint');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove a client from the module source.
-     */
-    public function withoutClient(string $path): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutClient');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the provided dependencies from the module source's dependency list.
-     */
-    public function withoutDependencies(array $dependencies): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
-        $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Disable experimental features for the module source.
-     */
-    public function withoutExperimentalFeatures(array $features): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExperimentalFeatures');
-        $innerQueryBuilder->setArgument('features', $features);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the provided toolchains from the module source.
-     */
-    public function withoutToolchains(array $toolchains): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutToolchains');
-        $innerQueryBuilder->setArgument('toolchains', $toolchains);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
+        return \Dagger\ModuleSourceKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 }

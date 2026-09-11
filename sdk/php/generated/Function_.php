@@ -16,33 +16,6 @@ namespace Dagger;
 class Function_ extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Arguments accepted by the function, if any.
-     */
-    public function args(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'args');
-    }
-
-    /**
-     * The reason this function is deprecated, if any.
-     */
-    public function deprecated(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
-    }
-
-    /**
-     * A doc string for the function, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this Function.
      */
     public function id(): Id
@@ -52,44 +25,52 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The name of the function.
+     * Returns the function with the given doc string.
      */
-    public function name(): string
+    public function withDescription(string $description): Function_
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The type returned by the function.
+     * Returns the function with the provided deprecation reason.
      */
-    public function returnType(): TypeDef
+    public function withDeprecated(?string $reason = null): Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('returnType');
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The location of this function declaration.
-     */
-    public function sourceMap(): ?SourceMap
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDeprecated');
+        if (null !== $reason) {
+        $innerQueryBuilder->setArgument('reason', $reason);
         }
-        return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * If this function is provided by a module, the name of the module. Unset otherwise.
+     * Returns the function with a flag indicating it's a check.
      */
-    public function sourceModuleName(): string
+    public function withCheck(): Function_
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheck');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with a flag indicating it's a generator.
+     */
+    public function withGenerator(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGenerator');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with a flag indicating it returns a service for dagger up.
+     */
+    public function withUp(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUp');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -98,6 +79,16 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     public function withAgent(): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAgent');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with the given source map.
+     */
+    public function withSourceMap(SourceMap $sourceMap): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMap');
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -156,61 +147,70 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns the function with a flag indicating it's a check.
+     * The name of the function.
      */
-    public function withCheck(): Function_
+    public function name(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheck');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
-     * Returns the function with the provided deprecation reason.
+     * A doc string for the function, if any.
      */
-    public function withDeprecated(?string $reason = null): Function_
+    public function description(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDeprecated');
-        if (null !== $reason) {
-        $innerQueryBuilder->setArgument('reason', $reason);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
+     * The reason this function is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
+    }
+
+    /**
+     * The location of this function declaration.
+     */
+    public function sourceMap(): ?SourceMap
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
         }
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
     }
 
     /**
-     * Returns the function with the given doc string.
+     * If this function is provided by a module, the name of the module. Unset otherwise.
      */
-    public function withDescription(string $description): Function_
+    public function sourceModuleName(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
     }
 
     /**
-     * Returns the function with a flag indicating it's a generator.
+     * Arguments accepted by the function, if any.
      */
-    public function withGenerator(): Function_
+    public function args(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGenerator');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
     /**
-     * Returns the function with the given source map.
+     * The type returned by the function.
      */
-    public function withSourceMap(SourceMap $sourceMap): Function_
+    public function returnType(): TypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMap');
-        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns the function with a flag indicating it returns a service for dagger up.
-     */
-    public function withUp(): Function_
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUp');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('returnType');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

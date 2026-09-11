@@ -14,275 +14,24 @@ namespace Dagger;
 class Container extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
-     * Turn the container into a Service.
+     * A unique identifier for this Container.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Forces evaluation of the pipeline in the engine.
      *
-     * Be sure to set any exposed ports before this conversion.
+     * It doesn't run the default command if no exec has been set.
      */
-    public function asService(
-        ?array $args = [],
-        ?bool $useEntrypoint = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-        ?bool $expand = false,
-        ?bool $noInit = false,
-    ): Service {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asService');
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $useEntrypoint) {
-        $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        if (null !== $noInit) {
-        $innerQueryBuilder->setArgument('noInit', $noInit);
-        }
-        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Package the container state as an OCI image, and return it as a tar archive
-     */
-    public function asTarball(
-        ?array $platformVariants = null,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-    ): File {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTarball');
-        if (null !== $platformVariants) {
-        $innerQueryBuilder->setArgument('platformVariants', $platformVariants);
-        }
-        if (null !== $forcedCompression) {
-        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The combined buffered standard output and standard error stream of the last executed command
-     *
-     * Returns an error if no command was executed
-     */
-    public function combinedOutput(): string
+    public function sync(): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('combinedOutput');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'combinedOutput');
-    }
-
-    /**
-     * Return the container's default arguments.
-     */
-    public function defaultArgs(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultArgs');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'defaultArgs');
-    }
-
-    /**
-     * Retrieve a directory from the container's root filesystem
-     *
-     * Mounts are included.
-     */
-    public function directory(string $path, ?bool $expand = false): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container's configured docker healthcheck.
-     */
-    public function dockerHealthcheck(): ?HealthcheckConfig
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\HealthcheckConfig::class, new \Dagger\Id((string)$id), 'HealthcheckConfig');
-    }
-
-    /**
-     * Return the container's OCI entrypoint.
-     */
-    public function entrypoint(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
-    }
-
-    /**
-     * Retrieves the value of the specified persistent environment variable.
-     */
-    public function envVariable(string $name): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envVariable');
-        $leafQueryBuilder->setArgument('name', $name);
-        return (string)$this->queryLeaf($leafQueryBuilder, 'envVariable');
-    }
-
-    /**
-     * Retrieves the list of persistent environment variables configured on the container.
-     */
-    public function envVariables(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envVariables');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'envVariables');
-    }
-
-    /**
-     * check if a file or directory exists
-     */
-    public function exists(
-        string $path,
-        ?ExistsType $expectedType = null,
-        ?bool $doNotFollowSymlinks = false,
-        ?bool $expand = false,
-    ): bool {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $expectedType) {
-        $leafQueryBuilder->setArgument('expectedType', $expectedType);
-        }
-        if (null !== $doNotFollowSymlinks) {
-        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
-        }
-        if (null !== $expand) {
-        $leafQueryBuilder->setArgument('expand', $expand);
-        }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
-    }
-
-    /**
-     * The exit code of the last executed command
-     *
-     * Returns an error if no command was executed
-     */
-    public function exitCode(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exitCode');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'exitCode');
-    }
-
-    /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
-     *
-     * Configures all available GPUs on the host to be accessible to this container.
-     *
-     * This currently works for Nvidia devices only.
-     */
-    public function experimentalWithAllGPUs(): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGPUs');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
-     *
-     * Configures the provided list of devices to be accessible to this container.
-     *
-     * This currently works for Nvidia devices only.
-     */
-    public function experimentalWithGPU(array $devices): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGPU');
-        $innerQueryBuilder->setArgument('devices', $devices);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Writes the container as an OCI tarball to the destination file path on the host.
-     *
-     * It can also export platform variants.
-     */
-    public function export(
-        string $path,
-        ?array $platformVariants = null,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-        ?bool $expand = false,
-    ): string {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $platformVariants) {
-        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
-        }
-        if (null !== $forcedCompression) {
-        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        if (null !== $expand) {
-        $leafQueryBuilder->setArgument('expand', $expand);
-        }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
-    }
-
-    /**
-     * Exports the container as an image to the host's container image store.
-     */
-    public function exportImage(
-        string $name,
-        ?array $platformVariants = null,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-    ): void {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
-        $leafQueryBuilder->setArgument('name', $name);
-        if (null !== $platformVariants) {
-        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
-        }
-        if (null !== $forcedCompression) {
-        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        $this->queryLeaf($leafQueryBuilder, 'exportImage');
-    }
-
-    /**
-     * Retrieves the list of exposed ports.
-     *
-     * This includes ports already exposed by the image, even if not explicitly added with dagger.
-     */
-    public function exposedPorts(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exposedPorts');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'exposedPorts');
-    }
-
-    /**
-     * Retrieves a file at the given path.
-     *
-     * Mounts are included.
-     */
-    public function file(string $path, ?bool $expand = false): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -313,33 +62,222 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * A unique identifier for this Container.
+     * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
      */
-    public function id(): Id
+    public function rootfs(): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('rootfs');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+     * Change the container's root filesystem. The previous root filesystem will be lost.
      */
-    public function imageRef(): string
+    public function withRootfs(Directory $directory): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('imageRef');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'imageRef');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRootfs');
+        $innerQueryBuilder->setArgument('directory', $directory);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Reads the container from an OCI tarball.
+     * Retrieve a directory from the container's root filesystem
+     *
+     * Mounts are included.
      */
-    public function import(File $source, ?string $tag = ''): Container
+    public function directory(string $path, ?bool $expand = false): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('import');
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $tag) {
-        $innerQueryBuilder->setArgument('tag', $tag);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves a file at the given path.
+     *
+     * Mounts are included.
+     */
+    public function file(string $path, ?bool $expand = false): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the user to be set for all commands.
+     */
+    public function user(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('user');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'user');
+    }
+
+    /**
+     * Retrieves this container with a different command user.
+     */
+    public function withUser(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUser');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with an unset command user.
+     *
+     * Should default to root.
+     */
+    public function withoutUser(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the working directory for all commands.
+     */
+    public function workdir(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'workdir');
+    }
+
+    /**
+     * Change the container's working directory. Like WORKDIR in Dockerfile.
+     */
+    public function withWorkdir(string $path, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Unset the container's working directory.
+     *
+     * Should default to "/".
+     */
+    public function withoutWorkdir(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutWorkdir');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the list of persistent environment variables configured on the container.
+     */
+    public function envVariables(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envVariables');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'envVariables');
+    }
+
+    /**
+     * Retrieves the value of the specified persistent environment variable.
+     */
+    public function envVariable(string $name): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envVariable');
+        $leafQueryBuilder->setArgument('name', $name);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envVariable');
+    }
+
+    /**
+     * Set a new environment variable in the container.
+     */
+    public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Export environment variables from an env-file to the container.
+     */
+    public function withEnvFileVariables(EnvFile $source): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set a new environment variable, using a secret value
+     */
+    public function withSecretVariable(string $name, Secret $secret): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSecretVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('secret', $secret);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+     *
+     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+     */
+    public function withVolatileVariable(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given environment variable.
+     */
+    public function withoutEnvVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutEnvVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given environment variable containing the secret.
+     */
+    public function withoutSecretVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSecretVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given volatile environment variable.
+     */
+    public function withoutVolatileVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus the given label.
+     */
+    public function withLabel(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLabel');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -363,239 +301,114 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Returns the image layer or configuration blob with the given digest as a File.
+     * Retrieves this container minus the given environment label.
      */
-    public function layer(
-        string $id,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-    ): File {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
-        $innerQueryBuilder->setArgument('id', $id);
-        if (null !== $forcedCompression) {
-        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Computes and returns the manifest for this container as a File.
-     */
-    public function manifest(
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-    ): File {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('manifest');
-        if (null !== $forcedCompression) {
-        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves the list of paths where a directory is mounted.
-     */
-    public function mounts(): array
+    public function withoutLabel(string $name): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mounts');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'mounts');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLabel');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The platform this container executes and publishes as.
+     * Retrieves this container with the specificed docker healtcheck command set.
      */
-    public function platform(): Platform
+    public function withDockerHealthcheck(
+        array $args,
+        ?bool $shell = null,
+        ?string $interval = null,
+        ?string $timeout = null,
+        ?string $startPeriod = null,
+        ?string $startInterval = null,
+        ?int $retries = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDockerHealthcheck');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $shell) {
+        $innerQueryBuilder->setArgument('shell', $shell);
+        }
+        if (null !== $interval) {
+        $innerQueryBuilder->setArgument('interval', $interval);
+        }
+        if (null !== $timeout) {
+        $innerQueryBuilder->setArgument('timeout', $timeout);
+        }
+        if (null !== $startPeriod) {
+        $innerQueryBuilder->setArgument('startPeriod', $startPeriod);
+        }
+        if (null !== $startInterval) {
+        $innerQueryBuilder->setArgument('startInterval', $startInterval);
+        }
+        if (null !== $retries) {
+        $innerQueryBuilder->setArgument('retries', $retries);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container without a configured docker healtcheck command.
+     */
+    public function withoutDockerHealthcheck(): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('platform');
-        return new \Dagger\Platform((string)$this->queryLeaf($leafQueryBuilder, 'platform'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDockerHealthcheck');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Package the container state as an OCI image, and publish it to a registry
-     *
-     * Returns the fully qualified address of the published image, with digest
+     * Retrieves this container's configured docker healthcheck.
      */
-    public function publish(
-        string $address,
-        ?array $platformVariants = null,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-        ?Service $registryService = null,
-        ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
-    ): string {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
-        $leafQueryBuilder->setArgument('address', $address);
-        if (null !== $platformVariants) {
-        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
-        }
-        if (null !== $forcedCompression) {
-        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        if (null !== $registryService) {
-        $leafQueryBuilder->setArgument('registryService', $registryService);
-        }
-        if (null !== $protocol) {
-        $leafQueryBuilder->setArgument('protocol', $protocol);
-        }
-        if (null !== $insecureSkipTLSVerify) {
-        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
-        }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
-    }
-
-    /**
-     * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
-     */
-    public function rootfs(): Directory
+    public function dockerHealthcheck(): ?HealthcheckConfig
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('rootfs');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return file status
-     */
-    public function stat(string $path, ?bool $doNotFollowSymlinks = false): ?Stat
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
-        $objectQueryBuilder->setArgument('path', $path);
-        if (null !== $doNotFollowSymlinks) {
-        $objectQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
-        }
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
         $objectQueryBuilder->selectField('id');
         $id = $this->queryLeaf($objectQueryBuilder, 'id');
         if ($id === null) {
             return null;
         }
-        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
+        return $this->client->loadObjectFromId(\Dagger\HealthcheckConfig::class, new \Dagger\Id((string)$id), 'HealthcheckConfig');
     }
 
     /**
-     * The buffered standard error stream of the last executed command
-     *
-     * Returns an error if no command was executed
+     * Return the container's OCI entrypoint.
      */
-    public function stderr(): string
+    public function entrypoint(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stderr');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'stderr');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
     }
 
     /**
-     * The buffered standard output stream of the last executed command
-     *
-     * Returns an error if no command was executed
+     * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
      */
-    public function stdout(): string
+    public function withEntrypoint(array $args, ?bool $keepDefaultArgs = false): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stdout');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'stdout');
-    }
-
-    /**
-     * Forces evaluation of the pipeline in the engine.
-     *
-     * It doesn't run the default command if no exec has been set.
-     */
-    public function sync(): Container
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
-    }
-
-    /**
-     * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-     */
-    public function terminal(
-        ?array $cmd = [],
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
-        if (null !== $cmd) {
-        $innerQueryBuilder->setArgument('cmd', $cmd);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEntrypoint');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $keepDefaultArgs) {
+        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-     *
-     * Be sure to set any exposed ports before calling this api.
+     * Reset the container's OCI entrypoint.
      */
-    public function up(
-        ?bool $random = false,
-        ?array $ports = null,
-        ?array $args = [],
-        ?bool $useEntrypoint = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-        ?bool $expand = false,
-        ?bool $noInit = false,
-    ): void {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
-        if (null !== $random) {
-        $leafQueryBuilder->setArgument('random', $random);
-        }
-        if (null !== $ports) {
-        $leafQueryBuilder->setArgument('ports', $ports);
-        }
-        if (null !== $args) {
-        $leafQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $useEntrypoint) {
-        $leafQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $leafQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $leafQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        if (null !== $expand) {
-        $leafQueryBuilder->setArgument('expand', $expand);
-        }
-        if (null !== $noInit) {
-        $leafQueryBuilder->setArgument('noInit', $noInit);
-        }
-        $this->queryLeaf($leafQueryBuilder, 'up');
-    }
-
-    /**
-     * Retrieves the user to be set for all commands.
-     */
-    public function user(): string
+    public function withoutEntrypoint(?bool $keepDefaultArgs = false): Container
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('user');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'user');
-    }
-
-    /**
-     * Retrieves this container plus the given OCI annotation.
-     */
-    public function withAnnotation(string $name, string $value): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAnnotation');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutEntrypoint');
+        if (null !== $keepDefaultArgs) {
+        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the container's default arguments.
+     */
+    public function defaultArgs(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultArgs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'defaultArgs');
     }
 
     /**
@@ -609,20 +422,336 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Set the default command to invoke for the container's terminal API.
+     * Remove the container's default arguments.
      */
-    public function withDefaultTerminalCmd(
-        array $args,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
+    public function withoutDefaultArgs(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDefaultArgs');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the list of paths where a directory is mounted.
+     */
+    public function mounts(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mounts');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'mounts');
+    }
+
+    /**
+     * Retrieves this container plus a directory mounted at the given path.
+     */
+    public function withMountedDirectory(
+        string $path,
+        Directory $source,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $readOnly = false,
+        ?bool $expand = false,
     ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
-        $innerQueryBuilder->setArgument('args', $args);
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
         }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $readOnly) {
+        $innerQueryBuilder->setArgument('readOnly', $readOnly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a file mounted at the given path.
+     */
+    public function withMountedFile(
+        string $path,
+        File $source,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
+     */
+    public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedTemp');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $size) {
+        $innerQueryBuilder->setArgument('size', $size);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a cache volume mounted at the given path.
+     */
+    public function withMountedCache(
+        string $path,
+        CacheVolume $cache,
+        ?Directory $source = null,
+        ?CacheSharingMode $sharing = null,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedCache');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('cache', $cache);
+        if (null !== $source) {
+        $innerQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $sharing) {
+        $innerQueryBuilder->setArgument('sharing', $sharing);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a volume mounted at the given path.
+     */
+    public function withMountedVolume(
+        string $path,
+        Volume $volume,
+        ?bool $readOnly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedVolume');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
+        if (null !== $readOnly) {
+        $innerQueryBuilder->setArgument('readOnly', $readOnly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a secret mounted into a file at the given path.
+     */
+    public function withMountedSecret(
+        string $path,
+        Secret $source,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?int $mode = 256,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedSecret');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $mode) {
+        $innerQueryBuilder->setArgument('mode', $mode);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a socket forwarded to the given Unix socket path.
+     */
+    public function withUnixSocket(
+        string $path,
+        Socket $source,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUnixSocket');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with a previously added Unix socket removed.
+     */
+    public function withoutUnixSocket(string $path, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUnixSocket');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container after unmounting everything at the given path.
+     */
+    public function withoutMount(string $path, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMount');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a container snapshot with a file added
+     */
+    public function withFile(
+        string $path,
+        File $source,
+        ?int $permissions = null,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with the file at the given path removed.
+     */
+    public function withoutFile(string $path, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a new container spanshot with specified files removed
+     */
+    public function withoutFiles(array $paths, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus the contents of the given files copied to the given path.
+     */
+    public function withFiles(
+        string $path,
+        array $sources,
+        ?int $permissions = null,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a new container snapshot, with a file added to its filesystem with text content
+     */
+    public function withNewFile(
+        string $path,
+        string $contents,
+        ?int $permissions = 420,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        if (null !== $inheritOwner) {
+        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -669,75 +798,57 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves this container with the specificed docker healtcheck command set.
+     * Return a new container snapshot, with a directory removed from its filesystem
      */
-    public function withDockerHealthcheck(
-        array $args,
-        ?bool $shell = null,
-        ?string $interval = null,
-        ?string $timeout = null,
-        ?string $startPeriod = null,
-        ?string $startInterval = null,
-        ?int $retries = null,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDockerHealthcheck');
-        $innerQueryBuilder->setArgument('args', $args);
-        if (null !== $shell) {
-        $innerQueryBuilder->setArgument('shell', $shell);
-        }
-        if (null !== $interval) {
-        $innerQueryBuilder->setArgument('interval', $interval);
-        }
-        if (null !== $timeout) {
-        $innerQueryBuilder->setArgument('timeout', $timeout);
-        }
-        if (null !== $startPeriod) {
-        $innerQueryBuilder->setArgument('startPeriod', $startPeriod);
-        }
-        if (null !== $startInterval) {
-        $innerQueryBuilder->setArgument('startInterval', $startInterval);
-        }
-        if (null !== $retries) {
-        $innerQueryBuilder->setArgument('retries', $retries);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
-     */
-    public function withEntrypoint(array $args, ?bool $keepDefaultArgs = false): Container
+    public function withoutDirectory(string $path, ?bool $expand = false): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEntrypoint');
-        $innerQueryBuilder->setArgument('args', $args);
-        if (null !== $keepDefaultArgs) {
-        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Export environment variables from an env-file to the container.
-     */
-    public function withEnvFileVariables(EnvFile $source): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
-        $innerQueryBuilder->setArgument('source', $source);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set a new environment variable in the container.
-     */
-    public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * check if a file or directory exists
+     */
+    public function exists(
+        string $path,
+        ?ExistsType $expectedType = null,
+        ?bool $doNotFollowSymlinks = false,
+        ?bool $expand = false,
+    ): bool {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
+    }
+
+    /**
+     * Return file status
+     */
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): ?Stat
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $objectQueryBuilder->setArgument('path', $path);
+        if (null !== $doNotFollowSymlinks) {
+        $objectQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
     }
 
     /**
@@ -802,6 +913,284 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * The buffered standard output stream of the last executed command
+     *
+     * Returns an error if no command was executed
+     */
+    public function stdout(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stdout');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'stdout');
+    }
+
+    /**
+     * The buffered standard error stream of the last executed command
+     *
+     * Returns an error if no command was executed
+     */
+    public function stderr(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stderr');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'stderr');
+    }
+
+    /**
+     * The combined buffered standard output and standard error stream of the last executed command
+     *
+     * Returns an error if no command was executed
+     */
+    public function combinedOutput(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('combinedOutput');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'combinedOutput');
+    }
+
+    /**
+     * The exit code of the last executed command
+     *
+     * Returns an error if no command was executed
+     */
+    public function exitCode(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exitCode');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'exitCode');
+    }
+
+    /**
+     * Return a snapshot with a symlink
+     */
+    public function withSymlink(string $target, string $linkName, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSymlink');
+        $innerQueryBuilder->setArgument('target', $target);
+        $innerQueryBuilder->setArgument('linkName', $linkName);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus the given OCI annotation.
+     */
+    public function withAnnotation(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAnnotation');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given OCI annotation.
+     */
+    public function withoutAnnotation(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutAnnotation');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Package the container state as an OCI image, and publish it to a registry
+     *
+     * Returns the fully qualified address of the published image, with digest
+     */
+    public function publish(
+        string $address,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+        ?Service $registryService = null,
+        ?RegistryProtocol $protocol = null,
+        ?bool $insecureSkipTLSVerify = false,
+    ): string {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
+        $leafQueryBuilder->setArgument('address', $address);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $registryService) {
+        $leafQueryBuilder->setArgument('registryService', $registryService);
+        }
+        if (null !== $protocol) {
+        $leafQueryBuilder->setArgument('protocol', $protocol);
+        }
+        if (null !== $insecureSkipTLSVerify) {
+        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
+    }
+
+    /**
+     * The platform this container executes and publishes as.
+     */
+    public function platform(): Platform
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('platform');
+        return new \Dagger\Platform((string)$this->queryLeaf($leafQueryBuilder, 'platform'));
+    }
+
+    /**
+     * Writes the container as an OCI tarball to the destination file path on the host.
+     *
+     * It can also export platform variants.
+     */
+    public function export(
+        string $path,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+        ?bool $expand = false,
+    ): string {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
+     * Exports the container as an image to the host's container image store.
+     */
+    public function exportImage(
+        string $name,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'exportImage');
+    }
+
+    /**
+     * Package the container state as an OCI image, and return it as a tar archive
+     */
+    public function asTarball(
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTarball');
+        if (null !== $platformVariants) {
+        $innerQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Reads the container from an OCI tarball.
+     */
+    public function import(File $source, ?string $tag = ''): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('import');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $tag) {
+        $innerQueryBuilder->setArgument('tag', $tag);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Attach credentials for future publishing to a registry. Use in combination with publish
+     */
+    public function withRegistryAuth(string $address, string $username, Secret $secret): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRegistryAuth');
+        $innerQueryBuilder->setArgument('address', $address);
+        $innerQueryBuilder->setArgument('username', $username);
+        $innerQueryBuilder->setArgument('secret', $secret);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container without the registry authentication of a given address.
+     */
+    public function withoutRegistryAuth(string $address): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutRegistryAuth');
+        $innerQueryBuilder->setArgument('address', $address);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+     */
+    public function imageRef(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('imageRef');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'imageRef');
+    }
+
+    /**
+     * Computes and returns the manifest for this container as a File.
+     */
+    public function manifest(
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('manifest');
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the image layer or configuration blob with the given digest as a File.
+     */
+    public function layer(
+        string $id,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
+        $innerQueryBuilder->setArgument('id', $id);
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
      *
      * Exposed ports serve two purposes:
@@ -831,287 +1220,27 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Return a container snapshot with a file added
+     * Unexpose a previously exposed port.
      */
-    public function withFile(
-        string $path,
-        File $source,
-        ?int $permissions = null,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
-        }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus the contents of the given files copied to the given path.
-     */
-    public function withFiles(
-        string $path,
-        array $sources,
-        ?int $permissions = null,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('sources', $sources);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
-        }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus the given label.
-     */
-    public function withLabel(string $name, string $value): Container
+    public function withoutExposedPort(int $port, ?NetworkProtocol $protocol = null): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLabel');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a cache volume mounted at the given path.
-     */
-    public function withMountedCache(
-        string $path,
-        CacheVolume $cache,
-        ?Directory $source = null,
-        ?CacheSharingMode $sharing = null,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedCache');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('cache', $cache);
-        if (null !== $source) {
-        $innerQueryBuilder->setArgument('source', $source);
-        }
-        if (null !== $sharing) {
-        $innerQueryBuilder->setArgument('sharing', $sharing);
-        }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExposedPort');
+        $innerQueryBuilder->setArgument('port', $port);
+        if (null !== $protocol) {
+        $innerQueryBuilder->setArgument('protocol', $protocol);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Retrieves this container plus a directory mounted at the given path.
+     * Retrieves the list of exposed ports.
+     *
+     * This includes ports already exposed by the image, even if not explicitly added with dagger.
      */
-    public function withMountedDirectory(
-        string $path,
-        Directory $source,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $readOnly = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $readOnly) {
-        $innerQueryBuilder->setArgument('readOnly', $readOnly);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a file mounted at the given path.
-     */
-    public function withMountedFile(
-        string $path,
-        File $source,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a secret mounted into a file at the given path.
-     */
-    public function withMountedSecret(
-        string $path,
-        Secret $source,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?int $mode = 256,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedSecret');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $mode) {
-        $innerQueryBuilder->setArgument('mode', $mode);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
-     */
-    public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container
+    public function exposedPorts(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedTemp');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $size) {
-        $innerQueryBuilder->setArgument('size', $size);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a volume mounted at the given path.
-     */
-    public function withMountedVolume(
-        string $path,
-        Volume $volume,
-        ?bool $readOnly = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedVolume');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('volume', $volume);
-        if (null !== $readOnly) {
-        $innerQueryBuilder->setArgument('readOnly', $readOnly);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a new container snapshot, with a file added to its filesystem with text content
-     */
-    public function withNewFile(
-        string $path,
-        string $contents,
-        ?int $permissions = 420,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('contents', $contents);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
-        }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Attach credentials for future publishing to a registry. Use in combination with publish
-     */
-    public function withRegistryAuth(string $address, string $username, Secret $secret): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRegistryAuth');
-        $innerQueryBuilder->setArgument('address', $address);
-        $innerQueryBuilder->setArgument('username', $username);
-        $innerQueryBuilder->setArgument('secret', $secret);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Change the container's root filesystem. The previous root filesystem will be lost.
-     */
-    public function withRootfs(Directory $directory): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRootfs');
-        $innerQueryBuilder->setArgument('directory', $directory);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set a new environment variable, using a secret value
-     */
-    public function withSecretVariable(string $name, Secret $secret): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSecretVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('secret', $secret);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exposedPorts');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'exposedPorts');
     }
 
     /**
@@ -1132,276 +1261,147 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Return a snapshot with a symlink
+     * Set the default command to invoke for the container's terminal API.
      */
-    public function withSymlink(string $target, string $linkName, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSymlink');
-        $innerQueryBuilder->setArgument('target', $target);
-        $innerQueryBuilder->setArgument('linkName', $linkName);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container plus a socket forwarded to the given Unix socket path.
-     */
-    public function withUnixSocket(
-        string $path,
-        Socket $source,
-        ?string $owner = '',
-        ?bool $inheritOwner = false,
-        ?bool $expand = false,
+    public function withDefaultTerminalCmd(
+        array $args,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
     ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUnixSocket');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
-        if (null !== $inheritOwner) {
-        $innerQueryBuilder->setArgument('inheritOwner', $inheritOwner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Retrieves this container with a different command user.
+     * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
-    public function withUser(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUser');
-        $innerQueryBuilder->setArgument('name', $name);
+    public function terminal(
+        ?array $cmd = [],
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+     * EXPERIMENTAL API! Subject to change/removal at any time.
      *
-     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
-     */
-    public function withVolatileVariable(string $name, string $value): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Change the container's working directory. Like WORKDIR in Dockerfile.
-     */
-    public function withWorkdir(string $path, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container minus the given OCI annotation.
-     */
-    public function withoutAnnotation(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutAnnotation');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove the container's default arguments.
-     */
-    public function withoutDefaultArgs(): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDefaultArgs');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a new container snapshot, with a directory removed from its filesystem
-     */
-    public function withoutDirectory(string $path, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container without a configured docker healtcheck command.
-     */
-    public function withoutDockerHealthcheck(): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDockerHealthcheck');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Reset the container's OCI entrypoint.
-     */
-    public function withoutEntrypoint(?bool $keepDefaultArgs = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutEntrypoint');
-        if (null !== $keepDefaultArgs) {
-        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container minus the given environment variable.
-     */
-    public function withoutEnvVariable(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutEnvVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Unexpose a previously exposed port.
-     */
-    public function withoutExposedPort(int $port, ?NetworkProtocol $protocol = null): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExposedPort');
-        $innerQueryBuilder->setArgument('port', $port);
-        if (null !== $protocol) {
-        $innerQueryBuilder->setArgument('protocol', $protocol);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container with the file at the given path removed.
-     */
-    public function withoutFile(string $path, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a new container spanshot with specified files removed
-     */
-    public function withoutFiles(array $paths, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
-        $innerQueryBuilder->setArgument('paths', $paths);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container minus the given environment label.
-     */
-    public function withoutLabel(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutLabel');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container after unmounting everything at the given path.
-     */
-    public function withoutMount(string $path, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMount');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container without the registry authentication of a given address.
-     */
-    public function withoutRegistryAuth(string $address): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutRegistryAuth');
-        $innerQueryBuilder->setArgument('address', $address);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container minus the given environment variable containing the secret.
-     */
-    public function withoutSecretVariable(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSecretVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container with a previously added Unix socket removed.
-     */
-    public function withoutUnixSocket(string $path, ?bool $expand = false): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUnixSocket');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container with an unset command user.
+     * Configures the provided list of devices to be accessible to this container.
      *
-     * Should default to root.
+     * This currently works for Nvidia devices only.
      */
-    public function withoutUser(): Container
+    public function experimentalWithGPU(array $devices): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGPU');
+        $innerQueryBuilder->setArgument('devices', $devices);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Retrieves this container minus the given volatile environment variable.
-     */
-    public function withoutVolatileVariable(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Unset the container's working directory.
+     * EXPERIMENTAL API! Subject to change/removal at any time.
      *
-     * Should default to "/".
+     * Configures all available GPUs on the host to be accessible to this container.
+     *
+     * This currently works for Nvidia devices only.
      */
-    public function withoutWorkdir(): Container
+    public function experimentalWithAllGPUs(): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutWorkdir');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGPUs');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Retrieves the working directory for all commands.
+     * Turn the container into a Service.
+     *
+     * Be sure to set any exposed ports before this conversion.
      */
-    public function workdir(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'workdir');
+    public function asService(
+        ?array $args = [],
+        ?bool $useEntrypoint = false,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+        ?bool $expand = false,
+        ?bool $noInit = false,
+    ): Service {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asService');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        if (null !== $useEntrypoint) {
+        $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+     *
+     * Be sure to set any exposed ports before calling this api.
+     */
+    public function up(
+        ?bool $random = false,
+        ?array $ports = null,
+        ?array $args = [],
+        ?bool $useEntrypoint = false,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+        ?bool $expand = false,
+        ?bool $noInit = false,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
+        if (null !== $random) {
+        $leafQueryBuilder->setArgument('random', $random);
+        }
+        if (null !== $ports) {
+        $leafQueryBuilder->setArgument('ports', $ports);
+        }
+        if (null !== $args) {
+        $leafQueryBuilder->setArgument('args', $args);
+        }
+        if (null !== $useEntrypoint) {
+        $leafQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $leafQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $leafQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $noInit) {
+        $leafQueryBuilder->setArgument('noInit', $noInit);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'up');
     }
 }

@@ -14,13 +14,12 @@ namespace Dagger;
 class Host extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Accesses a container image on the host.
+     * A unique identifier for this Host.
      */
-    public function containerImage(string $name): Container
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('containerImage');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -77,25 +76,13 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this Host.
+     * Accesses a Unix socket on the host.
      */
-    public function id(): Id
+    public function unixSocket(string $path): Socket
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Creates a service that forwards traffic to a specified address via the host.
-     */
-    public function service(array $ports, ?string $host = 'localhost'): Service
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
-        $innerQueryBuilder->setArgument('ports', $ports);
-        if (null !== $host) {
-        $innerQueryBuilder->setArgument('host', $host);
-        }
-        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('unixSocket');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -115,12 +102,25 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Accesses a Unix socket on the host.
+     * Creates a service that forwards traffic to a specified address via the host.
      */
-    public function unixSocket(string $path): Socket
+    public function service(array $ports, ?string $host = 'localhost'): Service
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('unixSocket');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
+        $innerQueryBuilder->setArgument('ports', $ports);
+        if (null !== $host) {
+        $innerQueryBuilder->setArgument('host', $host);
+        }
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Accesses a container image on the host.
+     */
+    public function containerImage(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('containerImage');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

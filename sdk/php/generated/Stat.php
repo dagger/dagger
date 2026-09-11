@@ -14,21 +14,21 @@ namespace Dagger;
 class Stat extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * file type
-     */
-    public function fileType(): FileType
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fileType');
-        return \Dagger\FileType::from((string)$this->queryLeaf($leafQueryBuilder, 'fileType'));
-    }
-
-    /**
      * A unique identifier for this Stat.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * file size
+     */
+    public function size(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('size');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'size');
     }
 
     /**
@@ -41,20 +41,20 @@ class Stat extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * file type
+     */
+    public function fileType(): FileType
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fileType');
+        return \Dagger\FileType::from((string)$this->queryLeaf($leafQueryBuilder, 'fileType'));
+    }
+
+    /**
      * permission bits
      */
     public function permissions(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('permissions');
         return (int)$this->queryLeaf($leafQueryBuilder, 'permissions');
-    }
-
-    /**
-     * file size
-     */
-    public function size(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('size');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'size');
     }
 }

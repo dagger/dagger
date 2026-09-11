@@ -14,6 +14,15 @@ namespace Dagger;
 class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this CurrentModule.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
@@ -29,27 +38,6 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all generators defined by the module
-     */
-    public function generators(?array $include = null): GeneratorGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * A unique identifier for this CurrentModule.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -101,5 +89,17 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workdirFile');
         $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all generators defined by the module
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

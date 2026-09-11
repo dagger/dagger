@@ -14,12 +14,21 @@ namespace Dagger;
 class SourceMap extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The column number within the line.
+     * A unique identifier for this SourceMap.
      */
-    public function column(): int
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('column');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'column');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The module dependency this was declared in.
+     */
+    public function module(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('module');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'module');
     }
 
     /**
@@ -32,15 +41,6 @@ class SourceMap extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this SourceMap.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * The line number within the filename.
      */
     public function line(): int
@@ -50,12 +50,12 @@ class SourceMap extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The module dependency this was declared in.
+     * The column number within the line.
      */
-    public function module(): string
+    public function column(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('module');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'module');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('column');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'column');
     }
 
     /**

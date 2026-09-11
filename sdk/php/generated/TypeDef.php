@@ -14,90 +14,6 @@ namespace Dagger;
 class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
-     */
-    public function asEnum(): ?EnumTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asEnum');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\EnumTypeDef::class, new \Dagger\Id((string)$id), 'EnumTypeDef');
-    }
-
-    /**
-     * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
-     */
-    public function asInput(): ?InputTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\InputTypeDef::class, new \Dagger\Id((string)$id), 'InputTypeDef');
-    }
-
-    /**
-     * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
-     */
-    public function asInterface(): ?InterfaceTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\InterfaceTypeDef::class, new \Dagger\Id((string)$id), 'InterfaceTypeDef');
-    }
-
-    /**
-     * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
-     */
-    public function asList(): ?ListTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asList');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\ListTypeDef::class, new \Dagger\Id((string)$id), 'ListTypeDef');
-    }
-
-    /**
-     * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
-     */
-    public function asObject(): ?ObjectTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asObject');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\ObjectTypeDef::class, new \Dagger\Id((string)$id), 'ObjectTypeDef');
-    }
-
-    /**
-     * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
-     */
-    public function asScalar(): ?ScalarTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asScalar');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\ScalarTypeDef::class, new \Dagger\Id((string)$id), 'ScalarTypeDef');
-    }
-
-    /**
      * A unique identifier for this TypeDef.
      */
     public function id(): Id
@@ -107,75 +23,61 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The kind of type this is (e.g. primitive, list, object).
+     * Sets whether this type can be set to null.
      */
-    public function kind(): TypeDefKind
+    public function withOptional(bool $optional): TypeDef
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
-    }
-
-    /**
-     * The canonical non-optional name of the type.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * Whether this type can be set to null. Defaults to false.
-     */
-    public function optional(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
-    }
-
-    /**
-     * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
-     */
-    public function withConstructor(Function_ $function): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConstructor');
-        $innerQueryBuilder->setArgument('function', $function);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withOptional');
+        $innerQueryBuilder->setArgument('optional', $optional);
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a TypeDef of kind Enum with the provided name.
+     * Sets the kind of the type.
+     */
+    public function withKind(TypeDefKind $kind): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withKind');
+        $innerQueryBuilder->setArgument('kind', $kind);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Scalar with the provided name.
+     */
+    public function withScalar(string $name, ?string $description = ''): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withScalar');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind List with the provided type for its elements.
+     */
+    public function withListOf(TypeDef $elementType): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withListOf');
+        $innerQueryBuilder->setArgument('elementType', $elementType);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Object with the provided name.
      *
-     * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+     * Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
      */
-    public function withEnum(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $description) {
-        $innerQueryBuilder->setArgument('description', $description);
-        }
-        if (null !== $sourceMap) {
-        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
-        }
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-     */
-    public function withEnumMember(
+    public function withObject(
         string $name,
-        ?string $value = '',
         ?string $description = '',
         ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $value) {
-        $innerQueryBuilder->setArgument('value', $value);
-        }
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }
@@ -189,24 +91,17 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+     * Returns a TypeDef of kind Interface with the provided name.
      */
-    public function withEnumValue(
-        string $value,
-        ?string $description = '',
-        ?SourceMap $sourceMap = null,
-        ?string $deprecated = null,
-    ): TypeDef {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
-        $innerQueryBuilder->setArgument('value', $value);
+    public function withInterface(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
+        $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
-        }
-        if (null !== $deprecated) {
-        $innerQueryBuilder->setArgument('deprecated', $deprecated);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -247,11 +142,23 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns a TypeDef of kind Interface with the provided name.
+     * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
      */
-    public function withInterface(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
+    public function withConstructor(Function_ $function): TypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConstructor');
+        $innerQueryBuilder->setArgument('function', $function);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Enum with the provided name.
+     *
+     * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+     */
+    public function withEnum(string $name, ?string $description = '', ?SourceMap $sourceMap = null): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
@@ -263,38 +170,16 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Sets the kind of the type.
+     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
      */
-    public function withKind(TypeDefKind $kind): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withKind');
-        $innerQueryBuilder->setArgument('kind', $kind);
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns a TypeDef of kind List with the provided type for its elements.
-     */
-    public function withListOf(TypeDef $elementType): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withListOf');
-        $innerQueryBuilder->setArgument('elementType', $elementType);
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns a TypeDef of kind Object with the provided name.
-     *
-     * Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
-     */
-    public function withObject(
-        string $name,
+    public function withEnumValue(
+        string $value,
         ?string $description = '',
         ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
     ): TypeDef {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
-        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
+        $innerQueryBuilder->setArgument('value', $value);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }
@@ -308,25 +193,140 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Sets whether this type can be set to null.
+     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
      */
-    public function withOptional(bool $optional): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withOptional');
-        $innerQueryBuilder->setArgument('optional', $optional);
+    public function withEnumMember(
+        string $name,
+        ?string $value = '',
+        ?string $description = '',
+        ?SourceMap $sourceMap = null,
+        ?string $deprecated = null,
+    ): TypeDef {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $value) {
+        $innerQueryBuilder->setArgument('value', $value);
+        }
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
+        }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a TypeDef of kind Scalar with the provided name.
+     * The canonical non-optional name of the type.
      */
-    public function withScalar(string $name, ?string $description = ''): TypeDef
+    public function name(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withScalar');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $description) {
-        $innerQueryBuilder->setArgument('description', $description);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The kind of type this is (e.g. primitive, list, object).
+     */
+    public function kind(): TypeDefKind
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
+        return \Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+    }
+
+    /**
+     * Whether this type can be set to null. Defaults to false.
+     */
+    public function optional(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
+    }
+
+    /**
+     * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
+     */
+    public function asList(): ?ListTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asList');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
         }
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return $this->client->loadObjectFromId(\Dagger\ListTypeDef::class, new \Dagger\Id((string)$id), 'ListTypeDef');
+    }
+
+    /**
+     * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
+     */
+    public function asObject(): ?ObjectTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asObject');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ObjectTypeDef::class, new \Dagger\Id((string)$id), 'ObjectTypeDef');
+    }
+
+    /**
+     * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
+     */
+    public function asInterface(): ?InterfaceTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\InterfaceTypeDef::class, new \Dagger\Id((string)$id), 'InterfaceTypeDef');
+    }
+
+    /**
+     * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
+     */
+    public function asInput(): ?InputTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\InputTypeDef::class, new \Dagger\Id((string)$id), 'InputTypeDef');
+    }
+
+    /**
+     * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+     */
+    public function asScalar(): ?ScalarTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asScalar');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ScalarTypeDef::class, new \Dagger\Id((string)$id), 'ScalarTypeDef');
+    }
+
+    /**
+     * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+     */
+    public function asEnum(): ?EnumTypeDef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asEnum');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\EnumTypeDef::class, new \Dagger\Id((string)$id), 'EnumTypeDef');
     }
 }

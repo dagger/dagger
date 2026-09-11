@@ -14,15 +14,6 @@ namespace Dagger;
 class LLMSkill extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The one-line description from the SKILL.md frontmatter.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this LLMSkill.
      */
     public function id(): Id
@@ -38,5 +29,14 @@ class LLMSkill extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The one-line description from the SKILL.md frontmatter.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 }

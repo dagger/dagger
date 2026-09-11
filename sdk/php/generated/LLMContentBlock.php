@@ -14,33 +14,6 @@ namespace Dagger;
 class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
-     */
-    public function arguments(): Json
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'arguments'));
-    }
-
-    /**
-     * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
-     */
-    public function callId(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
-    }
-
-    /**
-     * Whether the tool call resulted in an error (for TOOL_RESULT kind).
-     */
-    public function errored(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('errored');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'errored');
-    }
-
-    /**
      * A unique identifier for this LLMContentBlock.
      */
     public function id(): Id
@@ -59,15 +32,6 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
-     */
-    public function signature(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('signature');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'signature');
-    }
-
-    /**
      * Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
      */
     public function text(): string
@@ -77,11 +41,47 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
+     * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+     */
+    public function callId(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
+    }
+
+    /**
      * The name of the tool called (for TOOL_CALL kind).
      */
     public function toolName(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('toolName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'toolName');
+    }
+
+    /**
+     * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+     */
+    public function arguments(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'arguments'));
+    }
+
+    /**
+     * Whether the tool call resulted in an error (for TOOL_RESULT kind).
+     */
+    public function errored(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('errored');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'errored');
+    }
+
+    /**
+     * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+     */
+    public function signature(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('signature');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'signature');
     }
 }

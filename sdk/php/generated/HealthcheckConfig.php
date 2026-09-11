@@ -14,15 +14,6 @@ namespace Dagger;
 class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Healthcheck command arguments.
-     */
-    public function args(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'args');
-    }
-
-    /**
      * A unique identifier for this HealthcheckConfig.
      */
     public function id(): Id
@@ -32,21 +23,12 @@ class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Interval between running healthcheck. Example:30s
+     * Healthcheck command arguments.
      */
-    public function interval(): string
+    public function args(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interval');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'interval');
-    }
-
-    /**
-     * The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
-     */
-    public function retries(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('retries');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'retries');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
     /**
@@ -59,12 +41,21 @@ class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * StartInterval configures the duration between checks during the startup phase. Example:5s
+     * Healthcheck timeout. Example:3s
      */
-    public function startInterval(): string
+    public function timeout(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('startInterval');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'startInterval');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('timeout');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'timeout');
+    }
+
+    /**
+     * Interval between running healthcheck. Example:30s
+     */
+    public function interval(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interval');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'interval');
     }
 
     /**
@@ -77,11 +68,20 @@ class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Healthcheck timeout. Example:3s
+     * StartInterval configures the duration between checks during the startup phase. Example:5s
      */
-    public function timeout(): string
+    public function startInterval(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('timeout');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'timeout');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('startInterval');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'startInterval');
+    }
+
+    /**
+     * The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+     */
+    public function retries(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('retries');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'retries');
     }
 }
