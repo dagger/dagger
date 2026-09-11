@@ -66,8 +66,8 @@ source = './b'
 entrypoint = true
 `
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", original)
-	out, err := base.With(daggerExec("ws", "entrypoint")).CombinedOutput(ctx)
-	require.Error(t, err)
+	out, err := base.With(daggerExecFail("ws", "entrypoint")).CombinedOutput(ctx)
+	require.NoError(t, err)
 	require.Contains(t, out, "multiple entrypoint modules")
 
 	for _, args := range [][]string{

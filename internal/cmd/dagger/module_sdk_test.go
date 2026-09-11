@@ -531,6 +531,24 @@ func TestModuleInitControlMessages(t *testing.T) {
 	}
 }
 
+func TestModuleInitNameFromWorkspace(t *testing.T) {
+	for _, tc := range []struct {
+		name, configFile, cwd, address, modulePath, want string
+	}{
+		{"root", "dagger.toml", "/", "file:///work/app", "", "app-dev"},
+		{"nested config", "../dagger.toml", "/shop/subdir", "file:///work/shop/subdir", "", "shop-dev"},
+		{"custom path", "dagger.toml", "/", "file:///work/app", "custom", "custom"},
+		{"absolute path", "../dagger.toml", "/shop/subdir", "file:///work/shop/subdir", "/custom", "custom"},
+		{"no config", "", "/", "file:///work/app", "", "app-dev"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			name, err := moduleInitNameFromWorkspace(tc.configFile, tc.cwd, tc.address, tc.modulePath)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, name)
+		})
+	}
+}
+
 func TestModuleInitControlPresence(t *testing.T) {
 	for _, arg := range []string{"", "--install", "--install=false", "--entrypoint", "--entrypoint=false"} {
 		t.Run(arg, func(t *testing.T) {

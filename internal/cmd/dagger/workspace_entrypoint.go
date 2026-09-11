@@ -82,6 +82,14 @@ func writeWorkspaceEntrypoint(ctx context.Context, ws *dagger.Workspace, name st
 	if configFile == "" {
 		return workspace.SetEntrypoint(nil, name)
 	}
+	cwd, err := ws.Cwd(ctx)
+	if err != nil {
+		return err
+	}
+	configFile, err = workspaceConfigRootPathFromCwd(configFile, cwd)
+	if err != nil {
+		return err
+	}
 	// ConfigRead can include user or environment overlays. Read the selected
 	// file for mutation so those overlays are never copied into base storage.
 	root := ws.WithWorkdir(".")

@@ -209,9 +209,30 @@ func moduleInitResultName(ctx context.Context, current *dagger.Workspace) (strin
 	if err != nil {
 		return "", err
 	}
+	return moduleInitNameFromWorkspace(configFile, cwd, address, moduleInitPath)
+}
+
+func moduleInitNameFromWorkspace(configFile, cwd, address, modulePath string) (string, error) {
+	if configFile != "" {
+		var err error
+		configFile, err = workspaceConfigRootPathFromCwd(configFile, cwd)
+		if err != nil {
+			return "", err
+		}
+	}
+	cwd, err := workspaceRelativeCwd(cwd)
+	if err != nil {
+		return "", err
+	}
 	scopePath := ""
-	if moduleInitPath != "" {
-		scopePath, err = workspace.ResolveSDKManagedPath(cwd, moduleInitPath)
+	if modulePath != "" {
+		base := cwd
+		modulePath = strings.ReplaceAll(modulePath, `\`, "/")
+		if filepath.IsAbs(modulePath) {
+			base = "."
+			modulePath = strings.TrimLeft(modulePath, "/")
+		}
+		scopePath, err = workspace.ResolveSDKManagedPath(base, modulePath)
 		if err != nil {
 			return "", err
 		}
