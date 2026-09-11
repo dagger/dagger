@@ -726,6 +726,15 @@ pub struct Changeset {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ChangesetFilterOpts<'a> {
+    /// Exclude changes at paths matching these patterns.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// Only include changes at paths matching these patterns. Empty includes all paths.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ChangesetWithChangesetOpts {
     /// What to do on a merge conflict
     #[builder(setter(into, strip_option), default)]
@@ -819,6 +828,40 @@ impl Changeset {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Select changes matching the supplied glob patterns, preserving their original baseline.
+    /// Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter(&self) -> Changeset {
+        let query = self.selection.select("filter");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Select changes matching the supplied glob patterns, preserving their original baseline.
+    /// Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_opts<'a>(&self, opts: ChangesetFilterOpts<'a>) -> Changeset {
+        let mut query = self.selection.select("filter");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// A unique identifier for this Changeset.
     pub async fn id(&self) -> Result<Id, DaggerError> {
@@ -8905,6 +8948,21 @@ pub struct GitRefTreeOpts {
     #[builder(setter(into, strip_option), default)]
     pub include_tags: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRefWithCommitOpts<'a> {
+    /// Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+    #[builder(setter(into, strip_option), default)]
+    pub allow_empty: Option<bool>,
+    /// RFC3339 committer date. Defaults to date.
+    #[builder(setter(into, strip_option), default)]
+    pub committer_date: Option<&'a str>,
+    /// Committer email. Defaults to authorEmail.
+    #[builder(setter(into, strip_option), default)]
+    pub committer_email: Option<&'a str>,
+    /// Committer name. Defaults to authorName.
+    #[builder(setter(into, strip_option), default)]
+    pub committer_name: Option<&'a str>,
+}
 impl IntoID<Id> for GitRef {
     fn into_id(
         self,
@@ -8929,6 +8987,16 @@ impl Loadable for GitRef {
     }
 }
 impl GitRef {
+    /// Return this ref's repository with HEAD pinned to the selected commit.
+    /// Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+    pub fn as_repository(&self) -> GitRepository {
+        let query = self.selection.select("asRepository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a synthetic workspace from this git ref.
     ///
     /// # Arguments
@@ -9140,6 +9208,95 @@ impl GitRef {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create a single-parent commit on this ref by applying a changeset's edits.
+    /// Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+    /// Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to apply. Use Changeset.filter to select paths before committing.
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author date; also the default committer date.
+    /// * `author_name` - Author name.
+    /// * `author_email` - Author email.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit(
+        &self,
+        changes: impl IntoID<Id>,
+        message: impl Into<String>,
+        date: impl Into<String>,
+        author_name: impl Into<String>,
+        author_email: impl Into<String>,
+    ) -> GitRef {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        query = query.arg("authorName", author_name.into());
+        query = query.arg("authorEmail", author_email.into());
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a single-parent commit on this ref by applying a changeset's edits.
+    /// Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+    /// Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to apply. Use Changeset.filter to select paths before committing.
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author date; also the default committer date.
+    /// * `author_name` - Author name.
+    /// * `author_email` - Author email.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit_opts<'a>(
+        &self,
+        changes: impl IntoID<Id>,
+        message: impl Into<String>,
+        date: impl Into<String>,
+        author_name: impl Into<String>,
+        author_email: impl Into<String>,
+        opts: GitRefWithCommitOpts<'a>,
+    ) -> GitRef {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        query = query.arg("authorName", author_name.into());
+        query = query.arg("authorEmail", author_email.into());
+        if let Some(committer_name) = opts.committer_name {
+            query = query.arg("committerName", committer_name);
+        }
+        if let Some(committer_email) = opts.committer_email {
+            query = query.arg("committerEmail", committer_email);
+        }
+        if let Some(committer_date) = opts.committer_date {
+            query = query.arg("committerDate", committer_date);
+        }
+        if let Some(allow_empty) = opts.allow_empty {
+            query = query.arg("allowEmpty", allow_empty);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for GitRef {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
@@ -9214,7 +9371,8 @@ impl Loadable for GitRepository {
     }
 }
 impl GitRepository {
-    /// Creates a synthetic workspace from this git repository.
+    /// Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+    /// Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
     ///
     /// # Arguments
     ///
@@ -9227,7 +9385,8 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Creates a synthetic workspace from this git repository.
+    /// Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+    /// Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
     ///
     /// # Arguments
     ///
@@ -9492,6 +9651,28 @@ impl GitRepository {
         if let Some(prerequisite_ref) = opts.prerequisite_ref {
             query = query.arg("prerequisiteRef", prerequisite_ref);
         }
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+    /// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+    /// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory` - Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
+    pub fn with_directory(&self, directory: impl IntoID<Id>) -> GitRepository {
+        let mut query = self.selection.select("withDirectory");
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+            }),
+        );
         GitRepository {
             proc: self.proc.clone(),
             selection: query,

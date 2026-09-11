@@ -820,6 +820,35 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ChangesetFilterOpts contains options for Changeset.Filter
+type ChangesetFilterOpts struct {
+	// Only include changes at paths matching these patterns. Empty includes all paths.
+	Include []string
+	// Exclude changes at paths matching these patterns.
+	Exclude []string
+}
+
+// Select changes matching the supplied glob patterns, preserving their original baseline.
+//
+// Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+func (r *Changeset) Filter(opts ...ChangesetFilterOpts) *Changeset {
+	q := r.query.Select("filter")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this Changeset.
 func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -8865,6 +8894,17 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
+// Return this ref's repository with HEAD pinned to the selected commit.
+//
+// Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+func (r *GitRef) AsRepository() *GitRepository {
+	q := r.query.Select("asRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
 // GitRefAsWorkspaceOpts contains options for GitRef.AsWorkspace
 type GitRefAsWorkspaceOpts struct {
 	// Current working directory inside the workspace root. Defaults to the workspace root.
@@ -9135,6 +9175,55 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 }
 
+// GitRefWithCommitOpts contains options for GitRef.WithCommit
+type GitRefWithCommitOpts struct {
+	// Committer name. Defaults to authorName.
+	CommitterName string
+	// Committer email. Defaults to authorEmail.
+	CommitterEmail string
+	// RFC3339 committer date. Defaults to date.
+	CommitterDate string
+	// Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+	AllowEmpty bool
+}
+
+// Create a single-parent commit on this ref by applying a changeset's edits.
+//
+// Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+//
+// Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+func (r *GitRef) WithCommit(changes *Changeset, message string, date string, authorName string, authorEmail string, opts ...GitRefWithCommitOpts) *GitRef {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `committerName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterName) {
+			q = q.Arg("committerName", opts[i].CommitterName)
+		}
+		// `committerEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterEmail) {
+			q = q.Arg("committerEmail", opts[i].CommitterEmail)
+		}
+		// `committerDate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterDate) {
+			q = q.Arg("committerDate", opts[i].CommitterDate)
+		}
+		// `allowEmpty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowEmpty) {
+			q = q.Arg("allowEmpty", opts[i].AllowEmpty)
+		}
+	}
+	q = q.Arg("changes", changes)
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+	q = q.Arg("authorName", authorName)
+	q = q.Arg("authorEmail", authorEmail)
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // AsNode returns this GitRef as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GitRef) AsNode() Node {
@@ -9173,7 +9262,9 @@ type GitRepositoryAsWorkspaceOpts struct {
 	Cwd string
 }
 
-// Creates a synthetic workspace from this git repository.
+// Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+//
+// Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
 func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -9405,6 +9496,21 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 		}
 	}
 	q = q.Arg("bundle", bundle)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+//
+// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+//
+// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+func (r *GitRepository) WithDirectory(directory *Directory) *GitRepository {
+	assertNotNil("directory", directory)
+	q := r.query.Select("withDirectory")
+	q = q.Arg("directory", directory)
 
 	return &GitRepository{
 		query: q,
