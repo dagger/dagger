@@ -5764,6 +5764,13 @@ type Workspace implements Node {
     gitignore: Boolean = false
   ): Directory!
 
+  """
+  Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+
+  Reflects the selected env's effective view. Fails if several modules are selected.
+  """
+  entrypoint: String!
+
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
 

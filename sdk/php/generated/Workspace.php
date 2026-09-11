@@ -149,6 +149,17 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+     *
+     * Reflects the selected env's effective view. Fails if several modules are selected.
+     */
+    public function entrypoint(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
+    }
+
+    /**
      * List named environments defined in the workspace configuration.
      */
     public function envList(): array

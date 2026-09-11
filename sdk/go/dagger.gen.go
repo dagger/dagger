@@ -16306,6 +16306,7 @@ type Workspace struct {
 	configRead  *string
 	cwd         *string
 	detectScope *string
+	entrypoint  *string
 	export      *Void
 	findUp      *string
 	id          *ID
@@ -16530,6 +16531,21 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	return &Directory{
 		query: q,
 	}
+}
+
+// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // List named environments defined in the workspace configuration.

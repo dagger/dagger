@@ -411,6 +411,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
+		dagql.Func("entrypoint", s.entrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live config from host").
+			Doc("Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.",
+				"Reflects the selected env's effective view. Fails if several modules are selected."),
 		dagql.Func("envList", s.envList).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").

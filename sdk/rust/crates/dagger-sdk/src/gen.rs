@@ -15860,6 +15860,12 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+    /// Reflects the selected env's effective view. Fails if several modules are selected.
+    pub async fn entrypoint(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("entrypoint");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// List named environments defined in the workspace configuration.
     pub async fn env_list(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("envList");

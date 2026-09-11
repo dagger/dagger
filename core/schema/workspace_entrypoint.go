@@ -14,6 +14,26 @@ type workspaceEntrypointArgs struct {
 	Name string
 }
 
+func (s *workspaceSchema) entrypoint(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.String, error) {
+	data, err := s.configRead(ctx, parent, configReadArgs{})
+	if err != nil {
+		return "", err
+	}
+	cfg, err := workspace.ParseConfig([]byte(data))
+	if err != nil {
+		return "", err
+	}
+	name, err := workspace.EntrypointName(cfg)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(name), nil
+}
+
 func (s *workspaceSchema) withEntrypoint(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],

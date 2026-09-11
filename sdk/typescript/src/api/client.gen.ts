@@ -15291,6 +15291,7 @@ export class Workspace extends BaseClient {
   private readonly _configRead?: string = undefined
   private readonly _cwd?: string = undefined
   private readonly _detectScope?: string = undefined
+  private readonly _entrypoint?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
 
@@ -15305,6 +15306,7 @@ export class Workspace extends BaseClient {
     _configRead?: string,
     _cwd?: string,
     _detectScope?: string,
+    _entrypoint?: string,
     _export?: Void,
     _findUp?: string,
   ) {
@@ -15316,6 +15318,7 @@ export class Workspace extends BaseClient {
     this._configRead = _configRead
     this._cwd = _cwd
     this._detectScope = _detectScope
+    this._entrypoint = _entrypoint
     this._export = _export
     this._findUp = _findUp
   }
@@ -15466,6 +15469,23 @@ export class Workspace extends BaseClient {
   directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+   *
+   * Reflects the selected env's effective view. Fails if several modules are selected.
+   */
+  entrypoint = async (): Promise<string> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

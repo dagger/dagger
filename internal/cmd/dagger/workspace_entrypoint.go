@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -44,15 +43,7 @@ Changes are written to the selected dagger.toml.`,
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			ws := engineClient.Dagger().CurrentWorkspace()
 			if !write {
-				data, err := ws.ConfigRead(ctx)
-				if err != nil {
-					return err
-				}
-				cfg, err := workspace.ParseConfig([]byte(data))
-				if err != nil {
-					return err
-				}
-				name, err := workspace.EntrypointName(cfg)
+				name, err := ws.Entrypoint(ctx)
 				if err != nil || name == "" {
 					return err
 				}

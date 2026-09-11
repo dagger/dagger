@@ -147,7 +147,15 @@ func (WorkspaceSuite) TestWorkspaceEntrypointAPI(ctx context.Context, t *testctx
 		name, err := workspace.EntrypointName(cfg)
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, name, tc.name)
+		name, err = tc.ws.Entrypoint(ctx)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, name, tc.name)
 	}
-	_, err := ws.WithEntrypoint("missing").ConfigRead(ctx)
+	_, err := c.Directory().
+		WithNewFile("dagger.toml", "[modules.a]\nsource = './a'\nentrypoint = true\n[modules.b]\nsource = './b'\nentrypoint = true\n").
+		AsWorkspace().
+		Entrypoint(ctx)
+	require.ErrorContains(t, err, "multiple entrypoint modules")
+	_, err = ws.WithEntrypoint("missing").ConfigRead(ctx)
 	require.ErrorContains(t, err, `module "missing" is not installed`)
 }

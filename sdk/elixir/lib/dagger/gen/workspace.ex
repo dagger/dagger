@@ -169,6 +169,19 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+
+  Reflects the selected env's effective view. Fails if several modules are selected.
+  """
+  @spec entrypoint(t()) :: {:ok, String.t()} | {:error, term()}
+  def entrypoint(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("entrypoint")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   List named environments defined in the workspace configuration.
   """
   @spec env_list(t()) :: {:ok, [String.t()]} | {:error, term()}
