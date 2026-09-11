@@ -36,7 +36,7 @@ func (stage *workspaceMigrationStage) migrateConfig(ctx context.Context) error {
 	stage.legacy.Steps = append(stage.legacy.Steps, &core.WorkspaceMigrationStep{
 		Code:        "legacy-sdk-config",
 		Description: "Moved legacy SDK configuration to sdks",
-		Changes:     changes.Self(),
+		Changes:     changes,
 	})
 	return nil
 }
