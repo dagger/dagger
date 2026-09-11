@@ -4069,7 +4069,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("workspace with config", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:       "/repo",
 			HasGitRoot: true,
 			Cwd:        filepath.Join("services", "payment", "src"),
@@ -4087,7 +4087,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("workspace without config", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:       "/repo",
 			HasGitRoot: true,
 			Cwd:        ".",
@@ -4101,7 +4101,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 	t.Run("local boundary without Git is rootless", func(t *testing.T) {
 		t.Parallel()
 
-		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		ws, err := srv.buildCoreWorkspace(ctx, &workspace.Workspace{
 			Root:     "/repo",
 			Cwd:      ".",
 			LockFile: workspace.LockFileName,

@@ -4,6 +4,7 @@ import (
 	context "context"
 	"errors"
 	"fmt"
+	io "io"
 	"sync"
 
 	"github.com/dagger/dagger/util/grpcutil"
@@ -137,4 +138,44 @@ func (p GitAttachableProxy) PackUncommitted(req *PackUncommittedRequest, srv Git
 	}
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
+
+func (p GitAttachableProxy) PreparePushSSHAuth(ctx context.Context, req *PreparePushSSHAuthRequest) (*PreparePushSSHAuthResponse, error) {
+	return p.client.PreparePushSSHAuth(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p GitAttachableProxy) CaptureGit(req *CaptureGitRequest, srv Git_CaptureGitServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+	clientStream, err := p.client.CaptureGit(grpcutil.IncomingToOutgoingContext(ctx), req)
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
+
+func (p GitAttachableProxy) ApplyBundle(srv Git_ApplyBundleServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+	stream, err := p.client.ApplyBundle(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := srv.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(req); err != nil {
+			return err
+		}
+	}
+	response, err := stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	return srv.SendAndClose(response)
 }
