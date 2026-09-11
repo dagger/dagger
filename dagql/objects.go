@@ -380,6 +380,13 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 		if !typeVisibleInView(iface, view) {
 			continue
 		}
+		// Structural conformance may have been inferred in a newer view.
+		// Do not advertise an interface whose required fields are hidden here.
+		if slices.ContainsFunc(iface.FieldSpecs(view), func(spec FieldSpec) bool {
+			return def.Fields.ForName(spec.Name) == nil
+		}) {
+			continue
+		}
 		def.Interfaces = append(def.Interfaces, name)
 	}
 	sort.Strings(def.Interfaces)
