@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -136,8 +135,8 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: resolved.selectors()}); err != nil {
+	repo, err := workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{Field: "__pullDirectory", Args: resolved.selectors()})
+	if err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(parent.Self().Cwd)}}}); err != nil {
@@ -218,27 +217,4 @@ func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.Object
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-}
-
-func (s *workspaceSchema) pullRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (dagql.ObjectResult[*core.GitRepository], error) {
-	var inst dagql.ObjectResult[*core.GitRepository]
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "__pullDirectory", Args: args.selectors()}); err != nil {
-		return inst, err
-	}
-	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{Directory: dir})
-	if err != nil {
-		return inst, err
-	}
-	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return inst, err
-	}
-	repo.URL, repo.DiscardGitDir = head.Self().Repo.Self().URL, head.Self().Repo.Self().DiscardGitDir
-	repo.PushURLs = slices.Clone(head.Self().Repo.Self().PushURLs)
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }

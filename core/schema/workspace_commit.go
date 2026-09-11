@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -20,11 +19,16 @@ type workspaceWithCommitArgs struct {
 	AuthorEmail dagql.Optional[dagql.String]
 }
 
-func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (core.WorkspaceCommitOpts, error) {
-	opts := core.WorkspaceCommitOpts{
+type workspaceCommitOpts struct {
+	core.GitCommitOpts
+	Paths []string
+}
+
+func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (workspaceCommitOpts, error) {
+	opts := workspaceCommitOpts{GitCommitOpts: core.GitCommitOpts{
 		Message: args.Message, Date: args.Date,
 		AuthorName: args.AuthorName.Value.String(), AuthorEmail: args.AuthorEmail.Value.String(),
-	}
+	}}
 	if _, err := time.Parse(time.RFC3339, args.Date); err != nil {
 		return opts, fmt.Errorf("withCommit date must be RFC3339: %w", err)
 	}
@@ -106,14 +110,52 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	); err != nil {
 		return inst, err
 	}
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, frozen, &repo, dagql.Selector{
-		Field: "__commitRepository", Args: args.selectors(),
-	}); err != nil {
+	opts, err := args.opts(frozen.Self())
+	if err != nil {
 		return inst, err
 	}
-	if err := srv.Select(ctx, repo, &inst,
-		dagql.Selector{Field: "head"},
+	selected := changes
+	if len(opts.Paths) > 0 {
+		paths, err := changes.Self().ComputePaths(ctx)
+		if err != nil {
+			return inst, err
+		}
+		matches := func(p string) bool {
+			for _, scope := range opts.Paths {
+				if scope == "." || p == scope || strings.HasPrefix(p, scope+"/") {
+					return true
+				}
+			}
+			return false
+		}
+		for to, from := range paths.Renamed {
+			if matches(to) != matches(from) {
+				return inst, fmt.Errorf("paths would split the rename %q -> %q; include both paths or neither", from, to)
+			}
+		}
+		includes := make([]string, 0, len(opts.Paths))
+		escape := strings.NewReplacer("\\", "\\\\", "*", "\\*", "?", "\\?", "[", "\\[")
+		for _, p := range opts.Paths {
+			if p == "." {
+				includes = nil
+				break
+			}
+			includes = append(includes, escape.Replace(p))
+		}
+		if err := srv.Select(ctx, changes, &selected, dagql.Selector{Field: "filter", Args: []dagql.NamedInput{{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))}}}); err != nil {
+			return inst, err
+		}
+	}
+	changesID, err := selected.ID()
+	if err != nil {
+		return inst, err
+	}
+	commitArgs := gitRefWithCommitArgs{Changes: dagql.NewID[*core.Changeset](changesID), Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail}
+	var committed dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, frozen, &committed, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, committed, &inst,
 		dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{
 			{Name: "cwd", Value: dagql.NewString(frozen.Self().Cwd)},
 		}},
@@ -186,39 +228,6 @@ func workspaceGitCheckout(ctx context.Context, srv *dagql.Server, ws dagql.Objec
 	return inst, err
 }
 
-func (s *workspaceSchema) commitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("commit requires a frozen workspace; call snapshot first")
-	}
-	opts, err := args.opts(parent.Self())
-	if err != nil {
-		return inst, err
-	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-	base, err := workspaceGitCheckout(ctx, srv, parent)
-	if err != nil {
-		return inst, err
-	}
-	var changes dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
-		return inst, err
-	}
-	dir, err := core.WorkspaceCommitChangeset(ctx, base, changes.Self(), opts)
-	if err != nil {
-		return inst, fmt.Errorf("withCommit: %w", err)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-}
-
-func (s *workspaceSchema) commitRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (dagql.ObjectResult[*core.GitRepository], error) {
-	return workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{
-		Field: "__commitDirectory", Args: args.selectors(),
-	})
-}
-
 // workspaceRepositoryFromDirectory opens an engine-side directory while
 // preserving the workspace's logical origin and push routing.
 func workspaceRepositoryFromDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], directory dagql.Selector) (inst dagql.ObjectResult[*core.GitRepository], err error) {
@@ -230,20 +239,11 @@ func workspaceRepositoryFromDirectory(ctx context.Context, parent dagql.ObjectRe
 	if err := srv.Select(ctx, parent, &dir, directory); err != nil {
 		return inst, err
 	}
-	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{Directory: dir})
-	if err != nil {
-		return inst, err
-	}
-	// Keep the logical origin even though the objects now live engine-side,
-	// just as GitRepository.withBundle does.
 	var head dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
 		return inst, err
 	}
-	repo.URL = head.Self().Repo.Self().URL
-	repo.PushURLs = slices.Clone(head.Self().Repo.Self().PushURLs)
-	repo.DiscardGitDir = head.Self().Repo.Self().DiscardGitDir
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+	return gitRepositoryWithDirectory(ctx, srv, head.Self().Repo, dir)
 }
 
 func validateWorkspaceGitAuthor(name, email string) error {
