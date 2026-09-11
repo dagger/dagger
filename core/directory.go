@@ -1816,7 +1816,7 @@ func (d *gitDiagnostics) Write(p []byte) (int, error) {
 // wrap annotates err with whatever the subprocess said, plus the patch lines
 // it complained about. Without this a caller several layers up sees only e.g.
 // "git apply: exit status 128" — true, and useless.
-func (d *gitDiagnostics) wrap(what string, err error) error {
+func (d *gitDiagnostics) wrap(what string, err error) error { //nolint:unparam // "what" names the subprocess; only git apply so far
 	out := strings.TrimSpace(string(d.buf))
 	if out == "" {
 		return fmt.Errorf("%s: %w (no output)", what, err)
