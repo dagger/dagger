@@ -86,24 +86,24 @@ func (*Function) TypeDescription() string {
 	)
 }
 
-func (fn *Function) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (fn *Function) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if fn == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted function: nil function")
 	}
-	payload, err := encodePersistedFunction(cache, fn)
+	payload, err := encodePersistedFunction(enc, fn)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*Function) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Function) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFunction
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted function payload: %w", err)
 	}
-	return decodePersistedFunction(ctx, dag, &persisted)
+	return decodePersistedFunction(ctx, dec, &persisted)
 }
 
 func (fn *Function) AttachDependencyResults(
@@ -655,24 +655,24 @@ func (*FunctionArg) TypeDescription() string {
 		an argument passed at function call time.`)
 }
 
-func (arg *FunctionArg) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (arg *FunctionArg) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if arg == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted function arg: nil function arg")
 	}
-	payload, err := encodePersistedFunctionArg(cache, arg)
+	payload, err := encodePersistedFunctionArg(enc, arg)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*FunctionArg) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionArg) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFunctionArg
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted function arg payload: %w", err)
 	}
-	return decodePersistedFunctionArg(ctx, dag, &persisted)
+	return decodePersistedFunctionArg(ctx, dec, &persisted)
 }
 
 func (arg *FunctionArg) isContextual() bool {
@@ -851,24 +851,24 @@ func (*TypeDef) TypeDescription() string {
 	return "A definition of a parameter or return type in a Module."
 }
 
-func (typeDef *TypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (typeDef *TypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if typeDef == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted type def: nil type def")
 	}
-	payload, err := encodePersistedTypeDef(cache, typeDef)
+	payload, err := encodePersistedTypeDef(enc, typeDef)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*TypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*TypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted type def payload: %w", err)
 	}
-	return decodePersistedTypeDef(ctx, dag, &persisted)
+	return decodePersistedTypeDef(ctx, dec, &persisted)
 }
 
 func (typeDef *TypeDef) AttachDependencyResults(
@@ -1219,24 +1219,24 @@ func (*ObjectTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*ObjectTypeDef)(nil)
 
-func (obj *ObjectTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (obj *ObjectTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if obj == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted object type def: nil object type def")
 	}
-	payload, err := encodePersistedObjectTypeDef(cache, obj)
+	payload, err := encodePersistedObjectTypeDef(enc, obj)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedObjectTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted object type def payload: %w", err)
 	}
-	return decodePersistedObjectTypeDef(ctx, dag, &persisted)
+	return decodePersistedObjectTypeDef(ctx, dec, &persisted)
 }
 
 func (obj *ObjectTypeDef) AttachDependencyResults(
@@ -1507,24 +1507,24 @@ func (*FieldTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*FieldTypeDef)(nil)
 
-func (field *FieldTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (field *FieldTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if field == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted field type def: nil field type def")
 	}
-	payload, err := encodePersistedFieldTypeDef(cache, field)
+	payload, err := encodePersistedFieldTypeDef(enc, field)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFieldTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted field type def payload: %w", err)
 	}
-	return decodePersistedFieldTypeDef(ctx, dag, &persisted)
+	return decodePersistedFieldTypeDef(ctx, dec, &persisted)
 }
 
 //nolint:dupl // symmetric with FunctionArg.AttachDependencyResults; each typedef kind walks its own fields
@@ -1624,24 +1624,24 @@ func (*InterfaceTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*InterfaceTypeDef)(nil)
 
-func (iface *InterfaceTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (iface *InterfaceTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if iface == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted interface type def: nil interface type def")
 	}
-	payload, err := encodePersistedInterfaceTypeDef(cache, iface)
+	payload, err := encodePersistedInterfaceTypeDef(enc, iface)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedInterfaceTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted interface type def payload: %w", err)
 	}
-	return decodePersistedInterfaceTypeDef(ctx, dag, &persisted)
+	return decodePersistedInterfaceTypeDef(ctx, dec, &persisted)
 }
 
 //nolint:dupl // symmetric with EnumTypeDef.AttachDependencyResults; each typedef kind walks its own fields
@@ -1792,18 +1792,18 @@ func (typeDef *ScalarTypeDef) TypeDescription() string {
 	return "A definition of a custom scalar defined in a Module."
 }
 
-func (typeDef *ScalarTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (typeDef *ScalarTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if typeDef == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted scalar type def: nil scalar type def")
 	}
 	return encodePersistedObjectPayload(encodePersistedScalarTypeDef(typeDef))
 }
 
-func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedScalarTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted scalar type def payload: %w", err)
@@ -1841,24 +1841,24 @@ func (*ListTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*ListTypeDef)(nil)
 
-func (typeDef *ListTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (typeDef *ListTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if typeDef == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted list type def: nil list type def")
 	}
-	payload, err := encodePersistedListTypeDef(cache, typeDef)
+	payload, err := encodePersistedListTypeDef(enc, typeDef)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedListTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted list type def payload: %w", err)
 	}
-	return decodePersistedListTypeDef(ctx, dag, &persisted)
+	return decodePersistedListTypeDef(ctx, dec, &persisted)
 }
 
 func (typeDef *ListTypeDef) AttachDependencyResults(
@@ -1913,24 +1913,24 @@ module accept input objects via their id rather than graphql input types.`
 
 var _ dagql.HasDependencyResults = (*InputTypeDef)(nil)
 
-func (typeDef *InputTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (typeDef *InputTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if typeDef == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted input type def: nil input type def")
 	}
-	payload, err := encodePersistedInputTypeDef(cache, typeDef)
+	payload, err := encodePersistedInputTypeDef(enc, typeDef)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedInputTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted input type def payload: %w", err)
 	}
-	return decodePersistedInputTypeDef(ctx, dag, &persisted)
+	return decodePersistedInputTypeDef(ctx, dec, &persisted)
 }
 
 func (typeDef *InputTypeDef) AttachDependencyResults(
@@ -2018,24 +2018,24 @@ func (*EnumTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*EnumTypeDef)(nil)
 
-func (enum *EnumTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (enum *EnumTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if enum == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted enum type def: nil enum type def")
 	}
-	payload, err := encodePersistedEnumTypeDef(cache, enum)
+	payload, err := encodePersistedEnumTypeDef(enc, enum)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedEnumTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted enum type def payload: %w", err)
 	}
-	return decodePersistedEnumTypeDef(ctx, dag, &persisted)
+	return decodePersistedEnumTypeDef(ctx, dec, &persisted)
 }
 
 //nolint:dupl // symmetric with InterfaceTypeDef.AttachDependencyResults; each typedef kind walks its own fields
@@ -2199,24 +2199,24 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 
 var _ dagql.HasDependencyResults = (*EnumMemberTypeDef)(nil)
 
-func (enumValue *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (enumValue *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if enumValue == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted enum member type def: nil enum member type def")
 	}
-	payload, err := encodePersistedEnumMemberTypeDef(cache, enumValue)
+	payload, err := encodePersistedEnumMemberTypeDef(enc, enumValue)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	return encodePersistedObjectPayload(payload)
 }
 
-func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedEnumMemberTypeDef
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted enum member type def payload: %w", err)
 	}
-	return decodePersistedEnumMemberTypeDef(ctx, dag, &persisted)
+	return decodePersistedEnumMemberTypeDef(ctx, dec, &persisted)
 }
 
 func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
@@ -2486,18 +2486,18 @@ func (*FunctionCall) TypeDescription() string {
 	return "An active function call."
 }
 
-func (fnCall *FunctionCall) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (fnCall *FunctionCall) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if fnCall == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted function call: nil function call")
 	}
 	return encodePersistedObjectPayload(persistedFunctionCall(*fnCall))
 }
 
-func (*FunctionCall) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionCall) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedFunctionCall
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted function call payload: %w", err)
@@ -2578,18 +2578,18 @@ func (*FunctionCallArgValue) TypeDescription() string {
 	return "A value passed as a named argument to a function call."
 }
 
-func (arg *FunctionCallArgValue) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (arg *FunctionCallArgValue) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if arg == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted function call arg value: nil function call arg value")
 	}
 	return encodePersistedObjectPayload(persistedFunctionCallArgValue(*arg))
 }
 
-func (*FunctionCallArgValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionCallArgValue) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedFunctionCallArgValue
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted function call arg value payload: %w", err)
@@ -2620,18 +2620,18 @@ func (*SourceMap) TypeDescription() string {
 	return "Source location information."
 }
 
-func (sourceMap *SourceMap) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (sourceMap *SourceMap) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if sourceMap == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted source map: nil source map")
 	}
 	return encodePersistedObjectPayload(encodePersistedSourceMap(sourceMap))
 }
 
-func (*SourceMap) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*SourceMap) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var persisted persistedSourceMap
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted source map payload: %w", err)
@@ -2841,7 +2841,7 @@ func decodePersistedSourceMap(sourceMap *persistedSourceMap) *SourceMap {
 	}
 }
 
-func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionArg) (*persistedFunctionArg, error) {
+func encodePersistedFunctionArg(enc *dagql.PersistEncodeContext, arg *FunctionArg) (*persistedFunctionArg, error) {
 	if arg == nil {
 		return nil, nil
 	}
@@ -2855,13 +2855,13 @@ func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionA
 		Deprecated:     arg.Deprecated,
 		OriginalName:   arg.OriginalName,
 	}
-	typeDefID, err := encodePersistedObjectRef(cache, arg.TypeDef, "function arg type def")
+	typeDefID, err := encodePersistedObjectRef(enc, arg.TypeDef, "function arg type def")
 	if err != nil {
 		return nil, err
 	}
 	payload.TypeDefResultID = typeDefID
 	if arg.SourceMap.Valid && arg.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, arg.SourceMap.Value, "function arg source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, arg.SourceMap.Value, "function arg source map")
 		if err != nil {
 			return nil, err
 		}
@@ -2870,11 +2870,11 @@ func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionA
 	return payload, nil
 }
 
-func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *persistedFunctionArg) (*FunctionArg, error) {
+func decodePersistedFunctionArg(ctx context.Context, dec *dagql.PersistDecodeContext, arg *persistedFunctionArg) (*FunctionArg, error) {
 	if arg == nil {
 		return nil, nil
 	}
-	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, arg.TypeDefResultID, "function arg type def")
+	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, arg.TypeDefResultID, "function arg type def")
 	if err != nil {
 		return nil, err
 	}
@@ -2890,7 +2890,7 @@ func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *per
 		OriginalName:   arg.OriginalName,
 	}
 	if arg.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, arg.SourceMapResultID, "function arg source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, arg.SourceMapResultID, "function arg source map")
 		if err != nil {
 			return nil, err
 		}
@@ -2899,7 +2899,7 @@ func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *per
 	return decoded, nil
 }
 
-func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*persistedFunction, error) {
+func encodePersistedFunction(enc *dagql.PersistEncodeContext, fn *Function) (*persistedFunction, error) {
 	if fn == nil {
 		return nil, nil
 	}
@@ -2916,13 +2916,13 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}
-	returnTypeID, err := encodePersistedObjectRef(cache, fn.ReturnType, "function return type")
+	returnTypeID, err := encodePersistedObjectRef(enc, fn.ReturnType, "function return type")
 	if err != nil {
 		return nil, err
 	}
 	payload.ReturnTypeResultID = returnTypeID
 	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, fn.SourceMap.Value, "function source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, fn.SourceMap.Value, "function source map")
 		if err != nil {
 			return nil, err
 		}
@@ -2934,7 +2934,7 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 	}
 	payload.ArgResultIDs = make([]uint64, 0, len(fn.Args))
 	for _, arg := range fn.Args {
-		argID, err := encodePersistedObjectRef(cache, arg, "function arg")
+		argID, err := encodePersistedObjectRef(enc, arg, "function arg")
 		if err != nil {
 			return nil, err
 		}
@@ -2943,11 +2943,11 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 	return payload, nil
 }
 
-func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persistedFunction) (*Function, error) {
+func decodePersistedFunction(ctx context.Context, dec *dagql.PersistDecodeContext, fn *persistedFunction) (*Function, error) {
 	if fn == nil {
 		return nil, nil
 	}
-	returnType, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, fn.ReturnTypeResultID, "function return type")
+	returnType, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, fn.ReturnTypeResultID, "function return type")
 	if err != nil {
 		return nil, err
 	}
@@ -2966,7 +2966,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		OriginalName:       fn.OriginalName,
 	}
 	if fn.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, fn.SourceMapResultID, "function source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, fn.SourceMapResultID, "function source map")
 		if err != nil {
 			return nil, err
 		}
@@ -2977,7 +2977,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 	}
 	decoded.Args = make(dagql.ObjectResultArray[*FunctionArg], 0, len(fn.ArgResultIDs))
 	for _, argID := range fn.ArgResultIDs {
-		arg, err := loadPersistedObjectResultByResultID[*FunctionArg](ctx, dag, argID, "function arg")
+		arg, err := loadPersistedObjectResultByResultID[*FunctionArg](ctx, dec, argID, "function arg")
 		if err != nil {
 			return nil, err
 		}
@@ -2986,7 +2986,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 	return decoded, nil
 }
 
-func encodePersistedTypeDef(cache dagql.PersistedObjectCache, typeDef *TypeDef) (*persistedTypeDef, error) {
+func encodePersistedTypeDef(enc *dagql.PersistEncodeContext, typeDef *TypeDef) (*persistedTypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
@@ -2995,42 +2995,42 @@ func encodePersistedTypeDef(cache dagql.PersistedObjectCache, typeDef *TypeDef) 
 		Optional: typeDef.Optional,
 	}
 	if typeDef.AsList.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsList.Value, "typedef list")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsList.Value, "typedef list")
 		if err != nil {
 			return nil, err
 		}
 		payload.AsListResultID = resultID
 	}
 	if typeDef.AsObject.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsObject.Value, "typedef object")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsObject.Value, "typedef object")
 		if err != nil {
 			return nil, err
 		}
 		payload.AsObjectResultID = resultID
 	}
 	if typeDef.AsInterface.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsInterface.Value, "typedef interface")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsInterface.Value, "typedef interface")
 		if err != nil {
 			return nil, err
 		}
 		payload.AsInterfaceResultID = resultID
 	}
 	if typeDef.AsInput.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsInput.Value, "typedef input")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsInput.Value, "typedef input")
 		if err != nil {
 			return nil, err
 		}
 		payload.AsInputResultID = resultID
 	}
 	if typeDef.AsScalar.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsScalar.Value, "typedef scalar")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsScalar.Value, "typedef scalar")
 		if err != nil {
 			return nil, err
 		}
 		payload.AsScalarResultID = resultID
 	}
 	if typeDef.AsEnum.Valid {
-		resultID, err := encodePersistedObjectRef(cache, typeDef.AsEnum.Value, "typedef enum")
+		resultID, err := encodePersistedObjectRef(enc, typeDef.AsEnum.Value, "typedef enum")
 		if err != nil {
 			return nil, err
 		}
@@ -3039,7 +3039,7 @@ func encodePersistedTypeDef(cache dagql.PersistedObjectCache, typeDef *TypeDef) 
 	return payload, nil
 }
 
-func decodePersistedTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedTypeDef) (*TypeDef, error) {
+func decodePersistedTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, typeDef *persistedTypeDef) (*TypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
@@ -3048,42 +3048,42 @@ func decodePersistedTypeDef(ctx context.Context, dag *dagql.Server, typeDef *per
 		Optional: typeDef.Optional,
 	}
 	if typeDef.AsListResultID != 0 {
-		list, err := loadPersistedObjectResultByResultID[*ListTypeDef](ctx, dag, typeDef.AsListResultID, "typedef list")
+		list, err := loadPersistedObjectResultByResultID[*ListTypeDef](ctx, dec, typeDef.AsListResultID, "typedef list")
 		if err != nil {
 			return nil, err
 		}
 		decoded.AsList = dagql.NonNull(list)
 	}
 	if typeDef.AsObjectResultID != 0 {
-		obj, err := loadPersistedObjectResultByResultID[*ObjectTypeDef](ctx, dag, typeDef.AsObjectResultID, "typedef object")
+		obj, err := loadPersistedObjectResultByResultID[*ObjectTypeDef](ctx, dec, typeDef.AsObjectResultID, "typedef object")
 		if err != nil {
 			return nil, err
 		}
 		decoded.AsObject = dagql.NonNull(obj)
 	}
 	if typeDef.AsInterfaceResultID != 0 {
-		iface, err := loadPersistedObjectResultByResultID[*InterfaceTypeDef](ctx, dag, typeDef.AsInterfaceResultID, "typedef interface")
+		iface, err := loadPersistedObjectResultByResultID[*InterfaceTypeDef](ctx, dec, typeDef.AsInterfaceResultID, "typedef interface")
 		if err != nil {
 			return nil, err
 		}
 		decoded.AsInterface = dagql.NonNull(iface)
 	}
 	if typeDef.AsInputResultID != 0 {
-		input, err := loadPersistedObjectResultByResultID[*InputTypeDef](ctx, dag, typeDef.AsInputResultID, "typedef input")
+		input, err := loadPersistedObjectResultByResultID[*InputTypeDef](ctx, dec, typeDef.AsInputResultID, "typedef input")
 		if err != nil {
 			return nil, err
 		}
 		decoded.AsInput = dagql.NonNull(input)
 	}
 	if typeDef.AsScalarResultID != 0 {
-		scalar, err := loadPersistedObjectResultByResultID[*ScalarTypeDef](ctx, dag, typeDef.AsScalarResultID, "typedef scalar")
+		scalar, err := loadPersistedObjectResultByResultID[*ScalarTypeDef](ctx, dec, typeDef.AsScalarResultID, "typedef scalar")
 		if err != nil {
 			return nil, err
 		}
 		decoded.AsScalar = dagql.NonNull(scalar)
 	}
 	if typeDef.AsEnumResultID != 0 {
-		enum, err := loadPersistedObjectResultByResultID[*EnumTypeDef](ctx, dag, typeDef.AsEnumResultID, "typedef enum")
+		enum, err := loadPersistedObjectResultByResultID[*EnumTypeDef](ctx, dec, typeDef.AsEnumResultID, "typedef enum")
 		if err != nil {
 			return nil, err
 		}
@@ -3092,7 +3092,7 @@ func decodePersistedTypeDef(ctx context.Context, dag *dagql.Server, typeDef *per
 	return decoded.syncName(), nil
 }
 
-func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectTypeDef) (*persistedObjectTypeDef, error) {
+func encodePersistedObjectTypeDef(enc *dagql.PersistEncodeContext, obj *ObjectTypeDef) (*persistedObjectTypeDef, error) {
 	if obj == nil {
 		return nil, nil
 	}
@@ -3106,28 +3106,28 @@ func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectT
 		FunctionResultIDs: make([]uint64, 0, len(obj.Functions)),
 	}
 	if obj.SourceMap.Valid && obj.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, obj.SourceMap.Value, "object typedef source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, obj.SourceMap.Value, "object typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		payload.SourceMapResultID = sourceMapID
 	}
 	for _, field := range obj.Fields {
-		fieldID, err := encodePersistedObjectRef(cache, field, "object typedef field")
+		fieldID, err := encodePersistedObjectRef(enc, field, "object typedef field")
 		if err != nil {
 			return nil, err
 		}
 		payload.FieldResultIDs = append(payload.FieldResultIDs, fieldID)
 	}
 	for _, fn := range obj.Functions {
-		fnID, err := encodePersistedObjectRef(cache, fn, "object typedef function")
+		fnID, err := encodePersistedObjectRef(enc, fn, "object typedef function")
 		if err != nil {
 			return nil, err
 		}
 		payload.FunctionResultIDs = append(payload.FunctionResultIDs, fnID)
 	}
 	if obj.Constructor.Valid {
-		constructorID, err := encodePersistedObjectRef(cache, obj.Constructor.Value, "object typedef constructor")
+		constructorID, err := encodePersistedObjectRef(enc, obj.Constructor.Value, "object typedef constructor")
 		if err != nil {
 			return nil, err
 		}
@@ -3136,7 +3136,7 @@ func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectT
 	return payload, nil
 }
 
-func decodePersistedObjectTypeDef(ctx context.Context, dag *dagql.Server, obj *persistedObjectTypeDef) (*ObjectTypeDef, error) {
+func decodePersistedObjectTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, obj *persistedObjectTypeDef) (*ObjectTypeDef, error) {
 	if obj == nil {
 		return nil, nil
 	}
@@ -3150,28 +3150,28 @@ func decodePersistedObjectTypeDef(ctx context.Context, dag *dagql.Server, obj *p
 		Functions:        make(dagql.ObjectResultArray[*Function], 0, len(obj.FunctionResultIDs)),
 	}
 	if obj.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, obj.SourceMapResultID, "object typedef source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, obj.SourceMapResultID, "object typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		decoded.SourceMap = dagql.NonNull(sourceMap)
 	}
 	for _, fieldID := range obj.FieldResultIDs {
-		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dag, fieldID, "object typedef field")
+		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dec, fieldID, "object typedef field")
 		if err != nil {
 			return nil, err
 		}
 		decoded.Fields = append(decoded.Fields, field)
 	}
 	for _, fnID := range obj.FunctionResultIDs {
-		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, fnID, "object typedef function")
+		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dec, fnID, "object typedef function")
 		if err != nil {
 			return nil, err
 		}
 		decoded.Functions = append(decoded.Functions, fn)
 	}
 	if obj.ConstructorResultID != 0 {
-		constructor, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, obj.ConstructorResultID, "object typedef constructor")
+		constructor, err := loadPersistedObjectResultByResultID[*Function](ctx, dec, obj.ConstructorResultID, "object typedef constructor")
 		if err != nil {
 			return nil, err
 		}
@@ -3180,7 +3180,7 @@ func decodePersistedObjectTypeDef(ctx context.Context, dag *dagql.Server, obj *p
 	return decoded, nil
 }
 
-func encodePersistedFieldTypeDef(cache dagql.PersistedObjectCache, field *FieldTypeDef) (*persistedFieldTypeDef, error) {
+func encodePersistedFieldTypeDef(enc *dagql.PersistEncodeContext, field *FieldTypeDef) (*persistedFieldTypeDef, error) {
 	if field == nil {
 		return nil, nil
 	}
@@ -3190,13 +3190,13 @@ func encodePersistedFieldTypeDef(cache dagql.PersistedObjectCache, field *FieldT
 		Deprecated:   field.Deprecated,
 		OriginalName: field.OriginalName,
 	}
-	typeDefID, err := encodePersistedObjectRef(cache, field.TypeDef, "field typedef type")
+	typeDefID, err := encodePersistedObjectRef(enc, field.TypeDef, "field typedef type")
 	if err != nil {
 		return nil, err
 	}
 	payload.TypeDefResultID = typeDefID
 	if field.SourceMap.Valid && field.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, field.SourceMap.Value, "field typedef source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, field.SourceMap.Value, "field typedef source map")
 		if err != nil {
 			return nil, err
 		}
@@ -3205,11 +3205,11 @@ func encodePersistedFieldTypeDef(cache dagql.PersistedObjectCache, field *FieldT
 	return payload, nil
 }
 
-func decodePersistedFieldTypeDef(ctx context.Context, dag *dagql.Server, field *persistedFieldTypeDef) (*FieldTypeDef, error) {
+func decodePersistedFieldTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, field *persistedFieldTypeDef) (*FieldTypeDef, error) {
 	if field == nil {
 		return nil, nil
 	}
-	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, field.TypeDefResultID, "field typedef type")
+	typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, field.TypeDefResultID, "field typedef type")
 	if err != nil {
 		return nil, err
 	}
@@ -3221,7 +3221,7 @@ func decodePersistedFieldTypeDef(ctx context.Context, dag *dagql.Server, field *
 		OriginalName: field.OriginalName,
 	}
 	if field.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, field.SourceMapResultID, "field typedef source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, field.SourceMapResultID, "field typedef source map")
 		if err != nil {
 			return nil, err
 		}
@@ -3230,7 +3230,7 @@ func decodePersistedFieldTypeDef(ctx context.Context, dag *dagql.Server, field *
 	return decoded, nil
 }
 
-func encodePersistedInterfaceTypeDef(cache dagql.PersistedObjectCache, iface *InterfaceTypeDef) (*persistedInterfaceTypeDef, error) {
+func encodePersistedInterfaceTypeDef(enc *dagql.PersistEncodeContext, iface *InterfaceTypeDef) (*persistedInterfaceTypeDef, error) {
 	if iface == nil {
 		return nil, nil
 	}
@@ -3242,14 +3242,14 @@ func encodePersistedInterfaceTypeDef(cache dagql.PersistedObjectCache, iface *In
 		FunctionResultIDs: make([]uint64, 0, len(iface.Functions)),
 	}
 	if iface.SourceMap.Valid && iface.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, iface.SourceMap.Value, "interface typedef source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, iface.SourceMap.Value, "interface typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		payload.SourceMapResultID = sourceMapID
 	}
 	for _, fn := range iface.Functions {
-		fnID, err := encodePersistedObjectRef(cache, fn, "interface typedef function")
+		fnID, err := encodePersistedObjectRef(enc, fn, "interface typedef function")
 		if err != nil {
 			return nil, err
 		}
@@ -3259,7 +3259,7 @@ func encodePersistedInterfaceTypeDef(cache dagql.PersistedObjectCache, iface *In
 }
 
 //nolint:dupl // symmetric with decodePersistedEnumTypeDef; each typedef kind rehydrates its own fields
-func decodePersistedInterfaceTypeDef(ctx context.Context, dag *dagql.Server, iface *persistedInterfaceTypeDef) (*InterfaceTypeDef, error) {
+func decodePersistedInterfaceTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, iface *persistedInterfaceTypeDef) (*InterfaceTypeDef, error) {
 	if iface == nil {
 		return nil, nil
 	}
@@ -3271,14 +3271,14 @@ func decodePersistedInterfaceTypeDef(ctx context.Context, dag *dagql.Server, ifa
 		Functions:        make(dagql.ObjectResultArray[*Function], 0, len(iface.FunctionResultIDs)),
 	}
 	if iface.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, iface.SourceMapResultID, "interface typedef source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, iface.SourceMapResultID, "interface typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		decoded.SourceMap = dagql.NonNull(sourceMap)
 	}
 	for _, fnID := range iface.FunctionResultIDs {
-		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dag, fnID, "interface typedef function")
+		fn, err := loadPersistedObjectResultByResultID[*Function](ctx, dec, fnID, "interface typedef function")
 		if err != nil {
 			return nil, err
 		}
@@ -3311,11 +3311,11 @@ func decodePersistedScalarTypeDef(typeDef *persistedScalarTypeDef) *ScalarTypeDe
 	}
 }
 
-func encodePersistedListTypeDef(cache dagql.PersistedObjectCache, typeDef *ListTypeDef) (*persistedListTypeDef, error) {
+func encodePersistedListTypeDef(enc *dagql.PersistEncodeContext, typeDef *ListTypeDef) (*persistedListTypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
-	elementTypeDefID, err := encodePersistedObjectRef(cache, typeDef.ElementTypeDef, "list typedef element type")
+	elementTypeDefID, err := encodePersistedObjectRef(enc, typeDef.ElementTypeDef, "list typedef element type")
 	if err != nil {
 		return nil, err
 	}
@@ -3324,11 +3324,11 @@ func encodePersistedListTypeDef(cache dagql.PersistedObjectCache, typeDef *ListT
 	}, nil
 }
 
-func decodePersistedListTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedListTypeDef) (*ListTypeDef, error) {
+func decodePersistedListTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, typeDef *persistedListTypeDef) (*ListTypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
-	elementTypeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, typeDef.ElementTypeDefResultID, "list typedef element type")
+	elementTypeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, typeDef.ElementTypeDefResultID, "list typedef element type")
 	if err != nil {
 		return nil, err
 	}
@@ -3337,7 +3337,7 @@ func decodePersistedListTypeDef(ctx context.Context, dag *dagql.Server, typeDef 
 	}, nil
 }
 
-func encodePersistedInputTypeDef(cache dagql.PersistedObjectCache, typeDef *InputTypeDef) (*persistedInputTypeDef, error) {
+func encodePersistedInputTypeDef(enc *dagql.PersistEncodeContext, typeDef *InputTypeDef) (*persistedInputTypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
@@ -3346,7 +3346,7 @@ func encodePersistedInputTypeDef(cache dagql.PersistedObjectCache, typeDef *Inpu
 		FieldResultIDs: make([]uint64, 0, len(typeDef.Fields)),
 	}
 	for _, field := range typeDef.Fields {
-		fieldID, err := encodePersistedObjectRef(cache, field, "input typedef field")
+		fieldID, err := encodePersistedObjectRef(enc, field, "input typedef field")
 		if err != nil {
 			return nil, err
 		}
@@ -3355,7 +3355,7 @@ func encodePersistedInputTypeDef(cache dagql.PersistedObjectCache, typeDef *Inpu
 	return payload, nil
 }
 
-func decodePersistedInputTypeDef(ctx context.Context, dag *dagql.Server, typeDef *persistedInputTypeDef) (*InputTypeDef, error) {
+func decodePersistedInputTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, typeDef *persistedInputTypeDef) (*InputTypeDef, error) {
 	if typeDef == nil {
 		return nil, nil
 	}
@@ -3364,7 +3364,7 @@ func decodePersistedInputTypeDef(ctx context.Context, dag *dagql.Server, typeDef
 		Fields: make(dagql.ObjectResultArray[*FieldTypeDef], 0, len(typeDef.FieldResultIDs)),
 	}
 	for _, fieldID := range typeDef.FieldResultIDs {
-		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dag, fieldID, "input typedef field")
+		field, err := loadPersistedObjectResultByResultID[*FieldTypeDef](ctx, dec, fieldID, "input typedef field")
 		if err != nil {
 			return nil, err
 		}
@@ -3373,7 +3373,7 @@ func decodePersistedInputTypeDef(ctx context.Context, dag *dagql.Server, typeDef
 	return decoded, nil
 }
 
-func encodePersistedEnumTypeDef(cache dagql.PersistedObjectCache, enum *EnumTypeDef) (*persistedEnumTypeDef, error) {
+func encodePersistedEnumTypeDef(enc *dagql.PersistEncodeContext, enum *EnumTypeDef) (*persistedEnumTypeDef, error) {
 	if enum == nil {
 		return nil, nil
 	}
@@ -3385,14 +3385,14 @@ func encodePersistedEnumTypeDef(cache dagql.PersistedObjectCache, enum *EnumType
 		MemberResultIDs:  make([]uint64, 0, len(enum.Members)),
 	}
 	if enum.SourceMap.Valid && enum.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, enum.SourceMap.Value, "enum typedef source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, enum.SourceMap.Value, "enum typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		payload.SourceMapResultID = sourceMapID
 	}
 	for _, member := range enum.Members {
-		memberID, err := encodePersistedObjectRef(cache, member, "enum typedef member")
+		memberID, err := encodePersistedObjectRef(enc, member, "enum typedef member")
 		if err != nil {
 			return nil, err
 		}
@@ -3402,7 +3402,7 @@ func encodePersistedEnumTypeDef(cache dagql.PersistedObjectCache, enum *EnumType
 }
 
 //nolint:dupl // symmetric with decodePersistedInterfaceTypeDef; each typedef kind rehydrates its own fields
-func decodePersistedEnumTypeDef(ctx context.Context, dag *dagql.Server, enum *persistedEnumTypeDef) (*EnumTypeDef, error) {
+func decodePersistedEnumTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, enum *persistedEnumTypeDef) (*EnumTypeDef, error) {
 	if enum == nil {
 		return nil, nil
 	}
@@ -3414,14 +3414,14 @@ func decodePersistedEnumTypeDef(ctx context.Context, dag *dagql.Server, enum *pe
 		Members:          make(dagql.ObjectResultArray[*EnumMemberTypeDef], 0, len(enum.MemberResultIDs)),
 	}
 	if enum.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, enum.SourceMapResultID, "enum typedef source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, enum.SourceMapResultID, "enum typedef source map")
 		if err != nil {
 			return nil, err
 		}
 		decoded.SourceMap = dagql.NonNull(sourceMap)
 	}
 	for _, memberID := range enum.MemberResultIDs {
-		member, err := loadPersistedObjectResultByResultID[*EnumMemberTypeDef](ctx, dag, memberID, "enum typedef member")
+		member, err := loadPersistedObjectResultByResultID[*EnumMemberTypeDef](ctx, dec, memberID, "enum typedef member")
 		if err != nil {
 			return nil, err
 		}
@@ -3430,7 +3430,7 @@ func decodePersistedEnumTypeDef(ctx context.Context, dag *dagql.Server, enum *pe
 	return decoded, nil
 }
 
-func encodePersistedEnumMemberTypeDef(cache dagql.PersistedObjectCache, member *EnumMemberTypeDef) (*persistedEnumMemberTypeDef, error) {
+func encodePersistedEnumMemberTypeDef(enc *dagql.PersistEncodeContext, member *EnumMemberTypeDef) (*persistedEnumMemberTypeDef, error) {
 	if member == nil {
 		return nil, nil
 	}
@@ -3442,7 +3442,7 @@ func encodePersistedEnumMemberTypeDef(cache dagql.PersistedObjectCache, member *
 		OriginalName: member.OriginalName,
 	}
 	if member.SourceMap.Valid && member.SourceMap.Value.Self() != nil {
-		sourceMapID, err := encodePersistedObjectRef(cache, member.SourceMap.Value, "enum member source map")
+		sourceMapID, err := encodePersistedObjectRef(enc, member.SourceMap.Value, "enum member source map")
 		if err != nil {
 			return nil, err
 		}
@@ -3451,7 +3451,7 @@ func encodePersistedEnumMemberTypeDef(cache dagql.PersistedObjectCache, member *
 	return payload, nil
 }
 
-func decodePersistedEnumMemberTypeDef(ctx context.Context, dag *dagql.Server, member *persistedEnumMemberTypeDef) (*EnumMemberTypeDef, error) {
+func decodePersistedEnumMemberTypeDef(ctx context.Context, dec *dagql.PersistDecodeContext, member *persistedEnumMemberTypeDef) (*EnumMemberTypeDef, error) {
 	if member == nil {
 		return nil, nil
 	}
@@ -3463,7 +3463,7 @@ func decodePersistedEnumMemberTypeDef(ctx context.Context, dag *dagql.Server, me
 		OriginalName: member.OriginalName,
 	}
 	if member.SourceMapResultID != 0 {
-		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dag, member.SourceMapResultID, "enum member source map")
+		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, member.SourceMapResultID, "enum member source map")
 		if err != nil {
 			return nil, err
 		}

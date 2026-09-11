@@ -130,7 +130,7 @@ type persistedDiffStat struct {
 	RemovedLines int          `json:"removedLines"`
 }
 
-func (s *DiffStat) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (s *DiffStat) EncodePersistedObject(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if s == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted diff stat: nil diff stat")
 	}
@@ -143,7 +143,7 @@ func (s *DiffStat) EncodePersistedObject(context.Context, dagql.PersistedObjectC
 	})
 }
 
-func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedDiffStat
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted diff stat payload: %w", err)
@@ -415,50 +415,55 @@ func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	return nil
 }
 
-func (ch *Changeset) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
-	_ = ctx
+// encodePersistedChangesetPayload records the exact before and after
+// directory rows of a changeset; it is shared by the Changeset codec and by
+// values that hold raw changesets inline.
+func encodePersistedChangesetPayload(enc *dagql.PersistEncodeContext, ch *Changeset, label string) (persistedChangesetPayload, error) {
 	if ch == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted changeset: nil changeset")
+		return persistedChangesetPayload{}, fmt.Errorf("encode persisted %s: nil changeset", label)
 	}
-	beforeID, err := encodePersistedObjectRef(cache, ch.Before, "changeset before")
+	beforeID, err := encodePersistedObjectRef(enc, ch.Before, label+" before")
+	if err != nil {
+		return persistedChangesetPayload{}, err
+	}
+	afterID, err := encodePersistedObjectRef(enc, ch.After, label+" after")
+	if err != nil {
+		return persistedChangesetPayload{}, err
+	}
+	return persistedChangesetPayload{BeforeResultID: beforeID, AfterResultID: afterID}, nil
+}
+
+func decodePersistedChangesetPayload(ctx context.Context, dec *dagql.PersistDecodeContext, persisted persistedChangesetPayload, label string) (*Changeset, error) {
+	before, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.BeforeResultID, label+" before")
+	if err != nil {
+		return nil, err
+	}
+	after, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.AfterResultID, label+" after")
+	if err != nil {
+		return nil, err
+	}
+	return NewChangeset(ctx, before, after)
+}
+
+func (ch *Changeset) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	encoded, err := encodePersistedChangesetPayload(enc, ch, "changeset")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
-	afterID, err := encodePersistedObjectRef(cache, ch.After, "changeset after")
-	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
-	}
-	payload, err := json.Marshal(persistedChangesetPayload{
-		BeforeResultID: beforeID,
-		AfterResultID:  afterID,
-	})
+	payload, err := json.Marshal(encoded)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted changeset payload: %w", err)
 	}
 	return encodePersistedObjectRawJSON(payload), nil
 }
 
-func (*Changeset) DecodePersistedObject(
-	ctx context.Context,
-	dag *dagql.Server,
-	_ uint64,
-	_ *dagql.ResultCall,
-	payload json.RawMessage,
-) (dagql.Typed, error) {
+func (*Changeset) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedChangesetPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted changeset payload: %w", err)
 	}
-
-	before, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.BeforeResultID, "changeset before")
-	if err != nil {
-		return nil, err
-	}
-	after, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.AfterResultID, "changeset after")
-	if err != nil {
-		return nil, err
-	}
-	return NewChangeset(ctx, before, after)
+	return decodePersistedChangesetPayload(ctx, dec, persisted, "changeset")
 }
 
 // changesetPathSets enables O(1) path lookups during conflict detection.

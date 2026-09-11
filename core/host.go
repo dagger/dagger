@@ -24,11 +24,11 @@ func (*Host) TypeDescription() string {
 	return "Information about the host environment."
 }
 
-func (*Host) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (*Host) EncodePersistedObject(context.Context, *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	return dagql.PersistedObjectEncoding{JSON: json.RawMessage(`{}`)}, nil
 }
 
-func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagql.ResultCall, json.RawMessage) (dagql.Typed, error) {
+func (*Host) DecodePersistedObject(context.Context, *dagql.PersistDecodeContext, json.RawMessage) (dagql.Typed, error) {
 	return &Host{}, nil
 }
 

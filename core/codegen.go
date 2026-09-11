@@ -28,7 +28,7 @@ type persistedGeneratedCodePayload struct {
 	VCSIgnoredPaths   []string `json:"vcsIgnoredPaths,omitempty"`
 }
 
-func (code *GeneratedCode) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (code *GeneratedCode) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if code == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted generated code: nil generated code")
@@ -37,7 +37,7 @@ func (code *GeneratedCode) EncodePersistedObject(ctx context.Context, cache dagq
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted generated code: missing code directory")
 	}
 
-	codeID, err := encodePersistedObjectRef(cache, code.Code, "generated code directory")
+	codeID, err := encodePersistedObjectRef(enc, code.Code, "generated code directory")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -53,7 +53,7 @@ func (code *GeneratedCode) EncodePersistedObject(ctx context.Context, cache dagq
 	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
-func (*GeneratedCode) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*GeneratedCode) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGeneratedCodePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted generated code payload: %w", err)
@@ -62,7 +62,7 @@ func (*GeneratedCode) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 		return nil, fmt.Errorf("decode persisted generated code: missing code directory")
 	}
 
-	codeDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.CodeResultID, "generated code directory")
+	codeDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.CodeResultID, "generated code directory")
 	if err != nil {
 		return nil, err
 	}

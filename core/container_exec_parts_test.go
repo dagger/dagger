@@ -79,7 +79,7 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	require.Nil(t, child.lazyOpForRouting())
 	require.False(t, dagql.HasPendingLazyEvaluation(childRes))
 
-	encoded, err := child.EncodePersistedObject(ctx, cache)
+	encoded, err := child.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	var persisted struct {
 		Metadata struct {

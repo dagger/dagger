@@ -67,7 +67,7 @@ func (op *containerPartsTestDirectorySourceOp) AttachDependencies(context.Contex
 	return nil, nil
 }
 
-func (op *containerPartsTestDirectorySourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestDirectorySourceOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -89,7 +89,7 @@ func (op *containerPartsTestFileSourceOp) AttachDependencies(context.Context, fu
 	return nil, nil
 }
 
-func (op *containerPartsTestFileSourceOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestFileSourceOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -113,7 +113,7 @@ func (op *containerPartsTestBaseOp) AttachDependencies(context.Context, func(dag
 	return nil, nil
 }
 
-func (op *containerPartsTestBaseOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestBaseOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 
@@ -1200,7 +1200,7 @@ func (op *containerPartsTestUnrefinedWriterOp) AttachDependencies(_ context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (op *containerPartsTestUnrefinedWriterOp) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (op *containerPartsTestUnrefinedWriterOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, nil
 }
 

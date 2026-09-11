@@ -91,7 +91,7 @@ func TestRestoredSnapshotRoundTrip(t *testing.T) {
 				res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "a", "saved", value, true)
 				id, err := cache.PersistedResultID(res)
 				require.NoError(t, err)
-				original, err := value.(dagql.PersistedObject).EncodePersistedObject(ctx, cache)
+				original, err := value.(dagql.PersistedObject).EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 				require.NoError(t, err)
 				require.NoError(t, cache.ReleaseSession(ctx, "a"))
 				require.NoError(t, cache.Close(ctx))
@@ -110,7 +110,7 @@ func TestRestoredSnapshotRoundTrip(t *testing.T) {
 					links := res.Unwrap().(dagql.PersistedSnapshotRefLinkProvider).PersistedSnapshotRefLinks()
 					require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "saved"}}, links)
 					require.Contains(t, manager.owners, "dagql/result/"+fmt.Sprint(id)+"/snapshot")
-					encoded, err := res.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, cache)
+					encoded, err := res.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 					require.NoError(t, err)
 					require.Equal(t, original, encoded)
 					require.Zero(t, manager.openCount("saved"))
@@ -121,7 +121,7 @@ func TestRestoredSnapshotRoundTrip(t *testing.T) {
 						require.True(t, open)
 						require.Equal(t, "saved", snapshot.SnapshotID())
 						require.Equal(t, 1, manager.openCount("saved"))
-						encoded, err = res.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, cache)
+						encoded, err = res.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 						require.NoError(t, err)
 						require.Equal(t, original, encoded)
 					}
@@ -278,7 +278,7 @@ func (lazy *storedSnapshotTestLazy[T]) Evaluate(ctx context.Context, value T) er
 func (*storedSnapshotTestLazy[T]) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	return nil, nil
 }
-func (*storedSnapshotTestLazy[T]) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (*storedSnapshotTestLazy[T]) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return nil, errors.New("test lazy has no encoding")
 }
 

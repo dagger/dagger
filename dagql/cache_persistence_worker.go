@@ -474,23 +474,20 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			SnapshotLinks: snapshot.snapshotOwnerLinks,
 		}, nil
 	}
-	if snapshot == nil || !snapshot.hasValue {
-		return PersistedResultEncoding{
-			Envelope: PersistedResultEnvelope{
-				Version: 1,
-				Kind:    persistedResultKindNull,
-			},
-		}, nil
+	if snapshot == nil {
+		return PersistedResultEncoding{}, fmt.Errorf("persist result envelope: nil snapshot")
 	}
-	if snapshot.self == nil {
-		return PersistedResultEncoding{
-			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindNull,
-				ResultID:              uint64(snapshot.resultID),
-				SessionResourceHandle: snapshot.sessionResourceHandle,
-			},
-		}, nil
+	if !snapshot.hasValue || snapshot.self == nil {
+		// A row without a value is an attached absent value: it keeps its
+		// identity and recorded call so restart restores the same row. The
+		// declaration is checked here, at capture, so a contradictory row
+		// fails this save by name instead of wiping the store on import.
+		return encodePersistedAbsentValue(
+			NewPersistEncodeContext(c, uint64(snapshot.resultID), snapshot.frame),
+			uint64(snapshot.resultID),
+			snapshot.sessionResourceHandle,
+			true,
+		)
 	}
 	if snapshot.frame == nil {
 		if snapshot.self == nil || snapshot.self.Type() == nil || snapshot.self.Type().Name() != "Query" {

@@ -39,16 +39,16 @@ type containerStoredPart struct {
 	Services   ServiceBindings
 }
 
-func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
 	lazy := container.lazyOpForRouting()
-	metadata, err := container.encodeContainerMetadata(cache)
+	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
-	pending, parts, links, err := container.encodeContainerParts(ctx, cache, lazy)
+	pending, parts, links, err := container.encodeContainerParts(ctx, enc, lazy)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -63,7 +63,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		if lazy == nil {
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
 		}
-		payload.LazyJSON, err = lazy.EncodePersisted(ctx, cache)
+		payload.LazyJSON, err = lazy.EncodePersisted(ctx, enc)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -177,11 +177,11 @@ func (lazy *ContainerRestoreLazy) AttachDependencies(ctx context.Context, attach
 	return lazy.recipe.AttachDependencies(ctx, attach)
 }
 
-func (lazy *ContainerRestoreLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerRestoreLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy.recipe == nil {
 		return nil, nil
 	}
-	return lazy.recipe.EncodePersisted(ctx, cache)
+	return lazy.recipe.EncodePersisted(ctx, enc)
 }
 
 func (lazy *ContainerRestoreLazy) ContainerLazyGroups(ctx context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
@@ -297,7 +297,7 @@ func (container *Container) containerPartValue(part dagql.PartKey) (containerSto
 	return value, nil
 }
 
-func (container *Container) encodeContainerParts(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
+func (container *Container) encodeContainerParts(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
 	parts := make(map[dagql.PartKey]persistedContainerPart)
 	if !container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
 		return true, parts, nil, nil
@@ -314,7 +314,7 @@ func (container *Container) encodeContainerParts(ctx context.Context, cache dagq
 		if err != nil {
 			return false, nil, nil, err
 		}
-		services, err := encodePersistedServiceBindings(cache, "container part", value.Services)
+		services, err := encodePersistedServiceBindings(enc, "container part", value.Services)
 		if err != nil {
 			return false, nil, nil, err
 		}
@@ -339,7 +339,7 @@ func (container *Container) encodeContainerParts(ctx context.Context, cache dagq
 // error, and remain attached to their original recipe.
 //
 //nolint:gocyclo // Validate every part and restore its shared recipe state before publication.
-func (container *Container) installContainerParts(ctx context.Context, dag *dagql.Server, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
+func (container *Container) installContainerParts(ctx context.Context, dec *dagql.PersistDecodeContext, metadataConsumed bool, parts map[dagql.PartKey]persistedContainerPart, links []dagql.PersistedSnapshotRefLink, recipe Lazy[*Container]) error {
 	if !metadataConsumed {
 		if len(parts) != 0 {
 			return fmt.Errorf("container with pending metadata has snapshot part records")
@@ -418,7 +418,7 @@ func (container *Container) installContainerParts(ctx context.Context, dag *dagq
 			if byRole[role] == "" {
 				return fmt.Errorf("container part %q has no snapshot link for role %q", part, role)
 			}
-			services, err := decodePersistedServiceBindings(ctx, dag, "container part", record.Services)
+			services, err := decodePersistedServiceBindings(ctx, dec, "container part", record.Services)
 			if err != nil {
 				return err
 			}

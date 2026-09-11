@@ -232,20 +232,20 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 	return deps, nil
 }
 
-func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy == nil || lazy.State == nil {
 		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
 	if lazy.State.FunctionCall != nil {
 		return nil, fmt.Errorf("cannot persist container exec with active function call")
 	}
-	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
+	parentID, err := encodePersistedObjectRef(enc, lazy.State.Parent, "container withExec parent")
 	if err != nil {
 		return nil, err
 	}
 	var moduleContextID uint64
 	if lazy.State.ModuleContext.Self() != nil {
-		moduleContextID, err = encodePersistedObjectRef(cache, lazy.State.ModuleContext, "container withExec module context")
+		moduleContextID, err = encodePersistedObjectRef(enc, lazy.State.ModuleContext, "container withExec module context")
 		if err != nil {
 			return nil, err
 		}
@@ -288,11 +288,11 @@ func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Co
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	if lazy == nil {
 		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
 	}
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container volatile exec cache hit parent")
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container volatile exec cache hit parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2367,7 +2367,7 @@ func execInputMounts(mounts ContainerMounts, parent *Container) (ContainerMounts
 
 func decodePersistedContainerExecLazy(
 	ctx context.Context,
-	dag *dagql.Server,
+	dec *dagql.PersistDecodeContext,
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
 	var persisted persistedContainerExecLazy
@@ -2375,7 +2375,7 @@ func decodePersistedContainerExecLazy(
 		return nil, fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
 	}
 	if persisted.VolatileCacheHitParentResultID != 0 {
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
 		if err != nil {
 			return nil, err
 		}
@@ -2385,11 +2385,11 @@ func decodePersistedContainerExecLazy(
 			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
 		}, nil
 	}
-	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container exec parent")
 	if err != nil {
 		return nil, err
 	}
-	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "container exec module context")
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.ModuleContextResultID, "container exec module context")
 	if err != nil {
 		return nil, err
 	}

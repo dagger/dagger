@@ -1357,11 +1357,11 @@ func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dag
 	return size, true, nil
 }
 
-func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectCache) (persistedContainerMetadataValue, error) {
+func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeContext) (persistedContainerMetadataValue, error) {
 	if container == nil {
 		return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	services, err := encodePersistedServiceBindings(cache, "container", container.Services)
+	services, err := encodePersistedServiceBindings(enc, "container", container.Services)
 	if err != nil {
 		return persistedContainerMetadataValue{}, err
 	}
@@ -1395,14 +1395,14 @@ func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectC
 			encoded.Kind = persistedContainerMountKindFile
 		case mnt.CacheSource != nil:
 			encoded.Kind = persistedContainerMountKindCache
-			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
+			id, err := encodePersistedObjectRef(enc, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
 			if err != nil {
 				return persistedContainerMetadataValue{}, err
 			}
 			encoded.CacheSourceResultID = id
 		case mnt.VolumeSource != nil:
 			encoded.Kind = persistedContainerMountKindVolume
-			id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
+			id, err := encodePersistedObjectRef(enc, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
 			if err != nil {
 				return persistedContainerMetadataValue{}, err
 			}
@@ -1416,7 +1416,7 @@ func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectC
 		payload.Mounts = append(payload.Mounts, encoded)
 	}
 	for _, secret := range container.Secrets {
-		secretID, err := encodePersistedObjectRef(cache, secret.Secret, "container secret")
+		secretID, err := encodePersistedObjectRef(enc, secret.Secret, "container secret")
 		if err != nil {
 			return persistedContainerMetadataValue{}, err
 		}
@@ -1429,7 +1429,7 @@ func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectC
 		})
 	}
 	for _, socket := range container.Sockets {
-		sourceID, err := encodePersistedObjectRef(cache, socket.Source, "container socket")
+		sourceID, err := encodePersistedObjectRef(enc, socket.Source, "container socket")
 		if err != nil {
 			return persistedContainerMetadataValue{}, err
 		}
@@ -1443,7 +1443,7 @@ func (container *Container) encodeContainerMetadata(cache dagql.PersistedObjectC
 	return payload, nil
 }
 
-func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var envelope persistedContainerPayload
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
@@ -1463,13 +1463,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		case persistedContainerMountKindFile:
 			mnt.FileSource = new(LazyAccessor[*File, *Container])
 		case persistedContainerMountKindCache:
-			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
+			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dec, persistedMount.CacheSourceResultID, "container mount cache")
 			if err != nil {
 				return nil, err
 			}
 			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
 		case persistedContainerMountKindVolume:
-			volumeRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persistedMount.VolumeSourceResultID, "container mount volume")
+			volumeRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dec, persistedMount.VolumeSourceResultID, "container mount volume")
 			if err != nil {
 				return nil, err
 			}
@@ -1483,7 +1483,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 	secrets := make([]ContainerSecret, 0, len(persisted.Secrets))
 	for _, persistedSecret := range persisted.Secrets {
-		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persistedSecret.SecretResultID, "container secret")
+		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dec, persistedSecret.SecretResultID, "container secret")
 		if err != nil {
 			return nil, err
 		}
@@ -1497,7 +1497,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 	sockets := make([]ContainerSocket, 0, len(persisted.Sockets))
 	for _, persistedSocket := range persisted.Sockets {
-		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dag, persistedSocket.SourceResultID, "container socket")
+		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dec, persistedSocket.SourceResultID, "container socket")
 		if err != nil {
 			return nil, err
 		}
@@ -1507,13 +1507,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			Owner:         persistedSocket.Owner,
 		})
 	}
-	services, err := decodePersistedServiceBindings(ctx, dag, "container", persisted.Services)
+	services, err := decodePersistedServiceBindings(ctx, dec, "container", persisted.Services)
 	if err != nil {
 		return nil, err
 	}
 
 	metaAccessor := new(LazyAccessor[bkcache.ImmutableRef, *Container])
-	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
+	links, err := loadPersistedSnapshotLinksByResultID(ctx, dec, "container")
 	if err != nil {
 		return nil, err
 	}
@@ -1538,15 +1538,15 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 	var recipe Lazy[*Container]
 	if len(envelope.LazyJSON) != 0 {
-		if call == nil {
+		if dec.Call() == nil {
 			return nil, fmt.Errorf("decode persisted container: missing call for recipe")
 		}
-		recipe, err = decodePersistedContainerRecipe(ctx, dag, call, envelope.LazyJSON)
+		recipe, err = decodePersistedContainerRecipe(ctx, dec, dec.Call(), envelope.LazyJSON)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if err := container.installContainerParts(ctx, dag, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
+	if err := container.installContainerParts(ctx, dec, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
 		return nil, fmt.Errorf("decode persisted container: %w", err)
 	}
 	return container, nil
@@ -1832,8 +1832,8 @@ func (lazy *ContainerWithEntrypointLazy) AttachDependencies(ctx context.Context,
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithEntrypointLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEntrypoint parent")
+func (lazy *ContainerWithEntrypointLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withEntrypoint parent")
 	if err != nil {
 		return nil, err
 	}
@@ -1880,8 +1880,8 @@ func (lazy *ContainerWithoutEntrypointLazy) AttachDependencies(ctx context.Conte
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutEntrypointLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutEntrypoint parent")
+func (lazy *ContainerWithoutEntrypointLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutEntrypoint parent")
 	if err != nil {
 		return nil, err
 	}
@@ -1926,8 +1926,8 @@ func (lazy *ContainerWithDefaultArgsLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithDefaultArgsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDefaultArgs parent")
+func (lazy *ContainerWithDefaultArgsLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withDefaultArgs parent")
 	if err != nil {
 		return nil, err
 	}
@@ -1968,8 +1968,8 @@ func (lazy *ContainerWithoutDefaultArgsLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutDefaultArgsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutDefaultArgs parent")
+func (lazy *ContainerWithoutDefaultArgsLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutDefaultArgs parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2008,8 +2008,8 @@ func (lazy *ContainerWithUserLazy) AttachDependencies(ctx context.Context, attac
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithUserLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withUser parent")
+func (lazy *ContainerWithUserLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withUser parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2049,8 +2049,8 @@ func (lazy *ContainerWithoutUserLazy) AttachDependencies(ctx context.Context, at
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutUserLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutUser parent")
+func (lazy *ContainerWithoutUserLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutUser parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2093,8 +2093,8 @@ func (lazy *ContainerWithWorkdirLazy) AttachDependencies(ctx context.Context, at
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithWorkdirLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withWorkdir parent")
+func (lazy *ContainerWithWorkdirLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withWorkdir parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2135,8 +2135,8 @@ func (lazy *ContainerWithoutWorkdirLazy) AttachDependencies(ctx context.Context,
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutWorkdirLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutWorkdir parent")
+func (lazy *ContainerWithoutWorkdirLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutWorkdir parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2179,8 +2179,8 @@ func (lazy *ContainerWithEnvVariableLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEnvVariable parent")
+func (lazy *ContainerWithEnvVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withEnvVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2237,12 +2237,12 @@ func (lazy *ContainerWithEnvFileVariablesLazy) AttachDependencies(ctx context.Co
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithEnvFileVariablesLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withEnvFileVariables parent")
+func (lazy *ContainerWithEnvFileVariablesLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withEnvFileVariables parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withEnvFileVariables source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withEnvFileVariables source")
 	if err != nil {
 		return nil, err
 	}
@@ -2276,8 +2276,8 @@ func (lazy *ContainerWithSystemEnvVariableLazy) AttachDependencies(ctx context.C
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSystemEnvVariable parent")
+func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withSystemEnvVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2311,8 +2311,8 @@ func (lazy *ContainerWithVolatileVariableLazy) AttachDependencies(ctx context.Co
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withVolatileVariable parent")
+func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withVolatileVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2374,8 +2374,8 @@ func (lazy *ContainerWithoutVolatileVariableLazy) AttachDependencies(ctx context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutVolatileVariable parent")
+func (lazy *ContainerWithoutVolatileVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutVolatileVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2394,8 +2394,8 @@ func (lazy *ContainerWithoutEnvVariableLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutEnvVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutEnvVariable parent")
+func (lazy *ContainerWithoutEnvVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutEnvVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2438,8 +2438,8 @@ func (lazy *ContainerWithLabelLazy) AttachDependencies(ctx context.Context, atta
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithLabelLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withLabel parent")
+func (lazy *ContainerWithLabelLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withLabel parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2480,8 +2480,8 @@ func (lazy *ContainerWithoutLabelLazy) AttachDependencies(ctx context.Context, a
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutLabelLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutLabel parent")
+func (lazy *ContainerWithoutLabelLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutLabel parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2543,8 +2543,8 @@ func (lazy *ContainerWithImageConfigMetadataLazy) AttachDependencies(ctx context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithImageConfigMetadataLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withImageConfigMetadata parent")
+func (lazy *ContainerWithImageConfigMetadataLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withImageConfigMetadata parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2592,8 +2592,8 @@ func (lazy *ContainerWithHealthcheckLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithHealthcheckLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withHealthcheck parent")
+func (lazy *ContainerWithHealthcheckLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withHealthcheck parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2633,8 +2633,8 @@ func (lazy *ContainerWithoutHealthcheckLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutHealthcheckLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutHealthcheck parent")
+func (lazy *ContainerWithoutHealthcheckLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutHealthcheck parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2669,8 +2669,8 @@ func (lazy *ContainerSetGPUsLazy) AttachDependencies(ctx context.Context, attach
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerSetGPUsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container setGPUs parent")
+func (lazy *ContainerSetGPUsLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container setGPUs parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2706,8 +2706,8 @@ func (lazy *ContainerWithAnnotationLazy) AttachDependencies(ctx context.Context,
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithAnnotationLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withAnnotation parent")
+func (lazy *ContainerWithAnnotationLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withAnnotation parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2744,8 +2744,8 @@ func (lazy *ContainerWithoutAnnotationLazy) AttachDependencies(ctx context.Conte
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutAnnotationLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutAnnotation parent")
+func (lazy *ContainerWithoutAnnotationLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutAnnotation parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2786,12 +2786,12 @@ func (lazy *ContainerWithSecretVariableLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent, secret}, nil
 }
 
-func (lazy *ContainerWithSecretVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSecretVariable parent")
+func (lazy *ContainerWithSecretVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withSecretVariable parent")
 	if err != nil {
 		return nil, err
 	}
-	secretID, err := encodePersistedObjectRef(cache, lazy.Secret, "container withSecretVariable secret")
+	secretID, err := encodePersistedObjectRef(enc, lazy.Secret, "container withSecretVariable secret")
 	if err != nil {
 		return nil, err
 	}
@@ -2828,8 +2828,8 @@ func (lazy *ContainerWithoutSecretVariableLazy) AttachDependencies(ctx context.C
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutSecretVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutSecretVariable parent")
+func (lazy *ContainerWithoutSecretVariableLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutSecretVariable parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2870,12 +2870,12 @@ func (lazy *ContainerWithServiceBindingLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent, service}, nil
 }
 
-func (lazy *ContainerWithServiceBindingLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withServiceBinding parent")
+func (lazy *ContainerWithServiceBindingLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withServiceBinding parent")
 	if err != nil {
 		return nil, err
 	}
-	serviceID, err := encodePersistedObjectRef(cache, lazy.Service, "container withServiceBinding service")
+	serviceID, err := encodePersistedObjectRef(enc, lazy.Service, "container withServiceBinding service")
 	if err != nil {
 		return nil, err
 	}
@@ -2912,8 +2912,8 @@ func (lazy *ContainerWithExposedPortLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithExposedPortLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withExposedPort parent")
+func (lazy *ContainerWithExposedPortLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withExposedPort parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2949,8 +2949,8 @@ func (lazy *ContainerWithoutExposedPortLazy) AttachDependencies(ctx context.Cont
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutExposedPortLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutExposedPort parent")
+func (lazy *ContainerWithoutExposedPortLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutExposedPort parent")
 	if err != nil {
 		return nil, err
 	}
@@ -2985,8 +2985,8 @@ func (lazy *ContainerWithDefaultTerminalCmdLazy) AttachDependencies(ctx context.
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithDefaultTerminalCmdLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDefaultTerminalCmd parent")
+func (lazy *ContainerWithDefaultTerminalCmdLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withDefaultTerminalCmd parent")
 	if err != nil {
 		return nil, err
 	}
@@ -3051,8 +3051,8 @@ func (lazy *ContainerRootFSLazy) AttachDependencies(ctx context.Context, attach 
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerRootFSLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container rootfs parent")
+func (lazy *ContainerRootFSLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container rootfs parent")
 	if err != nil {
 		return nil, err
 	}
@@ -3145,12 +3145,12 @@ func (lazy *ContainerWithRootFSLazy) AttachDependencies(ctx context.Context, att
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithRootFSLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withRootfs parent")
+func (lazy *ContainerWithRootFSLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withRootfs parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withRootfs source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withRootfs source")
 	if err != nil {
 		return nil, err
 	}
@@ -3314,8 +3314,8 @@ func (lazy *ContainerDirectoryLazy) AttachDependencies(ctx context.Context, atta
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container directory parent")
+func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container directory parent")
 	if err != nil {
 		return nil, err
 	}
@@ -3482,8 +3482,8 @@ func (lazy *ContainerFileLazy) AttachDependencies(ctx context.Context, attach fu
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container file parent")
+func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container file parent")
 	if err != nil {
 		return nil, err
 	}
@@ -3533,12 +3533,12 @@ func (lazy *ContainerWithDirectoryLazy) AttachDependencies(ctx context.Context, 
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withDirectory parent")
+func (lazy *ContainerWithDirectoryLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withDirectory parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withDirectory source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withDirectory source")
 	if err != nil {
 		return nil, err
 	}
@@ -3591,12 +3591,12 @@ func (lazy *ContainerWithFileLazy) AttachDependencies(ctx context.Context, attac
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withFile parent")
+func (lazy *ContainerWithFileLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withFile parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withFile source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withFile source")
 	if err != nil {
 		return nil, err
 	}
@@ -3691,12 +3691,12 @@ func (lazy *ContainerWithMountedDirectoryLazy) AttachDependencies(ctx context.Co
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithMountedDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedDirectory parent")
+func (lazy *ContainerWithMountedDirectoryLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedDirectory parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedDirectory source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withMountedDirectory source")
 	if err != nil {
 		return nil, err
 	}
@@ -3791,12 +3791,12 @@ func (lazy *ContainerWithMountedFileLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithMountedFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedFile parent")
+func (lazy *ContainerWithMountedFileLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedFile parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedFile source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withMountedFile source")
 	if err != nil {
 		return nil, err
 	}
@@ -3908,12 +3908,12 @@ func (lazy *ContainerWithMountedPathDockerfileCompatLazy) AttachDependencies(ctx
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedPathDockerfileCompat parent")
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedPathDockerfileCompat parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedPathDockerfileCompat source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withMountedPathDockerfileCompat source")
 	if err != nil {
 		return nil, err
 	}
@@ -3955,12 +3955,12 @@ func (lazy *ContainerWithMountedCacheLazy) AttachDependencies(ctx context.Contex
 	return []dagql.AnyResult{parent, cacheVolume}, nil
 }
 
-func (lazy *ContainerWithMountedCacheLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedCache parent")
+func (lazy *ContainerWithMountedCacheLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedCache parent")
 	if err != nil {
 		return nil, err
 	}
-	cacheID, err := encodePersistedObjectRef(cache, lazy.Cache, "container withMountedCache cache")
+	cacheID, err := encodePersistedObjectRef(enc, lazy.Cache, "container withMountedCache cache")
 	if err != nil {
 		return nil, err
 	}
@@ -4000,12 +4000,12 @@ func (lazy *ContainerWithMountedVolumeLazy) AttachDependencies(ctx context.Conte
 	return []dagql.AnyResult{parent, volume}, nil
 }
 
-func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedVolume parent")
+func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedVolume parent")
 	if err != nil {
 		return nil, err
 	}
-	volumeID, err := encodePersistedObjectRef(cache, lazy.Volume, "container withMountedVolume volume")
+	volumeID, err := encodePersistedObjectRef(enc, lazy.Volume, "container withMountedVolume volume")
 	if err != nil {
 		return nil, err
 	}
@@ -4041,8 +4041,8 @@ func (lazy *ContainerWithMountedTempLazy) AttachDependencies(ctx context.Context
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedTemp parent")
+func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedTemp parent")
 	if err != nil {
 		return nil, err
 	}
@@ -4082,12 +4082,12 @@ func (lazy *ContainerWithMountedSecretLazy) AttachDependencies(ctx context.Conte
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithMountedSecretLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedSecret parent")
+func (lazy *ContainerWithMountedSecretLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedSecret parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedSecret source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withMountedSecret source")
 	if err != nil {
 		return nil, err
 	}
@@ -4124,8 +4124,8 @@ func (lazy *ContainerWithoutMountLazy) AttachDependencies(ctx context.Context, a
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutMountLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutMount parent")
+func (lazy *ContainerWithoutMountLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutMount parent")
 	if err != nil {
 		return nil, err
 	}
@@ -4170,8 +4170,8 @@ func (lazy *ContainerWithoutPathLazy) AttachDependencies(ctx context.Context, at
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutPathLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutPath parent")
+func (lazy *ContainerWithoutPathLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutPath parent")
 	if err != nil {
 		return nil, err
 	}
@@ -4216,8 +4216,8 @@ func (lazy *ContainerWithSymlinkLazy) AttachDependencies(ctx context.Context, at
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithSymlinkLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withSymlink parent")
+func (lazy *ContainerWithSymlinkLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withSymlink parent")
 	if err != nil {
 		return nil, err
 	}
@@ -4257,12 +4257,12 @@ func (lazy *ContainerWithUnixSocketLazy) AttachDependencies(ctx context.Context,
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerWithUnixSocketLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withUnixSocket parent")
+func (lazy *ContainerWithUnixSocketLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withUnixSocket parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withUnixSocket source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container withUnixSocket source")
 	if err != nil {
 		return nil, err
 	}
@@ -4298,8 +4298,8 @@ func (lazy *ContainerWithoutUnixSocketLazy) AttachDependencies(ctx context.Conte
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *ContainerWithoutUnixSocketLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutUnixSocket parent")
+func (lazy *ContainerWithoutUnixSocketLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withoutUnixSocket parent")
 	if err != nil {
 		return nil, err
 	}
@@ -4349,12 +4349,12 @@ func (lazy *ContainerImportLazy) AttachDependencies(ctx context.Context, attach 
 	return []dagql.AnyResult{parent, source}, nil
 }
 
-func (lazy *ContainerImportLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container import parent")
+func (lazy *ContainerImportLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container import parent")
 	if err != nil {
 		return nil, err
 	}
-	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container import source")
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "container import source")
 	if err != nil {
 		return nil, err
 	}
@@ -4368,7 +4368,7 @@ func (lazy *ContainerImportLazy) EncodePersisted(ctx context.Context, cache dagq
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedContainerRecipe(
 	ctx context.Context,
-	dag *dagql.Server,
+	dec *dagql.PersistDecodeContext,
 	call *dagql.ResultCall,
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
@@ -4378,7 +4378,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withEntrypoint lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEntrypoint parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withEntrypoint parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4393,7 +4393,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutEntrypoint lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEntrypoint parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutEntrypoint parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4407,7 +4407,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withDefaultArgs lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultArgs parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withDefaultArgs parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4421,7 +4421,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutDefaultArgs lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutDefaultArgs parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutDefaultArgs parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4434,7 +4434,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withUser lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withUser parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withUser parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4448,7 +4448,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutUser lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutUser parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutUser parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4461,7 +4461,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withWorkdir lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withWorkdir parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withWorkdir parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4476,7 +4476,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutWorkdir lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutWorkdir parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutWorkdir parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4489,7 +4489,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withEnvVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withEnvVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4505,11 +4505,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withEnvFileVariables lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withEnvFileVariables parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withEnvFileVariables parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*EnvFile](ctx, dag, persisted.SourceResultID, "container withEnvFileVariables source")
+		source, err := loadPersistedObjectResultByResultID[*EnvFile](ctx, dec, persisted.SourceResultID, "container withEnvFileVariables source")
 		if err != nil {
 			return nil, err
 		}
@@ -4523,7 +4523,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withSystemEnvVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSystemEnvVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withSystemEnvVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4537,7 +4537,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolatileVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withVolatileVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4552,7 +4552,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutEnvVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutEnvVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutEnvVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4566,7 +4566,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutVolatileVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutVolatileVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4580,7 +4580,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withLabel lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withLabel parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withLabel parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4595,7 +4595,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutLabel lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutLabel parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutLabel parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4609,7 +4609,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withImageConfigMetadata lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withImageConfigMetadata parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withImageConfigMetadata parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4627,7 +4627,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withHealthcheck lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withHealthcheck parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withHealthcheck parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4641,7 +4641,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutHealthcheck lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutHealthcheck parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutHealthcheck parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4654,7 +4654,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container setGPUs parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container setGPUs parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4668,7 +4668,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withAnnotation lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withAnnotation parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withAnnotation parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4683,7 +4683,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutAnnotation lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutAnnotation parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutAnnotation parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4697,11 +4697,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withSecretVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSecretVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withSecretVariable parent")
 		if err != nil {
 			return nil, err
 		}
-		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SecretResultID, "container withSecretVariable secret")
+		secret, err := loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.SecretResultID, "container withSecretVariable secret")
 		if err != nil {
 			return nil, err
 		}
@@ -4716,7 +4716,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutSecretVariable lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutSecretVariable parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutSecretVariable parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4730,11 +4730,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withServiceBinding lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withServiceBinding parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withServiceBinding parent")
 		if err != nil {
 			return nil, err
 		}
-		svc, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.ServiceResultID, "container withServiceBinding service")
+		svc, err := loadPersistedObjectResultByResultID[*Service](ctx, dec, persisted.ServiceResultID, "container withServiceBinding service")
 		if err != nil {
 			return nil, err
 		}
@@ -4749,7 +4749,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withExposedPort lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withExposedPort parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withExposedPort parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4763,7 +4763,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutExposedPort lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutExposedPort parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutExposedPort parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4778,7 +4778,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDefaultTerminalCmd parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withDefaultTerminalCmd parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4792,7 +4792,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container from lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container from parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container from parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4807,7 +4807,7 @@ func decodePersistedContainerRecipe(
 			RegistryTransport: persisted.RegistryTransport,
 		}
 		if len(persisted.RegistryServices) > 0 {
-			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
+			services, err := decodePersistedServiceBindings(ctx, dec, "container from registry", persisted.RegistryServices)
 			if err != nil {
 				return nil, err
 			}
@@ -4819,11 +4819,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withRootfs lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withRootfs parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withRootfs parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withRootfs source")
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SourceResultID, "container withRootfs source")
 		if err != nil {
 			return nil, err
 		}
@@ -4837,11 +4837,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withDirectory lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withDirectory parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withDirectory parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withDirectory source")
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SourceResultID, "container withDirectory source")
 		if err != nil {
 			return nil, err
 		}
@@ -4858,11 +4858,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container %s lazy payload: %w", call.Field, err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container "+call.Field+" parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container "+call.Field+" parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container "+call.Field+" source")
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.SourceResultID, "container "+call.Field+" source")
 		if err != nil {
 			return nil, err
 		}
@@ -4879,11 +4879,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedDirectory lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedDirectory parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedDirectory parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedDirectory source")
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SourceResultID, "container withMountedDirectory source")
 		if err != nil {
 			return nil, err
 		}
@@ -4900,11 +4900,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedFile lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedFile parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedFile parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container withMountedFile source")
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.SourceResultID, "container withMountedFile source")
 		if err != nil {
 			return nil, err
 		}
@@ -4921,11 +4921,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedPathDockerfileCompat lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedPathDockerfileCompat parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedPathDockerfileCompat parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedPathDockerfileCompat source")
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SourceResultID, "container withMountedPathDockerfileCompat source")
 		if err != nil {
 			return nil, err
 		}
@@ -4942,11 +4942,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedCache lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedCache parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedCache parent")
 		if err != nil {
 			return nil, err
 		}
-		cacheVolume, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persisted.CacheResultID, "container withMountedCache cache")
+		cacheVolume, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dec, persisted.CacheResultID, "container withMountedCache cache")
 		if err != nil {
 			return nil, err
 		}
@@ -4961,11 +4961,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedVolume lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedVolume parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedVolume parent")
 		if err != nil {
 			return nil, err
 		}
-		volume, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persisted.VolumeResultID, "container withMountedVolume volume")
+		volume, err := loadPersistedObjectResultByResultID[*Volume](ctx, dec, persisted.VolumeResultID, "container withMountedVolume volume")
 		if err != nil {
 			return nil, err
 		}
@@ -4981,7 +4981,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedTemp lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedTemp parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedTemp parent")
 		if err != nil {
 			return nil, err
 		}
@@ -4996,11 +4996,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withMountedSecret lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedSecret parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedSecret parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Secret](ctx, dag, persisted.SourceResultID, "container withMountedSecret source")
+		source, err := loadPersistedObjectResultByResultID[*Secret](ctx, dec, persisted.SourceResultID, "container withMountedSecret source")
 		if err != nil {
 			return nil, err
 		}
@@ -5017,7 +5017,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutMount lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutMount parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutMount parent")
 		if err != nil {
 			return nil, err
 		}
@@ -5031,7 +5031,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutPath lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutPath parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutPath parent")
 		if err != nil {
 			return nil, err
 		}
@@ -5045,7 +5045,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withSymlink lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withSymlink parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withSymlink parent")
 		if err != nil {
 			return nil, err
 		}
@@ -5060,11 +5060,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withUnixSocket lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withUnixSocket parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withUnixSocket parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dag, persisted.SourceResultID, "container withUnixSocket source")
+		source, err := loadPersistedObjectResultByResultID[*Socket](ctx, dec, persisted.SourceResultID, "container withUnixSocket source")
 		if err != nil {
 			return nil, err
 		}
@@ -5080,7 +5080,7 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withoutUnixSocket lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutUnixSocket parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withoutUnixSocket parent")
 		if err != nil {
 			return nil, err
 		}
@@ -5094,11 +5094,11 @@ func decodePersistedContainerRecipe(
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container import lazy payload: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container import parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container import parent")
 		if err != nil {
 			return nil, err
 		}
-		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container import source")
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.SourceResultID, "container import source")
 		if err != nil {
 			return nil, err
 		}
@@ -5109,7 +5109,7 @@ func decodePersistedContainerRecipe(
 			Tag:       persisted.Tag,
 		}, nil
 	case "withExec":
-		return decodePersistedContainerExecLazy(ctx, dag, payload)
+		return decodePersistedContainerExecLazy(ctx, dec, payload)
 	default:
 		return nil, fmt.Errorf("decode persisted container lazy payload: unsupported field %q", call.Field)
 	}

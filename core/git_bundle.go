@@ -126,12 +126,12 @@ type persistedGitBundlePayload struct {
 	PrerequisiteSHAs []string        `json:"prerequisiteSHAs,omitempty"`
 }
 
-func (bundle *GitBundle) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (bundle *GitBundle) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if bundle == nil || bundle.File.Self() == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git bundle: missing bundle file")
 	}
-	fileID, err := encodePersistedObjectRef(cache, bundle.File, "git bundle file")
+	fileID, err := encodePersistedObjectRef(enc, bundle.File, "git bundle file")
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -148,7 +148,7 @@ func (bundle *GitBundle) EncodePersistedObject(ctx context.Context, cache dagql.
 	return encodePersistedObjectRawJSON(payload), nil
 }
 
-func (*GitBundle) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*GitBundle) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedGitBundlePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted git bundle: %w", err)
@@ -156,7 +156,7 @@ func (*GitBundle) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	if persisted.FileResultID == 0 {
 		return nil, fmt.Errorf("decode persisted git bundle: missing bundle file")
 	}
-	file, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.FileResultID, "git bundle file")
+	file, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.FileResultID, "git bundle file")
 	if err != nil {
 		return nil, err
 	}

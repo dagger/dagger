@@ -27,9 +27,9 @@ func (*persistSnapshotValue) Type() *ast.Type {
 	}
 }
 
-func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
+func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, enc *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	payload, err := json.Marshal(struct {
 		Name string `json:"name"`
 	}{

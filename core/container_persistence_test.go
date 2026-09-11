@@ -147,7 +147,7 @@ func TestContainerPersistedUnsupportedTargetPreservesConsumedExecMeta(t *testing
 			wholeErr := cacheA.Evaluate(ctxA, res)
 			require.Error(t, fsErr)
 			require.Error(t, wholeErr)
-			encoded, err := child.EncodePersistedObject(ctxA, cacheA)
+			encoded, err := child.EncodePersistedObject(ctxA, dagql.NewPersistEncodeContext(cacheA, 0, nil))
 			require.NoError(t, err)
 			var payload persistedContainerPayload
 			require.NoError(t, json.Unmarshal(encoded.JSON, &payload))
@@ -174,7 +174,7 @@ func TestContainerPersistedUnsupportedTargetPreservesConsumedExecMeta(t *testing
 			require.EqualError(t, cacheB.Evaluate(ctxB, loaded), wholeErr.Error())
 			require.Error(t, cacheB.EvaluateParts(ctxB, loaded, ContainerPartExecMeta), "ordinary post-body scan still reports the target error")
 			require.Equal(t, 1, managerB.openCount("metadata"))
-			_, err = restored.EncodePersistedObject(ctxB, cacheB)
+			_, err = restored.EncodePersistedObject(ctxB, dagql.NewPersistEncodeContext(cacheB, 0, nil))
 			require.NoError(t, err)
 			require.NoError(t, cacheB.ReleaseSession(ctxB, "second"))
 			require.NoError(t, cacheB.Close(ctxB))
@@ -358,7 +358,7 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 		ContainerPartExecMeta: {Kind: containerPartSnapshot, Role: "meta"},
 	}
 	links := []dagql.PersistedSnapshotRefLink{{Role: "fs", RefKey: "joint-fs"}, {Role: "meta", RefKey: "joint-meta"}}
-	require.NoError(t, ctr.installContainerParts(ctx, srv, true, parts, links, recipe))
+	require.NoError(t, ctr.installContainerParts(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), true, parts, links, recipe))
 	require.True(t, recipe.State.GroupConsumed(ContainerLazyGroupExecOutputs))
 	require.Zero(t, manager.openCount("joint-fs"))
 	require.Zero(t, manager.openCount("joint-meta"))
@@ -368,7 +368,7 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 	require.Zero(t, manager.openCount("joint-fs"))
 	_, set := ctr.FS.Peek()
 	require.False(t, set)
-	pending, encoded, encodedLinks, err := ctr.encodeContainerParts(ctx, cache, ctr.lazyOpForRouting())
+	pending, encoded, encodedLinks, err := ctr.encodeContainerParts(ctx, dagql.NewPersistEncodeContext(cache, 0, nil), ctr.lazyOpForRouting())
 	require.NoError(t, err)
 	require.False(t, pending)
 	require.Equal(t, parts, encoded)
@@ -565,7 +565,7 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 		{Target: "/file", FileSource: fileSource},
 		{Target: "/dir", DirectorySource: dirSource},
 	}
-	encoded, err := original.EncodePersistedObject(ctx, cache)
+	encoded, err := original.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "container", Type: dagql.NewResultCallType(original.Type())}
 	res, err := cache.GetOrInitCall(ctx, "paths", srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
@@ -615,7 +615,7 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 	require.True(t, ok, "a recorded empty path is an available value")
 	require.Empty(t, path)
 	require.Empty(t, restored.storedParts[ContainerPartFS].Path)
-	reencoded, err := restored.EncodePersistedObject(ctx, cache)
+	reencoded, err := restored.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	require.JSONEq(t, string(encoded.JSON), string(reencoded.JSON))
 	require.ElementsMatch(t, encoded.SnapshotLinks, reencoded.SnapshotLinks)

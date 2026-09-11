@@ -24,18 +24,18 @@ func (*JSONValue) Type() *ast.Type {
 	}
 }
 
-func (v *JSONValue) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (v *JSONValue) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if v == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted JSON value: nil JSON value")
 	}
 	return encodePersistedObjectPayload(v)
 }
 
-func (*JSONValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*JSONValue) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
-	_ = dag
+	_ = dec
 	var v JSONValue
 	if err := json.Unmarshal(payload, &v); err != nil {
 		return nil, fmt.Errorf("decode persisted JSON value payload: %w", err)

@@ -187,7 +187,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	resultID, err := sc.PersistedResultID(res)
 	assert.NilError(t, err)
 
-	decoded, err := decodePersistedModuleObjectValue(ctx, dag, persistedModuleObjectValue{
+	decoded, err := decodePersistedModuleObjectValue(ctx, dagql.NewPersistDecodeContext(dag, 0, nil), persistedModuleObjectValue{
 		Kind:     persistedModuleObjectValueKindResultRef,
 		ResultID: resultID,
 	})
@@ -256,10 +256,10 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 		EnumDefs:      dagql.ObjectResultArray[*TypeDef]{enumTypeDefTop},
 	}
 
-	payload, err := mod.EncodePersistedObject(ctx, sc)
+	payload, err := mod.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(sc, 0, nil))
 	assert.NilError(t, err)
 
-	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
+	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(dag, 0, nil), payload.JSON)
 	assert.NilError(t, err)
 	decoded, ok := decodedTyped.(*Module)
 	assert.Assert(t, ok)
@@ -511,14 +511,14 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 			"child": child,
 		},
 	}
-	payload, err := obj.EncodePersistedObject(ctx, sc)
+	payload, err := obj.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(sc, 0, nil))
 	assert.NilError(t, err)
 
 	var persisted persistedModuleObjectPayload
 	assert.NilError(t, json.Unmarshal(payload.JSON, &persisted))
 	assert.Equal(t, persistedModuleObjectValueKindResultRef, persisted.Fields["child"].Kind)
 
-	decodedTyped, err := obj.DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
+	decodedTyped, err := obj.DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(dag, 0, nil), payload.JSON)
 	assert.NilError(t, err)
 	decoded, ok := decodedTyped.(*ModuleObject)
 	assert.Assert(t, ok)
@@ -553,7 +553,7 @@ func TestModuleObjectEncodeRejectsRawCallIDInSemanticField(t *testing.T) {
 		},
 	}
 
-	_, err := obj.EncodePersistedObject(ctx, nil)
+	_, err := obj.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
 	assert.ErrorContains(t, err, "unexpected raw call ID in semantic field")
 }
 
@@ -571,7 +571,7 @@ func TestModuleObjectEncodeAllowsRawCallIDInPrivateField(t *testing.T) {
 		},
 	}
 
-	payload, err := obj.EncodePersistedObject(ctx, nil)
+	payload, err := obj.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
 	assert.NilError(t, err)
 
 	var persisted persistedModuleObjectPayload
@@ -660,7 +660,7 @@ func TestModuleObjectPrivateHandleFieldRetainedAcrossProducerSessionClose(t *tes
 	assert.Assert(t, isResult)
 
 	// The rewritten value persists as a real result ref, not an opaque scalar.
-	encoded, err := parentObj.EncodePersistedObject(ctx, producerCache)
+	encoded, err := parentObj.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(producerCache, 0, nil))
 	assert.NilError(t, err)
 	var persisted persistedModuleObjectPayload
 	assert.NilError(t, json.Unmarshal(encoded.JSON, &persisted))
@@ -1041,4 +1041,138 @@ func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(
 	assert.NilError(t, retainedID.Decode(childEnc))
 	_, err = consumerDepDag.Load(consumerCtx, &retainedID)
 	assert.NilError(t, err)
+}
+
+// TestModuleObjectNestedNumbersSurvivePersistenceAndSDKConversion saves a
+// module object whose private state holds numbers nested inside maps and
+// arrays, restores it from the persisted payload twice, and converts it back
+// to SDK input. A module receives its own state back through that conversion,
+// so a number that rounds through float64 anywhere on the path hands the next
+// call a different value than the one it returned.
+func TestModuleObjectNestedNumbersSurvivePersistenceAndSDKConversion(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	sc, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{mockServer: &mockServer{}, cache: sc, root: root}
+	root.Server = testSrv
+	dag := newCoreDagqlServerForTest(t, root)
+	testSrv.dag = dag
+	ctx = dagql.ContextWithCache(ctx, sc)
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-object-numbers-client",
+		SessionID: "module-object-numbers-session",
+	})
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+
+	// Counter declares `counts: [Int!]!`; "state" below is private data the
+	// module kept for itself, so the two conversion routes are both exercised.
+	intTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "moduleObjectNumbersInt", (&TypeDef{}).WithKind(TypeDefKindInteger))
+	listTypeDef := newTypeDefAttachedResult(t, ctx, sc, dag, "moduleObjectNumbersList", (&TypeDef{}).WithListOf(
+		newTypeDefAttachedResult(t, ctx, sc, dag, "moduleObjectNumbersListDef", &ListTypeDef{ElementTypeDef: intTypeDef}),
+	))
+	objDef := NewObjectTypeDef("Counter", "", nil)
+	objDef.Fields = append(objDef.Fields, newTypeDefDetachedResult(t, dag, "moduleObjectNumbersCountsField", NewFieldTypeDef("counts", listTypeDef, "", nil)))
+	objDefRes := newTypeDefDetachedResult(t, dag, "moduleObjectNumbersObj", objDef)
+	mod := &Module{
+		NameField:  "test",
+		Deps:       NewSchemaBuilder(nil, nil),
+		ObjectDefs: dagql.ObjectResultArray[*TypeDef]{newTypeDefDetachedResult(t, dag, "moduleObjectNumbersTopTypeDef", (&TypeDef{}).WithObjectTypeDef(objDefRes))},
+	}
+	modRes, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("moduleObjectNumbersModule", mod))
+	assert.NilError(t, err)
+	objType := &ModuleObjectType{typeDef: objDef, mod: modRes}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("moduleObjectNumbersParent", &ModuleObject{TypeDef: objDef}))
+
+	// The shape an SDK hands back: private state the module kept for itself,
+	// decoded with UseNumber, with numbers nested inside a map and a list.
+	// "state" is not a declared field of Counter, so it travels through the
+	// private-field conversion.
+	const bigInt = "9007199254740993" // 2^53+1: the first integer float64 cannot hold
+	const maxInt64 = "9223372036854775807"
+	const minInt64 = "-9223372036854775808"
+	freshState := map[string]any{
+		"ids": []any{json.Number(bigInt), json.Number(maxInt64), json.Number(minInt64)},
+		"limits": map[string]any{
+			"ratio":  json.Number("0.1"),
+			"nested": map[string]any{"deep": json.Number(bigInt)},
+		},
+	}
+	declaredCounts := []any{json.Number(bigInt), json.Number(maxInt64), json.Number(minInt64)}
+	obj := &ModuleObject{Module: modRes, TypeDef: objDef, Fields: map[string]any{
+		"counts": declaredCounts,
+		"state":  freshState,
+	}}
+
+	freshInput, err := objType.ConvertToSDKInput(ctx, obj)
+	assert.NilError(t, err)
+	freshJSON, err := json.Marshal(freshInput)
+	assert.NilError(t, err)
+
+	enc := dagql.NewPersistEncodeContext(sc, 0, nil)
+	dec := dagql.NewPersistDecodeContext(dag, 0, nil)
+	payload, err := obj.EncodePersistedObject(ctx, enc)
+	assert.NilError(t, err)
+
+	var persisted persistedModuleObjectPayload
+	assert.NilError(t, json.Unmarshal(payload.JSON, &persisted))
+	deep := persisted.Fields["state"].Fields["limits"].Fields["nested"].Fields["deep"]
+	assert.Equal(t, persistedModuleObjectValueKindScalar, deep.Kind)
+	assert.Equal(t, bigInt, string(deep.ScalarJSON), "the saved token is the exact integer, not a float")
+
+	current := obj
+	currentPayload := payload.JSON
+	for round := 1; round <= 2; round++ {
+		decodedTyped, err := current.DecodePersistedObject(ctx, dec, currentPayload)
+		assert.NilError(t, err)
+		decoded, ok := decodedTyped.(*ModuleObject)
+		assert.Assert(t, ok)
+
+		state, ok := decoded.Fields["state"].(map[string]any)
+		assert.Assert(t, ok, "round %d", round)
+		ids, ok := state["ids"].([]any)
+		assert.Assert(t, ok, "round %d", round)
+		assert.Equal(t, json.Number(bigInt), ids[0], "round %d: the large integer is exact inside a list", round)
+		assert.Equal(t, json.Number(maxInt64), ids[1], "round %d", round)
+		assert.Equal(t, json.Number(minInt64), ids[2], "round %d", round)
+		counts, ok := decoded.Fields["counts"].([]any)
+		assert.Assert(t, ok, "round %d", round)
+		assert.Equal(t, json.Number(bigInt), counts[0], "round %d: a declared Int list stays exact too", round)
+		assert.Equal(t, json.Number(maxInt64), counts[1], "round %d", round)
+		assert.Equal(t, json.Number(minInt64), counts[2], "round %d", round)
+		limits, ok := state["limits"].(map[string]any)
+		assert.Assert(t, ok, "round %d", round)
+		assert.Equal(t, json.Number("0.1"), limits["ratio"], "round %d", round)
+		nested, ok := limits["nested"].(map[string]any)
+		assert.Assert(t, ok, "round %d", round)
+		assert.Equal(t, json.Number(bigInt), nested["deep"], "round %d: nesting depth does not lose precision", round)
+
+		converted, err := objType.ConvertToSDKInput(ctx, decoded)
+		assert.NilError(t, err)
+		convertedJSON, err := json.Marshal(converted)
+		assert.NilError(t, err)
+		assert.Equal(t, string(freshJSON), string(convertedJSON), "round %d: SDK input matches what the module returned", round)
+
+		// Second save: the restored object re-encodes to the same bytes.
+		reencoded, err := decoded.EncodePersistedObject(ctx, enc)
+		assert.NilError(t, err)
+		assert.Equal(t, string(currentPayload), string(reencoded.JSON), "round %d: the second save preserves the tokens", round)
+		current, currentPayload = decoded, reencoded.JSON
+	}
+
+	// Deliberate control: reading the same saved bytes through an untyped
+	// json.Unmarshal, as the payload decoder did before it used a lossless
+	// reader, rounds the nested integer.
+	var lossy persistedModuleObjectPayload
+	assert.NilError(t, json.Unmarshal(payload.JSON, &lossy))
+	var rounded any
+	assert.NilError(t, json.Unmarshal(lossy.Fields["state"].Fields["limits"].Fields["nested"].Fields["deep"].ScalarJSON, &rounded))
+	roundedJSON, err := json.Marshal(rounded)
+	assert.NilError(t, err)
+	assert.Assert(t, string(roundedJSON) != bigInt, "untyped decoding must lose the large integer; got %s", string(roundedJSON))
 }

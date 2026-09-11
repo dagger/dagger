@@ -379,6 +379,117 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		logSnapshotRow(t, "list last engine first child read", first)
 	})
 
+	t.Run("module core metadata returns survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "core-metadata-returns-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		type response struct {
+			EnvVar struct {
+				ID    string `json:"id"`
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"envVar"`
+			Ports []struct {
+				ID          string  `json:"id"`
+				Port        int     `json:"port"`
+				Description *string `json:"description"`
+			} `json:"ports"`
+			Schema struct {
+				ID string `json:"id"`
+			} `json:"schema"`
+			Clients []struct {
+				ID        string `json:"id"`
+				Generator string `json:"generator"`
+				Directory string `json:"directory"`
+			} `json:"clients"`
+		}
+		request := func(client *dagger.Client) response {
+			t.Helper()
+			raw, err := moduleFixture(t, client, "go/persisted-core-returns").
+				WithEnvVariable("REQUEST_NUMBER", identity.NewID()).
+				With(daggerQueryAt(".", "{envVar{id name value} ports{id port description} schema{id} clients{id generator directory}}")).Stdout(ctx)
+			require.NoError(t, err)
+			var res response
+			require.NoError(t, json.Unmarshal([]byte(raw), &res))
+			require.Equal(t, "CI", res.EnvVar.Name)
+			require.Equal(t, "true", res.EnvVar.Value)
+			require.Len(t, res.Ports, 2)
+			require.Equal(t, 8080, res.Ports[0].Port)
+			require.NotNil(t, res.Ports[0].Description)
+			require.Equal(t, "web", *res.Ports[0].Description)
+			require.Equal(t, 9090, res.Ports[1].Port)
+			require.Nil(t, res.Ports[1].Description)
+			require.Len(t, res.Clients, 1)
+			require.Equal(t, "go", res.Clients[0].Generator)
+			require.Equal(t, "./gen", res.Clients[0].Directory)
+			return res
+		}
+		rowIDs := func(res response) map[string]uint64 {
+			return map[string]uint64{
+				"envVar": snapshotResultID(t, res.EnvVar.ID),
+				"port0":  snapshotResultID(t, res.Ports[0].ID),
+				"port1":  snapshotResultID(t, res.Ports[1].ID),
+				"schema": snapshotResultID(t, res.Schema.ID),
+				"client": snapshotResultID(t, res.Clients[0].ID),
+			}
+		}
+		checkByID := func(client *dagger.Client, res response) {
+			t.Helper()
+			value, err := dagger.Ref[*dagger.EnvVariable](client, dagger.ID(res.EnvVar.ID)).Value(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", value)
+			description, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[0].ID)).Description(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "web", description)
+			port, err := dagger.Ref[*dagger.Port](client, dagger.ID(res.Ports[1].ID)).Port(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 9090, port)
+			contents, err := dagger.Ref[*dagger.Schema](client, dagger.ID(res.Schema.ID)).Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, string(contents), `"sourceMap"`)
+			generator, err := dagger.Ref[*dagger.ModuleConfigClient](client, dagger.ID(res.Clients[0].ID)).Generator(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "go", generator)
+		}
+
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		first := request(a)
+		ids := rowIDs(first)
+		rows := readSnapshotRows(ctx, t, c, upA)
+		for name, id := range ids {
+			require.Contains(t, rows, id, "%s row is retained on the first engine", name)
+			logSnapshotRow(t, "first engine "+name, rows[id])
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		// Middle engine: the saved rows load by ID before the module runs,
+		// then the module request preserves each exact row, then the engine
+		// saves again from the typed-read state.
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		rows = readSnapshotRows(ctx, t, c, upB)
+		for name, id := range ids {
+			require.Contains(t, rows, id, "%s row survived the restart", name)
+			logSnapshotRow(t, "middle engine before read "+name, rows[id])
+		}
+		checkByID(b, first)
+		middle := request(b)
+		require.Equal(t, ids, rowIDs(middle), "the middle engine hands back the exact saved rows")
+		stopEngine(ctx, t, upB, tunnelB, b)
+		upB, tunnelB, b = nil, nil, nil
+
+		upC, tunnelC, last := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, last) })
+		checkByID(last, first)
+		require.Equal(t, ids, rowIDs(request(last)), "the second save preserved every row")
+		rows = readSnapshotRows(ctx, t, c, upC)
+		for name, id := range ids {
+			logSnapshotRow(t, "last engine "+name, rows[id])
+		}
+	})
+
 	t.Run("container parts preserve mutations and unopened snapshots", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "container-parts-" + identity.NewID()

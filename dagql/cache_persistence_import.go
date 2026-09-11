@@ -144,13 +144,13 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 					return fmt.Errorf("import result %d self payload: %w", resultID, err)
 				}
 			} else {
-				env = PersistedResultEnvelope{
-					Version: 1,
-					Kind:    persistedResultKindNull,
-				}
+				return fmt.Errorf("import result %d: empty self payload", resultID)
 			}
 			if env.Kind == "" {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
+			}
+			if env.Version != persistedResultEnvelopeVersion {
+				return fmt.Errorf("import result %d: unsupported self payload version %d", resultID, env.Version)
 			}
 
 			if row.CallFrameJSON == "" {
@@ -176,6 +176,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
 
 			if env.Kind == persistedResultKindNull {
+				// An attached absent value keeps its row identity, recorded
+				// call, requirements and list position: its self is the
+				// invalid nullable wrapper of the declared type, never a
+				// missing value.
+				absent, err := persistedAbsentValue(frame)
+				if err != nil {
+					return fmt.Errorf("import result %d null self payload: %w", resultID, err)
+				}
+				res.self = absent
 				res.hasValue = true
 				res.persistedEnvelope = nil
 				c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "nil")
@@ -560,17 +569,29 @@ func resolverServer(resolver TypeResolver) *Server {
 	return dag
 }
 
-func persistedEnvelopeObjectTypeNames(env PersistedResultEnvelope, names []string) []string {
+// persistedEnvelopeTypeName is one GraphQL type an envelope needs installed
+// before it can decode: an object class or a scalar/enum definition.
+type persistedEnvelopeTypeName struct {
+	name   string
+	object bool
+}
+
+// persistedEnvelopeTypeNames collects every object, scalar and enum type name
+// an envelope decodes through, including inline list items. Items naming
+// another row decode through that row's own envelope.
+func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEnvelopeTypeName) []persistedEnvelopeTypeName {
 	switch env.Kind {
 	case persistedResultKindObject:
 		if env.TypeName != "" {
-			names = append(names, env.TypeName)
+			names = append(names, persistedEnvelopeTypeName{name: env.TypeName, object: true})
+		}
+	case persistedResultKindScalar:
+		if env.TypeName != "" && !persistedBuiltinScalarName(env.TypeName) {
+			names = append(names, persistedEnvelopeTypeName{name: env.TypeName})
 		}
 	case persistedResultKindList:
 		for _, item := range env.Items {
-			if item.ResultID == 0 {
-				names = persistedEnvelopeObjectTypeNames(item, names)
-			}
+			names = persistedEnvelopeTypeNames(item, names)
 		}
 	}
 	return names
@@ -720,14 +741,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 			decodeResolver := resolver
-			seenTypeNames := map[string]struct{}{}
-			for _, typeName := range persistedEnvelopeObjectTypeNames(*state.persistedEnvelope, nil) {
+			seenTypeNames := map[persistedEnvelopeTypeName]struct{}{}
+			for _, typeName := range persistedEnvelopeTypeNames(*state.persistedEnvelope, nil) {
 				if _, seen := seenTypeNames[typeName]; seen {
 					continue
 				}
 				seenTypeNames[typeName] = struct{}{}
 				var err error
-				decodeResolver, err = resolverForSharedResultObject(ctx, decodeResolver, res, typeName)
+				decodeResolver, err = resolverForSharedResultType(ctx, decodeResolver, res, typeName)
 				if err != nil {
 					err = fmt.Errorf("decode persisted hit payload: %w", err)
 					finishPersistDecode(err, false)

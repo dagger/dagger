@@ -430,7 +430,7 @@ func TestCacheVolumeEncodePersistsSourceResultID(t *testing.T) {
 		"1000:1000",
 	)
 
-	payload, err := cache.EncodePersistedObject(context.Background(), persisted)
+	payload, err := cache.EncodePersistedObject(context.Background(), dagql.NewPersistEncodeContext(persisted, 0, nil))
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload

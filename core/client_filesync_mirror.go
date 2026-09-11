@@ -101,9 +101,9 @@ type persistedClientFilesyncMirrorPayload struct {
 	Drive          string `json:"drive,omitempty"`
 }
 
-func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = cache
+	_ = enc
 	if m == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted client filesync mirror: nil mirror")
 	}
@@ -132,7 +132,7 @@ func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache 
 	}, nil
 }
 
-func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedClientFilesyncMirrorPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted client filesync mirror payload: %w", err)
@@ -141,15 +141,15 @@ func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dag *dag
 		StableClientID: persisted.StableClientID,
 		Drive:          persisted.Drive,
 	}
-	if resultID == 0 {
+	if dec.ResultID() == 0 {
 		return mirror, nil
 	}
 
-	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "client filesync mirror", "snapshot")
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "client filesync mirror", "snapshot")
 	if err != nil {
 		return nil, err
 	}
-	query, err := persistedDecodeQuery(dag)
+	query, err := persistedDecodeQuery(dec)
 	if err != nil {
 		return nil, err
 	}

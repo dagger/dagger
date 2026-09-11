@@ -15,7 +15,7 @@ import (
 type Lazy[T dagql.Typed] interface {
 	Evaluate(context.Context, T) error
 	AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
-	EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error)
+	EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error)
 }
 
 type LazyState struct {

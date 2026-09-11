@@ -1028,24 +1028,24 @@ type persistedModulePayload struct {
 	AsModuleVariantDigest         string                          `json:"asModuleVariantDigest,omitempty"`
 }
 
-func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	var persisted persistedModulePayload
 	if mod.Source.Valid {
-		sourceID, err := encodePersistedObjectRef(cache, mod.Source.Value, "module source")
+		sourceID, err := encodePersistedObjectRef(enc, mod.Source.Value, "module source")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.SourceResultID = sourceID
 	}
 	if mod.ContextSource.Valid {
-		contextSourceID, err := encodePersistedObjectRef(cache, mod.ContextSource.Value, "module context source")
+		contextSourceID, err := encodePersistedObjectRef(enc, mod.ContextSource.Value, "module context source")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.ContextSourceResultID = contextSourceID
 	}
 	if mod.Runtime.Valid {
-		runtimeID, err := encodePersistedObjectRef(cache, mod.Runtime.Value, "module runtime")
+		runtimeID, err := encodePersistedObjectRef(enc, mod.Runtime.Value, "module runtime")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -1060,7 +1060,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			if depInst.Self() == nil {
 				continue
 			}
-			depResultID, err := encodePersistedObjectRef(cache, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
+			depResultID, err := encodePersistedObjectRef(enc, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -1077,7 +1077,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	persisted.Description = mod.Description
 	persisted.ObjectDefResultIDs = make([]uint64, 0, len(mod.ObjectDefs))
 	for _, def := range mod.ObjectDefs {
-		defID, err := encodePersistedObjectRef(cache, def, "module object typedef")
+		defID, err := encodePersistedObjectRef(enc, def, "module object typedef")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -1085,7 +1085,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	}
 	persisted.InterfaceDefResultIDs = make([]uint64, 0, len(mod.InterfaceDefs))
 	for _, def := range mod.InterfaceDefs {
-		defID, err := encodePersistedObjectRef(cache, def, "module interface typedef")
+		defID, err := encodePersistedObjectRef(enc, def, "module interface typedef")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -1093,7 +1093,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	}
 	persisted.EnumDefResultIDs = make([]uint64, 0, len(mod.EnumDefs))
 	for _, def := range mod.EnumDefs {
-		defID, err := encodePersistedObjectRef(cache, def, "module enum typedef")
+		defID, err := encodePersistedObjectRef(enc, def, "module enum typedef")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -1113,26 +1113,26 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	return encodePersistedObjectRawJSON(jsonBytes), nil
 }
 
-func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedModulePayload
-	if err := json.Unmarshal(payload, &persisted); err != nil {
+	if err := unmarshalPersistedPayload(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted module payload: %w", err)
 	}
 
-	sourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.SourceResultID, "module source")
+	sourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dec, persisted.SourceResultID, "module source")
 	if err != nil {
 		return nil, err
 	}
-	contextSourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.ContextSourceResultID, "module context source")
+	contextSourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dec, persisted.ContextSourceResultID, "module context source")
 	if err != nil {
 		return nil, err
 	}
-	runtimeRes, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.RuntimeResultID, "module runtime")
+	runtimeRes, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.RuntimeResultID, "module runtime")
 	if err != nil {
 		return nil, err
 	}
 
-	query, err := persistedDecodeQuery(dag)
+	query, err := persistedDecodeQuery(dec)
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module query: %w", err)
 	}
@@ -1142,7 +1142,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 
 	for _, depID := range persisted.DepModuleResultIDs {
-		depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, depID, "module dependency")
+		depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, depID, "module dependency")
 		if err != nil {
 			return nil, err
 		}
@@ -1151,7 +1151,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 
 	objectDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.ObjectDefResultIDs))
 	for _, defID := range persisted.ObjectDefResultIDs {
-		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, defID, "module object typedef")
+		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, defID, "module object typedef")
 		if err != nil {
 			return nil, err
 		}
@@ -1159,7 +1159,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 	interfaceDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.InterfaceDefResultIDs))
 	for _, defID := range persisted.InterfaceDefResultIDs {
-		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, defID, "module interface typedef")
+		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, defID, "module interface typedef")
 		if err != nil {
 			return nil, err
 		}
@@ -1167,7 +1167,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 	enumDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.EnumDefResultIDs))
 	for _, defID := range persisted.EnumDefResultIDs {
-		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, defID, "module enum typedef")
+		def, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dec, defID, "module enum typedef")
 		if err != nil {
 			return nil, err
 		}

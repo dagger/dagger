@@ -47,7 +47,7 @@ func TestVolumePersistedObjectRoundTrip(t *testing.T) {
 		},
 	}
 
-	encoded, err := vol.EncodePersistedObject(ctx, cache)
+	encoded, err := vol.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	var raw persistedVolumePayload
 	require.NoError(t, json.Unmarshal(encoded.JSON, &raw))
@@ -56,7 +56,7 @@ func TestVolumePersistedObjectRoundTrip(t *testing.T) {
 	require.NotZero(t, raw.SSHFS.KnownHostsResultID)
 	require.NotZero(t, raw.SSHFS.ServiceHostResultID)
 
-	decodedTyped, err := (&Volume{}).DecodePersistedObject(ctx, srv, 0, nil, encoded.JSON)
+	decodedTyped, err := (&Volume{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), encoded.JSON)
 	require.NoError(t, err)
 	decoded, ok := decodedTyped.(*Volume)
 	require.True(t, ok)
@@ -80,7 +80,7 @@ func TestEngineVolumePersistedObjectRoundTrip(t *testing.T) {
 			LayoutVersion: EngineVolumeLayoutVersion,
 		},
 	}
-	encoded, err := vol.EncodePersistedObject(context.Background(), nil)
+	encoded, err := vol.EncodePersistedObject(context.Background(), dagql.NewPersistEncodeContext(nil, 0, nil))
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded.JSON), "/var/lib/dagger")
 
@@ -91,7 +91,7 @@ func TestEngineVolumePersistedObjectRoundTrip(t *testing.T) {
 	require.Equal(t, "llama/weights", raw.Engine.Subdir)
 	require.Equal(t, EngineVolumeLayoutVersion, raw.Engine.LayoutVersion)
 
-	decodedTyped, err := (&Volume{}).DecodePersistedObject(context.Background(), nil, 0, nil, encoded.JSON)
+	decodedTyped, err := (&Volume{}).DecodePersistedObject(context.Background(), dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
 	require.NoError(t, err)
 	decoded, ok := decodedTyped.(*Volume)
 	require.True(t, ok)
@@ -240,7 +240,7 @@ func TestContainerPersistedObjectRoundTripsVolumeMount(t *testing.T) {
 	_, err = container.WithMountedVolume(ctx, "/mnt/repo", volume, true)
 	require.NoError(t, err)
 
-	encoded, err := container.EncodePersistedObject(ctx, cache)
+	encoded, err := container.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
 	var raw persistedContainerPayload
 	require.NoError(t, json.Unmarshal(encoded.JSON, &raw))
@@ -249,7 +249,7 @@ func TestContainerPersistedObjectRoundTripsVolumeMount(t *testing.T) {
 	require.Equal(t, volumeID, raw.Metadata.Value.Mounts[0].VolumeSourceResultID)
 	require.True(t, raw.Metadata.Value.Mounts[0].Readonly)
 
-	decodedTyped, err := (&Container{}).DecodePersistedObject(ctx, srv, volumeID, nil, encoded.JSON)
+	decodedTyped, err := (&Container{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, volumeID, nil), encoded.JSON)
 	require.NoError(t, err)
 	decoded, ok := decodedTyped.(*Container)
 	require.True(t, ok)

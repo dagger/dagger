@@ -209,7 +209,7 @@ type persistedFilePayload struct {
 	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
-func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	if file == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted file: nil file")
 	}
@@ -219,7 +219,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 			filePath = peekedPath
 		}
 	}
-	services, err := encodePersistedServiceBindings(cache, "file", file.Services)
+	services, err := encodePersistedServiceBindings(enc, "file", file.Services)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -244,7 +244,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
-		lazyKind, lazyJSON, err := encodePersistedFileLazy(ctx, cache, file.Lazy)
+		lazyKind, lazyJSON, err := encodePersistedFileLazy(ctx, enc, file.Lazy)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
@@ -260,12 +260,12 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 }
 
 //nolint:dupl // symmetric with decodePersistedDirectoryWithSnapshotRole in directory.go; sharing hides type specifics
-func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server, resultID uint64, payload json.RawMessage, snapshotRole string) (*File, error) {
+func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage, snapshotRole string) (*File, error) {
 	var persisted persistedFilePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)
 	}
-	services, err := decodePersistedServiceBindings(ctx, dag, "file", persisted.Services)
+	services, err := decodePersistedServiceBindings(ctx, dec, "file", persisted.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 	}
 	switch persisted.Form {
 	case persistedFileFormSnapshot:
-		link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, "file", snapshotRole)
+		link, err := loadPersistedSnapshotLinkByResultID(ctx, dec, "file", snapshotRole)
 		if err != nil {
 			return nil, err
 		}
@@ -294,7 +294,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 		if persisted.LazyKind == "" {
 			return nil, fmt.Errorf("decode persisted file payload: missing lazy kind")
 		}
-		lazy, err := decodePersistedFileLazy(ctx, dag, persisted.LazyKind, persisted.LazyJSON)
+		lazy, err := decodePersistedFileLazy(ctx, dec, persisted.LazyKind, persisted.LazyJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -305,8 +305,8 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 	}
 }
 
-func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
-	return decodePersistedFileWithSnapshotRole(ctx, dag, resultID, payload, "snapshot")
+func (*File) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	return decodePersistedFileWithSnapshotRole(ctx, dec, payload, "snapshot")
 }
 
 type FileBlobLazy struct {
@@ -383,35 +383,35 @@ type persistedFileSubfileLazy struct {
 	Path           string `json:"path"`
 }
 
-func encodePersistedFileLazy(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*File]) (string, json.RawMessage, error) {
+func encodePersistedFileLazy(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*File]) (string, json.RawMessage, error) {
 	switch lazy := lazy.(type) {
 	case *FileBlobLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindBlob, payload, err
 	case *FileSubfileLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindDirectoryFile, payload, err
 	case *ContainerFileLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindContainerFile, payload, err
 	case *FileWithNameLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindWithName, payload, err
 	case *FileWithReplacedLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindWithReplaced, payload, err
 	case *FileWithTimestampsLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindWithTimestamps, payload, err
 	case *FileChownLazy:
-		payload, err := lazy.EncodePersisted(ctx, cache)
+		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindChown, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted file lazy: unsupported lazy type %T", lazy)
 	}
 }
 
-func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind string, payload json.RawMessage) (Lazy[*File], error) {
+func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContext, lazyKind string, payload json.RawMessage) (Lazy[*File], error) {
 	switch lazyKind {
 	case persistedFileLazyKindBlob:
 		var persisted persistedFileBlobLazy
@@ -429,7 +429,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted file subfile lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ParentResultID, "file subfile parent")
+		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.ParentResultID, "file subfile parent")
 		if err != nil {
 			return nil, err
 		}
@@ -439,7 +439,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container file lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container file parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container file parent")
 		if err != nil {
 			return nil, err
 		}
@@ -449,7 +449,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted file withName lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.ParentResultID, "file withName parent")
+		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.ParentResultID, "file withName parent")
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +459,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted file withReplaced lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.ParentResultID, "file withReplaced parent")
+		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.ParentResultID, "file withReplaced parent")
 		if err != nil {
 			return nil, err
 		}
@@ -476,7 +476,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted file withTimestamps lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.ParentResultID, "file withTimestamps parent")
+		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.ParentResultID, "file withTimestamps parent")
 		if err != nil {
 			return nil, err
 		}
@@ -486,7 +486,7 @@ func decodePersistedFileLazy(ctx context.Context, dag *dagql.Server, lazyKind st
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted file chown lazy: %w", err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.ParentResultID, "file chown parent")
+		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dec, persisted.ParentResultID, "file chown parent")
 		if err != nil {
 			return nil, err
 		}
@@ -551,7 +551,7 @@ func (lazy *FileBlobLazy) AttachDependencies(context.Context, func(dagql.AnyResu
 	return nil, nil
 }
 
-func (lazy *FileBlobLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (lazy *FileBlobLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
 	return json.Marshal(persistedFileBlobLazy{
 		Filename:    lazy.Filename,
 		Contents:    slices.Clone(lazy.Contents),
@@ -619,8 +619,8 @@ func (lazy *FileSubfileLazy) AttachDependencies(ctx context.Context, attach func
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (lazy *FileSubfileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "file subfile parent")
+func (lazy *FileSubfileLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "file subfile parent")
 	if err != nil {
 		return nil, err
 	}
@@ -642,8 +642,8 @@ func (lazy *FileWithReplacedLazy) AttachDependencies(ctx context.Context, attach
 	return []dagql.AnyResult{attached}, nil
 }
 
-func (lazy *FileWithReplacedLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "file withReplaced parent")
+func (lazy *FileWithReplacedLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "file withReplaced parent")
 	if err != nil {
 		return nil, err
 	}
@@ -671,8 +671,8 @@ func (lazy *FileWithNameLazy) AttachDependencies(ctx context.Context, attach fun
 	return []dagql.AnyResult{attached}, nil
 }
 
-func (lazy *FileWithNameLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "file withName parent")
+func (lazy *FileWithNameLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "file withName parent")
 	if err != nil {
 		return nil, err
 	}
@@ -694,8 +694,8 @@ func (lazy *FileWithTimestampsLazy) AttachDependencies(ctx context.Context, atta
 	return []dagql.AnyResult{attached}, nil
 }
 
-func (lazy *FileWithTimestampsLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "file withTimestamps parent")
+func (lazy *FileWithTimestampsLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "file withTimestamps parent")
 	if err != nil {
 		return nil, err
 	}
@@ -717,8 +717,8 @@ func (lazy *FileChownLazy) AttachDependencies(ctx context.Context, attach func(d
 	return []dagql.AnyResult{attached}, nil
 }
 
-func (lazy *FileChownLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
-	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "file chown parent")
+func (lazy *FileChownLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "file chown parent")
 	if err != nil {
 		return nil, err
 	}
