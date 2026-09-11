@@ -279,3 +279,63 @@ func TestModuleMigrationCleansEveryConvertedModule(t *testing.T) {
 	require.NoError(t, p.module("app", true, false))
 	require.Len(t, cleaned, 2)
 }
+
+func TestModuleMigrationVisitsSDKScopeModules(t *testing.T) {
+	p := testModuleMigrationPlanner(t, map[string]string{
+		"tools/dagger.json": `{"name":"tools","sdk":"github.com/acme/sdk@v1","dependencies":[{"name":"dep","source":"../dep"}]}`,
+		"dep/dagger.json":   `{"name":"dep","sdk":"go"}`,
+	})
+	p.config.Modules = map[string]workspace.ModuleEntry{"acme-sdk": {Source: "github.com/acme/sdk@v1"}}
+	p.config.SDKs = map[string]workspace.SDKEntry{"acme": {
+		Module: "acme-sdk",
+		Scopes: map[string]workspace.SDKScope{"tools": {IsModule: true}},
+	}}
+	require.NoError(t, p.requiredModules(nil))
+	require.Equal(t, "tools", p.config.SDKs["acme"].Scopes["tools"].Name)
+	require.Equal(t, []string{"./dep"}, p.config.SDKs["acme"].Scopes["tools"].Clients)
+	require.Contains(t, p.writes, "tools/dagger-module.toml")
+	require.Contains(t, p.writes, "dep/dagger-module.toml")
+}
+
+func TestModuleMigrationSDKScopeWithoutModuleConfigWarns(t *testing.T) {
+	p := testModuleMigrationPlanner(t, nil)
+	p.config.Modules = map[string]workspace.ModuleEntry{"acme-sdk": {Source: "github.com/acme/sdk@v1"}}
+	p.config.SDKs = map[string]workspace.SDKEntry{"acme": {
+		Module: "acme-sdk",
+		Scopes: map[string]workspace.SDKScope{"gone": {IsModule: true}},
+	}}
+	require.NoError(t, p.requiredModules(nil))
+	require.Empty(t, p.writes)
+	require.Len(t, p.warnings, 1)
+	require.Contains(t, p.warnings[0], `SDK "acme" declares module scope "gone"`)
+}
+
+func TestModuleMigrationSDKScopeSkipsNonModuleScopes(t *testing.T) {
+	p := testModuleMigrationPlanner(t, map[string]string{
+		"client/dagger.json": `{"name":"client","sdk":"go"}`,
+	})
+	p.config.Modules = map[string]workspace.ModuleEntry{"acme-sdk": {Source: "github.com/acme/sdk@v1"}}
+	p.config.SDKs = map[string]workspace.SDKEntry{"acme": {
+		Module: "acme-sdk",
+		Scopes: map[string]workspace.SDKScope{"client": {Clients: []string{"./lib"}}},
+	}}
+	require.NoError(t, p.requiredModules(nil))
+	require.Empty(t, p.writes)
+	require.Empty(t, p.warnings)
+	require.Empty(t, p.config.SDKs["acme"].Scopes["client"].Name)
+}
+
+func TestModuleMigrationSDKScopeFailureStopsMigration(t *testing.T) {
+	p := testModuleMigrationPlanner(t, map[string]string{
+		"tools/dagger.json": `{"name":"tools","sdk":{"source":"go","debug":true}}`,
+	})
+	p.config.Modules = map[string]workspace.ModuleEntry{"acme-sdk": {Source: "github.com/acme/sdk@v1"}}
+	p.config.SDKs = map[string]workspace.SDKEntry{"acme": {
+		Module: "acme-sdk",
+		Scopes: map[string]workspace.SDKScope{"./tools": {IsModule: true}},
+	}}
+	err := p.requiredModules(nil)
+	require.ErrorContains(t, err, `required SDK "acme" module scope "./tools" (tools)`)
+	require.ErrorContains(t, err, "deprecated SDK settings")
+	require.Empty(t, p.writes)
+}
