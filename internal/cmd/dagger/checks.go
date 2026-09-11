@@ -68,12 +68,16 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := dag.CurrentWorkspace()
-			checks := ws.Checks(dagger.WorkspaceChecksOpts{
-				Include:      args,
-				Skip:         checksSkip,
-				NoGenerate:   new(checksNoGenerate),
-				OnlyGenerate: new(checksOnlyGenerate),
-			})
+			opts := dagger.WorkspaceChecksOpts{Include: args, Skip: checksSkip}
+			// Omitted flags must leave workspace defaults in effect. A pointer
+			// to false is an explicit override, not the absence of a flag.
+			if cmd.Flags().Changed("no-generate") {
+				opts.NoGenerate = new(checksNoGenerate)
+			}
+			if cmd.Flags().Changed("generate") {
+				opts.OnlyGenerate = new(checksOnlyGenerate)
+			}
+			checks := ws.Checks(opts)
 			if checksListMode {
 				return listChecks(ctx, dag, checks, cmd)
 			}
