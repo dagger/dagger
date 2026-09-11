@@ -15,23 +15,7 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("base.txt", "base").WithNewFile("removed.txt", "remove me"))
-	serviceID, err := daemon.ID(ctx)
-	require.NoError(t, err)
-	var result struct {
-		Git struct {
-			Head struct{ AsWorkspace struct{ ID dagger.ID } }
-		}
-	}
-	// An explicit false cannot be expressed by the SDK's optional bool.
-	require.NoError(t, c.Do(ctx, &dagger.Request{
-		Query: `query($url: String!, $service: ID!) {
-			git(url: $url, experimentalServiceHost: $service, keepGitDir: false) {
-				head { asWorkspace { id } }
-			}
-		}`,
-		Variables: map[string]any{"url": url, "service": serviceID},
-	}, &dagger.Response{Data: &result}))
-	base := dagger.Ref[*dagger.Workspace](c, result.Git.Head.AsWorkspace.ID)
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
 	baseSHA, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	// Check the remote backend directly, before commits switch to a local one.
