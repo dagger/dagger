@@ -1938,11 +1938,14 @@ func (src *ModuleSource) LoadContextGit(
 		// remains pinned to the workspace ref.
 		refID, err := ref.ID()
 		if err != nil {
-			return inst, fmt.Errorf("git workspace source ref ID: %w", err)
+			return inst, err
 		}
-		if err := dag.Select(ctx, ref.Self().Repo, &inst, dagql.Selector{
-			Field: "__withHead",
-			Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.NewID[*GitRef](refID)}},
+		refObj, err := dagql.NewID[*GitRef](refID).Load(ctx, dag)
+		if err != nil {
+			return inst, err
+		}
+		if err := dag.Select(ctx, refObj, &inst, dagql.Selector{
+			Field: "asRepository",
 		}); err != nil {
 			return inst, fmt.Errorf("pin git workspace source repository: %w", err)
 		}

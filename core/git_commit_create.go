@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,36 +15,36 @@ import (
 )
 
 // ErrNothingToCommit is returned when the changeset handed to
-// WorkspaceCommitChangeset contains no change that git would record.
+// GitCommitChangeset contains no change that git would record.
 var ErrNothingToCommit = errors.New("nothing to commit")
 
-// WorkspaceCommitOpts describes the commit WorkspaceCommitChangeset creates.
+// GitCommitOpts describes the commit GitCommitChangeset creates.
 // Every field that feeds the commit object is supplied by the caller, so the
 // resulting commit hash is a pure function of the repository tree, the
 // changeset, and these options.
-type WorkspaceCommitOpts struct {
+type GitCommitOpts struct {
 	// Message is the commit message.
 	Message string
-	// Date is the RFC3339 author *and* committer date. Required: a commit that
+	// Date is the RFC3339 author date and default committer date. A commit that
 	// read the wall clock would not be reproducible.
 	Date string
-	// AuthorName and AuthorEmail are the author *and* committer identity.
-	AuthorName  string
-	AuthorEmail string
-	// Paths are literal workspace-root-relative paths; empty selects everything.
-	Paths []string
+	// AuthorName and AuthorEmail also supply defaults for committer identity.
+	AuthorName     string
+	AuthorEmail    string
+	CommitterName  string
+	CommitterEmail string
+	CommitterDate  string
+	AllowEmpty     bool
 }
 
-// WorkspaceCommitChangeset stages a commit inside a scratch copy of repoDir
-// (which must contain a real .git directory) and returns the resulting
-// repository tree. The changeset's content is applied to the work tree and only
-// the selected paths it touches are added to the index. The complete working
-// tree stays intact so unselected changes can remain as an overlay on new HEAD.
-func WorkspaceCommitChangeset(
+// GitCommitChangeset records already-reconciled changes in a scratch copy of
+// repoDir, which must contain a clean checkout and a real .git directory. Its
+// caller handles three-way merging and path selection before this operation.
+func GitCommitChangeset(
 	ctx context.Context,
 	repoDir dagql.ObjectResult[*Directory],
 	scoped *Changeset,
-	opts WorkspaceCommitOpts,
+	opts GitCommitOpts,
 ) (*Directory, error) {
 	if _, err := time.Parse(time.RFC3339, opts.Date); err != nil {
 		return nil, fmt.Errorf("commit date must be RFC3339: %w", err)
@@ -64,31 +63,33 @@ func WorkspaceCommitChangeset(
 	if err != nil {
 		return nil, fmt.Errorf("changeset content: %w", err)
 	}
-	for newPath, oldPath := range content.paths.Renamed {
-		if commitPathSelected(newPath, opts.Paths) != commitPathSelected(oldPath, opts.Paths) {
-			return nil, fmt.Errorf("paths would split the rename %q -> %q; include both paths or neither", oldPath, newPath)
-		}
-	}
-	stagePaths := slices.DeleteFunc(commitStagePaths(content.paths), func(p string) bool {
-		return !commitPathSelected(p, opts.Paths)
-	})
-	if len(stagePaths) == 0 {
+	stagePaths := commitStagePaths(content.paths)
+	if len(stagePaths) == 0 && !opts.AllowEmpty {
 		return nil, ErrNothingToCommit
 	}
 
+	if opts.CommitterName == "" {
+		opts.CommitterName = opts.AuthorName
+	}
+	if opts.CommitterEmail == "" {
+		opts.CommitterEmail = opts.AuthorEmail
+	}
+	if opts.CommitterDate == "" {
+		opts.CommitterDate = opts.Date
+	}
 	env := []string{
 		"GIT_LITERAL_PATHSPECS=1",
 		"GIT_AUTHOR_NAME=" + opts.AuthorName,
 		"GIT_AUTHOR_EMAIL=" + opts.AuthorEmail,
-		"GIT_COMMITTER_NAME=" + opts.AuthorName,
-		"GIT_COMMITTER_EMAIL=" + opts.AuthorEmail,
+		"GIT_COMMITTER_NAME=" + opts.CommitterName,
+		"GIT_COMMITTER_EMAIL=" + opts.CommitterEmail,
 		"GIT_AUTHOR_DATE=" + opts.Date,
-		"GIT_COMMITTER_DATE=" + opts.Date,
+		"GIT_COMMITTER_DATE=" + opts.CommitterDate,
 	}
 
-	return withGitMergeWorkspace(ctx, repoDir, "Workspace.withCommit", func(ws *gitMergeWorkspace) error {
+	return withGitMergeWorkspace(ctx, repoDir, "GitRef.withCommit", func(ws *gitMergeWorkspace) error {
 		if _, err := os.Stat(filepath.Join(ws.workDir, ".git")); err != nil {
-			return fmt.Errorf("workspace commit requires a git repository at the workspace root: %w", err)
+			return fmt.Errorf("commit requires a git repository at the directory root: %w", err)
 		}
 		if err := ws.applyContent(ctx, content); err != nil {
 			return fmt.Errorf("apply changes: %w", err)
@@ -106,42 +107,14 @@ func WorkspaceCommitChangeset(
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(staged) == "" {
+		if strings.TrimSpace(staged) == "" && !opts.AllowEmpty {
 			return ErrNothingToCommit
 		}
 		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, env,
 			"-c", "commit.gpgsign=false",
 			"-c", "core.hooksPath=/dev/null",
-			"commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message,
+			"commit", "--allow-empty", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message,
 		); err != nil {
-			return err
-		}
-		return normalizeGitDirAfterCommit(ctx, ws.workDir)
-	})
-}
-
-// WorkspaceReset moves the repository in repoDir (which must contain a real
-// .git directory) onto the given commit inside a scratch copy and returns the
-// resulting repository tree: HEAD — and its branch, when one is checked out —
-// at the commit, with the work tree and index matching it exactly. Like the
-// commit helper, the result is a pure function of the repository tree and the
-// commit hash.
-func WorkspaceReset(
-	ctx context.Context,
-	repoDir dagql.ObjectResult[*Directory],
-	commit string,
-) (*Directory, error) {
-	if !IsFullGitSHA(commit) {
-		return nil, fmt.Errorf("reset commit must be a full lowercase commit hash, got %q", commit)
-	}
-	return withGitMergeWorkspace(ctx, repoDir, "Workspace.withReset", func(ws *gitMergeWorkspace) error {
-		if _, err := os.Stat(filepath.Join(ws.workDir, ".git")); err != nil {
-			return fmt.Errorf("workspace reset requires a git repository at the workspace root: %w", err)
-		}
-		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, nil, "cat-file", "-e", commit+"^{commit}"); err != nil {
-			return fmt.Errorf("commit %s is not in this workspace's repository: %w", commit, err)
-		}
-		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, nil, "reset", "--hard", commit); err != nil {
 			return err
 		}
 		return normalizeGitDirAfterCommit(ctx, ws.workDir)
@@ -206,19 +179,6 @@ func batchPathSpecs(specs []string) [][]string {
 		batches = append(batches, current)
 	}
 	return batches
-}
-
-func commitPathSelected(p string, scopes []string) bool {
-	if len(scopes) == 0 {
-		return true
-	}
-	p = path.Clean(p)
-	for _, scope := range scopes {
-		if scope == "." || p == scope || strings.HasPrefix(p, scope+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 // runWorkspaceCommitGit layers explicit commit inputs over the hermetic Git environment.

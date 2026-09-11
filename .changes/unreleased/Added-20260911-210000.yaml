@@ -1,0 +1,6 @@
+kind: Added
+body: Add GitRef.asRepository, GitRepository.withDirectory, Changeset.filter, and GitRef.withCommit for composing Git operations. Commit creation merges intended edits with the parent and fails on conflicts, with explicit author and committer metadata and optional empty commits. GitRepository.asWorkspace now preserves pending file edits.
+time: 2026-09-11T21:00:00Z
+custom:
+  Author: vito
+  PR: ""

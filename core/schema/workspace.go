@@ -88,7 +88,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
-		dagql.NodeFunc("__pullRepository", s.pullRepository).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Open the pulled repository, preserving its logical origin."),
 		dagql.NodeFunc("__exportDirectory", s.exportDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Prepared integration is bound to a client checkout").Doc("(Internal-only) Bundle a prepared integration and its before/after worktrees."),
 		dagql.NodeFunc("__withExportBase", s.withExportBase).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Bind a prepared integration to its captured checkout."),
 		dagql.NodeFunc("withCommit", s.withCommit).
@@ -104,14 +103,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
 				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
 			),
-		dagql.NodeFunc("__commitRepository", s.commitRepository).
-			View(AfterVersion("v1.0.0-0")).
-			IsPersistable().
-			Doc("(Internal-only) Open the committed repository, preserving its logical origin."),
-		dagql.NodeFunc("__commitDirectory", s.commitDirectory).
-			View(AfterVersion("v1.0.0-0")).
-			IsPersistable().
-			Doc("(Internal-only) Create a commit in a frozen workspace's scratch repository."),
 		dagql.NodeFunc("withReset", s.withReset).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Freezes host-backed receivers before resetting").
@@ -123,14 +114,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("commit").Doc("Full commit hash to reset HEAD to."),
 				dagql.Arg("hard").Doc("Discard uncommitted changes, resetting the working tree to the commit."),
 			),
-		dagql.NodeFunc("__resetDirectory", s.resetDirectory).
-			View(AfterVersion("v1.0.0-0")).
-			IsPersistable().
-			Doc("(Internal-only) Reset HEAD in a frozen workspace's scratch repository."),
-		dagql.NodeFunc("__resetRepository", s.resetRepository).
-			View(AfterVersion("v1.0.0-0")).
-			IsPersistable().
-			Doc("(Internal-only) Open the reset repository, preserving its logical origin."),
 		dagql.NodeFunc("snapshot", s.snapshot).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").
