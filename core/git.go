@@ -30,6 +30,10 @@ type GitRepository struct {
 	remoteMu sync.Mutex
 
 	DiscardGitDir bool
+
+	// PushURLs is captured routing metadata, not a credential grant. Empty
+	// means use URL; multiple URLs require an explicit push destination.
+	PushURLs []string
 }
 
 type GitRepositoryBackend interface {
@@ -297,6 +301,7 @@ func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRe
 
 	clone := &GitRepository{
 		URL:           repo.URL,
+		PushURLs:      slices.Clone(repo.PushURLs),
 		Backend:       backend,
 		Remote:        &gitutil.Remote{},
 		DiscardGitDir: repo.DiscardGitDir,
@@ -493,6 +498,7 @@ const (
 type persistedGitRepositoryPayload struct {
 	Form          string          `json:"form"`
 	URL           string          `json:"url,omitempty"`
+	PushURLs      []string        `json:"pushURLs,omitempty"`
 	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
 	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
 
@@ -520,6 +526,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository remote: %w", err)
 	}
 	payload := persistedGitRepositoryPayload{
+		PushURLs:      repo.PushURLs,
 		DiscardGitDir: repo.DiscardGitDir,
 		RemoteJSON:    remoteJSON,
 	}
@@ -571,6 +578,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 
 	repo := &GitRepository{
 		Remote:        &remote,
+		PushURLs:      slices.Clone(persisted.PushURLs),
 		DiscardGitDir: persisted.DiscardGitDir,
 	}
 	if persisted.URL != "" {
