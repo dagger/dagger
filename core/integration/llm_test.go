@@ -1143,73 +1143,42 @@ func (LLMSuite) TestPortableIDPreservesPendingEdits(ctx context.Context, t *test
 	require.Equal(t, origHist, reloadedHist)
 }
 
-// TestExportBustsStaleHostReads verifies that Workspace.export invalidates the
-// session's cached host reads, so an agent that saves its changes to disk
-// (ctrl+s: export then rebind) observes the saved content on its next read
-// instead of a stale snapshot cached earlier in the same session.
-//
-// Host-backed workspace reads (Workspace.file) resolve through host.directory,
-// which is cached per client for the client's whole lifetime. Within a single
-// long-lived `dagger agent` session that meant a file read early in the
-// conversation kept returning its original contents even after the agent's
-// edits were exported to disk. Export bumps the client's workspace read epoch
-// for exactly this reason, so the read after it must observe the exported
-// "NEW" contents rather than the "OLD" ones cached by the earlier read.
-func (LLMSuite) TestExportBustsStaleHostReads(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("OLD"), 0o644))
-
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-
-	// Prime the per-client host.directory cache with the original contents,
-	// exactly as the agent reading the file before editing it would.
-	before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "OLD", before)
-
-	// Save: export the edited contents to the local Git workspace on disk, as
-	// ctrl+s does before rebinding.
-	require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
-
-	// Rebind the live workspace, as the CLI does after ctrl+s. The file on
-	// disk now holds "NEW".
-	llm := c.LLM().WithWorkspace(c.CurrentWorkspace())
-
-	// The next read must observe the exported contents, not the snapshot the
-	// earlier read cached for the session.
-	after, err := llm.Workspace().File("x.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "NEW", after)
-}
-
-// TestWorkspaceReloaded covers the ctrl+u direction: the agent discards its
-// pending overlay to re-sync with whatever is on disk now. Nothing was
-// exported, so no epoch bump happened on its own — Workspace.reloaded is what
-// invalidates the session's cached host reads, letting the agent see edits the
-// user made outside the session.
-func (LLMSuite) TestWorkspaceReloaded(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("OLD"), 0o644))
-
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-
-	// Prime the per-client host.directory cache.
-	before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "OLD", before)
-
-	// The user edits the file outside the session — no export, so nothing
-	// invalidates the cached read on its own.
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("NEW"), 0o644))
-
-	// Reloading the workspace busts the cache, so the agent re-reads the host.
-	after, err := c.LLM().
-		WithWorkspace(c.CurrentWorkspace().Reloaded()).
-		Workspace().File("x.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "NEW", after)
+// Snapshotting after saving or external edits supplies a new baseline without changing
+// workspaces already bound to an LLM or invalidating ambient read caches.
+func (LLMSuite) TestWorkspaceSnapshotRefreshesBinding(ctx context.Context, t *testctx.T) {
+	for _, export := range []bool{false, true} {
+		t.Run(fmt.Sprintf("export=%t", export), func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			filename := filepath.Join(workdir, "x.txt")
+			require.NoError(t, os.WriteFile(filename, []byte("OLD"), 0o644))
+			cmd := exec.CommandContext(ctx, "git", "add", "x.txt")
+			cmd.Dir = workdir
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			cmd = exec.CommandContext(ctx, "git", "commit", "-m", "initial")
+			cmd.Dir = workdir
+			out, err = cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "OLD", before)
+			original := c.LLM().WithWorkspace(snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()))
+			if export {
+				require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
+			} else {
+				require.NoError(t, os.WriteFile(filename, []byte("NEW"), 0o644))
+			}
+			fresh := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+			after, err := original.WithWorkspace(fresh).Workspace().File("x.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "NEW", after)
+			unchanged, err := original.Workspace().File("x.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "OLD", unchanged)
+		})
+	}
 }
 
 // TestNestedClientInheritsSessionConfig verifies that LLM configuration is

@@ -168,6 +168,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("bundle"),
 				dagql.Arg("prerequisiteRef"),
 			),
+		dagql.Func("__withPushURLs", s.withPushURLs).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Record push routing metadata. Does not grant credential access."),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
@@ -1254,6 +1258,7 @@ func (s *gitSchema) withBundle(
 		return inst, fmt.Errorf("open imported git bundle repository: %w", err)
 	}
 	repo.URL = parent.Self().URL
+	repo.PushURLs = slices.Clone(parent.Self().PushURLs)
 	repo.DiscardGitDir = parent.Self().DiscardGitDir
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
@@ -1419,6 +1424,11 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		repo.URL.Value.String(),
 		string(ref.Digest()),
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// The same commit with different push routing is a different GitRef:
+		// merging these results could send a push to the wrong destination.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
@@ -1738,6 +1748,16 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
+	// Trees without .git are content-addressed independently of the ref name.
+	// Record a pinned recipe before publishing that equivalence: otherwise a
+	// later SHA-based selection (such as Workspace.snapshot) can reuse the
+	// first writer's mutable branch recipe. Keep named refs for trees with .git,
+	// where the ref name is part of the checkout metadata and content identity.
+	ref := parent.Self()
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
+	}
+
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 	if err != nil {
 		return inst, err
@@ -1759,6 +1779,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	return inst, nil
+}
+
+func pinnedGitTree(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], sha string, args treeArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	err = srv.Select(ctx, repo, &inst,
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(sha)},
+		}},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(args.DiscardGitDir)},
+			{Name: "depth", Value: dagql.NewInt(args.Depth)},
+			{Name: "includeTags", Value: dagql.NewBoolean(args.IncludeTags)},
+		}},
+	)
+	return inst, err
 }
 
 func (s *gitSchema) targetCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
@@ -1790,6 +1824,10 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		repo.URL.Value.String(),
 		ref.SHA,
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if len(repo.PushURLs) > 0 {
+		// GitCommit retains its repository, including its push routing.
+		dgstInputs = append(dgstInputs, "pushURLs", hashutil.HashStrings(repo.PushURLs...).String())
 	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
@@ -1830,6 +1868,17 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	// Share the pinned recipe with GitRef.tree, even when this commit was
+	// originally selected through a mutable ref's targetCommit.
+	commit := parent.Self()
+	if commit.Repo.Self().DiscardGitDir || args.DiscardGitDir {
+		return pinnedGitTree(ctx, srv, commit.Repo, commit.Ref.SHA, treeArgs{
+			DiscardGitDir: args.DiscardGitDir,
+			Depth:         args.Depth,
+			IncludeTags:   args.IncludeTags,
+		})
 	}
 
 	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
