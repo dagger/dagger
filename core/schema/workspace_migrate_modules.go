@@ -565,16 +565,18 @@ func (p *moduleMigrationPlanner) registerSDK(dir string, cfg *modules.ModuleConf
 	}
 	modulePath = filepath.ToSlash(modulePath)
 	sdkSource := workspace.MigratedModuleSDKSource(cfg, modulePath)
+	preferredInstallName := ""
 	base, version, _ := strings.Cut(sdkSource, "@")
 	if !strings.ContainsAny(base, "/\\") {
-		if resolved, _, _, err := sdkmeta.ResolveInstall(base); err == nil {
+		if resolved, installName, _, err := sdkmeta.ResolveInstall(base); err == nil {
 			sdkSource = resolved
+			preferredInstallName = installName
 			if version != "" {
 				sdkSource += "@" + version
 			}
 		}
 	}
-	if err := workspace.RegisterMigratedModuleSDK(p.config, sdkSource, modulePath, cfg.Name, workspace.MigratedModuleClients(cfg, modulePath)...); err != nil {
+	if err := workspace.RegisterMigratedModuleSDK(p.config, sdkSource, preferredInstallName, modulePath, cfg.Name, workspace.MigratedModuleClients(cfg, modulePath)...); err != nil {
 		return fmt.Errorf("register SDK for %s: %w", dir, err)
 	}
 	return nil

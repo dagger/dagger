@@ -50,7 +50,11 @@ func migrationSDKInstallName(sdkRef string) string {
 // created, matching how the root module's SDK is recorded. This keeps every
 // locally-defined module's runtime installed and pinned in the workspace.
 func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath, migratedModuleName string, clients ...string) {
-	providerModuleName := ensureMigratedSDKInstall(wsCfg, sdkSource)
+	addMigratedModuleSDK(wsCfg, sdkSource, "", modulePath, migratedModuleName, clients...)
+}
+
+func addMigratedModuleSDK(wsCfg *Config, sdkSource, preferredInstallName, modulePath, migratedModuleName string, clients ...string) {
+	providerModuleName := ensureMigratedSDKInstall(wsCfg, sdkSource, preferredInstallName)
 	if providerModuleName == "" || migratedModuleName == "" {
 		return
 	}
@@ -75,8 +79,10 @@ func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath, migratedModuleNa
 }
 
 // RegisterMigratedModuleSDK adds the migrated module's scope without replacing
-// an existing scope owner or name. Check before changing the workspace config.
-func RegisterMigratedModuleSDK(cfg *Config, sdkSource, modulePath, moduleName string, clients ...string) error {
+// an existing scope owner or name. preferredInstallName preserves a canonical
+// registry install name when sdkSource has already been resolved to a full ref.
+// Check before changing the workspace config.
+func RegisterMigratedModuleSDK(cfg *Config, sdkSource, preferredInstallName, modulePath, moduleName string, clients ...string) error {
 	if cfg == nil {
 		return fmt.Errorf("workspace config is required")
 	}
@@ -95,7 +101,7 @@ func RegisterMigratedModuleSDK(cfg *Config, sdkSource, modulePath, moduleName st
 			modulePath = scopePath
 		}
 	}
-	AddMigratedModuleSDK(cfg, sdkSource, modulePath, moduleName, clients...)
+	addMigratedModuleSDK(cfg, sdkSource, preferredInstallName, modulePath, moduleName, clients...)
 	return nil
 }
 
@@ -106,12 +112,13 @@ func RegisterMigratedModuleSDK(cfg *Config, sdkSource, modulePath, moduleName st
 // AddMigratedModuleSDK for the same runtime lands on the same entry instead of
 // installing the SDK twice.
 func AddMigratedSDKInstall(wsCfg *Config, sdkSource string) {
-	ensureMigratedSDKInstall(wsCfg, sdkSource)
+	ensureMigratedSDKInstall(wsCfg, sdkSource, "")
 }
 
 // ensureMigratedSDKInstall finds or creates the SDK install entry for
 // sdkSource and returns its install name ("" if there is nothing to record).
-func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
+// preferredInstallName overrides the name derived from sdkSource when set.
+func ensureMigratedSDKInstall(wsCfg *Config, sdkSource, preferredInstallName string) string {
 	if wsCfg == nil || sdkSource == "" {
 		return ""
 	}
@@ -127,7 +134,10 @@ func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
 		}
 	}
 
-	sdkName := migrationSDKInstallName(sdkSource)
+	sdkName := preferredInstallName
+	if sdkName == "" {
+		sdkName = migrationSDKInstallName(sdkSource)
+	}
 	sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(sdkSource))
 	entry, exists := wsCfg.Modules[sdkName]
 	// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a

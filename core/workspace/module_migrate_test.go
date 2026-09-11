@@ -50,7 +50,7 @@ func TestMigratedModuleSDKScopePreservation(t *testing.T) {
 			"./app": {Name: "app", Settings: map[string]any{"setting": "keep"}, Clients: []string{"./existing"}},
 		}}},
 	}
-	err := RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v1", "app", "app", "./dep", "./existing")
+	err := RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v1", "", "app", "app", "./dep", "./existing")
 	require.NoError(t, err)
 	require.Len(t, cfg.Modules, 2)
 	require.Len(t, cfg.SDKs["custom"].Scopes, 1)
@@ -59,10 +59,17 @@ func TestMigratedModuleSDKScopePreservation(t *testing.T) {
 	require.Equal(t, map[string]any{"setting": "keep"}, scope.Settings)
 	require.Equal(t, []string{"./existing", "./dep"}, scope.Clients)
 	before := SerializeConfig(cfg)
-	require.ErrorContains(t, RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v2", "app", "app"), "belongs to SDK")
+	require.ErrorContains(t, RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v2", "", "app", "app"), "belongs to SDK")
 	require.Equal(t, before, SerializeConfig(cfg))
-	require.ErrorContains(t, RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v1", "app", "other"), "is named")
+	require.ErrorContains(t, RegisterMigratedModuleSDK(cfg, "github.com/acme/sdk@v1", "", "app", "other"), "is named")
 	require.Equal(t, before, SerializeConfig(cfg))
+}
+
+func TestRegisterMigratedModuleSDKUsesPreferredInstallName(t *testing.T) {
+	cfg := &Config{}
+	require.NoError(t, RegisterMigratedModuleSDK(cfg, "github.com/dagger/go-sdk", "dagger-go-sdk", "app", "app"))
+	require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
+	require.Equal(t, "dagger-go-sdk", cfg.SDKs["go"].Module)
 }
 
 func TestEmptyLegacyWorkspaceMigration(t *testing.T) {

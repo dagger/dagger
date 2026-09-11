@@ -148,6 +148,7 @@ module = "local-sdk"
 		cfg, err := workspace.ParseConfig([]byte(data))
 		require.NoError(t, err)
 		require.Equal(t, "github.com/dagger/dang-sdk", cfg.Modules[cfg.SDKs["dang"].Module].Source)
+		require.Equal(t, "dagger-dang-sdk", cfg.SDKs["dang"].Module)
 		require.True(t, cfg.SDKs["dang"].Scopes["app"].IsModule)
 		_, err = migrated.File("app/dagger-module.toml").Contents(ctx)
 		require.NoError(t, err)
