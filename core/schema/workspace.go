@@ -104,10 +104,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
 				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
 			),
-		dagql.NodeFunc("__commitBase", s.commitBase).
-			View(AfterVersion("v1.0.0-0")).
-			IsPersistable().
-			Doc("(Internal-only) Materialize a frozen workspace's Git checkout with full history."),
 		dagql.NodeFunc("__commitRepository", s.commitRepository).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
@@ -583,6 +579,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) The git repository backing this workspace git state."),
 		dagql.NodeFunc("head", s.workspaceGitHead).
 			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("directory", s.workspaceGitDirectory).
+			IsPersistable().
+			Doc("Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.",
+				"Mount this directory at .git alongside workspace.directory(\"/\") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.",
+				"This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
 	}.Install(srv)

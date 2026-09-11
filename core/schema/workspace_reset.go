@@ -121,8 +121,8 @@ func (s *workspaceSchema) resetDirectory(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return inst, err
 	}
-	var base dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &base, dagql.Selector{Field: "__commitBase"}); err != nil {
+	base, err := workspaceGitCheckout(ctx, srv, parent)
+	if err != nil {
 		return inst, err
 	}
 	dir, err := core.WorkspaceReset(ctx, base, args.Commit)
