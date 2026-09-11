@@ -120,6 +120,34 @@ func WorkspaceCommitChangeset(
 	})
 }
 
+// WorkspaceReset moves the repository in repoDir (which must contain a real
+// .git directory) onto the given commit inside a scratch copy and returns the
+// resulting repository tree: HEAD — and its branch, when one is checked out —
+// at the commit, with the work tree and index matching it exactly. Like the
+// commit helper, the result is a pure function of the repository tree and the
+// commit hash.
+func WorkspaceReset(
+	ctx context.Context,
+	repoDir dagql.ObjectResult[*Directory],
+	commit string,
+) (*Directory, error) {
+	if !IsFullGitSHA(commit) {
+		return nil, fmt.Errorf("reset commit must be a full lowercase commit hash, got %q", commit)
+	}
+	return withGitMergeWorkspace(ctx, repoDir, "Workspace.withReset", func(ws *gitMergeWorkspace) error {
+		if _, err := os.Stat(filepath.Join(ws.workDir, ".git")); err != nil {
+			return fmt.Errorf("workspace reset requires a git repository at the workspace root: %w", err)
+		}
+		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, nil, "cat-file", "-e", commit+"^{commit}"); err != nil {
+			return fmt.Errorf("commit %s is not in this workspace's repository: %w", commit, err)
+		}
+		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, nil, "reset", "--hard", commit); err != nil {
+			return err
+		}
+		return normalizeGitDirAfterCommit(ctx, ws.workDir)
+	})
+}
+
 func normalizeGitDirAfterCommit(ctx context.Context, workDir string) error {
 	if _, err := runWorkspaceCommitGit(ctx, workDir, nil, "read-tree", "HEAD"); err != nil {
 		return fmt.Errorf("normalize git index: %w", err)

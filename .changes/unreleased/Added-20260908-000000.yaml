@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Add Workspace.withReset to move Git HEAD to a commit. By default a reset
+  keeps everything since the commit as uncommitted changes, like git reset
+  --mixed, so a commit can be reworked and reapplied with withCommit — e.g. to
+  amend a commit message; hard discards uncommitted changes instead.
+time: 2026-09-08T00:00:00Z
+custom:
+  Author: vito
+  PR: ""
