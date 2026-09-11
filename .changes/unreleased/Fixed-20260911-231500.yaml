@@ -1,0 +1,5 @@
+kind: Fixed
+body: Workspace migration now converts local modules registered only as SDK module scopes, recording their name and clients, instead of reaching only installed modules and their dependencies.
+time: 2026-09-11T23:15:00.000000+00:00
+custom:
+    Author: grouville
