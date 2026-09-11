@@ -26,11 +26,11 @@ func MigrateConfigBytes(data []byte, configDir string) ([]byte, error) {
 	if envKey, found := configDecoderKey(tree, "env"); found {
 		envs, _ := tree.Get(envKey).(*toml.Tree)
 		for _, env := range sortedConfigKeys(envs) {
-			envTree, _ := envs.Get(env).(*toml.Tree)
+			envTree, _ := envs.GetPath([]string{env}).(*toml.Tree)
 			if modulesKey, found := configDecoderKey(envTree, "modules"); found {
 				mods, _ := envTree.Get(modulesKey).(*toml.Tree)
 				for _, name := range sortedConfigKeys(mods) {
-					module, _ := mods.Get(name).(*toml.Tree)
+					module, _ := mods.GetPath([]string{name}).(*toml.Tree)
 					if asSDKKey, found := configDecoderKey(module, "as-sdk"); found {
 						return nil, fmt.Errorf("cannot migrate %s: environment-specific SDK roles have no current replacement; field retained", JoinConfigPath(envKey, env, modulesKey, name, asSDKKey))
 					}
@@ -43,7 +43,7 @@ func MigrateConfigBytes(data []byte, configDir string) ([]byte, error) {
 	modulesKey, _ := configDecoderKey(tree, "modules")
 	modules, _ := tree.Get(modulesKey).(*toml.Tree)
 	for _, moduleName := range slices.Sorted(maps.Keys(cfg.Modules)) {
-		module, _ := modules.Get(moduleName).(*toml.Tree)
+		module, _ := modules.GetPath([]string{moduleName}).(*toml.Tree)
 		asSDKKey, found := configDecoderKey(module, "as-sdk")
 		if !found {
 			continue

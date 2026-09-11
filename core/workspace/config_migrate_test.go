@@ -152,6 +152,26 @@ package = 'bindings'
 		require.Equal(t, map[string]any{"package": "bindings"}, cfg.SDKs["custom"].Scopes["./client"].Settings)
 	})
 
+	t.Run("dotted module name", func(t *testing.T) {
+		data := []byte(`[modules."custom.sdk"]
+source = './sdk'
+[modules."custom.sdk".as-sdk]
+name = 'custom'
+[[modules."custom.sdk".as-sdk.modules]]
+path = '.'
+`)
+		updated, err := MigrateConfigBytes(data, ".")
+		require.NoError(t, err)
+		require.NotContains(t, string(updated), "as-sdk")
+		cfg, err := ParseConfig(updated)
+		require.NoError(t, err)
+		require.Equal(t, "custom.sdk", cfg.SDKs["custom"].Module)
+		require.True(t, cfg.SDKs["custom"].Scopes["."].IsModule)
+
+		_, err = MigrateConfigBytes([]byte(string(data)+"[env.test.modules.\"custom.sdk\".as-sdk]\nname = 'test'\n"), ".")
+		require.ErrorContains(t, err, "environment-specific SDK roles")
+	})
+
 	t.Run("current config makes no change", func(t *testing.T) {
 		data := []byte("# keep\nfuture = [ 1, 2 ]\n[modules]\n")
 		updated, err := MigrateConfigBytes(data, ".")
@@ -175,6 +195,7 @@ func TestMigrateConfigConflicts(t *testing.T) {
 		{"settings", "[[modules.provider.as-sdk.clients]]\npath = '.'\nmodule = '.'\npackage = 'new'", "[sdks.provider]\nmodule = 'provider'\n[sdks.provider.scopes.'.'.settings]\npackage = 'old'", "conflicts in settings.package"},
 		{"environment", "", "[env.test.modules.provider.as-sdk]\nname = 'test'", "environment-specific SDK roles"},
 		{"environment aliases", "", "[ENV.test.MODULES.provider.AS-SDK]\nNAME = 'test'", "environment-specific SDK roles"},
+		{"dotted environment", "", "[env.'ci.test'.modules.provider.as-sdk]\nname = 'test'", "environment-specific SDK roles"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := []byte("[modules.provider]\nsource = './sdk'\n[modules.provider.as-sdk]\n" + tc.legacy + "\n" + tc.extra + "\n")
