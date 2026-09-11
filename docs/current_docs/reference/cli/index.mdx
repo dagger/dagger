@@ -1562,7 +1562,10 @@ dagger module init SDK [flags]
 ### Options
 
 ```
+      --entrypoint    Install and select the module as entrypoint (default: select when --path and --name are omitted)
+      --install       Install the module (default: install when --path is omitted)
   -n, --name string   Module name (inferred when omitted)
+      --no-apply      Show generated changes without applying them
       --path string   Module path (default: .dagger/modules/<name> beside dagger.toml)
 ```
 
@@ -2364,6 +2367,7 @@ the source of truth.
 * [dagger workspace config](#dagger-workspace-config)	 - Get or set workspace configuration
 * [dagger workspace config-file](#dagger-workspace-config-file)	 - Print the selected workspace config file
 * [dagger workspace cwd](#dagger-workspace-cwd)	 - Print the workspace cwd
+* [dagger workspace entrypoint](#dagger-workspace-entrypoint)	 - Get or set the workspace entrypoint
 * [dagger workspace exec](#dagger-workspace-exec)	 - Execute a command in a container with the selected workspace mounted
 * [dagger workspace export](#dagger-workspace-export)	 - Export a file or directory from the selected workspace
 * [dagger workspace find](#dagger-workspace-find)	 - Find paths in the selected workspace
@@ -2503,6 +2507,43 @@ Print the workspace cwd
 
 ```
 dagger workspace cwd [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace entrypoint
+
+Get or set the workspace entrypoint
+
+### Synopsis
+
+Print the installed name of the current entrypoint.
+Print nothing if no entrypoint is set.
+
+With NAME, select that installed module and clear the previous entrypoint.
+Use --unset to clear the selection. NAME must be an exact installed name.
+Changes are written to the selected dagger.toml.
+
+```
+dagger workspace entrypoint [NAME] [flags]
+```
+
+### Options
+
+```
+      --unset   Clear the entrypoint
 ```
 
 ### Options inherited from parent commands

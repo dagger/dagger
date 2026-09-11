@@ -15450,6 +15450,31 @@ class Workspace(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
+    async def entrypoint(self) -> str:
+        """Installed name of the module selected as the workspace entrypoint, or
+        an empty string when none is selected.
+
+        Reflects the selected env's effective view. Fails if several modules
+        are selected.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("entrypoint", _args)
+        return await _ctx.execute(str)
+
     async def env_list(self) -> list[str]:
         """List named environments defined in the workspace configuration.
 
@@ -16039,6 +16064,24 @@ class Workspace(Type):
         _ctx = self._select("withDirectory", _args)
         return Workspace(_ctx)
 
+    def with_entrypoint(self, name: str) -> Self:
+        """Return this workspace with an installed module selected as its
+        entrypoint.
+
+        Every other entrypoint selection is cleared. Entrypoints live in the
+        base workspace config.
+
+        Parameters
+        ----------
+        name:
+            Exact installed module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withEntrypoint", _args)
+        return Workspace(_ctx)
+
     def with_file(
         self,
         path: str,
@@ -16073,6 +16116,8 @@ class Workspace(Type):
         *,
         name: str | None = "",
         path: str | None = "",
+        install: bool | None = None,
+        entrypoint: bool | None = None,
         settings: JSON | None = None,
     ) -> Self:
         """Return this workspace with a location initialized as a module scope.
@@ -16091,6 +16136,12 @@ class Workspace(Type):
             Module path relative to the workspace cwd, or an absolute
             workspace path. Defaults to .dagger/modules/<name> beside the
             active workspace config.
+        install:
+            Install the module. When omitted, install only if path is omitted.
+        entrypoint:
+            Select this module as the entrypoint and install it. False
+            prevents automatic selection. When omitted, select only if both
+            path and name are omitted and the module is installed.
         settings:
             Explicit SDK-module constructor setting overrides for this scope.
         """
@@ -16098,6 +16149,8 @@ class Workspace(Type):
             Arg("sdk", sdk),
             Arg("name", name, ""),
             Arg("path", path, ""),
+            Arg("install", install, None),
+            Arg("entrypoint", entrypoint, None),
             Arg("settings", settings, None),
         ]
         _ctx = self._select("withInitModule", _args)
@@ -16459,6 +16512,12 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutDirectory", _args)
+        return Workspace(_ctx)
+
+    def without_entrypoint(self) -> Self:
+        """Return this workspace with no module selected as its entrypoint."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutEntrypoint", _args)
         return Workspace(_ctx)
 
     def without_file(self, path: str) -> Self:

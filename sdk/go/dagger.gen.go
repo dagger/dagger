@@ -16306,6 +16306,7 @@ type Workspace struct {
 	configRead  *string
 	cwd         *string
 	detectScope *string
+	entrypoint  *string
 	export      *Void
 	findUp      *string
 	id          *ID
@@ -16530,6 +16531,21 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	return &Directory{
 		query: q,
 	}
+}
+
+// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // List named environments defined in the workspace configuration.
@@ -17135,6 +17151,18 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
+// Return this workspace with an installed module selected as its entrypoint.
+//
+// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+func (r *Workspace) WithEntrypoint(name string) *Workspace {
+	q := r.query.Select("withEntrypoint")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithFileOpts contains options for Workspace.WithFile
 type WorkspaceWithFileOpts struct {
 	// Permissions of the added file. Defaults to the source file permissions.
@@ -17165,6 +17193,10 @@ type WorkspaceWithInitModuleOpts struct {
 	Name string
 	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
 	Path string
+	// Install the module. When omitted, install only if path is omitted.
+	Install bool
+	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
 }
@@ -17182,6 +17214,14 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
+		}
+		// `install` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Install) {
+			q = q.Arg("install", opts[i].Install)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
 		}
 		// `settings` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Settings) {
@@ -17514,6 +17554,15 @@ func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfi
 func (r *Workspace) WithoutDirectory(path string) *Workspace {
 	q := r.query.Select("withoutDirectory")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with no module selected as its entrypoint.
+func (r *Workspace) WithoutEntrypoint() *Workspace {
+	q := r.query.Select("withoutEntrypoint")
 
 	return &Workspace{
 		query: q,

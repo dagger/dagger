@@ -15536,6 +15536,12 @@ pub struct WorkspaceWithFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
+    /// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+    #[builder(setter(into, strip_option), default)]
+    pub entrypoint: Option<bool>,
+    /// Install the module. When omitted, install only if path is omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub install: Option<bool>,
     /// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
@@ -15853,6 +15859,12 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+    /// Reflects the selected env's effective view. Fails if several modules are selected.
+    pub async fn entrypoint(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("entrypoint");
+        query.execute(self.graphql_client.clone()).await
     }
     /// List named environments defined in the workspace configuration.
     pub async fn env_list(&self) -> Result<Vec<String>, DaggerError> {
@@ -16490,6 +16502,21 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with an installed module selected as its entrypoint.
+    /// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Exact installed module name.
+    pub fn with_entrypoint(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withEntrypoint");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a file added or replaced, without mutating the source.
     ///
     /// # Arguments
@@ -16579,6 +16606,12 @@ impl Workspace {
         }
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        if let Some(install) = opts.install {
+            query = query.arg("install", install);
+        }
+        if let Some(entrypoint) = opts.entrypoint {
+            query = query.arg("entrypoint", entrypoint);
         }
         if let Some(settings) = opts.settings {
             query = query.arg("settings", settings);
@@ -17054,6 +17087,15 @@ impl Workspace {
     pub fn without_directory(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with no module selected as its entrypoint.
+    pub fn without_entrypoint(&self) -> Workspace {
+        let query = self.selection.select("withoutEntrypoint");
         Workspace {
             proc: self.proc.clone(),
             selection: query,

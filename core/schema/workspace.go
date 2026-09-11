@@ -265,6 +265,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with an installed module selected as its entrypoint.",
+				"Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.").
+			Args(
+				dagql.Arg("name").Doc("Exact installed module name."),
+			),
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with no module selected as its entrypoint."),
 		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",
@@ -273,6 +285,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use. Required."),
 				dagql.Arg("name").Doc("Module name. The engine infers it from path, the active config file, or the workspace root when omitted."),
 				dagql.Arg("path").Doc("Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config."),
+				dagql.Arg("install").View(AfterVersion("v1.0.0-0")).Doc("Install the module. When omitted, install only if path is omitted."),
+				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
@@ -397,6 +411,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
+		dagql.Func("entrypoint", s.entrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live config from host").
+			Doc("Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.",
+				"Reflects the selected env's effective view. Fails if several modules are selected."),
 		dagql.Func("envList", s.envList).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").

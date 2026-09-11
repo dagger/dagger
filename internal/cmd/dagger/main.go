@@ -841,6 +841,9 @@ func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
 	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
+	if commandName(cmd) == "workspace entrypoint" && (len(args) == 1 || workspaceEntrypointUnset) {
+		return workspaceFlagPolicyLocalOnly
+	}
 
 	for c := cmd; c != nil; c = c.Parent() {
 		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {

@@ -7510,6 +7510,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::entrypoint",
+			"p": "Dagger/Workspace.html#method_entrypoint",
+			"d": "<p>Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::envList",
 			"p": "Dagger/Workspace.html#method_envList",
 			"d": "<p>List named environments defined in the workspace configuration.</p>"
@@ -7660,6 +7666,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withEntrypoint",
+			"p": "Dagger/Workspace.html#method_withEntrypoint",
+			"d": "<p>Return this workspace with an installed module selected as its entrypoint.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withFile",
 			"p": "Dagger/Workspace.html#method_withFile",
 			"d": "<p>Return this workspace with a file added or replaced, without mutating the source.</p>"
@@ -7759,6 +7771,12 @@
 			"n": "Dagger\\Workspace::withoutDirectory",
 			"p": "Dagger/Workspace.html#method_withoutDirectory",
 			"d": "<p>Return this workspace with a directory removed, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutEntrypoint",
+			"p": "Dagger/Workspace.html#method_withoutEntrypoint",
+			"d": "<p>Return this workspace with no module selected as its entrypoint.</p>"
 		},
 		{
 			"t": "M",

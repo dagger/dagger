@@ -3374,6 +3374,16 @@ export type WorkspaceWithInitModuleOpts = {
   path?: string
 
   /**
+   * Install the module. When omitted, install only if path is omitted.
+   */
+  install?: boolean
+
+  /**
+   * Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   */
+  entrypoint?: boolean
+
+  /**
    * Explicit SDK-module constructor setting overrides for this scope.
    */
   settings?: JSON
@@ -15281,6 +15291,7 @@ export class Workspace extends BaseClient {
   private readonly _configRead?: string = undefined
   private readonly _cwd?: string = undefined
   private readonly _detectScope?: string = undefined
+  private readonly _entrypoint?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
 
@@ -15295,6 +15306,7 @@ export class Workspace extends BaseClient {
     _configRead?: string,
     _cwd?: string,
     _detectScope?: string,
+    _entrypoint?: string,
     _export?: Void,
     _findUp?: string,
   ) {
@@ -15306,6 +15318,7 @@ export class Workspace extends BaseClient {
     this._configRead = _configRead
     this._cwd = _cwd
     this._detectScope = _detectScope
+    this._entrypoint = _entrypoint
     this._export = _export
     this._findUp = _findUp
   }
@@ -15456,6 +15469,23 @@ export class Workspace extends BaseClient {
   directory = (path: string, opts?: WorkspaceDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+   *
+   * Reflects the selected env's effective view. Fails if several modules are selected.
+   */
+  entrypoint = async (): Promise<string> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -15791,6 +15821,17 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with an installed module selected as its entrypoint.
+   *
+   * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+   * @param name Exact installed module name.
+   */
+  withEntrypoint = (name: string): Workspace => {
+    const ctx = this._ctx.select("withEntrypoint", { name })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a file added or replaced, without mutating the source.
    * @param path Destination path. Relative paths resolve from the workspace cwd.
    * @param source File to add.
@@ -15812,6 +15853,8 @@ export class Workspace extends BaseClient {
    * @param sdk Workspace SDK name or module entry name to use. Required.
    * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
    * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
+   * @param opts.install Install the module. When omitted, install only if path is omitted.
+   * @param opts.entrypoint Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
@@ -16011,6 +16054,14 @@ export class Workspace extends BaseClient {
    */
   withoutDirectory = (path: string): Workspace => {
     const ctx = this._ctx.select("withoutDirectory", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with no module selected as its entrypoint.
+   */
+  withoutEntrypoint = (): Workspace => {
+    const ctx = this._ctx.select("withoutEntrypoint")
     return new Workspace(ctx)
   }
 
