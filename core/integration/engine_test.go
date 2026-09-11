@@ -301,6 +301,30 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (EngineSuite) TestCurrentTimestamp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	before := time.Now().UTC().Truncate(time.Second)
+	first, err := c.CurrentTimestamp(ctx)
+	require.NoError(t, err)
+	firstTime, err := time.Parse(time.RFC3339, first)
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(first, "Z"), "timestamp must use UTC")
+	require.False(t, firstTime.Before(before))
+	require.False(t, firstTime.After(time.Now()))
+
+	// RFC3339 timestamps have second precision. Cross a second boundary to
+	// verify that repeated calls through the same client are not cached.
+	time.Sleep(time.Second)
+	second, err := c.CurrentTimestamp(ctx)
+	require.NoError(t, err)
+	secondTime, err := time.Parse(time.RFC3339, second)
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(second, "Z"), "timestamp must use UTC")
+	require.True(t, secondTime.After(firstTime), "timestamp must not be cached")
+	require.False(t, secondTime.After(time.Now()))
+}
+
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
