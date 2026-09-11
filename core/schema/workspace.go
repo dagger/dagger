@@ -114,6 +114,25 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc("(Internal-only) Create a commit in a frozen workspace's scratch repository."),
+		dagql.NodeFunc("withReset", s.withReset).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before resetting").
+			Doc("Move this workspace's Git HEAD to a commit and return the resulting stable workspace.",
+				"A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.",
+				"With hard, the working tree is reset to the commit and every uncommitted change is discarded.",
+				"Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.").
+			Args(
+				dagql.Arg("commit").Doc("Full commit hash to reset HEAD to."),
+				dagql.Arg("hard").Doc("Discard uncommitted changes, resetting the working tree to the commit."),
+			),
+		dagql.NodeFunc("__resetDirectory", s.resetDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Reset HEAD in a frozen workspace's scratch repository."),
+		dagql.NodeFunc("__resetRepository", s.resetRepository).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Open the reset repository, preserving its logical origin."),
 		dagql.NodeFunc("snapshot", s.snapshot).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").
