@@ -136,6 +136,32 @@ func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
 }
 
+func (DirectorySuite) TestDeepLayerChain(ctx context.Context, t *testctx.T) {
+	// Each edit stacks one overlay layer; past about 440 layers the mount
+	// options no longer fit in one page and the kernel refuses the mount.
+	const edits = 600
+	c := connect(ctx, t)
+	dir := c.Directory()
+	for i := range edits {
+		dir = dir.WithNewFile(fmt.Sprintf("f-%03d", i), fmt.Sprint(i))
+		if i%100 == 99 {
+			var err error
+			dir, err = dir.Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
+
+	entries, err := dir.Entries(ctx)
+	require.NoError(t, err)
+	require.Len(t, entries, edits)
+	first, err := dir.File("f-000").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0", first)
+	last, err := dir.File("f-599").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "599", last)
+}
+
 func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Directory struct {

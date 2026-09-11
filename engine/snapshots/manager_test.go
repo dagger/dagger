@@ -559,3 +559,52 @@ func TestMergeContract(t *testing.T) {
 		}, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
 	})
 }
+
+func TestNewKeepsParentChainsMountable(t *testing.T) {
+	commitChain := func(t *testing.T, cm *snapshotManager, length int) ImmutableRef {
+		t.Helper()
+		var parent ImmutableRef
+		for range length {
+			mr, err := cm.New(context.Background(), parent)
+			require.NoError(t, err)
+			parent, err = mr.Commit(context.Background())
+			require.NoError(t, err)
+		}
+		return parent
+	}
+	chainDepth := func(t *testing.T, sn *applySnapshotDiffTestSnapshotter, snapshotID string) int {
+		t.Helper()
+		depth := 0
+		for id := snapshotID; id != ""; depth++ {
+			info, err := sn.Stat(context.Background(), id)
+			require.NoError(t, err)
+			id = info.Parent
+		}
+		return depth
+	}
+
+	t.Run("deep chains are squashed", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+
+		tip := commitChain(t, cm, 500)
+
+		// Overlay refuses mounts past about 440 lower layers.
+		require.LessOrEqual(t, chainDepth(t, sn, tip.SnapshotID()), 256)
+		require.NotEmpty(t, sn.mergeCalls)
+		for _, diffs := range sn.mergeCalls {
+			require.Len(t, diffs, 1)
+			require.Empty(t, diffs[0].Lower, "a squash must copy the full view of the parent")
+		}
+	})
+
+	t.Run("shallow chains are left alone", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+
+		tip := commitChain(t, cm, 10)
+
+		require.Equal(t, 10, chainDepth(t, sn, tip.SnapshotID()))
+		require.Empty(t, sn.mergeCalls)
+	})
+}
