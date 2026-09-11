@@ -29,6 +29,54 @@ func testModuleMigrationPlanner(t *testing.T, files map[string]string) *moduleMi
 	return p
 }
 
+func TestModuleMigrationUsesInstalledSDK(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		source  string
+		pin     string
+		runtime string
+		owner   string
+		wantErr bool
+	}{
+		{name: "versioned provider", source: "github.com/dagger/dang-sdk@v0.1", runtime: "dang", owner: "dang"},
+		{name: "vanity provider", source: "dagger.io/sdk/dang@v1", runtime: "dang", owner: "dang"},
+		{name: "pinned provider", source: "github.com/dagger/dang-sdk", pin: "abc123", runtime: "dang", owner: "dang"},
+		{name: "custom named SDK", source: "./sdk", runtime: "custom", owner: "custom"},
+		{name: "explicit version conflicts", source: "github.com/dagger/dang-sdk@v0.1", runtime: "dang@v2", owner: "dang", wantErr: true},
+		{name: "different owner conflicts", source: "github.com/dagger/go-sdk@v1", runtime: "dang", owner: "go", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, native := range []bool{false, true} {
+				t.Run(fmt.Sprintf("native=%t", native), func(t *testing.T) {
+					filename := "app/dagger.json"
+					data := fmt.Sprintf(`{"name":"app","sdk":%q}`, tc.runtime)
+					if native {
+						filename = "app/dagger-module.toml"
+						data = fmt.Sprintf("name = 'app'\n[runtime]\nsource = %q\n", tc.runtime)
+					}
+					p := testModuleMigrationPlanner(t, map[string]string{filename: data})
+					provider := workspace.ModuleEntry{Source: tc.source, Pin: tc.pin}
+					p.config.Modules = map[string]workspace.ModuleEntry{"provider": provider}
+					p.config.SDKs = map[string]workspace.SDKEntry{tc.owner: {
+						Module: "provider", Scopes: map[string]workspace.SDKScope{
+							"app": {IsModule: true, Name: "app", Clients: []string{"./existing-client"}},
+						},
+					}}
+					err := p.module("app", false, true)
+					if tc.wantErr {
+						require.ErrorContains(t, err, "belongs to SDK")
+					} else {
+						require.NoError(t, err)
+					}
+					require.Equal(t, map[string]workspace.ModuleEntry{"provider": provider}, p.config.Modules)
+					require.Len(t, p.config.SDKs, 1)
+					require.Equal(t, []string{"./existing-client"}, p.config.SDKs[tc.owner].Scopes["app"].Clients)
+				})
+			}
+		})
+	}
+}
+
 func TestModuleMigrationGraph(t *testing.T) {
 	p := testModuleMigrationPlanner(t, map[string]string{
 		"a/dagger.json":        `{"name":"a","sdk":"github.com/acme/sdk@v1","dependencies":[{"name":"b","source":"../b"},{"name":"c","source":"../c"}]}`,
