@@ -73,10 +73,10 @@ func updateLazyRetryMax(maxRunning *atomic.Int32, running int32) {
 func currentLazyAttempt(shared *sharedResult) (*lazyEvalAttempt, int) {
 	shared.lazyMu.Lock()
 	defer shared.lazyMu.Unlock()
-	if shared.lazyEvalAttempt == nil {
+	if shared.lazyWhole.attempt == nil {
 		return nil, 0
 	}
-	return shared.lazyEvalAttempt, shared.lazyEvalAttempt.waiters
+	return shared.lazyWhole.attempt, shared.lazyWhole.attempt.waiters
 }
 
 func TestCacheEvaluateRetriesForeignCancellation(t *testing.T) {
@@ -445,7 +445,7 @@ func (m *lazyBookkeepingSnapshotManager) AttachLease(ctx context.Context, leaseI
 func lazySyncState(shared *sharedResult) (pending, complete bool) {
 	shared.lazyMu.Lock()
 	defer shared.lazyMu.Unlock()
-	return shared.lazySyncPending, shared.lazyEvalComplete
+	return shared.lazyWhole.syncPending, shared.lazyEvalComplete
 }
 
 // A callback body consumes its object-side lazy state (mirroring how core

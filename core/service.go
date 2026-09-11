@@ -718,7 +718,7 @@ func (svc *Service) startContainer(
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 			NoInit:                        svc.NoInit,
-		}, false)
+		}, nil)
 		if err != nil {
 			return err
 		}

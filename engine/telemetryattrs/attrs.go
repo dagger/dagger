@@ -3,6 +3,11 @@ package telemetryattrs
 const (
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// DagPartialAttr marks a successful lazy-evaluation resume span that
+	// completed one part while the result still had deferred work. Such a
+	// resumption does not resolve the owning API span's pending state. (bool)
+	DagPartialAttr = "dagger.io/dag.partial"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
