@@ -159,9 +159,9 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if err != nil {
 		return err
 	}
-	disposition := changesetDispositionForAutoApply(autoApply)
-	if moduleInitNoApply {
-		disposition = changesetDispositionNoApply
+	disposition, err := workspaceExecDisposition(autoApply, moduleInitNoApply)
+	if err != nil {
+		return err
 	}
 	return mutateSDKModuleWorkspaceWithDisposition(cmd, `
 query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $entrypoint: Boolean) {
