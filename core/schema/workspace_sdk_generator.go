@@ -9,6 +9,9 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const syntheticSDKScopesGenerator = "scopes"
@@ -349,7 +352,7 @@ func runSDKModuleGeneratorGraph(
 	ctx context.Context,
 	base dagql.ObjectResult[*core.Workspace],
 	specs []*core.SyntheticGeneratorSpec,
-) (dagql.ObjectResult[*core.Workspace], error) {
+) (_ dagql.ObjectResult[*core.Workspace], rerr error) {
 	s := &workspaceSchema{}
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, base.Self(), workspaceConfigMustExist, false)
 	if err != nil {
@@ -360,13 +363,45 @@ func runSDKModuleGeneratorGraph(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+
+	// Each selected SDK is a distinct generator in the CLI, even though their
+	// scopes are evaluated together as one dependency-ordered graph. Keep the
+	// spans open for the whole graph so their duration and result describe the
+	// aggregate operation, while parenting each provider's scope work to the
+	// matching span so its rolled-up detail remains useful.
+	providerCtx := make(map[string]context.Context, len(specs))
+	var spans []trace.Span
+	for _, spec := range specs {
+		if spec == nil {
+			continue
+		}
+		generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
+			trace.WithAttributes(
+				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+				attribute.String(telemetry.GeneratorNameAttr, spec.Name),
+			),
+		)
+		providerCtx[spec.Provider] = generatorCtx
+		spans = append(spans, span)
+	}
+	defer func() {
+		for _, span := range spans {
+			telemetry.EndWithCause(span, &rerr)
+		}
+	}()
+
 	current := base
 	for _, node := range plan.ordered {
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
-		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope)
+		generatorCtx := ctx
+		if selectedCtx, ok := providerCtx[node.sdkName]; ok {
+			generatorCtx = selectedCtx
+		}
+		current, err = s.generateSDKModuleScope(generatorCtx, current, staged, selected, node.configScope, node.path, node.scope)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}
