@@ -153,10 +153,12 @@ type Parsed struct {
 // endpoint (callers may choose to fall back to treating it as a local path).
 type EndpointError struct{ error }
 
+func (e EndpointError) Unwrap() error { return e.error }
+
 // Parse parses a git ref string into its components.
 func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer("dagger.io/core/gitref")
-	_, span := tracer.Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
+	_, span := tracer.Start(ctx, fmt.Sprintf("parseGitRefString: %s", DisplayRef(refString)), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	scheme, schemelessRef := parseScheme(refString)

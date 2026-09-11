@@ -343,15 +343,11 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 	rr, err := RepoRootForImportPathStatic(importPath, "")
 	if err == errUnknownSite {
 		rr, err = RepoRootForImportDynamic(importPath, verbose)
-		// RepoRootForImportDynamic returns error detail
-		// that is irrelevant if the user didn't intend to use a
-		// dynamic import in the first place.
-		// Squelch it.
 		if err != nil {
 			if Verbose {
 				log.Printf("import %q: %v", importPath, err)
 			}
-			err = fmt.Errorf("unrecognized import path %q", importPath)
+			err = fmt.Errorf("unrecognized import path %q: %w", importPath, err)
 		}
 	}
 
@@ -456,7 +452,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		return nil, errors.New("import path doesn't contain a hostname")
 	}
 
-	urlStr, body, err := httpsOrHTTP(importPath)
+	urlStr, body, responseStatus, err := httpsOrHTTP(importPath)
 	if err != nil {
 		return nil, fmt.Errorf("http/https fetch: %w", err)
 	}
@@ -470,7 +466,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		if err != errNoMatch {
 			return nil, fmt.Errorf("parse %s: %w", urlStr, err)
 		}
-		return nil, fmt.Errorf("parse %s: no go-import meta tags", urlStr)
+		return nil, fmt.Errorf("parse %s (%s): no go-import meta tags", urlStr, responseStatus)
 	}
 	if verbose {
 		log.Printf("get %q: found meta tag %#v at %s", originalImportPath, metaImport, urlStr)
@@ -486,7 +482,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 			log.Printf("get %q: verifying non-authoritative meta tag", originalImportPath)
 		}
 		urlStr0 := urlStr
-		urlStr, body, err = httpsOrHTTP(metaImport.Prefix)
+		urlStr, body, responseStatus, err = httpsOrHTTP(metaImport.Prefix)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", urlStr, err)
 		}
@@ -495,7 +491,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 			return nil, fmt.Errorf("parsing %s: %w", originalImportPath, err)
 		}
 		if len(imports) == 0 {
-			return nil, fmt.Errorf("fetch %s: no go-import meta tag", urlStr)
+			return nil, fmt.Errorf("fetch %s (%s): no go-import meta tag", urlStr, responseStatus)
 		}
 		metaImport2, err := matchGoImport(imports, originalImportPath)
 		if err != nil || metaImport != metaImport2 {

@@ -8,6 +8,8 @@ import (
 
 var (
 	ErrGitAuthFailed       = errors.New("git authentication failed")
+	ErrGitConnectionFailed = errors.New("cannot connect to git repository")
+	ErrGitHostNotFound     = errors.New("cannot resolve git hostname")
 	ErrGitNoRepo           = errors.New("not a git repository")
 	ErrShallowNotSupported = errors.New("shallow clone not supported")
 	// ErrSHAFetchUnsupported is a normalized signal that retry-by-named-ref may succeed.
@@ -30,9 +32,19 @@ func translateError(err error, stderr string) error {
 
 	if strings.Contains(stderr, "authentication failed") ||
 		strings.Contains(stderr, "authentication required") ||
+		strings.Contains(stderr, "permission denied (publickey") ||
 		strings.Contains(stderr, "fatal: could not read username") ||
 		strings.Contains(stderr, "fatal: could not read password") {
 		return ErrGitAuthFailed
+	}
+	if strings.Contains(stderr, "could not resolve host") || strings.Contains(stderr, "could not resolve hostname") {
+		return ErrGitHostNotFound
+	}
+	if strings.Contains(stderr, "failed to connect to") ||
+		strings.Contains(stderr, "connection refused") ||
+		strings.Contains(stderr, "connection timed out") ||
+		strings.Contains(stderr, "network is unreachable") {
+		return ErrGitConnectionFailed
 	}
 	if strings.Contains(stderr, "not a git repository") {
 		return ErrGitNoRepo

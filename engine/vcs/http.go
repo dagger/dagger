@@ -5,6 +5,7 @@
 package vcs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -35,7 +36,7 @@ func httpGET(url string) ([]byte, error) {
 
 // httpsOrHTTP returns the body of either the importPath's
 // https resource or, if unavailable, the http resource.
-func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err error) {
+func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, status string, err error) {
 	fetch := func(scheme string) (urlStr string, res *http.Response, err error) {
 		u, err := url.Parse(scheme + "://" + importPath)
 		if err != nil {
@@ -55,6 +56,7 @@ func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err erro
 		}
 	}
 	urlStr, res, err := fetch("https")
+	httpsErr := err
 	if err != nil || res.StatusCode != 200 {
 		if Verbose {
 			if err != nil {
@@ -68,12 +70,12 @@ func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err erro
 	}
 	if err != nil {
 		closeBody(res)
-		return "", nil, err
+		return "", nil, "", errors.Join(httpsErr, err)
 	}
 	// Note: accepting a non-200 OK here, so people can serve a
 	// meta import in their http 404 page.
 	if Verbose {
 		log.Printf("Parsing meta tags from %s (status code %d)", urlStr, res.StatusCode)
 	}
-	return urlStr, res.Body, nil
+	return urlStr, res.Body, res.Status, nil
 }

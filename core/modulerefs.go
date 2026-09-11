@@ -53,8 +53,9 @@ func ParseRefString(
 	refString string,
 	refPin string,
 ) (_ *ParsedRefString, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", gitref.DisplayRef(refString)), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
+	originalRef := refString
 
 	kind := FastModuleSourceKindCheck(refString, refPin)
 	switch kind {
@@ -68,11 +69,11 @@ func ParseRefString(
 	case ModuleSourceKindGit:
 		refString, err := ResolveDaggerGetRedirect(ctx, refString)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve module ref string: %w", err)
+			return nil, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(originalRef), err)
 		}
 		parsedGitRef, err := ParseGitRefString(ctx, refString)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
+			return nil, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(originalRef), err)
 		}
 		return &ParsedRefString{
 			Kind: kind,
@@ -95,7 +96,7 @@ func ParseRefString(
 	// Parse scheme and attempt to parse as git endpoint
 	refString, err := ResolveDaggerGetRedirect(ctx, refString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve module ref string: %w", err)
+		return nil, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(originalRef), err)
 	}
 	parsedGitRef, err := ParseGitRefString(ctx, refString)
 	switch {
@@ -104,16 +105,16 @@ func ParseRefString(
 			Kind: ModuleSourceKindGit,
 			Git:  &parsedGitRef,
 		}, nil
-	case errors.As(err, &gitref.EndpointError{}):
+	case errors.As(err, &gitref.EndpointError{}) && !gitref.LooksRemote(originalRef):
 		// couldn't connect to git endpoint, fallback to local
 		return &ParsedRefString{
 			Kind: ModuleSourceKindLocal,
 			Local: &ParsedLocalRefString{
-				ModPath: refString,
+				ModPath: originalRef,
 			},
 		}, nil
 	default:
-		return nil, fmt.Errorf("failed to parse ref string: %w", err)
+		return nil, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(originalRef), err)
 	}
 }
 
