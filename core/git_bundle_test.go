@@ -35,6 +35,23 @@ func TestResolveGitBundleTargetPreservesAnnotatedTag(t *testing.T) {
 	require.Equal(t, commitSHA, tag.checkout.SHA)
 }
 
+func TestResolveGitBundleTargetPreservesDetachedHead(t *testing.T) {
+	sha := strings.Repeat("1", 40)
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "HEAD", SHA: sha}}}
+
+	target, err := resolveGitBundleTarget(remote, "HEAD")
+	require.NoError(t, err)
+	require.Equal(t, "HEAD", target.exact.Name)
+	require.Equal(t, sha, target.exact.SHA)
+	require.Empty(t, target.checkout.Name)
+	require.Equal(t, sha, target.checkout.SHA)
+
+	// An arbitrary commit SHA must remain unnamed and ineligible for bundling.
+	commit, err := resolveGitBundleTarget(remote, sha)
+	require.NoError(t, err)
+	require.Empty(t, commit.exact.Name)
+}
+
 func TestParseGitBundleHeader(t *testing.T) {
 	t.Run("version 2", func(t *testing.T) {
 		sha := strings.Repeat("1", sha1.Size*2)
