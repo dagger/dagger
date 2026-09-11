@@ -197,6 +197,11 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	if hasTTY {
 		params.PromptHandler = Frontend
+		var err error
+		params.SSHAskpassExecutable, err = os.Executable()
+		if err != nil {
+			return params, err
+		}
 	}
 
 	ca, err := auth.GetCloudAuth(ctx)

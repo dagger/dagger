@@ -116,6 +116,8 @@ type Params struct {
 	AllowedLLMModules []string
 
 	PromptHandler prompt.PromptHandler
+	// CLI helper for client-local SSH key unlocking; not a general command hook.
+	SSHAskpassExecutable string
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -578,7 +580,10 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// terminal
 		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
-		git.NewGitAttachable(ctx),
+		git.NewGitAttachable(ctx, git.GitAttachableOpts{
+			PromptHandler:        c.Params.PromptHandler,
+			SSHAskpassExecutable: c.Params.SSHAskpassExecutable,
+		}),
 	}
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
