@@ -55,9 +55,10 @@ func updateConfigTable(data []byte, prefix []string, before, after map[string]an
 		var err error
 		oldMap, oldTable := old.(map[string]any)
 		newMap, newTable := value.(map[string]any)
-		if oldTable && !has && !configEntryPath(parts) {
+		if oldTable && !has && !configEntryPath(parts) && !configSettingsPath(parts) {
 			// Removing the last known field does not remove unknown siblings
-			// in the same table. Whole-entry removal is explicit below.
+			// in schema-owned tables. Whole-entry removal is explicit, and
+			// arbitrary settings include every key, so both can be removed whole.
 			data, err = updateConfigTable(data, parts, oldMap, nil)
 		} else if newTable && (!had || oldTable) {
 			data, err = updateConfigTable(data, parts, oldMap, newMap)
@@ -91,6 +92,16 @@ func configEntryPath(parts []string) bool {
 		return parts[0] == "modules" || parts[0] == "sdks" || parts[0] == "env" || parts[0] == "ports"
 	}
 	return len(parts) == 4 && (parts[0] == "sdks" && parts[2] == "scopes" || parts[0] == "env" && parts[2] == "modules")
+}
+
+// Settings maps include every user key, so absent tables within them must be
+// deleted rather than retained for potentially unknown schema fields.
+func configSettingsPath(parts []string) bool {
+	if len(parts) >= 3 && parts[0] == "modules" && parts[2] == "settings" {
+		return true
+	}
+	return len(parts) >= 5 && parts[4] == "settings" &&
+		(parts[0] == "sdks" && parts[2] == "scopes" || parts[0] == "env" && parts[2] == "modules")
 }
 
 func deleteConfigDocumentPath(data []byte, parts, collapsed []string) ([]byte, error) {
