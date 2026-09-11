@@ -14,7 +14,9 @@ namespace Dagger;
 class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Creates a synthetic workspace from this git repository.
+     * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+     *
+     * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
      */
     public function asWorkspace(?string $cwd = '/'): Workspace
     {
@@ -162,6 +164,20 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $prerequisiteRef) {
         $innerQueryBuilder->setArgument('prerequisiteRef', $prerequisiteRef);
         }
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+     *
+     * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+     *
+     * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+     */
+    public function withDirectory(Directory $directory): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
+        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
