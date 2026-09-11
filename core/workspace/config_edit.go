@@ -263,12 +263,52 @@ func (doc *configText) remove(parts []string) ([]byte, error) {
 	for i := len(doc.statements) - 1; i >= 0; i-- {
 		stmt := doc.statements[i]
 		if configPathPrefix(stmt.path, parts) {
-			out = replaceConfigText(out, stmt.start, stmt.end, "")
+			floor := 0
+			if i > 0 {
+				floor = doc.statements[i-1].end
+			}
+			start, end := configRemovalSpan(out, floor, stmt.start, stmt.end)
+			out = replaceConfigText(out, start, end, "")
 		} else if !stmt.table && configPathPrefix(parts, stmt.path) {
 			return doc.editInline(stmt, parts[len(stmt.path):], nil, true)
 		}
 	}
 	return out, nil
+}
+
+// configRemovalSpan widens a removed statement over the blank lines around it.
+// Without this, each removed table leaves its separator behind, so removing
+// several tables leaves a run of blank lines. Blank lines on both sides become
+// one run; blank lines at either end of the document are dropped. Comments are
+// not blank lines and stay in place. floor is the end of the preceding
+// statement, and data after end may already be edited.
+func configRemovalSpan(data []byte, floor, start, end int) (int, int) {
+	before := start
+	for before > floor {
+		line := configLineStart(data, before-1)
+		if line < floor || len(bytes.TrimSpace(data[line:before])) != 0 {
+			break
+		}
+		before = line
+	}
+	after := end
+	for after < len(data) {
+		next := len(data)
+		if i := bytes.IndexByte(data[after:], '\n'); i >= 0 {
+			next = after + i + 1
+		}
+		if len(bytes.TrimSpace(data[after:next])) != 0 {
+			break
+		}
+		after = next
+	}
+	switch {
+	case before == 0 || after == len(data):
+		return before, after
+	case before < start && after > end:
+		return before, end
+	}
+	return start, end
 }
 
 // Inline tables are edited through a temporary table body. Only the resulting
