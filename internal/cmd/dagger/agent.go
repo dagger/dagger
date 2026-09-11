@@ -119,17 +119,27 @@ func agentIncludeVars(include []string) map[string]any {
 	return map[string]any{"include": include}
 }
 
-const composeAgentsQuery = `query ComposeAgents($include: [String!]) {
-  workspace: currentWorkspace {
+const composeAgentsQuery = `query ComposeAgents($include: [String!], $workspace: ID!) {
+  workspace: node(id: $workspace) { ... on Workspace {
     agents(include: $include) {
       compose {
         id
       }
     }
-  }
+  } }
 }`
 
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
+	workspace, err := snapshotWorkspace(ctx, dag)
+	if err != nil {
+		return "", err
+	}
+	id, err := workspace.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	vars := agentIncludeVars(include)
+	vars["workspace"] = id
 	var res struct {
 		Workspace struct {
 			Agents struct {
@@ -139,10 +149,10 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 			}
 		}
 	}
-	err := dag.Do(ctx, &dagger.Request{
+	err = dag.Do(ctx, &dagger.Request{
 		Query:     composeAgentsQuery,
 		OpName:    "ComposeAgents",
-		Variables: agentIncludeVars(include),
+		Variables: vars,
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -150,6 +160,16 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 		return "", err
 	}
 	return res.Workspace.Agents.Compose.ID, nil
+}
+
+// Materialize the effectful capture once before binding or composing tools.
+// Save and reload use the same approval policy as the initial agent bind.
+func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
+	id, err := dag.CurrentWorkspace().Snapshot().ID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot workspace: %w", err)
+	}
+	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }
 
 const listAgentsQuery = `query ListAgents($include: [String!]) {
