@@ -1296,7 +1296,7 @@ func (r *CheckGroup) Report() *File {
 // CheckGroupRunOpts contains options for CheckGroup.Run
 type CheckGroupRunOpts struct {
 	// If true, stop running checks as soon as any check fails.
-	FailFast *bool
+	FailFast bool
 }
 
 // Execute all selected checks
@@ -2593,7 +2593,7 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 // ContainerWithDockerHealthcheckOpts contains options for Container.WithDockerHealthcheck
 type ContainerWithDockerHealthcheckOpts struct {
 	// When true, command must be a single element, which is run using the container's shell
-	Shell *bool
+	Shell bool
 	// Interval between running healthcheck. Example: "30s"
 	Interval string
 	// Healthcheck timeout. Example: "3s"
@@ -5887,7 +5887,7 @@ func (r *EnvFile) Exists(ctx context.Context, name string) (bool, error) {
 // EnvFileGetOpts contains options for EnvFile.Get
 type EnvFileGetOpts struct {
 	// Return the value exactly as written to the file. No quote removal or variable expansion
-	Raw *bool
+	Raw bool
 }
 
 // Lookup a variable (last occurrence wins) and return its value, or an empty string
@@ -5963,7 +5963,7 @@ func (r *EnvFile) Namespace(prefix string) *EnvFile {
 // EnvFileVariablesOpts contains options for EnvFile.Variables
 type EnvFileVariablesOpts struct {
 	// Return values exactly as written to the file. No quote removal or variable expansion
-	Raw *bool
+	Raw bool
 }
 
 // Return all variables
@@ -6499,7 +6499,7 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 type FileAsEnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
 	// Deprecated: Variable expansion is now enabled by default
-	Expand *bool
+	Expand bool
 }
 
 // Parse as an env file
@@ -11512,7 +11512,7 @@ type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
 	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate *bool
+	NoGenerate bool
 }
 
 // Return all checks defined by the module
@@ -11828,9 +11828,9 @@ func (r *Module) SDK(ctx context.Context) (*SDKConfig, error) {
 // ModuleServeOpts contains options for Module.Serve
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
-	IncludeDependencies *bool
+	IncludeDependencies bool
 	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
-	Entrypoint *bool
+	Entrypoint bool
 }
 
 // Serve a module's API in the current session.
@@ -13342,7 +13342,7 @@ type CurrentTypeDefsOpts struct {
 	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
-	HideCore *bool
+	HideCore bool
 }
 
 // The TypeDef representations of the objects currently being served in the session.
@@ -13453,7 +13453,7 @@ func (r *Query) EngineVolume(name string, opts ...EngineVolumeOpts) *Volume {
 type EnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
 	// Deprecated: Variable expansion is now enabled by default
-	Expand *bool
+	Expand bool
 }
 
 // Initialize an environment file
@@ -16389,9 +16389,9 @@ type WorkspaceChecksOpts struct {
 	// Skip checks matching the specified patterns
 	Skip []string
 	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate *bool
+	NoGenerate bool
 	// When true, only return generate-as-checks; exclude annotated check functions
-	OnlyGenerate *bool
+	OnlyGenerate bool
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -17166,9 +17166,9 @@ type WorkspaceWithInitModuleOpts struct {
 	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
 	Path string
 	// Install the module. When omitted, install only if path is omitted.
-	Install *bool
+	Install bool
 	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
-	Entrypoint *bool
+	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
 }

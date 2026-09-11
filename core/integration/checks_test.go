@@ -378,16 +378,6 @@ source = "hello-with-generate-checks"
 		require.NotContains(t, out, "passing-check")
 	})
 
-	for _, flag := range []string{"--no-generate=false", "--generate=false"} {
-		t.Run(flag+" overrides the config", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerExec("check", "-l", flag)).CombinedOutput(ctx)
-			require.NoError(t, err, out)
-			require.Contains(t, out, "hello-with-generate-checks:passing-check")
-			require.Contains(t, out, "hello-with-generate-checks:empty-generate")
-			require.Contains(t, out, "hello-with-generate-checks:non-empty-generate")
-		})
-	}
-
 	t.Run("--no-generate flag matches the config default", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--no-generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)

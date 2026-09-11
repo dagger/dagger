@@ -106,7 +106,7 @@ source = "other"
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
-		checks, err := ws.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: new(true)}).List(ctx)
+		checks, err := ws.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
 		require.NoError(t, err)
 		require.Len(t, checks, 1)
 		name, err := checks[0].Name(ctx)
@@ -114,7 +114,7 @@ source = "other"
 		require.Equal(t, "verify", name)
 
 		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-		checks, err = changed.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: new(true)}).List(ctx)
+		checks, err = changed.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})

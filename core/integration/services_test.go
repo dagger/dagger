@@ -2300,7 +2300,7 @@ func main() {
 				WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 				WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 				WithDockerHealthcheck(tt.command, dagger.ContainerWithDockerHealthcheckOpts{
-					Shell:         new(tt.shell),
+					Shell:         tt.shell,
 					Interval:      "1s",
 					Timeout:       "3s",
 					StartPeriod:   "10s",

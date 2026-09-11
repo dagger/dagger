@@ -382,7 +382,7 @@ func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx
 	_, err = env.Get(ctx, "message")
 	require.Error(t, err)
 
-	afterRaw, err := env.Get(ctx, "message", dagger.EnvFileGetOpts{Raw: new(true)})
+	afterRaw, err := env.Get(ctx, "message", dagger.EnvFileGetOpts{Raw: true})
 	require.NoError(t, err)
 	require.Equal(t, `$GREETING, $NAME!`, afterRaw)
 }
