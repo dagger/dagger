@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -13,8 +14,167 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
+	sessionprompt "github.com/dagger/dagger/engine/session/prompt"
 	"github.com/vito/tuist"
 )
+
+func TestPushConfirmationAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	allowed := false
+	question := "Allow pushing to ssh://root@172.17.0.9/qa/remote.git @ refs/heads/approval-qa?"
+	field := NewExplicitConfirm("Yes", "No", &allowed).Title(question).Inline(true)
+	form := huh.NewForm(huh.NewGroup(field))
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	questionAt, inputAt := strings.Index(frame, question), strings.Index(frame, "unfinished draft")
+	if questionAt < 0 || inputAt < questionAt {
+		t.Fatalf("question must precede input:\n%s", frame)
+	}
+	if !strings.Contains(frame, "▶ No") || allowed {
+		t.Fatalf("permission must default to No:\n%s\nfield=%q form=%q", frame, field.View(), form.View())
+	}
+	// Long targets must wrap rather than hiding choices or the end of a ref.
+	field.WithWidth(40)
+	wrapped := ansi.Strip(field.View())
+	if !strings.Contains(wrapped, "▶ No") || !strings.Contains(strings.ReplaceAll(wrapped, "\n", ""), "refs/heads/approval-qa?") {
+		t.Fatalf("narrow confirmation clipped the target or choices: %q", wrapped)
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+		t.Fatal("dismissal must preserve the input and remove the question")
+	}
+}
+
+func TestPushConfirmationReportMode(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true
+	allowed := false
+	if err := fe.HandlePrompt(context.Background(), "Allow pushing?", "", &allowed); !errors.Is(err, ErrNonInteractive) {
+		t.Fatalf("report mode approval = %v", err)
+	}
+	if allowed {
+		t.Fatal("report mode granted permission")
+	}
+}
+
+func TestCheckpointSelectAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	form, selected, err := sessionprompt.SelectForm(&sessionprompt.SelectRequest{
+		Title: "Checkpoint selection", Prompt: "Local files stay untouched.",
+		Choices: []*sessionprompt.SelectChoice{{Id: "include", Label: "Include"}, {Id: "drop", Label: "Drop"}, {Id: "cancel", Label: "Cancel"}}, DefaultChoice: "cancel",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	for _, label := range []string{"Include", "Drop", "Cancel"} {
+		if !strings.Contains(frame, label) {
+			t.Fatalf("missing %s: %s", label, frame)
+		}
+	}
+	if *selected != "cancel" {
+		t.Fatal("must default to Cancel")
+	}
+	if strings.Index(frame, "Checkpoint selection") > strings.Index(frame, "unfinished draft") {
+		t.Fatal("choice must appear above input")
+	}
+	form.GetFocusedField().Update(tea.KeyMsg{Type: tea.KeyUp})
+	if *selected != "drop" {
+		t.Fatal("up should select Drop")
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" {
+		t.Fatal("must preserve draft")
+	}
+}
+
+func TestPushPassphraseMaskedAboveInput(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("unfinished draft")
+	var passphrase string
+	field := huh.NewInput().Title("SSH key passphrase").EchoMode(huh.EchoModePassword).Value(&passphrase)
+	form := huh.NewForm(huh.NewGroup(field))
+	wrap := fe.handlePromptForm(form, func(*huh.Form) {})
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	field.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fixture-secret")})
+	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
+	if passphrase != "fixture-secret" || strings.Contains(frame, passphrase) {
+		t.Fatal("passphrase input must accept text without displaying it")
+	}
+	questionAt, inputAt := strings.Index(frame, "SSH key passphrase"), strings.Index(frame, "unfinished draft")
+	if questionAt < 0 || inputAt < questionAt {
+		t.Fatal("passphrase form must appear above the input")
+	}
+	fe.removeForm(wrap)
+	if fe.textInput.Value() != "unfinished draft" || fe.formWrap != nil {
+		t.Fatal("dismissal must preserve the draft and remove the secret form")
+	}
+}
+
+func TestPushConfirmationCancellation(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+	fe.textInput.SetValue("keep this draft")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		allowed := false
+		done <- fe.HandlePrompt(ctx, "", "Allow pushing?", &allowed)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for fe.formWrap == nil && time.Now().Before(deadline) {
+		fe.tui.Step()
+		time.Sleep(time.Millisecond)
+	}
+	if fe.formWrap == nil {
+		t.Fatal("confirmation was not mounted")
+	}
+	cancel()
+	for time.Now().Before(deadline) {
+		fe.tui.Step()
+		select {
+		case err := <-done:
+			fe.tui.Step() // drain dismissal queued before the handler returned
+			if !errors.Is(err, context.Canceled) || fe.formWrap != nil || fe.textInput.Value() != "keep this draft" {
+				t.Fatalf("canceled prompt: err=%v form=%v draft=%q", err, fe.formWrap, fe.textInput.Value())
+			}
+			return
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	t.Fatal("canceled confirmation did not return")
+}
 
 func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	theme := frontendFormTheme()
