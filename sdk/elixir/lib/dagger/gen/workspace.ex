@@ -94,6 +94,41 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+
+  Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+
+  A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+  """
+  @spec commits_from(t(), Dagger.Workspace.t(), [
+          {:commits, [String.t()]},
+          {:max_commits, integer() | nil}
+        ]) :: {:ok, [Dagger.WorkspaceCommitPick.t()]} | {:error, term()}
+  def commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("commitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
+      |> QB.maybe_put_arg("maxCommits", optional_args[:max_commits])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceCommitPick{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceCommitPick"),
+           client: workspace.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   @spec config_file(t()) :: {:ok, String.t()} | {:error, term()}
@@ -199,9 +234,13 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Write this workspace's pending changes to its local Git workspace on the current client's host.
+  Write this workspace's changes to a local Git checkout on the calling client.
 
-  Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+  Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+
+  For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
+
+  Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
   """
   @spec export(t()) :: :ok | {:error, term()}
   def export(%__MODULE__{} = workspace) do
@@ -423,20 +462,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-  """
-  @spec reloaded(t()) :: Dagger.Workspace.t()
-  def reloaded(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("reloaded")
-
-    %Dagger.Workspace{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   An installed SDK, by name.
   """
   @spec sdk(t(), String.t()) :: Dagger.WorkspaceSDK.t()
@@ -541,6 +566,28 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return a snapshot of this workspace as a stable value.
+
+  Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+
+  Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+
+  Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+
+  The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+  """
+  @spec snapshot(t()) :: Dagger.Workspace.t()
+  def snapshot(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("snapshot")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return all terminal targets from modules loaded in the workspace.
   """
   @spec terminals(t(), [{:include, [String.t()]}]) :: Dagger.TerminalGroup.t()
@@ -596,6 +643,61 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+
+  A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+
+  Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+  """
+  @spec with_commit(t(), String.t(), String.t(), [
+          {:paths, [String.t()]},
+          {:author_name, String.t() | nil},
+          {:author_email, String.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommit")
+      |> QB.put_arg("message", message)
+      |> QB.put_arg("date", date)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("authorName", optional_args[:author_name])
+      |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+
+  Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+
+  A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+
+  Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+  """
+  @spec with_commits_from(t(), Dagger.Workspace.t(), [
+          {:commits, [String.t()]},
+          {:max_commits, integer() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commits_from(%__MODULE__{} = workspace, source, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommitsFrom")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("commits", optional_args[:commits])
+      |> QB.maybe_put_arg("maxCommits", optional_args[:max_commits])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment created.
   """
   @spec with_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -605,6 +707,37 @@ defmodule Dagger.Workspace do
       |> QB.select("withConfigEnv")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Select the config environment carried by this workspace.
+  """
+  @spec with_config_environment(t(), String.t()) :: Dagger.Workspace.t()
+  def with_config_environment(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("withConfigEnvironment") |> QB.put_arg("name", name)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+  """
+  @spec with_config_paths(t(), String.t(), String.t()) :: Dagger.Workspace.t()
+  def with_config_paths(%__MODULE__{} = workspace, config_file, lock_file) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withConfigPaths")
+      |> QB.put_arg("configFile", config_file)
+      |> QB.put_arg("lockFile", lock_file)
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -825,6 +958,29 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+
+  A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+
+  With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+
+  Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+  """
+  @spec with_reset(t(), String.t(), [{:hard, boolean() | nil}]) :: Dagger.Workspace.t()
+  def with_reset(%__MODULE__{} = workspace, commit, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReset")
+      |> QB.put_arg("commit", commit)
+      |> QB.maybe_put_arg("hard", optional_args[:hard])
 
     %Dagger.Workspace{
       query_builder: query_builder,
