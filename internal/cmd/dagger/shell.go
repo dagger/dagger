@@ -1043,9 +1043,17 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
 			return func() {
+				// Export takes long enough to look like a hang; acknowledge the
+				// keypress immediately, before the engine round-trips begin. On
+				// success the post-sync UI refresh repaints (or clears) the
+				// bubble; on failure the error below replaces it.
+				h.frontend.SetSidebarContent(idtui.SidebarSection{
+					Title:   "Changes",
+					Content: termenv.String("saving to checkout...").Faint().String(),
+				})
 				if err := h.llmSession.Target().ExportChanges(ctx); err != nil {
 					slog.Error("failed to export changes to local filesystem", "error", err.Error())
-					Frontend.SetSidebarContent(idtui.SidebarSection{
+					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
@@ -1055,9 +1063,15 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 	case key.MatchString("ctrl+u"):
 		if h.llmSession != nil {
 			return func() {
+				// Same acknowledgment as ctrl+s: re-capturing the checkout is
+				// slow, and the user needs to see the key registered.
+				h.frontend.SetSidebarContent(idtui.SidebarSection{
+					Title:   "Changes",
+					Content: termenv.String("reloading from checkout...").Faint().String(),
+				})
 				if err := h.llmSession.Target().ResetWorkspace(ctx); err != nil {
 					slog.Error("failed to reset agent workspace", "error", err.Error())
-					Frontend.SetSidebarContent(idtui.SidebarSection{
+					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})

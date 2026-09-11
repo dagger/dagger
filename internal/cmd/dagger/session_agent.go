@@ -219,6 +219,12 @@ type sessionAgent struct {
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
 
+	// syncOpL serializes explicit host synchronization (ExportChanges,
+	// ResetWorkspace). Both take long enough that a user waiting with no
+	// feedback used to mash ctrl+s/ctrl+u; a second operation must refuse
+	// rather than race the first one's writes to the host checkout.
+	syncOpL sync.Mutex
+
 	// prevContextTokens is the cumulative prompt-token total (input + cache
 	// reads + cache writes) observed after the previous turn, and
 	// prevStepContext is that turn's own prompt size. Together they drive the
@@ -1170,13 +1176,21 @@ func (a *sessionAgent) busy() bool {
 // explicit target, then refreshes the changes preview. It is the ctrl+s action;
 // export fails clearly when the current workspace cannot persist (a remote ref,
 // a synthetic workspace, or a local dir with no Git root).
-func (a *sessionAgent) ExportChanges(ctx context.Context) error {
+func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
 	if a.busy() {
 		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before saving")
 	}
+	if !a.syncOpL.TryLock() {
+		return fmt.Errorf("another save/reload is already in progress")
+	}
+	defer a.syncOpL.Unlock()
+	// Exporting and rebinding the workspace can take time; keep activity
+	// visible and attribute failures to the operation.
+	ctx, span := Tracer().Start(ctx, "saving changes to local checkout", telemetry.Reveal())
+	defer telemetry.EndWithCause(span, &rerr)
 	if err := a.llm.Workspace().Export(ctx); err != nil {
 		return err
 	}
@@ -1208,13 +1222,20 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) error {
 // Workspace.reloaded so cached host reads from earlier in the session are
 // invalidated and the agent genuinely re-reads whatever is on disk now. Sync
 // eagerly so a failure surfaces here rather than corrupting later saves.
-func (a *sessionAgent) ResetWorkspace(ctx context.Context) error {
+func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
 	if a.busy() {
 		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before resetting")
 	}
+	if !a.syncOpL.TryLock() {
+		return fmt.Errorf("another save/reload is already in progress")
+	}
+	defer a.syncOpL.Unlock()
+	// Like ExportChanges, reloading needs visible activity while the user waits.
+	ctx, span := Tracer().Start(ctx, "reloading workspace from local checkout", telemetry.Reveal())
+	defer telemetry.EndWithCause(span, &rerr)
 	frozen := a.session.dag.CurrentWorkspace().Reloaded()
 	reset, err := a.llm.WithWorkspace(frozen).Sync(ctx)
 	if err != nil {

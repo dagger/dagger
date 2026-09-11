@@ -183,6 +183,45 @@ func TestAgentDebugServerContextCancellation(t *testing.T) {
 	require.Error(t, err, "context cleanup must close the debug listener")
 }
 
+// TestAgentSyncKeysAcknowledgeImmediately guards the ctrl+s/ctrl+u activity
+// indicator: the Changes bubble must show an in-progress note the moment the
+// async work starts -- export/reload make enough engine round-trips that
+// without it the TUI looks frozen -- and a failure must then replace the note
+// with the error.
+func TestAgentSyncKeysAcknowledgeImmediately(t *testing.T) {
+	ctx := context.Background()
+
+	var sections []idtui.SidebarSection
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{
+		SetSidebarContentFunc: func(section idtui.SidebarSection) {
+			if section.Title == "Changes" {
+				sections = append(sections, section)
+			}
+		},
+	})
+	handler.llmSession = &LLMSession{target: &sessionAgent{}}
+
+	for _, tc := range []struct {
+		key      rune
+		progress string
+		errNote  string
+	}{
+		{'s', "saving to checkout...", "SAVE ERROR"},
+		{'u', "reloading from checkout...", "RESET ERROR"},
+	} {
+		sections = nil
+		work := handler.ReactToInput(ctx, uv.KeyPressEvent{Code: tc.key, Mod: uv.ModCtrl}, "", true)
+		require.NotNil(t, work)
+		work()
+		require.Len(t, sections, 2, "expected an in-progress paint followed by an error paint")
+		require.Contains(t, sections[0].Body(80), tc.progress)
+		require.Contains(t, sections[1].Body(80), tc.errNote)
+		// The target sessionAgent has no LLM bound, so the operation itself
+		// fails fast; what matters here is the paint ordering around it.
+		require.Contains(t, sections[1].Body(80), "no LLM session active")
+	}
+}
+
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	if _, err := os.Stat("/dagger.env"); os.IsNotExist(err) {
 		t.Skip(".env not configured")
