@@ -16433,6 +16433,65 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
+// WorkspaceCommitsFromOpts contains options for Workspace.CommitsFrom
+type WorkspaceCommitsFromOpts struct {
+	// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+//
+// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+func (r *Workspace) CommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCommitsFromOpts) ([]WorkspaceCommitPick, error) {
+	assertNotNil("source", source)
+	q := r.query.Select("commitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	q = q.Select("id")
+
+	type commitsFrom struct {
+		Id ID
+	}
+
+	convert := func(fields []commitsFrom) []WorkspaceCommitPick {
+		out := []WorkspaceCommitPick{}
+
+		for i := range fields {
+			val := WorkspaceCommitPick{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceCommitPick")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []commitsFrom
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Selected native workspace config file relative to the workspace cwd, if any.
 func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 	if r.configFile != nil {
@@ -17142,6 +17201,43 @@ func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWit
 	}
 }
 
+// WorkspaceWithCommitsFromOpts contains options for Workspace.WithCommitsFrom
+type WorkspaceWithCommitsFromOpts struct {
+	// Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+//
+// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+//
+// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -17707,6 +17803,114 @@ func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Wo
 // AsNode returns this Workspace as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Workspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A source commit classified against the receiving workspace.
+type WorkspaceCommitPick struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	reason *WorkspaceCommitPickReason
+	status *WorkspaceCommitPickStatus
+}
+
+func (r *WorkspaceCommitPick) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCommitPick {
+	return &WorkspaceCommitPick{
+		query: q,
+	}
+}
+
+// The commit in the source workspace.
+func (r *WorkspaceCommitPick) Commit() *GitCommit {
+	q := r.query.Select("commit")
+
+	return &GitCommit{
+		query: q,
+	}
+}
+
+// Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+func (r *WorkspaceCommitPick) ConflictPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("conflictPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceCommitPick.
+func (r *WorkspaceCommitPick) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceCommitPick) XXX_GraphQLType() string {
+	return "WorkspaceCommitPick"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceCommitPick) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceCommitPick) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceCommitPick) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Why the commit conflicts, or NONE.
+func (r *WorkspaceCommitPick) Reason(ctx context.Context) (WorkspaceCommitPickReason, error) {
+	if r.reason != nil {
+		return *r.reason, nil
+	}
+	q := r.query.Select("reason")
+
+	var response WorkspaceCommitPickReason
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether this commit can be applied.
+func (r *WorkspaceCommitPick) Status(ctx context.Context) (WorkspaceCommitPickStatus, error) {
+	if r.status != nil {
+		return *r.status, nil
+	}
+	q := r.query.Select("status")
+
+	var response WorkspaceCommitPickStatus
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceCommitPick as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceCommitPick) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -20019,6 +20223,141 @@ const (
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
+)
+
+// Why a source commit cannot be pulled.
+type WorkspaceCommitPickReason string
+
+func (WorkspaceCommitPickReason) IsEnum() {}
+
+func (v WorkspaceCommitPickReason) Name() string {
+	switch v {
+	case WorkspaceCommitPickReasonNone:
+		return "NONE"
+	case WorkspaceCommitPickReasonContent:
+		return "CONTENT"
+	case WorkspaceCommitPickReasonDirty:
+		return "DIRTY"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickReason) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickReason) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickReason) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONTENT":
+		*v = WorkspaceCommitPickReasonContent
+	case "DIRTY":
+		*v = WorkspaceCommitPickReasonDirty
+	case "NONE":
+		*v = WorkspaceCommitPickReasonNone
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// No conflict.
+	WorkspaceCommitPickReasonNone WorkspaceCommitPickReason = "NONE"
+
+	// The patch conflicts with committed content.
+	WorkspaceCommitPickReasonContent WorkspaceCommitPickReason = "CONTENT"
+
+	// The commit touches uncommitted paths in the receiving workspace.
+	WorkspaceCommitPickReasonDirty WorkspaceCommitPickReason = "DIRTY"
+)
+
+// Whether a source commit can be pulled.
+type WorkspaceCommitPickStatus string
+
+func (WorkspaceCommitPickStatus) IsEnum() {}
+
+func (v WorkspaceCommitPickStatus) Name() string {
+	switch v {
+	case WorkspaceCommitPickStatusPickable:
+		return "PICKABLE"
+	case WorkspaceCommitPickStatusPicked:
+		return "PICKED"
+	case WorkspaceCommitPickStatusRedundant:
+		return "REDUNDANT"
+	case WorkspaceCommitPickStatusConflict:
+		return "CONFLICT"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickStatus) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickStatus) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickStatus) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONFLICT":
+		*v = WorkspaceCommitPickStatusConflict
+	case "PICKABLE":
+		*v = WorkspaceCommitPickStatusPickable
+	case "PICKED":
+		*v = WorkspaceCommitPickStatusPicked
+	case "REDUNDANT":
+		*v = WorkspaceCommitPickStatusRedundant
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The commit can be applied.
+	WorkspaceCommitPickStatusPickable WorkspaceCommitPickStatus = "PICKABLE"
+
+	// The commit is already present by hash or cherry-pick origin.
+	WorkspaceCommitPickStatusPicked WorkspaceCommitPickStatus = "PICKED"
+
+	// The patch is already present, or applying it would be empty.
+	WorkspaceCommitPickStatusRedundant WorkspaceCommitPickStatus = "REDUNDANT"
+
+	// The commit cannot be applied; see reason and conflictPaths.
+	WorkspaceCommitPickStatusConflict WorkspaceCommitPickStatus = "CONFLICT"
 )
 
 // selectNode returns a query selection for node(id:) scoped to the

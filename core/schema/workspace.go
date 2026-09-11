@@ -68,6 +68,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
 			).
 			PassthroughTelemetry(),
+		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before planning integration").
+			Doc("Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.",
+				"Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before integrating commits").
+			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
+				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.",
+				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__pullRepository", s.pullRepository).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Open the pulled repository, preserving its logical origin."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Freezes host-backed receivers before committing").
@@ -524,6 +545,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
