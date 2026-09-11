@@ -74,6 +74,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+     *
+     * Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+     *
+     * A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+     */
+    public function commitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitsFrom');
+        $leafQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $leafQueryBuilder->setArgument('commits', $commits);
+        }
+        if (null !== $maxCommits) {
+        $leafQueryBuilder->setArgument('maxCommits', $maxCommits);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'commitsFrom');
+    }
+
+    /**
      * Selected native workspace config file relative to the workspace cwd, if any.
      */
     public function configFile(): string
@@ -169,9 +189,13 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Write this workspace's pending changes to its local Git workspace on the current client's host.
+     * Write this workspace's changes to a local Git checkout on the calling client.
      *
-     * Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+     * Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+     *
+     * For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
+     *
+     * Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
      */
     public function export(): void
     {
@@ -340,15 +364,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
-     */
-    public function reloaded(): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reloaded');
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * An installed SDK, by name.
      */
     public function sdk(string $name): WorkspaceSDK
@@ -435,6 +450,23 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return a snapshot of this workspace as a stable value.
+     *
+     * Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+     *
+     * Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+     *
+     * Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+     *
+     * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+     */
+    public function snapshot(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('snapshot');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all terminal targets from modules loaded in the workspace.
      */
     public function terminals(?array $include = null): TerminalGroup
@@ -475,6 +507,57 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+     *
+     * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+     *
+     * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+     */
+    public function withCommit(
+        string $message,
+        string $date,
+        ?array $paths = [],
+        ?string $authorName = null,
+        ?string $authorEmail = null,
+    ): Workspace {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('message', $message);
+        $innerQueryBuilder->setArgument('date', $date);
+        if (null !== $paths) {
+        $innerQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $authorName) {
+        $innerQueryBuilder->setArgument('authorName', $authorName);
+        }
+        if (null !== $authorEmail) {
+        $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+     *
+     * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
+     *
+     * A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+     *
+     * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+     */
+    public function withCommitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommitsFrom');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $commits) {
+        $innerQueryBuilder->setArgument('commits', $commits);
+        }
+        if (null !== $maxCommits) {
+        $innerQueryBuilder->setArgument('maxCommits', $maxCommits);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a named config environment created.
      */
     public function withConfigEnv(string $name, ?bool $here = false): Workspace
@@ -484,6 +567,27 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select the config environment carried by this workspace.
+     */
+    public function withConfigEnvironment(string $name): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigEnvironment');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+     */
+    public function withConfigPaths(string $configFile, string $lockFile): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigPaths');
+        $innerQueryBuilder->setArgument('configFile', $configFile);
+        $innerQueryBuilder->setArgument('lockFile', $lockFile);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -656,6 +760,25 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('contents', $contents);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+     *
+     * A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+     *
+     * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+     *
+     * Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+     */
+    public function withReset(string $commit, ?bool $hard = false): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReset');
+        $innerQueryBuilder->setArgument('commit', $commit);
+        if (null !== $hard) {
+        $innerQueryBuilder->setArgument('hard', $hard);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

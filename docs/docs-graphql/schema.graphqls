@@ -3237,6 +3237,41 @@ type GitCommit implements Node {
   ): Directory!
 }
 
+"""How a Git push updated the remote ref."""
+enum GitPushDisposition {
+  """The remote ref was created."""
+  CREATED
+
+  """The remote ref was fast-forwarded."""
+  FAST_FORWARD
+
+  """The remote ref was replaced under an explicit lease."""
+  FORCED
+
+  """The remote ref already pointed to this commit."""
+  UP_TO_DATE
+}
+
+"""
+A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+"""
+type GitPushResult implements Node {
+  """How the remote ref was updated."""
+  disposition: GitPushDisposition!
+
+  """A unique identifier for this GitPushResult."""
+  id: ID!
+
+  """The previous remote object ID; empty when the ref was created."""
+  previousSHA: String!
+
+  """The fully qualified remote ref."""
+  ref: String!
+
+  """The object ID pushed to the remote."""
+  sha: String!
+}
+
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """Creates a synthetic workspace from this git ref."""
@@ -3282,6 +3317,40 @@ type GitRef implements Node {
 
   """The resolved name of this ref."""
   name: String!
+
+  """
+  Push this ref's commit and history to a remote repository using the destination's credentials.
+
+  The source can come from a remote repository or an engine-side Git repository.
+  To publish a workspace's commits, use Workspace.git.head.push. Pushing does
+  not modify the calling client's checkout, and checkout hooks do not run.
+
+  A missing remote ref is created. Without a lease, Git's normal non-force rules
+  apply. Each invocation performs a push; loading the returned receipt does not
+  push again.
+  """
+  push(
+    """
+    Destination remote repository. Defaults to the source's captured push URL,
+    or its repository URL when none was captured. Required when the source has
+    multiple push URLs or no remote URL.
+    """
+    to: ID @expectedType(name: "GitRepository")
+
+    """
+    Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's
+    branch name. Required for detached and non-branch refs.
+    """
+    branch: String = ""
+
+    """
+    Optional lease: a full lowercase object ID allows replacement only if the
+    remote ref still has that value. Checked even for up-to-date pushes. Empty
+    or omitted uses normal non-force rules, creating the ref if it does not
+    exist.
+    """
+    expectedRemoteSHA: String = ""
+  ): GitPushResult!
 
   """The resolved ref name at this ref."""
   ref: String! @deprecated(reason: "Use \"name\" instead.")
@@ -5705,6 +5774,35 @@ type Workspace implements Node {
   ): CheckGroup!
 
   """
+  Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+
+  Results are ordered oldest first and account for earlier applicable commits in
+  the same preview. The preview does not apply commits or write to the checkout.
+
+  A local receiver is snapshotted automatically; untracked files require
+  interactive approval. Source uncommitted changes are ignored. Exceeding
+  maxCommits fails rather than returning a partial preview. Divergent merge
+  commits require manual integration.
+  """
+  commitsFrom(
+    """
+    Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    """
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Full commit hashes to select, in any order. Empty selects all new source
+    commits. Explicit hashes must be within the source's latest 10000 commits.
+    """
+    commits: [String!] = []
+
+    """
+    Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    """
+    maxCommits: Int = 100
+  ): [WorkspaceCommitPick!]!
+
+  """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   configFile: String!
@@ -5778,11 +5876,19 @@ type Workspace implements Node {
   envList: [String!]!
 
   """
-  Write this workspace's pending changes to its local Git workspace on the current client's host.
+  Write this workspace's changes to a local Git checkout on the calling client.
 
-  Like Directory.export, the write is a side effect on the client that makes the
-  call — never on the client that created the workspace. Inside a module, this
-  cannot reach the caller's host.
+  Local overlays can be exported directly. To save commits from another
+  workspace, first integrate them with currentWorkspace.withCommitsFrom(source).
+  Merge any pending source edits explicitly before exporting the result.
+
+  For prepared Git integrations, export checks the live checkout, preserves
+  unrelated local edits, and refuses stale or conflicting writes. History is
+  never rewritten. To publish commits to a remote repository, use git.head.push.
+
+  Like Directory.export, writes affect the client making the call, never the
+  client that created the workspace. Inside a module, this cannot reach the
+  caller's host.
   """
   export: Void!
 
@@ -5928,13 +6034,6 @@ type Workspace implements Node {
   """
   modules: [WorkspaceModule!]!
 
-  """
-  Return this workspace with its cached host reads invalidated, so subsequent
-  file and directory reads re-read the live host instead of a snapshot cached
-  earlier in the session.
-  """
-  reloaded: Workspace!
-
   """An installed SDK, by name."""
   sdk(
     """SDK name to look up."""
@@ -5994,6 +6093,27 @@ type Workspace implements Node {
     include: [String!]
   ): UpGroup!
 
+  """
+  Return a snapshot of this workspace as a stable value.
+
+  Git capture is a progressive enhancement: if the workspace has no Git
+  repository or commits, or the client cannot capture Git, return this workspace
+  unchanged. Approval rejections and capture failures remain errors.
+
+  Use the returned workspace for subsequent reads, edits, and module loading
+  against the captured baseline. Snapshotting an existing stable value preserves
+  its baseline; snapshot currentWorkspace again to capture later checkout
+  changes.
+
+  Only the owning client can capture a local checkout. Tracked changes are
+  captured automatically; untracked files require interactive approval. Remote
+  Git refs are pinned to their resolved commits. Capturing leaves the checkout
+  unchanged.
+
+  The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+  """
+  snapshot: Workspace!
+
   """Return all terminal targets from modules loaded in the workspace."""
   terminals(
     """Only include terminal targets matching the specified patterns"""
@@ -6028,6 +6148,78 @@ type Workspace implements Node {
     settings: JSON
   ): Workspace!
 
+  """
+  Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+
+  A local workspace is snapshotted automatically before committing; untracked
+  files require interactive approval. The host checkout is not modified. Changes
+  outside the selected paths remain uncommitted.
+
+  Missing author fields are resolved from Git config in the calling client's
+  working directory at commit time, then recorded explicitly for reproducible
+  commits. Unconfigured fields default to Dagger and dagger@localhost.
+  """
+  withCommit(
+    """Commit message."""
+    message: String!
+
+    """
+    Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+    """
+    paths: [String!] = []
+
+    """RFC3339 author and committer date. Required for reproducible commits."""
+    date: String!
+
+    """
+    Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+    """
+    authorName: String
+
+    """
+    Author and committer email. Defaults to git config user.email in the calling
+    client's working directory, otherwise dagger@localhost.
+    """
+    authorEmail: String
+  ): Workspace!
+
+  """
+  Integrate source commits into this workspace and return the result, preserving
+  this workspace's uncommitted changes and metadata.
+
+  Fast-forward when the selected commits include all new ancestors of their tip;
+  otherwise cherry-pick them oldest first. Already integrated commits and
+  patches already present are skipped. Any conflict fails the operation. Source
+  uncommitted changes are not transferred; merge them explicitly if needed. Use
+  commitsFrom to preview the integration.
+
+  A local receiver is snapshotted automatically; untracked files require
+  interactive approval. The result retains the receiver's checkout destination
+  for export. The checkout is not modified until export.
+
+  Cherry-picks preserve the source author and author date, use the calling
+  client's Git config for committer identity, and reuse the source committer
+  date for reproducible hashes. Origin trailers track cherry-picked commits.
+  Divergent merge commits require manual integration.
+  """
+  withCommitsFrom(
+    """
+    Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
+    """
+    source: ID! @expectedType(name: "Workspace")
+
+    """
+    Full commit hashes to select, in any order. Empty selects all new source
+    commits. Explicit hashes must be within the source's latest 10000 commits.
+    """
+    commits: [String!] = []
+
+    """
+    Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+    """
+    maxCommits: Int = 100
+  ): Workspace!
+
   """Return this workspace with a named config environment created."""
   withConfigEnv(
     """Environment name."""
@@ -6035,6 +6227,23 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """Select the config environment carried by this workspace."""
+  withConfigEnvironment(
+    """Environment name, or empty to clear the selection."""
+    name: String!
+  ): Workspace!
+
+  """
+  Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+  """
+  withConfigPaths(
+    """Config file path."""
+    configFile: String!
+
+    """Lockfile path."""
+    lockFile: String!
   ): Workspace!
 
   """
@@ -6220,6 +6429,30 @@ type Workspace implements Node {
     permissions: Int = 420
   ): Workspace!
 
+  """
+  Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+
+  A local workspace is snapshotted automatically before resetting; untracked
+  files require interactive approval. The host checkout is not modified. By
+  default the difference between the previous working tree and the target commit
+  stays uncommitted, as with git reset --mixed, so history can be reworked and
+  reapplied with withCommit — e.g. to amend the latest commit message, reset
+  to its parent and commit again.
+
+  With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+
+  Commits orphaned by the reset are not preserved: the frozen repository keeps
+  reachable history only, so a reset cannot be undone by resetting forward
+  again.
+  """
+  withReset(
+    """Full commit hash to reset HEAD to."""
+    commit: String!
+
+    """Discard uncommitted changes, resetting the working tree to the commit."""
+    hard: Boolean = false
+  ): Workspace!
+
   """Return this workspace with an SDK installed in its config."""
   withSDK(
     """SDK module reference to install."""
@@ -6381,6 +6614,53 @@ type Workspace implements Node {
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
   ): Workspace!
+}
+
+"""A source commit classified against the receiving workspace."""
+type WorkspaceCommitPick implements Node {
+  """The commit in the source workspace."""
+  commit: GitCommit!
+
+  """
+  Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+  """
+  conflictPaths: [String!]!
+
+  """A unique identifier for this WorkspaceCommitPick."""
+  id: ID!
+
+  """Why the commit conflicts, or NONE."""
+  reason: WorkspaceCommitPickReason!
+
+  """Whether this commit can be applied."""
+  status: WorkspaceCommitPickStatus!
+}
+
+"""Why a source commit cannot be pulled."""
+enum WorkspaceCommitPickReason {
+  """No conflict."""
+  NONE
+
+  """The patch conflicts with committed content."""
+  CONTENT
+
+  """The commit touches uncommitted paths in the receiving workspace."""
+  DIRTY
+}
+
+"""Whether a source commit can be pulled."""
+enum WorkspaceCommitPickStatus {
+  """The commit can be applied."""
+  PICKABLE
+
+  """The commit is already present by hash or cherry-pick origin."""
+  PICKED
+
+  """The patch is already present, or applying it would be empty."""
+  REDUNDANT
+
+  """The commit cannot be applied; see reason and conflictPaths."""
+  CONFLICT
 }
 
 """Local git state for a workspace."""

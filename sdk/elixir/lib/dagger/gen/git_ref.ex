@@ -129,6 +129,35 @@ defmodule Dagger.GitRef do
     Client.execute(git_ref.client, query_builder)
   end
 
+  @doc """
+  Push this ref's commit and history to a remote repository using the destination's credentials.
+
+  The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+
+  A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+  """
+  @spec push(t(), [
+          {:to, Dagger.GitRepository.t() | nil},
+          {:branch, String.t() | nil},
+          {:expected_remote_sha, String.t() | nil}
+        ]) :: Dagger.GitPushResult.t()
+  def push(%__MODULE__{} = git_ref, optional_args \\ []) do
+    query_builder =
+      git_ref.query_builder
+      |> QB.select("push")
+      |> QB.maybe_put_arg(
+        "to",
+        if(optional_args[:to], do: Dagger.ID.id!(optional_args[:to]), else: nil)
+      )
+      |> QB.maybe_put_arg("branch", optional_args[:branch])
+      |> QB.maybe_put_arg("expectedRemoteSHA", optional_args[:expected_remote_sha])
+
+    %Dagger.GitPushResult{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
   @deprecated """
   Use \\"name\\" instead.
   """
