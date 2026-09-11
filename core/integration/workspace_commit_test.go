@@ -186,6 +186,78 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	require.Equal(t, headBefore, git("rev-parse", "HEAD"))
 }
 
+func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	committed := ws.
+		WithNewFile("feature.txt", "feature").
+		WithNewFile("pending.txt", "pending").
+		WithCommit("draft mesage", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{Paths: []string{"feature.txt"}})
+	draftSHA, err := committed.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, baseSHA, draftSHA)
+
+	// A mixed reset moves HEAD back while the reverted commit's changes and
+	// the still-pending edit both stay uncommitted.
+	reset := committed.WithReset(baseSHA)
+	resetSHA, err := reset.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, resetSHA)
+	added, err := reset.Git().Uncommitted().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"feature.txt", "pending.txt"}, added)
+	contents, err := reset.File("feature.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "feature", contents)
+	// Reapplying the same paths with a corrected message is the amend flow.
+	amended, err := commitWorkspace(ctx, c, reset, "draft message, amended", []string{"feature.txt"})
+	require.NoError(t, err)
+	require.NotEqual(t, draftSHA, amended.Git.Head.Commit)
+	require.Equal(t, "draft message, amended", strings.TrimSpace(amended.Git.Head.TargetCommit.Message))
+	require.Equal(t, "Dagger", amended.Git.Head.TargetCommit.AuthorName)
+	require.Equal(t, []string{"pending.txt"}, amended.Git.Uncommitted.AddedPaths)
+	require.NotNil(t, amended.Git.Repository.URL)
+	require.Equal(t, url, *amended.Git.Repository.URL)
+	log, err := dagger.Ref[*dagger.Workspace](c, amended.ID).Git().Head().Log(ctx)
+	require.NoError(t, err)
+	require.Len(t, log, 2)
+	feature, err := dagger.Ref[*dagger.Workspace](c, amended.ID).Git().Head().Tree().File("feature.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "feature", feature)
+
+	// A hard reset discards everything since the commit, pending edits included.
+	hard := committed.WithReset(baseSHA, dagger.WorkspaceWithResetOpts{Hard: true})
+	hardSHA, err := hard.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, hardSHA)
+	hardAdded, err := hard.Git().Uncommitted().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, hardAdded)
+	_, err = hard.File("feature.txt").Contents(ctx)
+	require.Error(t, err)
+
+	// Input values are immutable.
+	oldSHA, err := committed.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, draftSHA, oldSHA)
+
+	// Resetting orphans the commits after the target: the frozen repository
+	// keeps reachable history only, so the reverted draft cannot be returned
+	// to. The amend flow recreates it from the uncommitted changes instead.
+	_, err = reset.WithReset(draftSHA).Git().Head().CommitSHA(ctx)
+	require.ErrorContains(t, err, "is not in this workspace's repository")
+
+	_, err = committed.WithReset("main").Git().Head().CommitSHA(ctx)
+	require.ErrorContains(t, err, "full lowercase commit hash")
+	missing := strings.Repeat("ab", 20)
+	_, err = committed.WithReset(missing).Git().Head().CommitSHA(ctx)
+	require.ErrorContains(t, err, "is not in this workspace's repository")
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("old.txt", strings.Repeat("rename me\n", 20)))
