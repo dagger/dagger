@@ -109,6 +109,26 @@ func (WorkspaceMigrationSuite) TestModuleMigrationWithoutWorkspace(ctx context.C
 }
 
 func (WorkspaceMigrationSuite) TestNativeWorkspaceModuleMigration(ctx context.Context, t *testctx.T) {
+	t.Run("migration preserves unrelated native SDK entries", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		const nativeConfig = `[modules.local-sdk]
+source = "go"
+
+[sdks.local]
+module = "local-sdk"
+`
+		migrated := workspaceBase(t, c).
+			WithNewFile("dagger.toml", nativeConfig).
+			With(legacyDangModule("app", "app", "App", "hello")).
+			With(daggerExec("module", "migrate", "app", "--auto-apply"))
+		data, err := migrated.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		cfg, err := workspace.ParseConfig([]byte(data))
+		require.NoError(t, err)
+		require.Equal(t, "go", cfg.Modules["local-sdk"].Source)
+		require.Equal(t, "local-sdk", cfg.SDKs["local"].Module)
+	})
+
 	t.Run("standalone module migration previews and applies in a native workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		base := nativeWorkspaceBase(t, c).

@@ -224,7 +224,6 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 			return nil, err
 		}
 		planner.configData, planner.config = data, cfg
-		applyMigratedSDKFixups(cfg, planMigratedSDKFixups(cfg))
 	}
 	for _, name := range []string{workspace.ConfigFileName, workspace.ModuleConfigFileName, workspace.LegacyModuleConfigFileName} {
 		for _, pattern := range []string{name, "**/" + name} {
@@ -300,7 +299,6 @@ func (p *moduleMigrationPlanner) requiredModules(convertedModules []string) erro
 func (p *moduleMigrationPlanner) result(ctx context.Context, base, staged dagql.ObjectResult[*core.Directory]) (*core.WorkspaceMigration, error) {
 	moduleBase := staged
 	if p.config != nil {
-		applyMigratedSDKFixups(p.config, planMigratedSDKFixups(p.config))
 		updated, err := migrationConfigBytes(p.configData, p.config)
 		if err != nil {
 			return nil, err
