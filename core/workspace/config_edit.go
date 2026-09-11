@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -439,6 +440,21 @@ func configValuesEqual(a, b any) bool {
 
 func renderConfigLiteral(value any) (string, error) {
 	switch v := value.(type) {
+	case json.Number:
+		// SDK settings retain JSON numbers when decoded. Preserve integer
+		// precision instead of routing every number through float64.
+		if strings.ContainsAny(v.String(), ".eE") {
+			n, err := v.Float64()
+			if err != nil {
+				return "", err
+			}
+			return renderConfigLiteral(n)
+		}
+		n, err := v.Int64()
+		if err != nil {
+			return "", err
+		}
+		return renderConfigLiteral(n)
 	case string:
 		return "\"" + string(scanner.Escape(v)) + "\"", nil
 	case bool:
