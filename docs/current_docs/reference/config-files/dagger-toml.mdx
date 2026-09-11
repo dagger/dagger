@@ -6,7 +6,7 @@ description: "The dagger.toml workspace configuration file schema."
 
 # dagger.toml
 
-A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace, their settings, and any per-environment overrides. `dagger module install` creates it on first install.
+A workspace is configured by a `dagger.toml` file at its root. It records the modules installed in the workspace and their settings. `dagger module install` creates it on first install.
 
 The machine-readable schema is published at [dagger-workspace.schema.json](/reference/dagger-workspace.schema.json).
 
@@ -16,7 +16,6 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | --- | --- | --- |
 | `modules` | table | Installed modules, keyed by install name. See [`[modules.<name>]`](#modulesname). |
 | `sdks` | table | Installed SDK providers and their generation scopes. See [`[sdks.<name>]`](#sdksname). |
-| `env` | table | Named environment overlays. See [`[env.<name>]`](#envname). |
 | `ports` | table | Host port mappings for services. See [`[ports.<name>]`](#portsname). |
 | `ignore` | array | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
@@ -89,21 +88,6 @@ explicit scope name. The inferred name is not written to this field.
 
 Use `dagger sdk scope name -u` to remove an override. An unnamed scope that
 contains only clients passes an empty name to the SDK.
-
-## `[env.<name>]`
-
-An environment overlay carries module settings, and may install modules scoped to itself. See [Environments](../../config/environments.mdx).
-
-```toml
-[env.staging.modules.eslint.settings]
-baseImageAddress = "node:22-alpine"
-```
-
-| Key | Type | Description |
-| --- | --- | --- |
-| `modules.<name>.settings` | table | Settings applied on top of the base configuration when the environment is selected. |
-| `modules.<name>.source` | string | Installs a module scoped to this environment. Mirrors `[modules.<name>].source`. |
-| `modules.<name>.pin` | string | Resolved version for the scoped `source`. |
 
 ## `[ports.<name>]`
 

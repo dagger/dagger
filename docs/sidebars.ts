@@ -88,7 +88,6 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
-        "config/environments",
         "config/user",
         "config/module-wiring",
         "config/migrate-dagger-json",
