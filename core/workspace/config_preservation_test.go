@@ -143,6 +143,16 @@ func TestConfigPreservation(t *testing.T) {
 		require.Equal(t, cfg, parsed)
 	})
 
+	t.Run("removal takes the comment attached to a removed module", func(t *testing.T) {
+		input := "# header\n\n[modules.kept]\nsource = './kept'\n\n# about old\n[modules.old]\nsource = './old'\n\n# separate\n\n[modules.last]\nsource = './last'\n"
+		cfg, err := ParseConfig([]byte(input))
+		require.NoError(t, err)
+		delete(cfg.Modules, "old")
+		out, err := UpdateConfigBytes([]byte(input), cfg)
+		require.NoError(t, err)
+		require.Equal(t, "# header\n\n[modules.kept]\nsource = './kept'\n\n# separate\n\n[modules.last]\nsource = './last'\n", string(out))
+	})
+
 	t.Run("removal includes unknown fields in removed module", func(t *testing.T) {
 		input := "# keep\n[modules.old]\nsource = './old'\nfuture = true\n[modules.old.as-sdk]\nname = 'old'\n\n[modules.kept]\nsource = './kept'\nfuture = 'kept'\n"
 		cfg, err := ParseConfig([]byte(input))

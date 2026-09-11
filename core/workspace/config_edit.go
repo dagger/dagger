@@ -267,7 +267,11 @@ func (doc *configText) remove(parts []string) ([]byte, error) {
 			if i > 0 {
 				floor = doc.statements[i-1].end
 			}
-			start, end := configRemovalSpan(out, floor, stmt.start, stmt.end)
+			start := stmt.start
+			if stmt.table {
+				start = configAttachedCommentStart(out, floor, start)
+			}
+			start, end := configRemovalSpan(out, floor, start, stmt.end)
 			out = replaceConfigText(out, start, end, "")
 		} else if !stmt.table && configPathPrefix(parts, stmt.path) {
 			return doc.editInline(stmt, parts[len(stmt.path):], nil, true)
@@ -279,9 +283,8 @@ func (doc *configText) remove(parts []string) ([]byte, error) {
 // configRemovalSpan widens a removed statement over the blank lines around it.
 // Without this, each removed table leaves its separator behind, so removing
 // several tables leaves a run of blank lines. Blank lines on both sides become
-// one run; blank lines at either end of the document are dropped. Comments are
-// not blank lines and stay in place. floor is the end of the preceding
-// statement, and data after end may already be edited.
+// one run; blank lines at either end of the document are dropped. floor is the
+// end of the preceding statement, and data after end may already be edited.
 func configRemovalSpan(data []byte, floor, start, end int) (int, int) {
 	before := start
 	for before > floor {
@@ -309,6 +312,26 @@ func configRemovalSpan(data []byte, floor, start, end int) (int, int) {
 		return before, end
 	}
 	return start, end
+}
+
+// configAttachedCommentStart returns the start of the comment block directly
+// above a table heading, with no blank line between them. That block
+// documents the table, so it goes when the table goes. A block at the top of
+// the file stays, because it usually documents the whole file.
+func configAttachedCommentStart(data []byte, floor, start int) int {
+	block := start
+	for block > floor {
+		line := configLineStart(data, block-1)
+		text := bytes.TrimSpace(data[line:block])
+		if line < floor || len(text) == 0 || text[0] != '#' {
+			break
+		}
+		block = line
+	}
+	if len(bytes.TrimSpace(data[:block])) == 0 {
+		return start
+	}
+	return block
 }
 
 // Inline tables are edited through a temporary table body. Only the resulting

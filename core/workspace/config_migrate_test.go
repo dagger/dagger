@@ -79,7 +79,7 @@ func TestMigrateConfigBytes(t *testing.T) {
 		require.Equal(t, updated, again)
 	})
 
-	t.Run("removed SDK sections leave one blank line", func(t *testing.T) {
+	t.Run("removed SDK sections take their comment and leave one blank line", func(t *testing.T) {
 		original := `[modules.dagger-go-sdk]
 source = './sdk'
 
@@ -100,8 +100,6 @@ source = './editor'
 		require.NoError(t, err)
 		require.True(t, strings.HasPrefix(string(updated), `[modules.dagger-go-sdk]
 source = './sdk'
-
-# Legacy SDK roles.
 
 [modules.editor]
 source = './editor'
