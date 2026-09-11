@@ -107,6 +107,18 @@ export function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return name as CacheSharingMode
   }
 }
+export type ChangesetFilterOpts = {
+  /**
+   * Only include changes at paths matching these patterns. Empty includes all paths.
+   */
+  include?: string[]
+
+  /**
+   * Exclude changes at paths matching these patterns.
+   */
+  exclude?: string[]
+}
+
 export type ChangesetWithChangesetOpts = {
   /**
    * What to do on a merge conflict
@@ -1932,6 +1944,28 @@ export type GitRefTreeOpts = {
    * Set to true to populate tag refs in the local checkout .git.
    */
   includeTags?: boolean
+}
+
+export type GitRefWithCommitOpts = {
+  /**
+   * Committer name. Defaults to authorName.
+   */
+  committerName?: string
+
+  /**
+   * Committer email. Defaults to authorEmail.
+   */
+  committerEmail?: string
+
+  /**
+   * RFC3339 committer date. Defaults to date.
+   */
+  committerDate?: string
+
+  /**
+   * Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+   */
+  allowEmpty?: boolean
 }
 
 export type GitRepositoryAsWorkspaceOpts = {
@@ -4175,6 +4209,18 @@ export class Changeset extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Select changes matching the supplied glob patterns, preserving their original baseline.
+   *
+   * Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+   * @param opts.include Only include changes at paths matching these patterns. Empty includes all paths.
+   * @param opts.exclude Exclude changes at paths matching these patterns.
+   */
+  filter = (opts?: ChangesetFilterOpts): Changeset => {
+    const ctx = this._ctx.select("filter", { ...opts })
+    return new Changeset(ctx)
   }
 
   /**
@@ -10043,6 +10089,16 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Return this ref's repository with HEAD pinned to the selected commit.
+   *
+   * Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+   */
+  asRepository = (): GitRepository => {
+    const ctx = this._ctx.select("asRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
    * Creates a synthetic workspace from this git ref.
    * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
    */
@@ -10177,6 +10233,41 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Create a single-parent commit on this ref by applying a changeset's edits.
+   *
+   * Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+   *
+   * Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+   * @param changes Changes to apply. Use Changeset.filter to select paths before committing.
+   * @param message Commit message.
+   * @param date RFC3339 author date; also the default committer date.
+   * @param authorName Author name.
+   * @param authorEmail Author email.
+   * @param opts.committerName Committer name. Defaults to authorName.
+   * @param opts.committerEmail Committer email. Defaults to authorEmail.
+   * @param opts.committerDate RFC3339 committer date. Defaults to date.
+   * @param opts.allowEmpty Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+   */
+  withCommit = (
+    changes: Changeset,
+    message: string,
+    date: string,
+    authorName: string,
+    authorEmail: string,
+    opts?: GitRefWithCommitOpts,
+  ): GitRef => {
+    const ctx = this._ctx.select("withCommit", {
+      changes,
+      message,
+      date,
+      authorName,
+      authorEmail,
+      ...opts,
+    })
+    return new GitRef(ctx)
+  }
+
+  /**
    * Call the provided function with current GitRef.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
@@ -10219,7 +10310,9 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Creates a synthetic workspace from this git repository.
+   * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+   *
+   * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
    * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
    */
   asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
@@ -10349,6 +10442,19 @@ export class GitRepository extends BaseClient {
     opts?: GitRepositoryWithBundleOpts,
   ): GitRepository => {
     const ctx = this._ctx.select("withBundle", { bundle, ...opts })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+   *
+   * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+   *
+   * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+   * @param directory Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
+   */
+  withDirectory = (directory: Directory): GitRepository => {
+    const ctx = this._ctx.select("withDirectory", { directory })
     return new GitRepository(ctx)
   }
 

@@ -69,6 +69,23 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Select changes matching the supplied glob patterns, preserving their original baseline.
+     *
+     * Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+     */
+    public function filter(?array $include = [], ?array $exclude = []): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Changeset.
      */
     public function id(): Id

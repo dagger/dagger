@@ -16,6 +16,22 @@ defmodule Dagger.GitRef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Return this ref's repository with HEAD pinned to the selected commit.
+
+  Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+  """
+  @spec as_repository(t()) :: Dagger.GitRepository.t()
+  def as_repository(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("asRepository")
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   Creates a synthetic workspace from this git ref.
   """
   @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
@@ -203,6 +219,47 @@ defmodule Dagger.GitRef do
       |> QB.maybe_put_arg("includeTags", optional_args[:include_tags])
 
     %Dagger.Directory{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
+  Create a single-parent commit on this ref by applying a changeset's edits.
+
+  Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+
+  Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+  """
+  @spec with_commit(t(), Dagger.Changeset.t(), String.t(), String.t(), String.t(), String.t(), [
+          {:committer_name, String.t() | nil},
+          {:committer_email, String.t() | nil},
+          {:committer_date, String.t() | nil},
+          {:allow_empty, boolean() | nil}
+        ]) :: Dagger.GitRef.t()
+  def with_commit(
+        %__MODULE__{} = git_ref,
+        changes,
+        message,
+        date,
+        author_name,
+        author_email,
+        optional_args \\ []
+      ) do
+    query_builder =
+      git_ref.query_builder
+      |> QB.select("withCommit")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
+      |> QB.put_arg("message", message)
+      |> QB.put_arg("date", date)
+      |> QB.put_arg("authorName", author_name)
+      |> QB.put_arg("authorEmail", author_email)
+      |> QB.maybe_put_arg("committerName", optional_args[:committer_name])
+      |> QB.maybe_put_arg("committerEmail", optional_args[:committer_email])
+      |> QB.maybe_put_arg("committerDate", optional_args[:committer_date])
+      |> QB.maybe_put_arg("allowEmpty", optional_args[:allow_empty])
+
+    %Dagger.GitRef{
       query_builder: query_builder,
       client: git_ref.client
     }

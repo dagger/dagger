@@ -103,6 +103,25 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Select changes matching the supplied glob patterns, preserving their original baseline.
+
+  Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+  """
+  @spec filter(t(), [{:include, [String.t()]}, {:exclude, [String.t()]}]) :: Dagger.Changeset.t()
+  def filter(%__MODULE__{} = changeset, optional_args \\ []) do
+    query_builder =
+      changeset.query_builder
+      |> QB.select("filter")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: changeset.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Changeset.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

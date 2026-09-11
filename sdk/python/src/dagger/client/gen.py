@@ -1021,6 +1021,33 @@ class Changeset(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
+    def filter(
+        self,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> Self:
+        """Select changes matching the supplied glob patterns, preserving their
+        original baseline.
+
+        Includes additions, modifications, and deletions. Selecting only one
+        side of a rename yields an addition or deletion.
+
+        Parameters
+        ----------
+        include:
+            Only include changes at paths matching these patterns. Empty
+            includes all paths.
+        exclude:
+            Exclude changes at paths matching these patterns.
+        """
+        _args = [
+            Arg("include", [] if include is None else include, []),
+            Arg("exclude", [] if exclude is None else exclude, []),
+        ]
+        _ctx = self._select("filter", _args)
+        return Changeset(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this Changeset.
 
@@ -8608,6 +8635,16 @@ class GitPushResult(Type):
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
+    def as_repository(self) -> "GitRepository":
+        """Return this ref's repository with HEAD pinned to the selected commit.
+
+        Preserves the original repository backend, connection information, and
+        other refs. Does not modify a branch or checkout, or prune history.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asRepository", _args)
+        return GitRepository(_ctx)
+
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
         """Creates a synthetic workspace from this git ref.
 
@@ -8868,6 +8905,67 @@ class GitRef(Type):
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
 
+    def with_commit(
+        self,
+        changes: Changeset,
+        message: str,
+        date: str,
+        author_name: str,
+        author_email: str,
+        *,
+        committer_name: str | None = None,
+        committer_email: str | None = None,
+        committer_date: str | None = None,
+        allow_empty: bool | None = False,
+    ) -> Self:
+        """Create a single-parent commit on this ref by applying a changeset's
+        edits.
+
+        Three-way merges the changeset against this ref's tree, using its
+        before snapshot as the base. Preserves compatible parent edits and
+        fails on conflicts. Does not modify the input repository or host
+        checkout.
+
+        Identity and dates are explicit; neither client Git configuration nor
+        the current clock is consulted.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply. Use Changeset.filter to select paths before
+            committing.
+        message:
+            Commit message.
+        date:
+            RFC3339 author date; also the default committer date.
+        author_name:
+            Author name.
+        author_email:
+            Author email.
+        committer_name:
+            Committer name. Defaults to authorName.
+        committer_email:
+            Committer email. Defaults to authorEmail.
+        committer_date:
+            RFC3339 committer date. Defaults to date.
+        allow_empty:
+            Allow a commit whose tree matches its parent, including when the
+            supplied edits are already present. Defaults to false.
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("message", message),
+            Arg("date", date),
+            Arg("authorName", author_name),
+            Arg("authorEmail", author_email),
+            Arg("committerName", committer_name, None),
+            Arg("committerEmail", committer_email, None),
+            Arg("committerDate", committer_date, None),
+            Arg("allowEmpty", allow_empty, False),
+        ]
+        _ctx = self._select("withCommit", _args)
+        return GitRef(_ctx)
+
     def with_(self, cb: Callable[["GitRef"], "GitRef"]) -> "GitRef":
         """Call the provided callable with current GitRef.
 
@@ -8881,7 +8979,11 @@ class GitRepository(Type):
     """A git repository."""
 
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
-        """Creates a synthetic workspace from this git repository.
+        """Creates a synthetic workspace from this repository's HEAD and
+        uncommitted file changes.
+
+        Pending changes are applied at the repository root. The staging split
+        is not preserved. The source repository is not modified.
 
         Parameters
         ----------
@@ -9143,6 +9245,31 @@ class GitRepository(Type):
             Arg("prerequisiteRef", prerequisite_ref, ""),
         ]
         _ctx = self._select("withBundle", _args)
+        return GitRepository(_ctx)
+
+    def with_directory(self, directory: Directory) -> Self:
+        """Replace this repository's storage with the supplied self-contained Git
+        repository, retaining its logical URL and push destinations.
+
+        Accepts a whole checkout (including .git and pending file edits), .git
+        contents, or a bare repository. Does not initialize a repository,
+        merge histories, or modify either input.
+
+        The receiver's logical routing wins over the supplied Git
+        configuration; that configuration is not rewritten. Use
+        Directory.asGit to open the supplied repository without retaining the
+        receiver's routing.
+
+        Parameters
+        ----------
+        directory:
+            Existing Git storage to open. Git metadata and object dependencies
+            must be contained in this directory.
+        """
+        _args = [
+            Arg("directory", directory),
+        ]
+        _ctx = self._select("withDirectory", _args)
         return GitRepository(_ctx)
 
     def with_(
