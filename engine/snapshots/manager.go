@@ -345,18 +345,26 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 	return rec, nil
 }
 
+// Overlay refuses to mount a snapshot whose parent chain is too deep: past 500
+// lower layers, or once the lowerdir option outgrows one page (about 440
+// layers with 5-digit snapshot IDs).
+const maxParentChainDepth = 128
+
 func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefOption) (mr MutableRef, err error) {
 	id := identity.NewID()
-
-	var parentSnapshotID string
-	if s != nil {
-		parentSnapshotID = s.SnapshotID()
-	}
 
 	snapshotID := id
 	ctx, err = EnsureLease(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure lease for snapshot prepare")
+	}
+
+	var parentSnapshotID string
+	if s != nil {
+		parentSnapshotID, err = cm.mountableParent(ctx, s.SnapshotID())
+		if err != nil {
+			return nil, err
+		}
 	}
 	err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 	if err != nil {
@@ -393,6 +401,27 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
 	return ref, nil
+}
+
+// mountableParent returns parentSnapshotID, or a single-layer copy of it when
+// its chain has reached maxParentChainDepth.
+func (cm *snapshotManager) mountableParent(ctx context.Context, parentSnapshotID string) (string, error) {
+	depth := 0
+	for id := parentSnapshotID; id != "" && depth < maxParentChainDepth; depth++ {
+		info, err := cm.Snapshotter.Stat(ctx, id)
+		if err != nil {
+			return "", errors.Wrapf(err, "stat snapshot %s", id)
+		}
+		id = info.Parent
+	}
+	if depth < maxParentChainDepth {
+		return parentSnapshotID, nil
+	}
+	squashedID := identity.NewID()
+	if err := cm.Snapshotter.Merge(ctx, squashedID, []Diff{{Upper: parentSnapshotID}}); err != nil {
+		return "", errors.Wrapf(err, "squash snapshot %s", parentSnapshotID)
+	}
+	return squashedID, nil
 }
 
 func (cm *snapshotManager) GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) {
