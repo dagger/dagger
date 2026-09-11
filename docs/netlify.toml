@@ -2464,6 +2464,25 @@
 
 ## end: migration 1.0 -> reference section ##
 
+## start: migration PHP API reference removal ##
+##
+## The generated PHP API reference (Doctum HTML under /reference/php) was
+## removed. It was not versioned: every docs version linked to one copy, built
+## from main. Send old links to the PHP SDK page. The target is not live at /
+## yet; it arrives when the current docs become the default version.
+
+[[redirects]]
+  from = "/reference/php"
+  to = "/reference/sdks/php"
+  status = 301
+
+[[redirects]]
+  from = "/reference/php/*"
+  to = "/reference/sdks/php"
+  status = 301
+
+## end: migration PHP API reference removal ##
+
 ## start: 1.0 fallback (keep last) ##
 ##
 ## The site default at / is the 1.0 beta, which dropped many 0.21-era pages.

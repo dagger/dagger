@@ -2,9 +2,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -16,14 +14,11 @@ const (
 	phpSDKDigest        = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
 	phpSDKComposerImage = "composer/composer:2.8-bin" +
 		"@sha256:c735b6a52ea118693178babc601984dbbbd07f1d31ec87eaa881173622b467ed"
-
-	phpDoctumVersion = "5.5.4"
 )
 
 type PhpClientDev struct {
 	OriginalWorkspace  *dagger.Directory // +private
 	Workspace          *dagger.Directory // +private
-	DoctumConfigPath   string            // +private
 	SourcePath         string            // +private
 	ClientDockerConfig *dagger.Secret    // +private
 	Ws                 *dagger.Workspace // +private
@@ -33,14 +28,11 @@ type PhpClientDev struct {
 func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"]
+	// +ignore=["*", "!sdk/php", "sdk/php/.changes"]
 	workspaceDir *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
 	sourcePath string,
-	// The path of the doctum config in the workspace
-	// +default="docs/doctum-config.php"
-	doctumConfigPath string,
 	// A docker config file with credentials to install on clients.
 	// +optional
 	clientDockerConfig *dagger.Secret,
@@ -52,7 +44,6 @@ func New(
 		Workspace:          workspaceDir,
 		OriginalWorkspace:  workspaceDir,
 		SourcePath:         sourcePath,
-		DoctumConfigPath:   doctumConfigPath,
 		ClientDockerConfig: clientDockerConfig,
 		Ws:                 ws,
 	}
@@ -110,11 +101,6 @@ func (t PhpClientDev) Source() *dagger.Directory {
 	return t.Workspace.Directory(t.SourcePath)
 }
 
-// DoctumConfig returns the doctum configuration file
-func (t PhpClientDev) DoctumConfig() *dagger.File {
-	return t.Workspace.File(t.DoctumConfigPath)
-}
-
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
 // +check
 func (t PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
@@ -145,17 +131,10 @@ func (t PhpClientDev) Test(ctx context.Context) error {
 	return err
 }
 
-// Regenerate the PHP SDK API + docs
+// Regenerate the PHP SDK API
 // +generate
-func (t *PhpClientDev) API(ctx context.Context) (*dagger.Changeset, error) {
-	t, err := t.
-		WithGeneratedClient().
-		WithGeneratedDocs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return t.Changes(), nil
+func (t *PhpClientDev) API() *dagger.Changeset {
+	return t.WithGeneratedClient().Changes()
 }
 
 func (t *PhpClientDev) Changes() *dagger.Changeset {
@@ -177,37 +156,6 @@ func (t *PhpClientDev) WithGeneratedClient() *PhpClientDev {
 		WithDirectory(t.SourcePath, relLayer)
 
 	return t
-}
-
-// Generate reference docs from the generated client
-// NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
-// (see WithGeneratedClient)
-func (t *PhpClientDev) WithGeneratedDocs(ctx context.Context) (*PhpClientDev, error) {
-	relLayer := t.DevContainer(false).
-		WithFile(
-			"/usr/bin/doctum",
-			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)),
-			dagger.ContainerWithFileOpts{Permissions: 0711},
-		).
-		WithFile("/etc/doctum-config.php", t.DoctumConfig()).
-		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
-		Directory("/src/sdk/php/build")
-
-	// format this file, since otherwise it's on one line and makes lots of conflicts
-	// FIXME: use dagger JSON API
-	search, err := formatJSONFile(ctx, relLayer.File("doctum-search.json"))
-	if err != nil {
-		return nil, err
-	}
-	relLayer = relLayer.
-		WithFile("doctum-search.json", search).
-		// remove the renderer.index file, which seems to not be required to render the docs
-		WithoutFile("renderer.index")
-	t.Workspace = t.Workspace.
-		// Merge relative layer with the current workspace
-		WithDirectory("docs/static/reference/php", relLayer)
-
-	return t, nil
 }
 
 // Test the publishing process
@@ -269,24 +217,4 @@ func (t PhpClientDev) Release(
 			GithubToken: githubToken,
 		},
 	)
-}
-
-func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
-	name, err := f.Name(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	contents, err := f.Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var out bytes.Buffer
-	err = json.Indent(&out, []byte(contents), "", "\t")
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.File(name, out.String()), nil
 }
