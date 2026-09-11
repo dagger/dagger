@@ -17103,6 +17103,45 @@ func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *
 	}
 }
 
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
+	Paths []string
+	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+	AuthorName string
+	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+	AuthorEmail string
+}
+
+// Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
+//
+// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.
+//
+// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+	}
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
