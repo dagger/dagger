@@ -143,6 +143,17 @@ var ErrCacheSessionReleased = errors.New("cache session released")
 var ErrCacheClosed = errors.New("cache closed")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
+// errAttachRefusedByProducerRelease classifies a dependency-attachment
+// failure caused by the publishing session's own release refusing an
+// attachment-time claim. It wraps only the error latched on the attach
+// barrier: a reader from another live session that parked on the barrier is
+// innocent (a fresh execution would succeed), so the hit-serve paths convert
+// such a failure to a miss instead of surfacing the producer's release as
+// the reader's own error. Every other attachment failure propagates to
+// parked readers unchanged, and the publishing invocation itself always
+// keeps the attachment error.
+var errAttachRefusedByProducerRelease = errors.New("dependency attachment refused by the producing session's release")
+
 const cacheSessionReleasedBit uint64 = 1 << 63
 
 // cacheSessionLifecycle is retained for the engine lifetime, matching the
@@ -553,9 +564,15 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	return nil
 }
 
-func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error {
+// recomputeRequiredSessionResourcesLocked rebuilds res's stored
+// requiredSessionResources one level deep off each dep's own stored set. It
+// reports whether the stored set changed and bumps the result's requirement
+// generation when it did, so serve paths comparing the generation against a
+// selection-time capture can detect every growth of the set. Callers hold
+// the egraphMu write lock.
+func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) (bool, error) {
 	if res == nil {
-		return nil
+		return false, nil
 	}
 
 	var reqs *set.TreeSet[SessionResourceHandle]
@@ -566,7 +583,7 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	for depID := range res.deps {
 		dep := c.resultsByID[depID]
 		if dep == nil {
-			return fmt.Errorf("recompute required session resources: missing dep result %d", depID)
+			return false, fmt.Errorf("recompute required session resources: missing dep result %d", depID)
 		}
 		if dep.requiredSessionResources == nil {
 			continue
@@ -577,12 +594,25 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 			reqs = reqs.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 		}
 	}
-	if reqs == nil || reqs.Empty() {
-		res.requiredSessionResources = nil
-		return nil
+	if reqs != nil && reqs.Empty() {
+		reqs = nil
+	}
+	if sessionResourceSetsEqual(res.requiredSessionResources, reqs) {
+		return false, nil
 	}
 	res.requiredSessionResources = reqs
-	return nil
+	res.requiredSessionResourcesGen.Add(1)
+	return true, nil
+}
+
+func sessionResourceSetsEqual(a, b *set.TreeSet[SessionResourceHandle]) bool {
+	if a == nil || a.Empty() {
+		return b == nil || b.Empty()
+	}
+	if b == nil || b.Empty() {
+		return false
+	}
+	return a.Equal(b)
 }
 
 func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientID string, handle SessionResourceHandle, value any) error {
@@ -1831,6 +1861,16 @@ type Cache struct {
 	testPersistDecodePreLock       func(uint64)
 	testPersistDecodeJoined        func(uint64)
 	testPersistDecodeLeadPublished func(uint64)
+	// serve-time requirement re-validation hook: after a serve path left the
+	// selection critical section and before it compares the captured
+	// requirement generation (lookupCacheForRequest, lookupCacheForDigests,
+	// loadResultByResultID).
+	testBeforeServeRequirementRecheck func(*sharedResult)
+	// publication hook: after the pre-lock digest derivations and before the
+	// indexing critical section (initCompletedResult), the window in which a
+	// structural ref's target can be collected out from under the
+	// publication.
+	testBeforePublicationIndex func(*ongoingCall)
 
 	closeOnce sync.Once
 	closeErr  error
@@ -1983,6 +2023,15 @@ type sharedResult struct {
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
+	// requiredSessionResourcesGen counts changes to requiredSessionResources
+	// for a registered result. It is bumped by the same egraphMu write
+	// critical section that changes the stored set
+	// (recomputeRequiredSessionResourcesLocked) and read with a plain atomic
+	// load by serve paths: a hit whose generation still matches the value
+	// captured inside the selection critical section is serving the exact
+	// set the selection-time subset check validated, so the locked re-check
+	// can be skipped.
+	requiredSessionResourcesGen atomic.Uint64
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
 	// attached for this result. They are the source of truth for owner lease
 	// cleanup and debug output. Persistence export for newly encoded objects
@@ -2483,8 +2532,8 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 		return err
 	}
 	ref.ResultID = uint64(resultID)
-	if shared, _, _, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
-		ref.shared = shared
+	if lookup, err := c.sharedResultByResultID(ctx, "", resultID, sharedResultLookupExact); err == nil {
+		ref.shared = lookup.res
 	}
 	ref.Call = nil
 	return nil
@@ -2549,15 +2598,26 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		shared.setObjClass(objVal.ObjectType())
 	}
 	if shared.id != 0 {
+		// Claim first, under the graph lock, before the unlocked refresh
+		// below: a successful claim pins the result for the rest of the
+		// attachment, so another session's release cannot collect it
+		// between here and the refresh. The claim checks the caller's
+		// session tombstone before registration, so the caller's own
+		// release fails here with the release refusal; a claim that finds
+		// the result already collected fails the attachment loudly, and
+		// that is an invariant violation by the caller rather than a case
+		// to handle - every production acquisition path claims at
+		// acquisition or reaches the result through a claimed one, whose
+		// dependency edges pin it.
+		if err := c.trackSessionResult(ctx, sessionID, res, true); err != nil {
+			return nil, fmt.Errorf("attach dependency result: claim cache-backed result: %w", err)
+		}
 		loaded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, res)
 		if err != nil {
 			return nil, fmt.Errorf("attach dependency result: refresh cache-backed value: %w", err)
 		}
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.traceAttachResultReusedCacheBacked(ctx, sessionID, shared)
-		if err := c.trackSessionResult(ctx, sessionID, loaded, true); err != nil {
-			return nil, fmt.Errorf("attach dependency result: claim cache-backed result: %w", err)
-		}
 		return loaded, nil
 	}
 	frame := shared.loadResultCall()
@@ -2631,7 +2691,20 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	return attached, nil
 }
 
+// AddExplicitDependency records a retention edge from parent to dep after
+// parent has already been published, so dep stays alive as long as parent's
+// cache entry does. The dep may carry session-resource requirements even
+// though the parent has settled: the recompute cascades the grown required
+// set to the parent and every ancestor deriving its set from it, each growth
+// bumps the affected result's requirement generation, and serve paths
+// compare that generation against their selection-time capture, so a hit
+// selected before the edge landed cannot be served under the old, smaller
+// required set.
 func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	return c.addExplicitDependency(ctx, parent, dep, reason)
+}
+
+func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -2684,8 +2757,33 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-	if err := c.recomputeRequiredSessionResourcesLocked(parentRes); err != nil {
-		return err
+
+	// The new dep can extend the parent's stored required set, and every
+	// result already depending on the parent derives its own stored set from
+	// it, so a change must cascade upward through depParents until the sets
+	// stop changing. At publication time the parent is fresh and has no
+	// depParents; the cascade matters for a retention edge added to an
+	// already-published result. The cascade runs inside the same egraphMu
+	// critical section as the edge insertion and terminates because a
+	// re-enqueue requires a strict change and the sets are bounded. Each
+	// change bumps that result's requirement generation, which is what
+	// serve-time re-validation compares against its selection-time capture.
+	queue := []*sharedResult{parentRes}
+	for len(queue) > 0 {
+		res := queue[0]
+		queue = queue[1:]
+		changed, err := c.recomputeRequiredSessionResourcesLocked(res)
+		if err != nil {
+			return err
+		}
+		if !changed || res.depParents == nil {
+			continue
+		}
+		for ancestorID := range res.depParents.Items() {
+			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
+				queue = append(queue, ancestor)
+			}
+		}
 	}
 
 	return nil
@@ -3133,19 +3231,24 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		if err != nil {
 			return r, fmt.Errorf("set session resource handle on %T: current dagql cache: %w", r.Self(), err)
 		}
-		cache.egraphMu.Lock()
-		defer cache.egraphMu.Unlock()
+		cache.egraphMu.RLock()
+		defer cache.egraphMu.RUnlock()
 
 		// Numeric result IDs are engine-lifetime unique, so a registered ID
 		// still names this exact result.
 		if _, found := cache.resultsByID[r.shared.id]; !found {
 			return r, fmt.Errorf("set session resource handle on %T: result %d was already collected", r.Self(), r.shared.id)
 		}
-		r.shared.sessionResourceHandle = handle
-		if err := cache.recomputeRequiredSessionResourcesLocked(r.shared); err != nil {
-			return r, err
+		// A registered result may already have been served through the
+		// session filter. Changing the handle here would rewrite the
+		// result's own requirement outside the egraphMu-guarded recompute
+		// that maintains the stored sets and their generations, invisibly
+		// to ancestors deriving their sets from it, so only the identical
+		// no-op is permitted.
+		if r.shared.sessionResourceHandle == handle {
+			return r, nil
 		}
-		return r, nil
+		return r, fmt.Errorf("set session resource handle on %T: result %d is already attached; its session-resource handle cannot change", r.Self(), r.shared.id)
 	}
 
 	state := r.shared.loadPayloadState()
@@ -4672,6 +4775,9 @@ func (c *Cache) lookupCacheForDigests(
 	}
 
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
+	// Capture the requirement generation inside the same critical section as
+	// the selection-time subset check (see lookupCacheForRequest).
+	requiredGenAtSelection := hitShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, false, err
@@ -4679,7 +4785,22 @@ func (c *Cache) lookupCacheForDigests(
 
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		if errors.Is(err, errAttachRefusedByProducerRelease) {
+			// The producing session's release failed the attachment; this
+			// reader is innocent, so convert to a miss keeping the
+			// recorded session edge (see lookupCacheForRequest).
+			return nil, false, nil
+		}
 		return nil, false, err
+	}
+	if c.testBeforeServeRequirementRecheck != nil {
+		c.testBeforeServeRequirementRecheck(hitShared)
+	}
+	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+		// The required set grew after this hit was selected; fall through
+		// to the singleflight, keeping the recorded session edge (see
+		// lookupCacheForRequest).
+		return nil, false, nil
 	}
 	if c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
@@ -4884,6 +5005,52 @@ func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) 
 	oc.handoffHoldActive = false
 
 	return errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+}
+
+// rollbackPartialPublicationLocked expunges a freshly indexed result whose
+// publication failed inside the indexing critical section, before any
+// ownership existed. Without it the record would stay registered and
+// digest-indexed with a zero ownership count - selectable by lookups and
+// reachable by no collection path, since collection is only ever triggered
+// by a decrement - and the dependency edges added so far would retain their
+// children forever. It removes the record from the e-graph, unwinds the
+// partial dependency edges, collects any child that loses its last
+// ownership unit, and returns the release hooks to run after the lock
+// drops, the failed result's own hook included - the same hooks the
+// attachment-failure path runs when it collects a failed publication.
+// Callers hold the egraphMu write lock.
+func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *sharedResult) ([]OnReleaseFunc, error) {
+	if res == nil || res.id == 0 {
+		return nil, nil
+	}
+	depIDs := make([]sharedResultID, 0, len(res.deps))
+	for depID := range res.deps {
+		depIDs = append(depIDs, depID)
+	}
+	c.removeResultFromEgraphLocked(ctx, res)
+	res.deps = nil
+	res.depParents = nil
+
+	var (
+		queue []*sharedResult
+		rerr  error
+	)
+	for _, depID := range depIDs {
+		c.forgetDependencyEdgeLocked(res.id, depID)
+		depRes := c.resultsByID[depID]
+		if depRes == nil {
+			continue
+		}
+		var err error
+		queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
+		rerr = errors.Join(rerr, err)
+	}
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	rerr = errors.Join(rerr, collectErr)
+	if res.onRelease != nil {
+		collectReleases = append([]OnReleaseFunc{res.onRelease}, collectReleases...)
+	}
+	return collectReleases, rerr
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -5157,6 +5324,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 
+	if c.testBeforePublicationIndex != nil {
+		c.testBeforePublicationIndex(oc)
+	}
 	c.egraphMu.Lock()
 	resultCall := oc.res.loadResultCall()
 	indexErr := c.indexWaitResultInEgraphLocked(
@@ -5174,16 +5344,30 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		hasResultTerm,
 		oc.res,
 	)
-	if indexErr != nil {
+	// Indexing registers the fresh result and makes it lookup-visible, but
+	// nothing owns it until the handoff hold below, so a failure anywhere in
+	// this critical section must roll the partial publication back before
+	// unlocking; the error itself still propagates loudly. Adopted results
+	// (resWasCacheBacked) are owned by others and pinned by the handoff hold
+	// taken at adoption, so they are never rolled back.
+	failPartialPublication := func(cause error) error {
+		if resWasCacheBacked {
+			c.egraphMu.Unlock()
+			return cause
+		}
+		cleanupCtx := context.WithoutCancel(ctx)
+		releases, rollbackErr := c.rollbackPartialPublicationLocked(cleanupCtx, oc.res)
 		c.egraphMu.Unlock()
-		return indexErr
+		return errors.Join(cause, rollbackErr, runOnReleaseFuncs(cleanupCtx, releases))
+	}
+	if indexErr != nil {
+		return failPartialPublication(indexErr)
 	}
 	for _, dep := range resultCallDeps {
 		depID := dep.resultID
 		depRes := c.resultsByID[depID]
 		if depRes == nil {
-			c.egraphMu.Unlock()
-			return fmt.Errorf("retain result call ref %d: missing cached result", depID)
+			return failPartialPublication(fmt.Errorf("retain result call ref %d: missing cached result", depID))
 		}
 		if oc.res.deps == nil {
 			oc.res.deps = make(map[sharedResultID]struct{})
@@ -5196,9 +5380,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
-	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
-		c.egraphMu.Unlock()
-		return err
+	if _, err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
+		return failPartialPublication(err)
 	}
 	// The cache-backed path already took the handoff hold when it adopted the
 	// canonical result above; only fresh results take it here.
@@ -5224,7 +5407,17 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
 		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-		finishAttachDeps(attachErr)
+		// Attachment runs under the publishing session, so a session-release
+		// refusal in the hook's own error chain can only be that session's
+		// release. Latch the classified form on the barrier for parked
+		// readers; the classification reads the hook error alone, so the
+		// joined cleanup errors cannot reclassify a genuine failure. The
+		// publishing invocation keeps the unclassified attachment error.
+		barrierErr := attachErr
+		if errors.Is(err, ErrCacheSessionReleased) {
+			barrierErr = fmt.Errorf("%w: %w", errAttachRefusedByProducerRelease, attachErr)
+		}
+		finishAttachDeps(barrierErr)
 		return attachErr
 	}
 	if err := c.syncResultSnapshotLeases(ctx, oc.res); err != nil {
@@ -5332,7 +5525,7 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 			continue
 		}
 		seen[attachedDepRes.id] = dep.Owned
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
+		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
 			return err
 		}
 		// Owned deps inherit the parent's install span — failures in their

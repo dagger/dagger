@@ -163,7 +163,24 @@ Instead, `selectLookupCandidateForSessionLocked` filters candidates by checking:
 Only a candidate whose required handle set is a subset of the session's loaded
 handles is eligible.
 
-This is the actual enforcement point of the core rule.
+This is the primary enforcement point of the core rule, but not the only one.
+
+A result's stored `requiredSessionResources` can grow after a hit was
+selected: an attached dep can carry requirements while the result's
+dependency attachment is still in flight, and `AddExplicitDependency` can add
+a requirement-carrying retention edge after the result settled (module
+typedefs retention does this when the loaded module's closure includes a
+secret or socket handle; the growth also cascades to results that already
+depend on the parent). Every change to the stored set bumps a per-result
+generation counter inside the same `egraphMu` critical section.
+
+Serve paths therefore re-validate before handing the value out
+(`sessionStillSatisfiesResourceRequirements`): they capture the generation
+inside the selection critical section, and at serve time compare it with one
+atomic load. If it is unchanged, the set the selection check validated is the
+set being served and no lock is taken; if it changed, the full locked subset
+check runs again. A stale request or digest hit converts to a miss and falls
+through to execution; a stale result-ID load is refused.
 
 ## Concrete Resource Categories Today
 

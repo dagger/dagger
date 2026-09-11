@@ -356,9 +356,41 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), res.onRelease)
 		}
 
-		for _, res := range c.resultsByID {
-			if err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
+		// recomputeRequiredSessionResourcesLocked reads each dep's STORED
+		// set, so a result must be recomputed after all of its deps or a
+		// parent visited first inherits nothing from them.
+		const (
+			requiredRecomputePending = iota + 1
+			requiredRecomputeDone
+		)
+		recomputeState := make(map[sharedResultID]int, len(c.resultsByID))
+		var recomputeDepsFirst func(res *sharedResult) error
+		recomputeDepsFirst = func(res *sharedResult) error {
+			switch recomputeState[res.id] {
+			case requiredRecomputeDone:
+				return nil
+			case requiredRecomputePending:
+				return fmt.Errorf("recompute imported required session resources: dependency cycle through result %d", res.id)
+			}
+			recomputeState[res.id] = requiredRecomputePending
+			for depID := range res.deps {
+				dep := c.resultsByID[depID]
+				if dep == nil {
+					return fmt.Errorf("recompute imported required session resources: missing dep result %d of result %d", depID, res.id)
+				}
+				if err := recomputeDepsFirst(dep); err != nil {
+					return err
+				}
+			}
+			if _, err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
 				return fmt.Errorf("recompute imported required session resources for result %d: %w", res.id, err)
+			}
+			recomputeState[res.id] = requiredRecomputeDone
+			return nil
+		}
+		for _, res := range c.resultsByID {
+			if err := recomputeDepsFirst(res); err != nil {
+				return err
 			}
 		}
 
@@ -418,15 +450,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
 					res.objClass = objDecoded.ObjectType()
 				}
-				decodedShared := decoded.cacheSharedResult()
-				if decodedShared != nil {
-					res.sessionResourceHandle = decodedShared.sessionResourceHandle
-					if decodedShared.requiredSessionResources != nil {
-						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-					} else if decodedShared.sessionResourceHandle == "" {
-						res.requiredSessionResources = nil
-					}
-				}
+				// The install must not touch the session-resource fields:
+				// the decoded shell only knows the row's own handle (the
+				// same envelope value the import row was built from), and
+				// requiredSessionResources belongs to import/publication
+				// and is read under egraphMu, not payloadMu.
 				res.persistedEnvelope = nil
 			}
 			res.payloadMu.Unlock()
@@ -731,15 +759,11 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
 					res.objClass = objDecoded.ObjectType()
 				}
-				decodedShared := decoded.cacheSharedResult()
-				if decodedShared != nil {
-					res.sessionResourceHandle = decodedShared.sessionResourceHandle
-					if decodedShared.requiredSessionResources != nil {
-						res.requiredSessionResources = decodedShared.requiredSessionResources.Copy()
-					} else if decodedShared.sessionResourceHandle == "" {
-						res.requiredSessionResources = nil
-					}
-				}
+				// The install must not touch the session-resource fields:
+				// the decoded shell only knows the row's own handle, so
+				// copying its requiredSessionResources dropped a non-leaf's
+				// dependency-derived requirements, and the write raced the
+				// lookup filter, which reads the field under egraphMu.
 				res.persistedEnvelope = nil
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}
