@@ -12877,6 +12877,11 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The current UTC time in RFC3339 format. Never cached.
+    pub async fn current_timestamp(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("currentTimestamp");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The TypeDef representations of the objects currently being served in the session.
     ///
     /// # Arguments

@@ -13180,9 +13180,10 @@ func (r *Port) AsNode() Node {
 type Query struct {
 	query *querybuilder.Selection
 
-	defaultPlatform *Platform
-	id              *ID
-	version         *string
+	currentTimestamp *string
+	defaultPlatform  *Platform
+	id               *ID
+	version          *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -13333,6 +13334,16 @@ func (r *Query) CurrentNode() Node {
 	return &NodeClient{
 		query: q,
 	}
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	q := r.query.Select("currentTimestamp")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs

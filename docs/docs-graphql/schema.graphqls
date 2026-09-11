@@ -4741,6 +4741,9 @@ type Query implements Node {
   """
   currentNode: Node!
 
+  """The current UTC time in RFC3339 format. Never cached."""
+  currentTimestamp: String!
+
   """
   The TypeDef representations of the objects currently being served in the session.
   """
