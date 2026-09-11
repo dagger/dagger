@@ -18115,6 +18115,19 @@ func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit
 	}
 }
 
+// Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+//
+// Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+//
+// This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+func (r *WorkspaceGit) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // The checked-out HEAD of this workspace.
 func (r *WorkspaceGit) Head() *GitRef {
 	q := r.query.Select("head")

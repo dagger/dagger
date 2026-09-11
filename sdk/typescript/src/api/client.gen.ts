@@ -16739,6 +16739,18 @@ export class WorkspaceGit extends BaseClient {
   }
 
   /**
+   * Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+   *
+   * Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+   *
+   * This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+   */
+  directory = (): Directory => {
+    const ctx = this._ctx.select("directory")
+    return new Directory(ctx)
+  }
+
+  /**
    * The checked-out HEAD of this workspace.
    */
   head = (): GitRef => {
