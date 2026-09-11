@@ -61,6 +61,7 @@ clients = [
 		require.NoError(t, err)
 		contents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
-		require.Equal(t, config+"\n", string(contents))
+		// The blank line before the removed table goes with it.
+		require.Equal(t, config, string(contents))
 	})
 }

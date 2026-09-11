@@ -73,7 +73,41 @@ func TestMigrateConfigBytes(t *testing.T) {
 		original := "# workspace\nignore = [\n  'node_modules', # keep\n]\nfuture = true\n\n[modules.dagger-go-sdk]\nsource = './sdk' # keep\npin = 'abc'\n\n[modules.dagger-go-sdk.as-sdk]\nname = 'golang'\n"
 		updated, err := MigrateConfigBytes([]byte(original), ".")
 		require.NoError(t, err)
-		require.Equal(t, strings.Replace(original, "[modules.dagger-go-sdk.as-sdk]\nname = 'golang'\n", "", 1)+"\n[sdks.golang]\nmodule = \"dagger-go-sdk\"\n", string(updated))
+		require.Equal(t, strings.Replace(original, "[modules.dagger-go-sdk.as-sdk]\nname = 'golang'\n", "", 1)+"[sdks.golang]\nmodule = \"dagger-go-sdk\"\n", string(updated))
+		again, err := MigrateConfigBytes(updated, ".")
+		require.NoError(t, err)
+		require.Equal(t, updated, again)
+	})
+
+	t.Run("removed SDK sections take their comment and leave one blank line", func(t *testing.T) {
+		original := `[modules.dagger-go-sdk]
+source = './sdk'
+
+# Legacy SDK roles.
+[modules.dagger-go-sdk.as-sdk]
+name = 'go'
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = 'a'
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = 'b'
+
+[modules.editor]
+source = './editor'
+`
+		updated, err := MigrateConfigBytes([]byte(original), ".")
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(string(updated), `[modules.dagger-go-sdk]
+source = './sdk'
+
+[modules.editor]
+source = './editor'
+
+[sdks.go]
+`), string(updated))
+		require.NotContains(t, string(updated), "\n\n\n")
+		require.False(t, strings.HasSuffix(string(updated), "\n\n"))
 		again, err := MigrateConfigBytes(updated, ".")
 		require.NoError(t, err)
 		require.Equal(t, updated, again)

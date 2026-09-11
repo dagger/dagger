@@ -263,12 +263,75 @@ func (doc *configText) remove(parts []string) ([]byte, error) {
 	for i := len(doc.statements) - 1; i >= 0; i-- {
 		stmt := doc.statements[i]
 		if configPathPrefix(stmt.path, parts) {
-			out = replaceConfigText(out, stmt.start, stmt.end, "")
+			floor := 0
+			if i > 0 {
+				floor = doc.statements[i-1].end
+			}
+			start := stmt.start
+			if stmt.table {
+				start = configAttachedCommentStart(out, floor, start)
+			}
+			start, end := configRemovalSpan(out, floor, start, stmt.end)
+			out = replaceConfigText(out, start, end, "")
 		} else if !stmt.table && configPathPrefix(parts, stmt.path) {
 			return doc.editInline(stmt, parts[len(stmt.path):], nil, true)
 		}
 	}
 	return out, nil
+}
+
+// configRemovalSpan widens a removed statement over the blank lines around it.
+// Without this, each removed table leaves its separator behind, so removing
+// several tables leaves a run of blank lines. Blank lines on both sides become
+// one run; blank lines at either end of the document are dropped. floor is the
+// end of the preceding statement, and data after end may already be edited.
+func configRemovalSpan(data []byte, floor, start, end int) (int, int) {
+	before := start
+	for before > floor {
+		line := configLineStart(data, before-1)
+		if line < floor || len(bytes.TrimSpace(data[line:before])) != 0 {
+			break
+		}
+		before = line
+	}
+	after := end
+	for after < len(data) {
+		next := len(data)
+		if i := bytes.IndexByte(data[after:], '\n'); i >= 0 {
+			next = after + i + 1
+		}
+		if len(bytes.TrimSpace(data[after:next])) != 0 {
+			break
+		}
+		after = next
+	}
+	switch {
+	case before == 0 || after == len(data):
+		return before, after
+	case before < start && after > end:
+		return before, end
+	}
+	return start, end
+}
+
+// configAttachedCommentStart returns the start of the comment block directly
+// above a table heading, with no blank line between them. That block
+// documents the table, so it goes when the table goes. A block at the top of
+// the file stays, because it usually documents the whole file.
+func configAttachedCommentStart(data []byte, floor, start int) int {
+	block := start
+	for block > floor {
+		line := configLineStart(data, block-1)
+		text := bytes.TrimSpace(data[line:block])
+		if line < floor || len(text) == 0 || text[0] != '#' {
+			break
+		}
+		block = line
+	}
+	if len(bytes.TrimSpace(data[:block])) == 0 {
+		return start
+	}
+	return block
 }
 
 // Inline tables are edited through a temporary table body. Only the resulting
