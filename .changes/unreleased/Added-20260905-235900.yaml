@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  Add currentTimestamp to query the current UTC time in RFC3339 format without
+  caching. API consumers can pass the returned timestamp as an explicit date
+  when creating workspace commits.
+time: 2026-09-05T23:59:00Z
+custom:
+  Author: vito
+  PR: ""

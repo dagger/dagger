@@ -13113,6 +13113,7 @@ export class Port extends BaseClient {
  */
 export class Client extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -13122,12 +13123,14 @@ export class Client extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _currentTimestamp?: string,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -13244,6 +13247,17 @@ export class Client extends BaseClient {
   currentNode = (): Node => {
     const ctx = this._ctx.select("currentNode")
     return new _NodeClient(ctx)
+  }
+
+  /**
+   * The current UTC time in RFC3339 format. Never cached.
+   */
+  currentTimestamp = async (): Promise<string> => {
+    const ctx = this._ctx.select("currentTimestamp")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

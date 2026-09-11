@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"time"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
@@ -99,6 +100,11 @@ func (s *querySchema) Install(srv *dagql.Server) {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
+
+		dagql.Func("currentTimestamp", s.currentTimestamp).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Returns the live current time").
+			Doc(`The current UTC time in RFC3339 format. Never cached.`),
 	}.Install(srv)
 }
 
@@ -123,6 +129,10 @@ func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pip
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
 	return engine.FullVersion(), nil
+}
+
+func (s *querySchema) currentTimestamp(_ context.Context, _ *core.Query, args struct{}) (string, error) {
+	return time.Now().UTC().Format(time.RFC3339), nil
 }
 
 func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
