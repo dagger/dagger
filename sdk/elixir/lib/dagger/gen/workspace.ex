@@ -637,6 +637,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with an installed module selected as its entrypoint.
+
+  Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+  """
+  @spec with_entrypoint(t(), String.t()) :: Dagger.Workspace.t()
+  def with_entrypoint(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("withEntrypoint") |> QB.put_arg("name", name)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a file added or replaced, without mutating the source.
   """
   @spec with_file(t(), String.t(), Dagger.File.t(), [{:permissions, integer() | nil}]) ::
@@ -964,6 +980,20 @@ defmodule Dagger.Workspace do
   def without_directory(%__MODULE__{} = workspace, path) do
     query_builder =
       workspace.query_builder |> QB.select("withoutDirectory") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with no module selected as its entrypoint.
+  """
+  @spec without_entrypoint(t()) :: Dagger.Workspace.t()
+  def without_entrypoint(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutEntrypoint")
 
     %Dagger.Workspace{
       query_builder: query_builder,

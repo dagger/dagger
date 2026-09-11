@@ -17135,6 +17135,18 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
+// Return this workspace with an installed module selected as its entrypoint.
+//
+// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+func (r *Workspace) WithEntrypoint(name string) *Workspace {
+	q := r.query.Select("withEntrypoint")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithFileOpts contains options for Workspace.WithFile
 type WorkspaceWithFileOpts struct {
 	// Permissions of the added file. Defaults to the source file permissions.
@@ -17526,6 +17538,15 @@ func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfi
 func (r *Workspace) WithoutDirectory(path string) *Workspace {
 	q := r.query.Select("withoutDirectory")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with no module selected as its entrypoint.
+func (r *Workspace) WithoutEntrypoint() *Workspace {
+	q := r.query.Select("withoutEntrypoint")
 
 	return &Workspace{
 		query: q,

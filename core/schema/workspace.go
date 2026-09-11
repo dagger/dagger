@@ -265,6 +265,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with an installed module selected as its entrypoint.",
+				"Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.").
+			Args(
+				dagql.Arg("name").Doc("Exact installed module name."),
+			),
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with no module selected as its entrypoint."),
 		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",

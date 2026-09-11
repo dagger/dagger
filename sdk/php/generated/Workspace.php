@@ -509,6 +509,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with an installed module selected as its entrypoint.
+     *
+     * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+     */
+    public function withEntrypoint(string $name): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEntrypoint');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a file added or replaced, without mutating the source.
      */
     public function withFile(string $path, File $source, ?int $permissions = null): Workspace
@@ -773,6 +785,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with no module selected as its entrypoint.
+     */
+    public function withoutEntrypoint(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutEntrypoint');
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

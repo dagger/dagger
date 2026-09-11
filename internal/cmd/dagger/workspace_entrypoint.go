@@ -1,10 +1,8 @@
 package daggercmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
@@ -76,41 +74,8 @@ func init() {
 }
 
 func writeWorkspaceEntrypoint(ctx context.Context, ws *dagger.Workspace, name string) error {
-	configFile, err := ws.ConfigFile(ctx)
-	if err != nil {
-		return err
+	if name == "" {
+		return ws.WithoutEntrypoint().Export(ctx)
 	}
-	if configFile == "" {
-		return workspace.SetEntrypoint(nil, ".", name)
-	}
-	cwd, err := ws.Cwd(ctx)
-	if err != nil {
-		return err
-	}
-	configFile, err = workspaceConfigRootPathFromCwd(configFile, cwd)
-	if err != nil {
-		return err
-	}
-	// ConfigRead can include user or environment overlays. Read the selected
-	// file for mutation so those overlays are never copied into base storage.
-	root := ws.WithWorkdir(".")
-	data, err := root.File(configFile).Contents(ctx)
-	if err != nil {
-		return err
-	}
-	cfg, err := workspace.ParseConfig([]byte(data))
-	if err != nil {
-		return err
-	}
-	if err := workspace.SetEntrypoint(cfg, filepath.Dir(configFile), name); err != nil {
-		return err
-	}
-	updated, err := workspace.UpdateConfigBytes([]byte(data), cfg)
-	if err != nil {
-		return err
-	}
-	if bytes.Equal([]byte(data), updated) {
-		return nil
-	}
-	return root.WithNewFile(configFile, string(updated)).Export(ctx)
+	return ws.WithEntrypoint(name).Export(ctx)
 }

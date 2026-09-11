@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -123,4 +124,30 @@ func (WorkspaceSuite) TestWorkspaceEntrypointWithoutConfig(ctx context.Context, 
 	require.Error(t, err, "clearing no selection must not create a config")
 	_, err = base.With(daggerExec("ws", "entrypoint", "missing")).Sync(ctx)
 	require.Error(t, err)
+}
+
+func (WorkspaceSuite) TestWorkspaceEntrypointAPI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := c.Directory().
+		WithNewFile("dagger.toml", "[modules.a]\nsource = './a'\nentrypoint = true\n[modules.b]\nsource = './b'\n").
+		AsWorkspace()
+	for _, tc := range []struct {
+		name string
+		ws   *dagger.Workspace
+		want string
+	}{
+		{"select", ws.WithEntrypoint("b"), "b"},
+		{"clear", ws.WithoutEntrypoint(), ""},
+		{"unchanged", ws.WithEntrypoint("a"), "a"},
+	} {
+		data, err := tc.ws.ConfigRead(ctx)
+		require.NoError(t, err, tc.name)
+		cfg, err := workspace.ParseConfig([]byte(data))
+		require.NoError(t, err, tc.name)
+		name, err := workspace.EntrypointName(cfg)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, name, tc.name)
+	}
+	_, err := ws.WithEntrypoint("missing").ConfigRead(ctx)
+	require.ErrorContains(t, err, `module "missing" is not installed`)
 }

@@ -6065,6 +6065,16 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with an installed module selected as its entrypoint.
+
+  Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+  """
+  withEntrypoint(
+    """Exact installed module name."""
+    name: String!
+  ): Workspace!
+
+  """
   Return this workspace with a file added or replaced, without mutating the source.
   """
   withFile(
@@ -6324,6 +6334,9 @@ type Workspace implements Node {
     """
     path: String!
   ): Workspace!
+
+  """Return this workspace with no module selected as its entrypoint."""
+  withoutEntrypoint: Workspace!
 
   """
   Return this workspace with a file removed, without mutating the source.

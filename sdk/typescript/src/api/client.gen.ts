@@ -15801,6 +15801,17 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with an installed module selected as its entrypoint.
+   *
+   * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+   * @param name Exact installed module name.
+   */
+  withEntrypoint = (name: string): Workspace => {
+    const ctx = this._ctx.select("withEntrypoint", { name })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a file added or replaced, without mutating the source.
    * @param path Destination path. Relative paths resolve from the workspace cwd.
    * @param source File to add.
@@ -16023,6 +16034,14 @@ export class Workspace extends BaseClient {
    */
   withoutDirectory = (path: string): Workspace => {
     const ctx = this._ctx.select("withoutDirectory", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with no module selected as its entrypoint.
+   */
+  withoutEntrypoint = (): Workspace => {
+    const ctx = this._ctx.select("withoutEntrypoint")
     return new Workspace(ctx)
   }
 

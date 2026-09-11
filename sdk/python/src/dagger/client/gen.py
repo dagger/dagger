@@ -16039,6 +16039,24 @@ class Workspace(Type):
         _ctx = self._select("withDirectory", _args)
         return Workspace(_ctx)
 
+    def with_entrypoint(self, name: str) -> Self:
+        """Return this workspace with an installed module selected as its
+        entrypoint.
+
+        Every other entrypoint selection is cleared. Entrypoints live in the
+        base workspace config.
+
+        Parameters
+        ----------
+        name:
+            Exact installed module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withEntrypoint", _args)
+        return Workspace(_ctx)
+
     def with_file(
         self,
         path: str,
@@ -16469,6 +16487,12 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutDirectory", _args)
+        return Workspace(_ctx)
+
+    def without_entrypoint(self) -> Self:
+        """Return this workspace with no module selected as its entrypoint."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutEntrypoint", _args)
         return Workspace(_ctx)
 
     def without_file(self, path: str) -> Self:
