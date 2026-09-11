@@ -117,10 +117,10 @@ source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
 
 [modules.dagger-dang-sdk]
-source = "github.com/dagger/dang-sdk"
+source = "github.com/dagger/dang-sdk@v0.1"
 
 [modules.dagger-go-sdk]
-source = "github.com/dagger/go-sdk"
+source = "github.com/dagger/go-sdk@v0.1"
 
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
