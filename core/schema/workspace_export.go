@@ -37,8 +37,8 @@ func (s *workspaceSchema) exportDirectory(ctx context.Context, source dagql.Obje
 	if base.Self() == nil {
 		return result, fmt.Errorf("workspace has no prepared checkout integration")
 	}
-	var repo dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "__commitBase"}); err != nil {
+	repo, err := workspaceGitCheckout(ctx, srv, source)
+	if err != nil {
 		return result, err
 	}
 	var head dagql.ObjectResult[*core.GitRef]

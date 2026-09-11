@@ -193,8 +193,8 @@ func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql
 	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
 		return nil, nil, head, fmt.Errorf("pulling requires frozen workspaces; call snapshot first")
 	}
-	var base dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &base, dagql.Selector{Field: "__commitBase"}); err != nil {
+	base, err := workspaceGitCheckout(ctx, srv, parent)
+	if err != nil {
 		return nil, nil, head, err
 	}
 	if err := srv.Select(ctx, source, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
