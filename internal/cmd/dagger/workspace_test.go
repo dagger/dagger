@@ -300,10 +300,10 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	for _, name := range []string{
 		"check",
 		"generate",
+		"init",
 		"install",
 		"module",
 		"settings",
-		"setup",
 		"uninstall",
 		"update",
 		"up",
@@ -335,6 +335,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"query",
 		"run",
 		"session",
+		"setup",
 		"installed",
 		"search",
 		"activity",
@@ -342,7 +343,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"check", "generate", "setup", "up"} {
+	for _, leaf := range []string{"check", "generate", "init", "up"} {
 		for _, parent := range []string{"api", "cloud", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}

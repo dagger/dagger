@@ -956,6 +956,18 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 
 type changesetDisposition int
 
+// changesetPromptCommandKey carries a replay command only for the apply form.
+// Other changeset callers keep their existing prompt description.
+type changesetPromptCommandKey struct{}
+
+func changesetPromptDescription(ctx context.Context, description string) string {
+	command, _ := ctx.Value(changesetPromptCommandKey{}).(string)
+	if command == "" {
+		return description
+	}
+	return command + "\n\n" + description
+}
+
 const (
 	changesetDispositionPrompt changesetDisposition = iota
 	changesetDispositionApply
@@ -1041,7 +1053,7 @@ func handleChangesetResponseWithApply(
 			huh.NewGroup(
 				idtui.NewExplicitConfirm("Apply", "Discard", &confirm).
 					Title("Apply changes?").
-					Description(description),
+					Description(changesetPromptDescription(ctx, description)),
 			),
 		)
 		if err := Frontend.HandleForm(ctx, form); err != nil {

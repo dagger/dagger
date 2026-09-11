@@ -264,11 +264,30 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Plan the explicit migration needed for the current workspace.
      *
+     * Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+     *
      * The returned plan has an empty changeset and no steps when no migration is needed.
      */
-    public function migrate(): WorkspaceMigration
+    public function migrate(?array $modules = []): WorkspaceMigration
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
+        if (null !== $modules) {
+        $innerQueryBuilder->setArgument('modules', $modules);
+        }
+        return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+     *
+     * Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+     */
+    public function migrateModule(?string $path = '.'): WorkspaceMigration
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrateModule');
+        if (null !== $path) {
+        $innerQueryBuilder->setArgument('path', $path);
+        }
         return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -525,6 +544,17 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $settings) {
         $innerQueryBuilder->setArgument('settings', $settings);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a native configuration, without changing an existing configuration.
+     *
+     * Fail if legacy configuration needs workspace migration.
+     */
+    public function withInitialized(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitialized');
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

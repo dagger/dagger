@@ -26,12 +26,12 @@ dagger [options] [subcommand | file...]
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
+* [dagger init](#dagger-init)	 - Initialize a workspace and show the next commands
 * [dagger install](#dagger-install)	 - Install a module into your workspace
 * [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings
-* [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
@@ -393,13 +393,14 @@ Manage Dagger Cloud
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
-* [dagger cloud check](#dagger-cloud-check)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 * [dagger cloud integration](#dagger-cloud-integration)	 - Manage Dagger Cloud integration providers
 * [dagger cloud login](#dagger-cloud-login)	 - Log in to Dagger Cloud
 * [dagger cloud logout](#dagger-cloud-logout)	 - Log out from Dagger Cloud
 * [dagger cloud logs](#dagger-cloud-logs)	 - Print the full logs for a Dagger Cloud trace, or a check/test/span within it
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 * [dagger cloud rerun](#dagger-cloud-rerun)	 - Re-run checks on Dagger Cloud for the current commit
+* [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
 
 ## dagger cloud billing
 
@@ -471,12 +472,12 @@ dagger cloud billing plans
 
 * [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
 
-## dagger cloud check
+## dagger cloud checks
 
 Manage Cloud-side automated checks for this workspace
 
 ```
-dagger cloud check
+dagger cloud checks
 ```
 
 ### Options inherited from parent commands
@@ -489,17 +490,17 @@ dagger cloud check
 ### SEE ALSO
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
-* [dagger cloud check list](#dagger-cloud-check-list)	 - List Cloud-side checks for this workspace
-* [dagger cloud check off](#dagger-cloud-check-off)	 - Disable a Cloud-side check (by name; defaults to the workspace remote's default check)
-* [dagger cloud check on](#dagger-cloud-check-on)	 - Enable a Cloud-side check (by name; defaults to the workspace remote's default check)
-* [dagger cloud check status](#dagger-cloud-check-status)	 - Show the status of a Cloud-side check (by name; defaults to the workspace remote's default check)
+* [dagger cloud checks list](#dagger-cloud-checks-list)	 - List Cloud-side checks for this workspace
+* [dagger cloud checks off](#dagger-cloud-checks-off)	 - Disable a Cloud-side check (by name; defaults to the workspace remote's default check)
+* [dagger cloud checks on](#dagger-cloud-checks-on)	 - Enable a Cloud-side check (by name; defaults to the workspace remote's default check)
+* [dagger cloud checks status](#dagger-cloud-checks-status)	 - Show the status of a Cloud-side check (by name; defaults to the workspace remote's default check)
 
-## dagger cloud check list
+## dagger cloud checks list
 
 List Cloud-side checks for this workspace
 
 ```
-dagger cloud check list [version]
+dagger cloud checks list [version]
 ```
 
 ### Options
@@ -517,14 +518,14 @@ dagger cloud check list [version]
 
 ### SEE ALSO
 
-* [dagger cloud check](#dagger-cloud-check)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 
-## dagger cloud check off
+## dagger cloud checks off
 
 Disable a Cloud-side check (by name; defaults to the workspace remote's default check)
 
 ```
-dagger cloud check off [name]
+dagger cloud checks off [name]
 ```
 
 ### Options inherited from parent commands
@@ -536,14 +537,14 @@ dagger cloud check off [name]
 
 ### SEE ALSO
 
-* [dagger cloud check](#dagger-cloud-check)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 
-## dagger cloud check on
+## dagger cloud checks on
 
 Enable a Cloud-side check (by name; defaults to the workspace remote's default check)
 
 ```
-dagger cloud check on [name]
+dagger cloud checks on [name]
 ```
 
 ### Options inherited from parent commands
@@ -555,14 +556,14 @@ dagger cloud check on [name]
 
 ### SEE ALSO
 
-* [dagger cloud check](#dagger-cloud-check)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 
-## dagger cloud check status
+## dagger cloud checks status
 
 Show the status of a Cloud-side check (by name; defaults to the workspace remote's default check)
 
 ```
-dagger cloud check status [name]
+dagger cloud checks status [name]
 ```
 
 ### Options inherited from parent commands
@@ -574,7 +575,7 @@ dagger cloud check status [name]
 
 ### SEE ALSO
 
-* [dagger cloud check](#dagger-cloud-check)	 - Manage Cloud-side automated checks for this workspace
+* [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 
 ## dagger cloud integration
 
@@ -888,6 +889,38 @@ dagger cloud rerun [--check NAME ...] [--failed | --all]
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 
+## dagger cloud signup
+
+Create or select a Dagger Cloud account and organization
+
+### Synopsis
+
+Create or select a Dagger Cloud account and organization.
+
+Use the same account and organization flow as dagger cloud login.
+If human action is required, non-interactive mode returns instructions
+without opening a browser or waiting for input.
+
+```
+dagger cloud signup [options] [org]
+```
+
+### Options
+
+```
+      --switch-account   Choose a different Dagger Cloud account
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+
 ## dagger engine
 
 How to select the engine that runs your workflows
@@ -996,6 +1029,45 @@ dagger generate [options] [pattern...]
   -l, --list           List available generators
       --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger init
+
+Initialize a workspace and show the next commands
+
+### Synopsis
+
+Initialize a workspace and show the next commands.
+
+Use an existing dagger.toml when present. If a legacy dagger.json has
+workspace settings, stop and direct the user to dagger workspace migrate.
+Otherwise, create an empty dagger.toml. Existing module files remain unchanged.
+
+Run this command in a local Git repository.
+Run this command again to inspect the current initialization state.
+
+```
+dagger init
 ```
 
 ### Options inherited from parent commands
@@ -1245,6 +1317,7 @@ dagger module
 * [dagger module init](#dagger-module-init)	 - Initialize a new module for development with an SDK
 * [dagger module install](#dagger-module-install)	 - Install a module into your workspace
 * [dagger module list](#dagger-module-list)	 - List installed modules
+* [dagger module migrate](#dagger-module-migrate)	 - Migrate one local module in place
 * [dagger module recommend](#dagger-module-recommend)	 - Find recommended modules and select which modules to install
 * [dagger module search](#dagger-module-search)	 - Search for modules you can install
 * [dagger module settings](#dagger-module-settings)	 - Get, set, or unset module settings
@@ -1579,6 +1652,53 @@ dagger module list [flags]
 
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 
+## dagger module migrate
+
+Migrate one local module in place
+
+### Synopsis
+
+Migrate one local dagger.json to dagger-module.toml in place.
+
+PATH defaults to the workspace current directory. Relative paths start there;
+absolute paths start at the workspace root. A dagger.toml is not required.
+If one exists, migration also registers the module's SDK scope. Otherwise,
+only the requested module is converted; no workspace config is created.
+Configurations with workspace fields require workspace migration.
+
+Review module and SDK configuration changes together. Use --auto-apply to apply
+without a prompt, or --no-apply to preview without changing files.
+
+```
+dagger module migrate [PATH] [flags]
+```
+
+### Options
+
+```
+      --no-apply   Preview migration without changing files
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
+
 ## dagger module recommend
 
 Find recommended modules and select which modules to install
@@ -1589,7 +1709,8 @@ Find modules for the current workspace and select which modules to install.
 Already installed modules are skipped.
 
 Use --auto-apply to install all recommended modules without a prompt.
-Without --auto-apply, installation is skipped in non-interactive mode.
+Without --auto-apply, print recommendations and install commands in
+non-interactive mode.
 
 ```
 dagger module recommend [flags]
@@ -2016,60 +2137,6 @@ dagger settings [module] [key] [value...]
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
-## dagger setup
-
-Ensure Dagger is properly set up and operational in the workspace
-
-### Synopsis
-
-Ensure Dagger is properly set up and operational in the workspace.
-
-Starts with a Cloud login prompt, then takes one of two paths:
-
-  • Workspace migrate    — if a legacy dagger.json project is detected,
-                           convert it to the current workspace format.
-  • Recommended modules  — otherwise, suggest modules to install based
-                           on files present in the workspace.
-
-Migration and recommendations never run together: after applying a
-migration, run setup again to see recommendations for the migrated
-workspace. Declining the migration falls through to recommendations.
-
-Run from a module subdirectory (a dagger.json below the repository
-root), the migrate step converts just that module to dagger-module.toml:
-no workspace is created and module recommendations are skipped. If that
-config lists toolchains, they are installed into a dagger.toml at the
-repository root — never a nested one. A subdirectory config with a
-blueprint is left as legacy with a warning.
-
-Toolchains of a module with an SDK are also added as dependencies in the
-migrated dagger-module.toml, since 0.21 exposed toolchains to module code
-the same way as dependencies. Remove any the module code does not use.
-
-Idempotent: safe to run anytime. No-ops what's already in good shape.
-Each step can be skipped at the prompt. With --auto-apply, workspace
-changes and module recommendations are applied without prompting. Cloud
-login is skipped in non-interactive mode; run dagger login separately.
-
-```
-dagger setup
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
 ## dagger shell
 
 Open a terminal for a container or directory in your project
@@ -2303,6 +2370,7 @@ the source of truth.
 * [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
 * [dagger workspace grep](#dagger-workspace-grep)	 - Search file contents in the selected workspace
 * [dagger workspace ls](#dagger-workspace-ls)	 - List directories or files in the selected workspace
+* [dagger workspace migrate](#dagger-workspace-migrate)	 - Migrate the workspace and its installed local modules
 * [dagger workspace remote](#dagger-workspace-remote)	 - Print the selectable remote address for the current workspace
 * [dagger workspace remotes](#dagger-workspace-remotes)	 - List selectable remote workspace addresses
 * [dagger workspace root](#dagger-workspace-root)	 - Print the workspace root
@@ -2863,6 +2931,52 @@ dagger workspace ls [PATH...] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+
+## dagger workspace migrate
+
+Migrate the workspace and its installed local modules
+
+### Synopsis
+
+Plan migration of the workspace and its installed local modules.
+
+Other legacy module configurations are optional candidates. They start
+unselected and are skipped in non-interactive mode, including with --auto-apply.
+Use dagger module migrate PATH to select one explicitly.
+
+Review all selected changes together. Use --auto-apply to apply without a
+prompt, or --no-apply to preview without changing files.
+
+```
+dagger workspace migrate [flags]
+```
+
+### Options
+
+```
+      --module stringArray   Also migrate this module explicitly (repeatable)
+      --no-apply             Preview migration without changing files
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply         Automatically apply changes when an output is returned
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 

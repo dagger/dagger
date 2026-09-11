@@ -189,7 +189,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 		}
 	}
 
-	if len(compatWorkspace.Modules) == 0 && compatWorkspace.MainModule == nil {
+	if len(compatWorkspace.Modules) == 0 && compatWorkspace.MainModule == nil && !mustMigrateToWorkspaceConfig(cfg) {
 		return nil
 	}
 	return compatWorkspace
@@ -297,10 +297,16 @@ func mustMigrateToWorkspaceConfig(cfg *modules.ModuleConfig) bool {
 	if cfg == nil {
 		return false
 	}
-	if cfg.Blueprint != nil || len(cfg.Toolchains) > 0 {
+	if cfg.SDK == nil || cfg.Blueprint != nil || len(cfg.Toolchains) > 0 {
 		return true
 	}
-	return cfg.SDK != nil && !ModuleSourceAtRoot(cfg)
+	return !ModuleSourceAtRoot(cfg)
+}
+
+// RequiresWorkspaceMigration classifies the selected legacy project. It does
+// not select unrelated legacy module files discovered in the workspace.
+func RequiresWorkspaceMigration(cfg *modules.ModuleConfig) bool {
+	return mustMigrateToWorkspaceConfig(cfg)
 }
 
 // ModuleSourceAtRoot reports whether a legacy module config's source lives in

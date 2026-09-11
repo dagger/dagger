@@ -15448,6 +15448,18 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceMigrateOpts<'a> {
+    /// Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub modules: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceMigrateModuleOpts<'a> {
+    /// Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceSearchOpts<'a> {
     /// Allow the . pattern to match newlines in multiline mode.
     #[builder(setter(into, strip_option), default)]
@@ -16009,9 +16021,66 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Plan the explicit migration needed for the current workspace.
+    /// Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
     /// The returned plan has an empty changeset and no steps when no migration is needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn migrate(&self) -> WorkspaceMigration {
         let query = self.selection.select("migrate");
+        WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Plan the explicit migration needed for the current workspace.
+    /// Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+    /// The returned plan has an empty changeset and no steps when no migration is needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn migrate_opts<'a>(&self, opts: WorkspaceMigrateOpts<'a>) -> WorkspaceMigration {
+        let mut query = self.selection.select("migrate");
+        if let Some(modules) = opts.modules {
+            query = query.arg("modules", modules);
+        }
+        WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+    /// Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn migrate_module(&self) -> WorkspaceMigration {
+        let query = self.selection.select("migrateModule");
+        WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+    /// Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn migrate_module_opts<'a>(
+        &self,
+        opts: WorkspaceMigrateModuleOpts<'a>,
+    ) -> WorkspaceMigration {
+        let mut query = self.selection.select("migrateModule");
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
+        }
         WorkspaceMigration {
             proc: self.proc.clone(),
             selection: query,
@@ -16514,6 +16583,16 @@ impl Workspace {
         if let Some(settings) = opts.settings {
             query = query.arg("settings", settings);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a native configuration, without changing an existing configuration.
+    /// Fail if legacy configuration needs workspace migration.
+    pub fn with_initialized(&self) -> Workspace {
+        let query = self.selection.select("withInitialized");
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -17179,9 +17258,19 @@ impl WorkspaceMigration {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+    pub async fn config_file(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("configFile");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this WorkspaceMigration.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+    pub async fn module_candidates(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("moduleCandidates");
         query.execute(self.graphql_client.clone()).await
     }
     /// Logical migration steps, each identified by a stable code.

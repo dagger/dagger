@@ -17,22 +17,35 @@ A workspace separates two things that a legacy `dagger.json` used to hold at onc
 
 ## Run the migration
 
-You don't have to migrate right away. Dagger infers a workspace from an existing `dagger.json` and warns you, so your project keeps working. When you're ready:
+Dagger can still load legacy configuration. To migrate the selected workspace:
 
 ```shell
-dagger setup
+dagger workspace migrate
 ```
 
-`dagger setup` prompts before each step. Its migration step writes workspace fields into `dagger.toml` and converts module-shaped `dagger.json` files to `dagger-module.toml` in place. It never moves module files, and it touches only the root `dagger.json` plus the local dependencies and toolchains that file references. If anything needs manual attention, it writes `.dagger/migration-report.md`.
+`dagger setup` is deprecated and hidden from help. It only prints guidance to use `dagger init` for a new configuration or `dagger ws migrate` for an existing configuration. It does not change files.
 
-A few behaviors worth knowing:
+Workspace migration converts workspace fields to `dagger.toml` and migrates installed local modules and their local dependencies in place. Module configuration becomes `dagger-module.toml`. SDK registration, scope clients, SDK reference corrections, and removal of obsolete generated-file ignore rules are included in the same preview.
 
-- If your repo *is* a module, meaning the root `dagger.json` describes a module whose source lives at the repo root, migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module isn't installed into the workspace, so load it explicitly: `dagger -m . call --help`.
-- Run from a module subdirectory, migration converts just that module and creates no workspace. `dagger.json` becomes `dagger-module.toml` in place, along with any local dependencies it references. Module recommendations are skipped.
-- Migration never creates nested `dagger.toml` files. It installs toolchains listed in a subdirectory `dagger.json` into the workspace at the repository root and rebases their local source paths. It leaves a subdirectory `dagger.json` with a `blueprint` as legacy, with a warning.
-- When a `dagger.json` has both an `sdk` and `toolchains`, the toolchains are installed into `dagger.toml` **and** recorded as dependencies in the migrated `dagger-module.toml`. In 0.21 a module could call its toolchains from code the same way as dependencies (for example `dag.Go()`), so this keeps that code working. Remove any dependency the module code does not use.
-- Modules now commit their generated code (`dagger.gen.go` and friends) instead of regenerating it at runtime. Migration removes the `.gitignore` rules that used to exclude it. Afterwards, run `dagger generate` and commit the output.
-- Applying a migration ends the setup run. Run `dagger setup` again for module recommendations.
+If a required local module cannot migrate, the command fails before applying changes or offering onboarding. The error identifies the module and its dependency path. Fix or migrate that module before retrying workspace migration.
+
+Other `dagger.json` files are optional module candidates. These can include fixtures. Candidates start unselected, and you can skip all of them. Non-interactive mode skips them, including with `--auto-apply`, and prints commands for explicit migration.
+
+To migrate one module, with or without an existing workspace:
+
+```shell
+dagger module migrate ./path/to/module
+```
+
+This command converts only that module. If a `dagger.toml` exists, it also updates the module's SDK scope in the selected workspace. Otherwise, it does not create a workspace config or change a parent legacy workspace. It does not migrate dependencies or optional candidates, or offer onboarding. If the configuration contains unhandled workspace fields, it stops and directs you to workspace migration. Existing destination files and conflicting SDK scopes are preserved.
+
+Both commands accept `--no-apply` for a preview and `--auto-apply` to apply without a prompt. These options do not select additional module candidates.
+
+After successful workspace migration, Dagger offers module recommendations and optional Cloud checks, in that order. In non-interactive mode, it prints the commands to run. A preview does not start these steps. If `init` detects a legacy workspace, it stops without changing files and directs you to `dagger workspace migrate`.
+
+Migration preserves module paths, runtime and dependency pins, and code generation settings. Legacy toolchains visible to module code become module dependencies and SDK scope clients. Unsupported settings require manual changes; migration reports the affected configuration.
+
+Modules now store generated code in the repository. After migration, run `dagger generate`, review the output and `.gitignore`, and commit the generated files.
 
 ## Where your configuration lands
 

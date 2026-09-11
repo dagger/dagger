@@ -1,90 +1,56 @@
 package daggercmd
 
 import (
-	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
-	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
-	"github.com/spf13/cobra"
+	toml "github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetupStepLogin(t *testing.T) {
-	configFile := llmconfig.ConfigFile
-	llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
-	t.Cleanup(func() { llmconfig.ConfigFile = configFile })
-
+func TestClearSetupCloudLoginPromptPreference(t *testing.T) {
 	for _, tt := range []struct {
-		name        string
-		auth        *cloudauth.Cloud
-		wantAlready bool
+		name      string
+		config    string
+		keepSetup bool
 	}{
-		{name: "not logged in"},
-		{name: "logged in", auth: &cloudauth.Cloud{}, wantAlready: true},
+		{name: "no config"},
+		{name: "no preference", config: "[unrelated]\nvalue = 42\n"},
+		{name: "old preference", config: "[unrelated]\nvalue = 42\n[setup]\ncloud_login = 'never'\n"},
+		{name: "other setup settings", config: "[unrelated]\nvalue = 42\n[setup]\ncloud_login = 'never'\nother = true\n", keepSetup: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
+			configFile := llmconfig.ConfigFile
+			llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
+			t.Cleanup(func() { llmconfig.ConfigFile = configFile })
 
-			var out bytes.Buffer
-			cmd := &cobra.Command{}
-			cmd.SetContext(ctx)
-			cmd.SetOut(&out)
-
-			err := setupStepLogin(ctx, cmd, func(context.Context) (*cloudauth.Cloud, error) {
-				return tt.auth, nil
-			}, nil)
+			if tt.config != "" {
+				require.NoError(t, os.WriteFile(llmconfig.ConfigFile, []byte(tt.config), 0o600))
+			}
+			require.NoError(t, clearSetupCloudLoginPromptPreference())
+			if tt.config == "" {
+				require.NoFileExists(t, llmconfig.ConfigFile)
+				return
+			}
+			data, err := os.ReadFile(llmconfig.ConfigFile)
 			require.NoError(t, err)
-			require.Equal(t, tt.wantAlready, bytes.Contains(out.Bytes(), []byte("Already logged in.")))
+			tree, err := toml.LoadBytes(data)
+			require.NoError(t, err)
+			require.EqualValues(t, 42, tree.GetPath([]string{"unrelated", "value"}))
+			require.False(t, tree.HasPath([]string{"setup", "cloud_login"}))
+			require.Equal(t, tt.keepSetup, tree.Has("setup"))
+			if tt.keepSetup {
+				require.Equal(t, true, tree.GetPath([]string{"setup", "other"}))
+			}
 		})
 	}
 }
 
-func TestConfirmSetupLoginSkipsNonInteractiveAutoApply(t *testing.T) {
-	previousAutoApply := autoApply
-	autoApply = true
-	t.Cleanup(func() { autoApply = previousAutoApply })
-
-	choice, err := confirmSetupLoginInteractive(t.Context(), &cobra.Command{}, nil, false)
-	require.NoError(t, err)
-	require.Equal(t, setupLoginNotNow, choice)
-}
-
-func TestDisableSetupCloudLoginPrompt(t *testing.T) {
-	configFile := llmconfig.ConfigFile
-	llmconfig.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
-	t.Cleanup(func() { llmconfig.ConfigFile = configFile })
-
-	require.NoError(t, os.WriteFile(llmconfig.ConfigFile, []byte("[unrelated]\nvalue = 42\n"), 0o600))
-	disabled, err := setupCloudLoginPromptDisabled()
-	require.NoError(t, err)
-	require.False(t, disabled)
-
-	require.NoError(t, disableSetupCloudLoginPrompt())
-	disabled, err = setupCloudLoginPromptDisabled()
-	require.NoError(t, err)
-	require.True(t, disabled)
-	data, err := os.ReadFile(llmconfig.ConfigFile)
-	require.NoError(t, err)
-	require.Contains(t, string(data), "[unrelated]")
-	require.Contains(t, string(data), `cloud_login = "never"`)
-
-	require.NoError(t, clearSetupCloudLoginPromptPreference())
-	disabled, err = setupCloudLoginPromptDisabled()
-	require.NoError(t, err)
-	require.False(t, disabled)
-	data, err = os.ReadFile(llmconfig.ConfigFile)
-	require.NoError(t, err)
-	require.Contains(t, string(data), "[unrelated]")
-	require.NotContains(t, string(data), "[setup]")
-}
-
-func TestSetupShowsFinalProgress(t *testing.T) {
-	require.True(t, commandShowsFinalProgress(setupCmd))
+func TestInitShowsFinalProgress(t *testing.T) {
+	require.True(t, commandShowsFinalProgress(initCmd))
+	require.False(t, commandShowsFinalProgress(setupCmd))
 }
 
 func TestFilterRecommendations(t *testing.T) {

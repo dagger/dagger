@@ -697,7 +697,7 @@ source = "github.com/acme/custom-go-sdk"
 		require.Len(t, cfg.Modules, 1, "one SDK install serves every module in the repo")
 		sdk := cfg.Modules["dagger-go-sdk"]
 		require.Equal(t, "go", sdk.Source)
-		require.Len(t, cfg.SDKs["go"].Scopes, 1)
+		require.Len(t, cfg.SDKs["go"].Scopes, 2)
 		scope, ok := cfg.SDKs["go"].Scopes[filepath.ToSlash(filepath.Join("services", "api", "libs", "dep"))]
 		require.True(t, ok)
 		require.True(t, scope.IsModule)

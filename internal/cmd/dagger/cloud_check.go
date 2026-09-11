@@ -4,17 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"text/tabwriter"
 
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/gitref"
 )
 
 var cloudCheckCmd = &cobra.Command{
-	Use:   "check",
-	Short: "Manage Cloud-side automated checks for this workspace",
-	Args:  cobra.NoArgs,
+	Use:     "checks",
+	Aliases: []string{"check"},
+	Short:   "Manage Cloud-side automated checks for this workspace",
+	Args:    cobra.NoArgs,
+	Annotations: map[string]string{
+		hiddenAliasesAnnotation: "check",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
@@ -66,12 +73,27 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 			remote.CloneRef = args[0]
 		} else {
 			var err error
-			remote, _, err = selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check")
+			remote, _, err = selectedRemoteWorkspaceAddress(cmd.Context(), "cloud checks")
 			if err != nil {
 				return err
 			}
 		}
+		if enabled {
+			if err := prepareCloudChecksAccount(cmd, args); err != nil {
+				return err
+			}
+		}
 		state, err := setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
+		if enabled && errors.Is(err, errCloudSourceNotConfigured) {
+			if setupErr := prepareCloudChecksIntegration(cmd, args); setupErr != nil {
+				return setupErr
+			}
+			// Re-read Cloud state after the user completes the browser step.
+			state, err = setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
+			if errors.Is(err, errCloudSourceNotConfigured) {
+				return cloudChecksPrerequisiteError(cmd, args, "GitHub access is not configured for this repository", "dagger cloud integration create github")
+			}
+		}
 		if errors.Is(err, errCloudNotAuthenticated) {
 			return fmt.Errorf("not authenticated; run 'dagger cloud login' to update Cloud checks")
 		}
@@ -83,8 +105,112 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 	}
 }
 
+func canPromptForCloudChecks() bool {
+	return canOpenShellOnError(progress, stdinIsTTY) && !cloudJSON && !autoApply
+}
+
+func prepareCloudChecksAccount(cmd *cobra.Command, args []string) error {
+	client, cloudAuth, err := cloudCLI.cloudClientWithLogin(cmd.Context(), false)
+	if err == nil {
+		// Engine and OIDC tokens already identify their Cloud account. The
+		// User query is an OAuth-only account/organization check.
+		if tokenType := cloudAuth.Token.Type(); tokenType == "Basic" || tokenType == "OIDC" {
+			return nil
+		}
+		user, userErr := client.User(cmd.Context())
+		if userErr != nil {
+			return userErr
+		}
+		if len(user.Orgs) > 0 {
+			return nil
+		}
+	} else if !errors.Is(err, errCloudNotAuthenticated) {
+		return err
+	}
+	required := cloudChecksPrerequisiteError(cmd, args, "Cloud checks need a Dagger Cloud account and organization", "dagger cloud signup")
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Cloud checks need a Dagger Cloud account. Sign up or log in?", cloudSetupCommand("signup")) {
+		return required
+	}
+	signup := newSignupCmd()
+	signup.SetContext(cmd.Context())
+	signup.SetIn(cmd.InOrStdin())
+	signup.SetOut(cmd.OutOrStdout())
+	signup.SetErr(cmd.ErrOrStderr())
+	if err := cloudCLI.Signup(signup, nil); err != nil {
+		return fmt.Errorf("%w\n\n%w", err, required)
+	}
+	return nil
+}
+
+func prepareCloudChecksIntegration(cmd *cobra.Command, args []string) error {
+	required := cloudChecksPrerequisiteError(cmd, args, "Cloud checks need GitHub access to this repository", "dagger cloud integration create github")
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Connect this repository to Dagger Cloud in the browser?", cloudSetupCommand("integration create github --open")) {
+		return required
+	}
+	client, _, err := cloudCLI.cloudClientWithLogin(cmd.Context(), false)
+	if err != nil {
+		return err
+	}
+	setup, err := cloudCLI.githubConnectHandoff(cmd.Context(), client)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Manual step: grant Dagger access to this repository, then return here:\n%s\n", setup.URL)
+	if err := browser.OpenURL(setup.URL); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
+	}
+	if !confirm(cmd, "Have you completed the manual GitHub step?") {
+		return required
+	}
+	return nil
+}
+
+func cloudSetupCommand(args string) string {
+	command := "dagger cloud " + args
+	if cloudOrgFlag != "" {
+		command += " --org " + shellQuote(cloudOrgFlag)
+	}
+	return command
+}
+
+// These prompts run outside the TUI, so the command stays in terminal output
+// after the response. Browser-only work is described as a manual step.
+func confirmSetupCommand(cmd *cobra.Command, title, command string) bool {
+	fmt.Fprint(cmd.OutOrStdout(), setupCommandPromptText(title, command))
+	return confirm(cmd, "Run this command?")
+}
+
+func setupCommandPromptText(title, command string) string {
+	return title + "\n\n" + command + "\n\n"
+}
+
+func cloudChecksPrerequisiteError(cmd *cobra.Command, args []string, reason, prerequisite string) error {
+	prefix := "dagger"
+	selected := workspaceRef
+	if selected != "" && !isObviouslyRemoteWorkspaceRef(selected) {
+		if abs, err := filepath.Abs(selected); err == nil {
+			selected = abs
+		}
+	}
+	if selected == "" && (cmd.Flags().Changed("workdir") || cmd.InheritedFlags().Changed("workdir")) {
+		selected, _ = os.Getwd()
+	}
+	if selected != "" {
+		prefix += " -W " + shellQuote(selected)
+	}
+	org := ""
+	if cloudOrgFlag != "" {
+		org = " --org " + shellQuote(cloudOrgFlag)
+	}
+	retry := prefix + " cloud checks on"
+	for _, arg := range args {
+		retry += " " + shellQuote(arg)
+	}
+	return fmt.Errorf("%s.\nComplete the prerequisite, then retry:\n\n%s%s\n%s%s", reason, prerequisite, org, retry, org)
+}
+
 func runCloudCheckStatus(cmd *cobra.Command, _ []string) error {
-	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check status")
+	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud checks status")
 	if err != nil {
 		return err
 	}
@@ -104,7 +230,7 @@ func runCloudCheckStatus(cmd *cobra.Command, _ []string) error {
 }
 
 func runCloudCheckList(cmd *cobra.Command, args []string) error {
-	remote, address, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check list")
+	remote, address, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud checks list")
 	if err != nil {
 		return err
 	}

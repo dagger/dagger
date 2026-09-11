@@ -470,7 +470,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::cwd</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Current location within the workspace root.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
-                    <dd><p>Filesystem changes for the full migration plan.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_changes">
+                    <dd><p>Filesystem changes for the full migration plan.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_configFile">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_changes">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
                     <dd><p>Filesystem changes for this step.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_code">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::code</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -1203,13 +1205,17 @@
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The module dependency this was declared in.</p></dd><dt><a href="Dagger/Workspace.html#method_migrate">
 <abbr title="Dagger\Workspace">Workspace</abbr>::migrate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Plan the explicit migration needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_module">
+                    <dd><p>Plan the explicit migration needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_migrateModule">
+<abbr title="Dagger\Workspace">Workspace</abbr>::migrateModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Plan migration of one local module without migrating its dependencies or creating a workspace configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_module">
 <abbr title="Dagger\Workspace">Workspace</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return a module defined in the workspace configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleSource">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Load a module source from a path within the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_modules">
 <abbr title="Dagger\Workspace">Workspace</abbr>::modules</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>List modules defined in the workspace configuration.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_modules">
+                    <dd><p>List modules defined in the workspace configuration.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_moduleCandidates">
+<abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::moduleCandidates</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
+                    <dd><p>Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_modules">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::modules</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>Modules authored with this SDK.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Agent.html#method_name">
@@ -2241,7 +2247,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a file added or replaced, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a location initialized as a module scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withModule">
+                    <dd><p>Return this workspace with a location initialized as a module scope.</p></dd><dt><a href="Dagger/Workspace.html#method_withInitialized">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withInitialized</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a native configuration, without changing an existing configuration.</p></dd><dt><a href="Dagger/Workspace.html#method_withModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a module installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withMountedDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withMountedDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

@@ -167,7 +167,7 @@ func init() {
 	)
 
 	// Assign each visible top-level command to its group.
-	setupCmd.GroupID = "setup"
+	initCmd.GroupID = "setup"
 
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
@@ -210,6 +210,7 @@ func init() {
 		uninstallAliasCmd,
 		updateAliasCmd,
 		settingsAliasCmd,
+		initCmd,
 		setupCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),

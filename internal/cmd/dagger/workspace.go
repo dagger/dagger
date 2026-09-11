@@ -1285,6 +1285,8 @@ type workspaceAutocheckState struct {
 	SelectedRepos  []string
 }
 
+var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
+
 func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress) (workspaceAutocheckState, bool, error) {
 	client, err := workspaceAutocheckClient(ctx, false)
 	if err != nil {
@@ -1332,7 +1334,7 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	}
 	source, ok := workspaceSourceForRepo(sources, repo)
 	if !ok || source.OrgName == nil {
-		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
 	}
 	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
 	if err != nil {
@@ -1340,7 +1342,7 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	}
 	mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID)
 	if !ok {
-		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
 	}
 	selected, enabled := workspaceSelectedRepos(mapped.Repositories, repo)
 	return workspaceAutocheckState{

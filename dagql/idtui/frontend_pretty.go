@@ -3828,11 +3828,15 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	}
 }
 
-// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
+// applyTuistFocus keeps an active prompt focused, or selects the active view: the fullscreen
 // test view in tests mode, the SpanTreeView for the selected span in trace mode,
 // or fe itself when no span is selected. Skipped when editline or search has
 // focus.
 func (fe *frontendPretty) applyTuistFocus() {
+	if fe.formWrap != nil {
+		fe.tui.SetFocus(fe.formWrap)
+		return
+	}
 	if fe.editlineFocused || fe.searchActive || fe.logSearchInput != nil {
 		return
 	}
@@ -4387,13 +4391,13 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
+		if fe.formWrap == nil && !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
+		if fe.formWrap == nil && !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
 			}

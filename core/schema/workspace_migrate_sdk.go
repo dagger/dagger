@@ -1,9 +1,10 @@
-package daggercmd
+package schema
 
 import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 )
 
@@ -31,7 +32,7 @@ func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
 			continue
 		}
 		base, version, _ := strings.Cut(entry.Source, "@")
-		ref, _, sdkName, err := sdkResolveInstall(base)
+		ref, _, sdkName, err := sdkmeta.ResolveInstall(base)
 		if err != nil {
 			continue
 		}
@@ -47,4 +48,21 @@ func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
 	}
 	sort.Slice(fixups, func(i, j int) bool { return fixups[i].ModuleName < fixups[j].ModuleName })
 	return fixups
+}
+
+func applyMigratedSDKFixups(cfg *workspace.Config, fixes []migratedSDKFixup) {
+	for _, fix := range fixes {
+		entry := cfg.Modules[fix.ModuleName]
+		entry.Source = fix.Ref
+		cfg.Modules[fix.ModuleName] = entry
+		if fix.CurrentSDKName == fix.SDKName {
+			continue
+		}
+		if _, exists := cfg.SDKs[fix.SDKName]; exists {
+			continue
+		}
+		sdk := cfg.SDKs[fix.CurrentSDKName]
+		delete(cfg.SDKs, fix.CurrentSDKName)
+		cfg.SDKs[fix.SDKName] = sdk
+	}
 }
