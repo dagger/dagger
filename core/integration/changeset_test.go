@@ -2262,3 +2262,26 @@ func (ChangesetSuite) TestMergePhantomStatOnlyChanges(ctx context.Context, t *te
 	require.NoError(t, err)
 	require.Equal(t, "ref: refs/heads/master\n", headContent)
 }
+
+func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("src/edit.txt", "old").WithNewFile("src/delete.txt", "delete").WithNewFile("docs/readme.txt", "docs")
+	all := before.WithNewFile("src/edit.txt", "new").WithoutFile("src/delete.txt").WithNewFile("src/add.txt", "added").WithNewFile("docs/readme.txt", "new docs").Changes(before)
+	selected := all.Filter(dagger.ChangesetFilterOpts{Include: []string{"src/**"}, Exclude: []string{"src/add.txt"}})
+	added, err := selected.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Empty(t, added)
+	removed, err := selected.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/delete.txt"}, removed)
+	modified, err := selected.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/edit.txt"}, modified)
+	// Filtering retains unrelated baseline content, not just matching files.
+	baseline, err := selected.Before().File("docs/readme.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "docs", baseline)
+	after, err := selected.After().File("docs/readme.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "docs", after)
+}
