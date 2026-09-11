@@ -110,6 +110,24 @@ func (s *workspaceSchema) commitsFrom(ctx context.Context, parent dagql.ObjectRe
 }
 
 func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
+	local := parent.Self().ClientLocalBase()
+	exportBase, exportPath, exportState := parent.Self().ExportBase, parent.Self().ExportPath, parent.Self().ExportStateDigest
+	hostPath := parent.Self().HostPath()
+	var state string
+	if local {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return inst, err
+		}
+		state, err = bk.GitCheckoutState(ctx, hostPath)
+		if err != nil {
+			return inst, err
+		}
+	}
 	parent, resolved, err := s.pullInputs(ctx, parent, args)
 	if err != nil {
 		return inst, err
@@ -140,6 +158,22 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	inst, err = checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, parent.Self(), parent.Self().SelectedEnv())
 	if err != nil {
 		return inst, err
+	}
+	if local || exportBase.Self() != nil {
+		if local {
+			exportBase, exportPath, exportState = parent, hostPath, state
+		}
+		baseID, err := exportBase.ID()
+		if err != nil {
+			return inst, err
+		}
+		var bound dagql.ObjectResult[*core.Workspace]
+		err = srv.Select(ctx, inst, &bound, dagql.Selector{Field: "__withExportBase", Args: []dagql.NamedInput{
+			{Name: "base", Value: dagql.NewID[*core.Workspace](baseID)},
+			{Name: "path", Value: dagql.NewString(exportPath)},
+			{Name: "stateDigest", Value: dagql.NewString(exportState)},
+		}})
+		return bound, err
 	}
 	return inst, nil
 }

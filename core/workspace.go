@@ -86,6 +86,12 @@ type Workspace struct {
 	// workspace selection.
 	selectedEnv string
 
+	// ExportBase binds a prepared integration to a snapshot of the destination.
+	// It is not a host-read route or permission: export always uses the caller.
+	ExportBase        dagql.ObjectResult[*Workspace]
+	ExportPath        string
+	ExportStateDigest string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -376,6 +382,9 @@ func (ws *Workspace) ExportHostPath() (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
 	}
+	if ws.ExportPath != "" {
+		return ws.ExportPath, nil
+	}
 	switch src := ws.BaseSource().(type) {
 	case *WorkspaceSourceClientLocal:
 		if src.HostPath == "" {
@@ -556,18 +565,21 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
-	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
-	MountPoints     []string                      `json:"mountPoints,omitempty"`
-	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
-	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
-	Address         string                        `json:"address,omitempty"`
-	Cwd             string                        `json:"cwd,omitempty"`
-	ConfigFile      string                        `json:"configFile,omitempty"`
-	LockFile        string                        `json:"lockFile,omitempty"`
-	ClientID        string                        `json:"clientID,omitempty"`
-	HostPath        string                        `json:"hostPath,omitempty"`
-	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
+	ExportBaseResultID uint64                        `json:"exportBaseResultID,omitempty"`
+	ExportPath         string                        `json:"exportPath,omitempty"`
+	ExportStateDigest  string                        `json:"exportStateDigest,omitempty"`
+	RootfsResultID     uint64                        `json:"rootfsResultID,omitempty"`
+	MountsResultID     uint64                        `json:"mountsResultID,omitempty"`
+	MountPoints        []string                      `json:"mountPoints,omitempty"`
+	Source             *persistedWorkspaceSource     `json:"source,omitempty"`
+	CompatWorkspace    *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	Address            string                        `json:"address,omitempty"`
+	Cwd                string                        `json:"cwd,omitempty"`
+	ConfigFile         string                        `json:"configFile,omitempty"`
+	LockFile           string                        `json:"lockFile,omitempty"`
+	ClientID           string                        `json:"clientID,omitempty"`
+	HostPath           string                        `json:"hostPath,omitempty"`
+	SelectedEnv        string                        `json:"selectedEnv,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -710,14 +722,23 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace: ws.compatWorkspace,
-		Address:         ws.Address,
-		Cwd:             ws.Cwd,
-		ConfigFile:      ws.ConfigFile,
-		LockFile:        ws.LockFile,
-		ClientID:        ws.ClientID,
-		HostPath:        ws.hostPath,
-		SelectedEnv:     ws.selectedEnv,
+		ExportPath:        ws.ExportPath,
+		ExportStateDigest: ws.ExportStateDigest,
+		CompatWorkspace:   ws.compatWorkspace,
+		Address:           ws.Address,
+		Cwd:               ws.Cwd,
+		ConfigFile:        ws.ConfigFile,
+		LockFile:          ws.LockFile,
+		ClientID:          ws.ClientID,
+		HostPath:          ws.hostPath,
+		SelectedEnv:       ws.selectedEnv,
+	}
+	if ws.ExportBase.Self() != nil {
+		id, err := encodePersistedObjectRef(cache, ws.ExportBase, "workspace export base")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.ExportBaseResultID = id
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -794,17 +815,26 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:          rootfs,
-		mounts:          mounts,
-		mountPoints:     persisted.MountPoints,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
-		selectedEnv:     persisted.SelectedEnv,
+		ExportPath:        persisted.ExportPath,
+		ExportStateDigest: persisted.ExportStateDigest,
+		rootfs:            rootfs,
+		mounts:            mounts,
+		mountPoints:       persisted.MountPoints,
+		compatWorkspace:   persisted.CompatWorkspace,
+		Address:           persisted.Address,
+		Cwd:               cwd,
+		ConfigFile:        configFile,
+		LockFile:          lockFile,
+		ClientID:          persisted.ClientID,
+		hostPath:          persisted.HostPath,
+		selectedEnv:       persisted.SelectedEnv,
+	}
+	if persisted.ExportBaseResultID != 0 {
+		var err error
+		ws.ExportBase, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.ExportBaseResultID, "workspace export base")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -827,6 +857,18 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	var deps []dagql.AnyResult
+	if ws.ExportBase.Self() != nil {
+		attached, err := attach(ws.ExportBase)
+		if err != nil {
+			return nil, err
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace export base: unexpected result %T", attached)
+		}
+		ws.ExportBase = typed
+		deps = append(deps, typed)
+	}
 
 	if ws.rootfs.Self() != nil {
 		attached, err := attach(ws.rootfs)
