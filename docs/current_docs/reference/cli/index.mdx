@@ -115,6 +115,7 @@ See https://docs.dagger.io/api for the full overview.
 * [dagger api call](#dagger-api-call)	 - Call one or more functions, interconnected into a pipeline
 * [dagger api functions](#dagger-api-functions)	 - List available functions
 * [dagger api query](#dagger-api-query)	 - Send API queries to a dagger engine
+* [dagger api schema](#dagger-api-schema)	 - Print the API schema currently served by the engine
 * [dagger api with-session](#dagger-api-with-session)	 - Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
 
 ## dagger api call
@@ -246,6 +247,66 @@ EOF
   -M, --no-load-module       Don't load any module for this command
       --var strings          List of query variables, in key=value format
       --var-json string      Query variables in JSON format (overrides --var)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
+
+## dagger api schema
+
+Print the API schema currently served by the engine
+
+### Synopsis
+
+Print the API schema the engine is currently serving, in GraphQL schema
+definition language (SDL).
+
+The schema combines Dagger's core types with the schema extensions
+contributed by every module loaded in the current workspace, so what it
+prints is exactly the API available to this session — the same surface
+that "dagger api query" and the generated SDK clients see.
+
+Name one or more modules to print only the types and Query fields they
+contribute.
+
+```
+dagger api schema [options] [module...]
+```
+
+### Examples
+
+```
+dagger api schema
+dagger api schema golang
+dagger api schema --core
+dagger api schema --json
+```
+
+### Options
+
+```
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --core                 Print only the core API, excluding schema extensions from modules
+      --eager-runtime        load module runtime eagerly
+      --json                 Print the raw introspection JSON instead of SDL
+  -m, --load-module string   Use a one-off module (local path or git ref)
+  -M, --no-load-module       Don't load any module for this command
 ```
 
 ### Options inherited from parent commands
