@@ -49,15 +49,17 @@ func (WorkspaceSuite) TestWorkspaceModuleResolution(ctx context.Context, t *test
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.LockFileName), data, 0o644))
 		const source = "go.example/tools@v0.20.2"
 		const resolution = source + " ➡️ https://github.com/dagger/dagger#v0.20.2:modules/wolfi"
-		for range 2 {
+		// The first install resolves the vanity source. Reinstalling the same
+		// request is a no-op and does not resolve or report the source again.
+		for _, wantResolutions := range []int{1, 0} {
 			cmd := hostDaggerCommand(ctx, t, workdir, "mod", "install", source, "--name=wolfi")
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			stdout, err := cmd.Output()
 			require.NoError(t, err, "%s", stderr.String())
 			require.NotContains(t, string(stdout), "➡️")
-			require.Equal(t, 1, strings.Count(stderr.String(), resolution), stderr.String())
-			require.Equal(t, 1, strings.Count(stderr.String(), "➡️"), stderr.String())
+			require.Equal(t, wantResolutions, strings.Count(stderr.String(), resolution), stderr.String())
+			require.Equal(t, wantResolutions, strings.Count(stderr.String(), "➡️"), stderr.String())
 		}
 	})
 }
