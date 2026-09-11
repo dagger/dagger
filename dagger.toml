@@ -137,35 +137,6 @@ source = "github.com/vito/editor"
 # TODO: Migrate this repository to [sdks.*] after that schema is available in
 # the released CLI used to bootstrap CI.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 [sdks.dang]
 module = "dagger-dang-sdk"
 
@@ -180,6 +151,8 @@ name = "ci"
 
 [sdks.dang.scopes.".dagger/modules/dotnet-client-dev"]
 is-module = true
+clients = ["./.dagger/modules/engine-dev"]
+name = "dotnet-client-dev"
 
 [sdks.dang.scopes.".dagger/modules/elixir-client-dev"]
 is-module = true
