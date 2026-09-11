@@ -261,13 +261,13 @@ func configSDKScopeIsModule(tree *toml.Tree, sdkName, scopeKey string) (bool, bo
 		return false, false
 	}
 	sdks, _ := tree.Get(sdksKey).(*toml.Tree)
-	sdk, _ := sdks.Get(sdkName).(*toml.Tree)
+	sdk, _ := sdks.GetPath([]string{sdkName}).(*toml.Tree)
 	scopesKey, found := configDecoderKey(sdk, "scopes")
 	if !found {
 		return false, false
 	}
 	scopes, _ := sdk.Get(scopesKey).(*toml.Tree)
-	scope, _ := scopes.Get(scopeKey).(*toml.Tree)
+	scope, _ := scopes.GetPath([]string{scopeKey}).(*toml.Tree)
 	isModuleKey, found := configDecoderKey(scope, "is-module")
 	if !found {
 		return false, false
