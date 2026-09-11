@@ -8723,6 +8723,123 @@ func (r *GitCommit) AsNode() Node {
 	}
 }
 
+// A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+type GitPushResult struct {
+	query *querybuilder.Selection
+
+	disposition *GitPushDisposition
+	id          *ID
+	previousSHA *string
+	ref         *string
+	sha         *string
+}
+
+func (r *GitPushResult) WithGraphQLQuery(q *querybuilder.Selection) *GitPushResult {
+	return &GitPushResult{
+		query: q,
+	}
+}
+
+// How the remote ref was updated.
+func (r *GitPushResult) Disposition(ctx context.Context) (GitPushDisposition, error) {
+	if r.disposition != nil {
+		return *r.disposition, nil
+	}
+	q := r.query.Select("disposition")
+
+	var response GitPushDisposition
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GitPushResult.
+func (r *GitPushResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitPushResult) XXX_GraphQLType() string {
+	return "GitPushResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitPushResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitPushResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitPushResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The previous remote object ID; empty when the ref was created.
+func (r *GitPushResult) PreviousSHA(ctx context.Context) (string, error) {
+	if r.previousSHA != nil {
+		return *r.previousSHA, nil
+	}
+	q := r.query.Select("previousSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The fully qualified remote ref.
+func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID pushed to the remote.
+func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitPushResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitPushResult) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	query *querybuilder.Selection
@@ -8920,6 +9037,43 @@ func (r *GitRef) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitRefPushOpts contains options for GitRef.Push
+type GitRefPushOpts struct {
+	// Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
+	To *GitRepository
+	// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+	Branch string
+	// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+	ExpectedRemoteSHA string
+}
+
+// Push this ref's commit and history to a remote repository using the destination's credentials.
+//
+// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+//
+// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+func (r *GitRef) Push(opts ...GitRefPushOpts) *GitPushResult {
+	q := r.query.Select("push")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+		// `branch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Branch) {
+			q = q.Arg("branch", opts[i].Branch)
+		}
+		// `expectedRemoteSHA` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedRemoteSHA) {
+			q = q.Arg("expectedRemoteSHA", opts[i].ExpectedRemoteSHA)
+		}
+	}
+
+	return &GitPushResult{
+		query: q,
+	}
 }
 
 // The resolved ref name at this ref.
@@ -19454,6 +19608,77 @@ const (
 	FunctionCachePolicyPerSession FunctionCachePolicy = "PerSession"
 
 	FunctionCachePolicyNever FunctionCachePolicy = "Never"
+)
+
+// How a Git push updated the remote ref.
+type GitPushDisposition string
+
+func (GitPushDisposition) IsEnum() {}
+
+func (v GitPushDisposition) Name() string {
+	switch v {
+	case GitPushDispositionCreated:
+		return "CREATED"
+	case GitPushDispositionFastForward:
+		return "FAST_FORWARD"
+	case GitPushDispositionForced:
+		return "FORCED"
+	case GitPushDispositionUpToDate:
+		return "UP_TO_DATE"
+	default:
+		return ""
+	}
+}
+
+func (v GitPushDisposition) Value() string {
+	return string(v)
+}
+
+func (v *GitPushDisposition) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *GitPushDisposition) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CREATED":
+		*v = GitPushDispositionCreated
+	case "FAST_FORWARD":
+		*v = GitPushDispositionFastForward
+	case "FORCED":
+		*v = GitPushDispositionForced
+	case "UP_TO_DATE":
+		*v = GitPushDispositionUpToDate
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The remote ref was created.
+	GitPushDispositionCreated GitPushDisposition = "CREATED"
+
+	// The remote ref was fast-forwarded.
+	GitPushDispositionFastForward GitPushDisposition = "FAST_FORWARD"
+
+	// The remote ref was replaced under an explicit lease.
+	GitPushDispositionForced GitPushDisposition = "FORCED"
+
+	// The remote ref already pointed to this commit.
+	GitPushDispositionUpToDate GitPushDisposition = "UP_TO_DATE"
 )
 
 // Compression algorithm to use for image layers.
