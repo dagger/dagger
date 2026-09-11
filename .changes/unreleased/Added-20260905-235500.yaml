@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Show unsaved commits and checkout-only history alongside uncommitted edits
+  in the agent Changes panel. Agent sessions now start from frozen checkpoints;
+  saving lands commits without rewriting history and rebinds a fresh checkpoint,
+  while reload discards unsaved agent changes in favor of the checkout.
+time: 2026-09-05T23:55:00Z
+custom:
+  Author: vito
+  PR: ""
