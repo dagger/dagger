@@ -17720,6 +17720,17 @@ impl Loadable for WorkspaceGit {
     }
 }
 impl WorkspaceGit {
+    /// Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+    /// Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+    /// This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The checked-out HEAD of this workspace.
     pub fn head(&self) -> GitRef {
         let query = self.selection.select("head");
