@@ -3239,6 +3239,20 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceMigrateOpts = {
+  /**
+   * Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  modules?: string[]
+}
+
+export type WorkspaceMigrateModuleOpts = {
+  /**
+   * Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  path?: string
+}
+
 export type WorkspaceSearchOpts = {
   /**
    * Directory or file paths to search
@@ -15559,10 +15573,24 @@ export class Workspace extends BaseClient {
   /**
    * Plan the explicit migration needed for the current workspace.
    *
+   * Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+   *
    * The returned plan has an empty changeset and no steps when no migration is needed.
+   * @param opts.modules Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
    */
-  migrate = (): WorkspaceMigration => {
-    const ctx = this._ctx.select("migrate")
+  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate", { ...opts })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+   *
+   * Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+   * @param opts.path Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  migrateModule = (opts?: WorkspaceMigrateModuleOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrateModule", { ...opts })
     return new WorkspaceMigration(ctx)
   }
 
@@ -15791,6 +15819,16 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithInitModuleOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withInitModule", { sdk, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a native configuration, without changing an existing configuration.
+   *
+   * Fail if legacy configuration needs workspace migration.
+   */
+  withInitialized = (): Workspace => {
+    const ctx = this._ctx.select("withInitialized")
     return new Workspace(ctx)
   }
 
@@ -16072,14 +16110,16 @@ export class WorkspaceGit extends BaseClient {
  */
 export class WorkspaceMigration extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _configFile?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID) {
+  constructor(ctx?: Context, _id?: ID, _configFile?: string) {
     super(ctx)
 
     this._id = _id
+    this._configFile = _configFile
   }
 
   /**
@@ -16103,6 +16143,32 @@ export class WorkspaceMigration extends BaseClient {
   changes = (): Changeset => {
     const ctx = this._ctx.select("changes")
     return new Changeset(ctx)
+  }
+
+  /**
+   * Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+   */
+  configFile = async (): Promise<string> => {
+    if (this._configFile) {
+      return this._configFile
+    }
+
+    const ctx = this._ctx.select("configFile")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+   */
+  moduleCandidates = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("moduleCandidates")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 
   /**

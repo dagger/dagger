@@ -309,12 +309,34 @@ defmodule Dagger.Workspace do
   @doc """
   Plan the explicit migration needed for the current workspace.
 
+  Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+
   The returned plan has an empty changeset and no steps when no migration is needed.
   """
-  @spec migrate(t()) :: Dagger.WorkspaceMigration.t()
-  def migrate(%__MODULE__{} = workspace) do
+  @spec migrate(t(), [{:modules, [String.t()]}]) :: Dagger.WorkspaceMigration.t()
+  def migrate(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("migrate")
+      workspace.query_builder
+      |> QB.select("migrate")
+      |> QB.maybe_put_arg("modules", optional_args[:modules])
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+
+  Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+  """
+  @spec migrate_module(t(), [{:path, String.t() | nil}]) :: Dagger.WorkspaceMigration.t()
+  def migrate_module(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("migrateModule")
+      |> QB.maybe_put_arg("path", optional_args[:path])
 
     %Dagger.WorkspaceMigration{
       query_builder: query_builder,
@@ -651,6 +673,22 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("path", optional_args[:path])
       |> QB.maybe_put_arg("settings", optional_args[:settings])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a native configuration, without changing an existing configuration.
+
+  Fail if legacy configuration needs workspace migration.
+  """
+  @spec with_initialized(t()) :: Dagger.Workspace.t()
+  def with_initialized(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withInitialized")
 
     %Dagger.Workspace{
       query_builder: query_builder,

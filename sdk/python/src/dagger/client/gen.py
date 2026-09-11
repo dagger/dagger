@@ -15694,14 +15694,48 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def migrate(self) -> "WorkspaceMigration":
+    def migrate(
+        self,
+        *,
+        modules: list[str] | None = None,
+    ) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
+
+        Include installed local modules and their local dependencies. Other
+        module candidates remain unchanged unless selected.
 
         The returned plan has an empty changeset and no steps when no
         migration is needed.
+
+        Parameters
+        ----------
+        modules:
+            Additional local modules to migrate. Relative paths start at the
+            workspace cwd; absolute paths start at the workspace root.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("modules", [] if modules is None else modules, []),
+        ]
         _ctx = self._select("migrate", _args)
+        return WorkspaceMigration(_ctx)
+
+    def migrate_module(self, *, path: str | None = ".") -> "WorkspaceMigration":
+        """Plan migration of one local module without migrating its dependencies
+        or creating a workspace configuration.
+
+        Include SDK registration when a workspace configuration exists and
+        remove obsolete generated-file ignore rules.
+
+        Parameters
+        ----------
+        path:
+            Module directory. Relative paths start at the workspace cwd;
+            absolute paths start at the workspace root.
+        """
+        _args = [
+            Arg("path", path, "."),
+        ]
+        _ctx = self._select("migrateModule", _args)
         return WorkspaceMigration(_ctx)
 
     def module(self, name: str) -> "WorkspaceModule":
@@ -16067,6 +16101,16 @@ class Workspace(Type):
             Arg("settings", settings, None),
         ]
         _ctx = self._select("withInitModule", _args)
+        return Workspace(_ctx)
+
+    def with_initialized(self) -> Self:
+        """Return this workspace with a native configuration, without changing an
+        existing configuration.
+
+        Fail if legacy configuration needs workspace migration.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withInitialized", _args)
         return Workspace(_ctx)
 
     def with_module(
@@ -16546,6 +16590,28 @@ class WorkspaceMigration(Type):
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
+    async def config_file(self) -> str:
+        """Native workspace config path after migration, relative to the
+        workspace root. Empty if no workspace config exists.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configFile", _args)
+        return await _ctx.execute(str)
+
     async def id(self) -> str:
         """A unique identifier for this WorkspaceMigration.
 
@@ -16573,6 +16639,28 @@ class WorkspaceMigration(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    async def module_candidates(self) -> list[str]:
+        """Unselected legacy module directories relative to the workspace root.
+        Candidates can include fixtures.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("moduleCandidates", _args)
+        return await _ctx.execute(list[str])
 
     async def steps(self) -> list["WorkspaceMigrationStep"]:
         """Logical migration steps, each identified by a stable code."""

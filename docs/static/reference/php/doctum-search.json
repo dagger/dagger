@@ -7570,6 +7570,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::migrateModule",
+			"p": "Dagger/Workspace.html#method_migrateModule",
+			"d": "<p>Plan migration of one local module without migrating its dependencies or creating a workspace configuration.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::module",
 			"p": "Dagger/Workspace.html#method_module",
 			"d": "<p>Return a module defined in the workspace configuration.</p>"
@@ -7663,6 +7669,12 @@
 			"n": "Dagger\\Workspace::withInitModule",
 			"p": "Dagger/Workspace.html#method_withInitModule",
 			"d": "<p>Return this workspace with a location initialized as a module scope.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withInitialized",
+			"p": "Dagger/Workspace.html#method_withInitialized",
+			"d": "<p>Return this workspace with a native configuration, without changing an existing configuration.</p>"
 		},
 		{
 			"t": "M",
@@ -7792,9 +7804,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::configFile",
+			"p": "Dagger/WorkspaceMigration.html#method_configFile",
+			"d": "<p>Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceMigration::id",
 			"p": "Dagger/WorkspaceMigration.html#method_id",
 			"d": "<p>A unique identifier for this WorkspaceMigration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceMigration::moduleCandidates",
+			"p": "Dagger/WorkspaceMigration.html#method_moduleCandidates",
+			"d": "<p>Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.</p>"
 		},
 		{
 			"t": "M",

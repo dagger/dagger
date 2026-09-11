@@ -1063,6 +1063,7 @@ Use an existing dagger.toml when present. If a legacy dagger.json has
 workspace settings, stop and direct the user to dagger workspace migrate.
 Otherwise, create an empty dagger.toml. Existing module files remain unchanged.
 
+Run this command in a local Git repository.
 Run this command again to inspect the current initialization state.
 
 ```
@@ -1075,8 +1076,13 @@ dagger init
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
@@ -1679,8 +1685,13 @@ dagger module migrate [PATH] [flags]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
@@ -2959,8 +2970,13 @@ dagger workspace migrate [flags]
   -y, --auto-apply         Automatically apply changes when an output is returned
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 

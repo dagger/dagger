@@ -23,12 +23,30 @@ class WorkspaceMigration extends Client\AbstractObject implements Client\IdAble,
     }
 
     /**
+     * Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+     */
+    public function configFile(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configFile');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configFile');
+    }
+
+    /**
      * A unique identifier for this WorkspaceMigration.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+     */
+    public function moduleCandidates(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleCandidates');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'moduleCandidates');
     }
 
     /**
