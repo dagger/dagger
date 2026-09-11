@@ -71,8 +71,8 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			checks := ws.Checks(dagger.WorkspaceChecksOpts{
 				Include:      args,
 				Skip:         checksSkip,
-				NoGenerate:   checksNoGenerate,
-				OnlyGenerate: checksOnlyGenerate,
+				NoGenerate:   new(checksNoGenerate),
+				OnlyGenerate: new(checksOnlyGenerate),
 			})
 			if checksListMode {
 				return listChecks(ctx, dag, checks, cmd)

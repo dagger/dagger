@@ -265,11 +265,20 @@ func (c *CommonFunctions) CheckVersionCompatibility(minVersion string) bool {
 }
 
 func SupportsNullableObjects(schemaVersion string) bool {
+	return supportsSDKFeature(schemaVersion, nullableObjectSDKCutoverVersion)
+}
+
+// SupportsNullableBooleans reports whether optional Boolean inputs preserve explicit false.
+func SupportsNullableBooleans(schemaVersion string) bool {
+	return supportsSDKFeature(schemaVersion, "v1.0.0-beta.12")
+}
+
+func supportsSDKFeature(schemaVersion, minVersion string) bool {
 	if schemaVersion == "" || !semver.IsValid(schemaVersion) {
 		return true
 	}
 	if version := betaVersion.FindString(schemaVersion); version != "" {
 		schemaVersion = version
 	}
-	return semver.Compare(schemaVersion, nullableObjectSDKCutoverVersion) >= 0
+	return semver.Compare(schemaVersion, minVersion) >= 0
 }

@@ -90,13 +90,13 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: true}
+	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: new(true)}
 	for _, o := range opts {
 		if o.entrypoint {
-			serveOpts.Entrypoint = true
+			serveOpts.Entrypoint = new(true)
 		}
 		if o.skipDependencies {
-			serveOpts.IncludeDependencies = false
+			serveOpts.IncludeDependencies = new(false)
 		}
 	}
 	err = modSrc.AsModule().Serve(serveCtx, serveOpts)

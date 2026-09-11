@@ -203,7 +203,7 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.Contains(t, tools, "## fromGit")
 			require.Contains(t, tools, gitAgentDoc)
 
-			checks, err := ws.Checks(dagger.WorkspaceChecksOpts{NoGenerate: true}).List(ctx)
+			checks, err := ws.Checks(dagger.WorkspaceChecksOpts{NoGenerate: new(true)}).List(ctx)
 			require.NoError(t, err)
 			require.Len(t, checks, 1)
 			checkName, err := checks[0].Name(ctx)

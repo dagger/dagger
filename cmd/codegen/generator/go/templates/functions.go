@@ -726,6 +726,14 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 // FormatInputType formats an input value's type, using @expectedType on ID
 // inputs to recover the expected object or interface type.
 func (funcs goTemplateFuncs) FormatInputType(arg introspection.InputValue, scopes ...string) (string, error) {
+	// A nullable Boolean without a default has three states: omitted, false,
+	// and true. A plain bool loses explicit false in the options zero-value
+	// filter. Keep historical clients source-compatible with their engine view.
+	if arg.TypeRef != nil && arg.TypeRef.Kind == introspection.TypeKindScalar &&
+		arg.TypeRef.Name == "Boolean" && arg.DefaultValue == nil &&
+		generator.SupportsNullableBooleans(funcs.schemaVersion) {
+		return "*bool", nil
+	}
 	expectedType := arg.Directives.ExpectedType()
 	if expectedType != "" {
 		// This is an ID arg with an @expectedType directive.
