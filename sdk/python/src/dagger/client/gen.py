@@ -16282,20 +16282,28 @@ class Workspace(Type):
         _ctx = self._select("withUpdatedLock", _args)
         return Workspace(_ctx)
 
-    def with_updated_modules(self, *, names: list[str] | None = None) -> Self:
-        """Return this workspace with refreshed lockfile state for installed
-        modules.
+    def with_updated_modules(
+        self,
+        *,
+        names: list[str] | None = None,
+        version: str | None = "",
+    ) -> Self:
+        """Return this workspace with updated module versions and lockfile state.
 
         An SDK client scope is regenerated when it targets an updated module.
 
         Parameters
         ----------
         names:
-            Installed module names to refresh. An empty list refreshes all
-            installed modules.
+            Installed module names or sources. A version suffix sets a new
+            request. An empty list refreshes all installed modules.
+        version:
+            New version request for exactly one selected module. Cannot be
+            combined with a version suffix.
         """
         _args = [
             Arg("names", [] if names is None else names, []),
+            Arg("version", version, ""),
         ]
         _ctx = self._select("withUpdatedModules", _args)
         return Workspace(_ctx)
@@ -16439,7 +16447,8 @@ class Workspace(Type):
         Parameters
         ----------
         name:
-            Name of the installed module entry to remove.
+            Installed module name or source to remove. Version selectors are
+            not accepted.
         here:
             Write to the workspace config directory at the workspace cwd.
         """

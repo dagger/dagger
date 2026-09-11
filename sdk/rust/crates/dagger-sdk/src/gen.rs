@@ -15581,9 +15581,12 @@ pub struct WorkspaceWithUpdatedLockOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithUpdatedModulesOpts<'a> {
-    /// Installed module names to refresh. An empty list refreshes all installed modules.
+    /// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
     #[builder(setter(into, strip_option), default)]
     pub names: Option<Vec<&'a str>>,
+    /// New version request for exactly one selected module. Cannot be combined with a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutClientOpts<'a> {
@@ -16794,7 +16797,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with refreshed lockfile state for installed modules.
+    /// Return this workspace with updated module versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -16808,7 +16811,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with refreshed lockfile state for installed modules.
+    /// Return this workspace with updated module versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -16821,6 +16824,9 @@ impl Workspace {
         let mut query = self.selection.select("withUpdatedModules");
         if let Some(names) = opts.names {
             query = query.arg("names", names);
+        }
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -16994,7 +17000,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the installed module entry to remove.
+    /// * `name` - Installed module name or source to remove. Version selectors are not accepted.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_module(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutModule");
@@ -17010,7 +17016,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the installed module entry to remove.
+    /// * `name` - Installed module name or source to remove. Version selectors are not accepted.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_module_opts(
         &self,

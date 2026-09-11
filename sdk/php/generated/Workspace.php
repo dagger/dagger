@@ -655,15 +655,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with refreshed lockfile state for installed modules.
+     * Return this workspace with updated module versions and lockfile state.
      *
      * An SDK client scope is regenerated when it targets an updated module.
      */
-    public function withUpdatedModules(?array $names = []): Workspace
+    public function withUpdatedModules(?array $names = [], ?string $version = ''): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedModules');
         if (null !== $names) {
         $innerQueryBuilder->setArgument('names', $names);
+        }
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

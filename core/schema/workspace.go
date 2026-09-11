@@ -224,7 +224,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a module removed from its config.",
 				"When the session selects an env, only that env's overlay entry is removed.").
 			Args(
-				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
+				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withSDK", s.withSDK).
@@ -335,10 +335,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with refreshed lockfile state for installed modules.",
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with updated module versions and lockfile state.",
 				"An SDK client scope is regenerated when it targets an updated module.").
 			Args(
-				dagql.Arg("names").Doc("Installed module names to refresh. An empty list refreshes all installed modules."),
+				dagql.Arg("names").Doc("Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules."),
+				dagql.Arg("version").View(AfterVersion("v1.0.0-0")).Doc("New version request for exactly one selected module. Cannot be combined with a version suffix."),
 			),
 		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).

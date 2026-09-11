@@ -3427,9 +3427,14 @@ export type WorkspaceWithUpdatedLockOpts = {
 
 export type WorkspaceWithUpdatedModulesOpts = {
   /**
-   * Installed module names to refresh. An empty list refreshes all installed modules.
+   * Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
    */
   names?: string[]
+
+  /**
+   * New version request for exactly one selected module. Cannot be combined with a version suffix.
+   */
+  version?: string
 }
 
 export type WorkspaceWithoutClientOpts = {
@@ -15892,10 +15897,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with refreshed lockfile state for installed modules.
+   * Return this workspace with updated module versions and lockfile state.
    *
    * An SDK client scope is regenerated when it targets an updated module.
-   * @param opts.names Installed module names to refresh. An empty list refreshes all installed modules.
+   * @param opts.names Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
+   * @param opts.version New version request for exactly one selected module. Cannot be combined with a version suffix.
    */
   withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
     const ctx = this._ctx.select("withUpdatedModules", { ...opts })
@@ -15983,7 +15989,7 @@ export class Workspace extends BaseClient {
    * Return this workspace with a module removed from its config.
    *
    * When the session selects an env, only that env's overlay entry is removed.
-   * @param name Name of the installed module entry to remove.
+   * @param name Installed module name or source to remove. Version selectors are not accepted.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
   withoutModule = (
