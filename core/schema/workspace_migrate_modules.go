@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -294,6 +296,42 @@ func (p *moduleMigrationPlanner) requiredModules(convertedModules []string) erro
 		}
 		if err := p.module(dir, false, true); err != nil {
 			return fmt.Errorf("required installed module %q (%s): %w", name, source, err)
+		}
+	}
+	return p.requiredSDKScopeModules()
+}
+
+// requiredSDKScopeModules visits every local module an SDK manages. A module
+// registered only as an SDK module scope is reached by neither an install entry
+// nor a dependency edge, so without this it keeps an is-module scope with no
+// name and no clients, and its legacy config is never converted.
+func (p *moduleMigrationPlanner) requiredSDKScopeModules() error {
+	if p.config == nil {
+		return nil
+	}
+	configDir := path.Dir(p.configPath)
+	for _, sdkName := range slices.Sorted(maps.Keys(p.config.SDKs)) {
+		scopes := p.config.SDKs[sdkName].Scopes
+		for _, key := range slices.Sorted(maps.Keys(scopes)) {
+			if !scopes[key].IsModule {
+				continue
+			}
+			dir, err := workspace.ResolveSDKManagedPath(configDir, key)
+			if err != nil {
+				return fmt.Errorf("SDK %q module scope %q: %w", sdkName, key, err)
+			}
+			if p.visited[dir] {
+				continue
+			}
+			if !p.files[path.Join(dir, workspace.LegacyModuleConfigFileName)] &&
+				!p.files[path.Join(dir, workspace.ModuleConfigFileName)] {
+				// A stale scope must not block the rest of the migration.
+				p.warnings = append(p.warnings, fmt.Sprintf("SDK %q declares module scope %q, but %s has no module configuration; its module name and clients were not recorded.", sdkName, key, dir))
+				continue
+			}
+			if err := p.module(dir, false, true); err != nil {
+				return fmt.Errorf("required SDK %q module scope %q (%s): %w", sdkName, key, dir, err)
+			}
 		}
 	}
 	return nil

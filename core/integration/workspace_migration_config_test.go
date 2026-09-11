@@ -123,3 +123,46 @@ arbitrary = { nested = true }
 	require.NoError(t, err)
 	require.Equal(t, original, unchanged)
 }
+
+// TestWorkspaceMigrateSDKScopeOnlyModule covers a module that the workspace
+// reaches only through an SDK's module list: no [modules.*] install entry
+// points at it and no installed module depends on it. Migration must still
+// convert it and record its name and clients on the scope.
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateSDKScopeOnlyModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	original := `[modules.dagger-custom-sdk]
+source = './sdk'
+
+[modules.dagger-custom-sdk.as-sdk]
+name = 'custom'
+[[modules.dagger-custom-sdk.as-sdk.modules]]
+path = './tools/reporter'
+`
+	applied := workspaceBase(t, c).
+		WithNewFile("dagger.toml", original).
+		WithNewFile("sdk/dagger-module.toml", "name = 'custom-sdk'\n").
+		WithNewFile("tools/reporter/dagger.json", `{"name":"reporter","sdk":"../../sdk","dependencies":[{"name":"helper","source":"../helper"}]}`).
+		WithNewFile("tools/helper/dagger.json", `{"name":"helper","sdk":"../../sdk"}`).
+		With(daggerExec("ws", "migrate", "--auto-apply"))
+
+	out, err := applied.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+
+	updated, err := applied.File("dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, updated, "as-sdk")
+	cfg, err := workspace.ParseConfig([]byte(updated))
+	require.NoError(t, err)
+	scope := cfg.SDKs["custom"].Scopes["./tools/reporter"]
+	require.True(t, scope.IsModule)
+	require.Equal(t, "reporter", scope.Name, updated)
+	require.Equal(t, []string{"./tools/helper"}, scope.Clients, updated)
+
+	native, err := applied.File("tools/reporter/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, native, `name = "reporter"`)
+	_, err = applied.File("tools/reporter/dagger.json").Contents(ctx)
+	require.Error(t, err)
+	_, err = applied.File("tools/helper/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+}
