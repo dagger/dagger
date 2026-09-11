@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -51,8 +52,6 @@ func gitPushSHA(sha string) bool {
 // Push copies only the selected history into a disposable repository. Neither
 // checkout configuration/hooks nor source credentials can affect the push.
 func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, opts GitPushOpts) (*GitPushResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, GitPushTimeout)
-	defer cancel()
 	name, err := opts.Ref(ref.Ref)
 	if err != nil {
 		return nil, err
@@ -68,6 +67,38 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	if err != nil {
 		return nil, err
 	}
+	// HTTP userinfo may contain a token even without a password. Never put
+	// embedded credentials in a permission prompt or in Git's output.
+	if destination.URL.User != nil {
+		_, hasPassword := destination.URL.User.Password()
+		if hasPassword || destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol {
+			return nil, fmt.Errorf("push destination must not contain embedded credentials; use a secret instead")
+		}
+	}
+	owner, err := query.AuthorizeGitPush(ctx, destination.URL.Remote(), name, opts.ExpectedRemoteSHA != "")
+	if err != nil {
+		return nil, err
+	}
+	// Human approval time does not consume the network operation's deadline.
+	ctx, cancel := context.WithTimeout(ctx, GitPushTimeout)
+	defer cancel()
+	authCtx := engine.ContextWithClientMetadata(ctx, owner)
+	var sshAuthSock string
+	if destination.URL.Scheme == gitutil.SSHProtocol && destination.SSHAuthSocket.Self() == nil && owner.SSHAuthSocketPath != "" {
+		// Mount only for this operation, without registering a socket handle or
+		// returning an authenticated GitRepository to the module.
+		socket := &Socket{
+			Kind:           SocketKindUnixOpaque,
+			URLVal:         (&url.URL{Scheme: "unix", Path: owner.SSHAuthSocketPath}).String(),
+			SourceClientID: owner.ClientID,
+		}
+		var cleanup func() error
+		sshAuthSock, cleanup, err = socket.MountSSHAgent(authCtx)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+	}
 	// Local fetch also spawns upload-pack. Cancel its whole process group so
 	// inherited pipes cannot keep the operation alive past the deadline.
 	local = local.New(gitutil.WithExec(runProcessGroup))
@@ -80,34 +111,24 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 		return nil, err
 	}
 	defer detach()
-	pushGit, cleanup, err := destination.setup(ctx)
+	pushGit, cleanup, err := destination.setupWithSSHAuthSock(ctx, sshAuthSock)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 	pushGit = pushGit.New(gitPushCLIOptions()...)
-	// Fetch may be public while receive-pack requires authentication. Do not
-	// inherit credentials from the source or implicitly cross a module boundary.
+	// Fetch may be public while receive-pack requires authentication. Approval
+	// permits operation-local owner credentials, not a transferable capability.
 	if destination.AuthToken.Self() == nil && destination.AuthHeader.Self() == nil &&
 		(destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol) {
-		caller, err := engine.ClientMetadataFromContext(ctx)
+		bk, err := query.Engine(authCtx)
 		if err != nil {
 			return nil, err
 		}
-		owner, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if caller.ClientID == owner.ClientID {
-			bk, err := query.Engine(ctx)
-			if err != nil {
-				return nil, err
-			}
-			credential, err := bk.GetCredential(ctx, destination.URL.Scheme, destination.URL.Host, destination.URL.Path)
-			if err == nil {
-				pushGit = pushGit.New(gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username))
-			} // Missing credentials are permitted for anonymous writable remotes.
-		}
+		credential, err := bk.GetCredential(authCtx, destination.URL.Scheme, destination.URL.Host, destination.URL.Path)
+		if err == nil {
+			pushGit = pushGit.New(gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username))
+		} // Missing credentials are permitted for anonymous writable remotes.
 	}
 	tmp, err := os.MkdirTemp("", "dagger-git-push-")
 	if err != nil {
@@ -139,7 +160,8 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 func gitPushCLIOptions() []gitutil.Option {
 	return []gitutil.Option{
 		gitutil.WithConfig(map[string]string{
-			"core.hooksPath": "/dev/null", "core.abbrev": "no",
+			"http.followRedirects": "false",
+			"core.hooksPath":       "/dev/null", "core.abbrev": "no",
 			"maintenance.auto": "false", "gc.auto": "0", "push.followTags": "false",
 			"push.gpgSign": "false", "push.recurseSubmodules": "no",
 		}),
