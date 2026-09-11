@@ -62,6 +62,10 @@ func TestConfigWarningsMatchDecoder(t *testing.T) {
 	warnings, err = ConfigWarnings([]byte("[modules.provider]\nsource = './sdk'\nSOURCE = './ignored'\n"), "dagger.toml")
 	require.NoError(t, err)
 	require.Equal(t, []string{"dagger.toml:3:1: unsupported field modules.provider.SOURCE is ignored"}, warnings)
+
+	warnings, err = ConfigWarnings([]byte("[MODULES.provider.AS-SDK]\nNAME = 'custom'\n"), "dagger.toml")
+	require.NoError(t, err)
+	require.Equal(t, []string{"dagger.toml:1:1: unsupported field MODULES.provider.AS-SDK is ignored; run `dagger ws migrate` to migrate it"}, warnings)
 }
 
 func TestMigrateConfigBytes(t *testing.T) {
@@ -125,6 +129,29 @@ package = 'bindings'
 		require.True(t, cfg.SDKs["custom"].Scopes["."].IsModule)
 	})
 
+	t.Run("decoder field aliases", func(t *testing.T) {
+		data := []byte(`[MODULES.provider]
+SOURCE = './sdk'
+[MODULES.provider.AS-SDK]
+NAME = 'custom'
+[[MODULES.provider.AS-SDK.MODULES]]
+PATH = '.'
+[[MODULES.provider.AS-SDK.CLIENTS]]
+PATH = './client'
+MODULE = '../target'
+package = 'bindings'
+`)
+		updated, err := MigrateConfigBytes(data, ".")
+		require.NoError(t, err)
+		require.NotContains(t, string(updated), "AS-SDK")
+		cfg, err := ParseConfig(updated)
+		require.NoError(t, err)
+		require.Equal(t, "provider", cfg.SDKs["custom"].Module)
+		require.True(t, cfg.SDKs["custom"].Scopes["."].IsModule)
+		require.Equal(t, []string{"../target"}, cfg.SDKs["custom"].Scopes["./client"].Clients)
+		require.Equal(t, map[string]any{"package": "bindings"}, cfg.SDKs["custom"].Scopes["./client"].Settings)
+	})
+
 	t.Run("current config makes no change", func(t *testing.T) {
 		data := []byte("# keep\nfuture = [ 1, 2 ]\n[modules]\n")
 		updated, err := MigrateConfigBytes(data, ".")
@@ -147,6 +174,7 @@ func TestMigrateConfigConflicts(t *testing.T) {
 		{"scope module flag", "[[modules.provider.as-sdk.modules]]\npath = '.'", "[sdks.provider]\nmodule = 'provider'\n[sdks.provider.scopes.'.']\nis-module = false", "explicitly sets is-module = false"},
 		{"settings", "[[modules.provider.as-sdk.clients]]\npath = '.'\nmodule = '.'\npackage = 'new'", "[sdks.provider]\nmodule = 'provider'\n[sdks.provider.scopes.'.'.settings]\npackage = 'old'", "conflicts in settings.package"},
 		{"environment", "", "[env.test.modules.provider.as-sdk]\nname = 'test'", "environment-specific SDK roles"},
+		{"environment aliases", "", "[ENV.test.MODULES.provider.AS-SDK]\nNAME = 'test'", "environment-specific SDK roles"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := []byte("[modules.provider]\nsource = './sdk'\n[modules.provider.as-sdk]\n" + tc.legacy + "\n" + tc.extra + "\n")

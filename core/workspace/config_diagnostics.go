@@ -30,11 +30,8 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 				if name != "" && name != "-" {
 					// Match go-toml's field lookup order, including accepted
 					// case variants. Only the first present key is consumed.
-					for _, key := range []string{name, strings.ToLower(name), strings.ToTitle(name), strings.ToLower(name[:1]) + name[1:]} {
-						if tree.HasPath([]string{key}) {
-							fields[key] = field.Type
-							break
-						}
+					if key, ok := configDecoderKey(tree, name); ok {
+						fields[key] = field.Type
 					}
 				}
 			}
@@ -64,6 +61,28 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 }
 
 func legacySDKConfigPath(parts []string) bool {
-	return len(parts) == 3 && parts[0] == "modules" && parts[2] == "as-sdk" ||
-		len(parts) == 5 && parts[0] == "env" && parts[2] == "modules" && parts[4] == "as-sdk"
+	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && configDecoderKeyMatches(parts[2], "as-sdk") ||
+		len(parts) == 5 && configDecoderKeyMatches(parts[0], "env") && configDecoderKeyMatches(parts[2], "modules") && configDecoderKeyMatches(parts[4], "as-sdk")
+}
+
+// configDecoderKey returns the key go-toml consumes for a tagged struct field.
+// Keep this order synchronized with go-toml's Decoder.valueFromTree.
+func configDecoderKey(tree *toml.Tree, name string) (string, bool) {
+	if tree == nil {
+		return "", false
+	}
+	for _, key := range configDecoderKeys(name) {
+		if tree.HasPath([]string{key}) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func configDecoderKeyMatches(key, name string) bool {
+	return slices.Contains(configDecoderKeys(name), key)
+}
+
+func configDecoderKeys(name string) []string {
+	return []string{name, strings.ToLower(name), strings.ToTitle(name), strings.ToLower(name[:1]) + name[1:]}
 }

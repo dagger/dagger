@@ -23,12 +23,16 @@ func MigrateConfigBytes(data []byte, configDir string) ([]byte, error) {
 	}
 	// The current schema has no environment-specific SDK registry. Moving an
 	// environment's role into the base config would change other environments.
-	if envs, ok := tree.Get("env").(*toml.Tree); ok {
+	if envKey, found := configDecoderKey(tree, "env"); found {
+		envs, _ := tree.Get(envKey).(*toml.Tree)
 		for _, env := range sortedConfigKeys(envs) {
-			if mods, ok := envs.GetPath([]string{env, "modules"}).(*toml.Tree); ok {
+			envTree, _ := envs.Get(env).(*toml.Tree)
+			if modulesKey, found := configDecoderKey(envTree, "modules"); found {
+				mods, _ := envTree.Get(modulesKey).(*toml.Tree)
 				for _, name := range sortedConfigKeys(mods) {
-					if mods.HasPath([]string{name, "as-sdk"}) {
-						return nil, fmt.Errorf("cannot migrate %s: environment-specific SDK roles have no current replacement; field retained", JoinConfigPath("env", env, "modules", name, "as-sdk"))
+					module, _ := mods.Get(name).(*toml.Tree)
+					if asSDKKey, found := configDecoderKey(module, "as-sdk"); found {
+						return nil, fmt.Errorf("cannot migrate %s: environment-specific SDK roles have no current replacement; field retained", JoinConfigPath(envKey, env, modulesKey, name, asSDKKey))
 					}
 				}
 			}
@@ -36,12 +40,16 @@ func MigrateConfigBytes(data []byte, configDir string) ([]byte, error) {
 	}
 
 	var remove [][]string
+	modulesKey, _ := configDecoderKey(tree, "modules")
+	modules, _ := tree.Get(modulesKey).(*toml.Tree)
 	for _, moduleName := range slices.Sorted(maps.Keys(cfg.Modules)) {
-		parts := []string{"modules", moduleName, "as-sdk"}
-		if !tree.HasPath(parts) {
+		module, _ := modules.Get(moduleName).(*toml.Tree)
+		asSDKKey, found := configDecoderKey(module, "as-sdk")
+		if !found {
 			continue
 		}
-		legacy, ok := tree.GetPath(parts).(*toml.Tree)
+		parts := []string{modulesKey, moduleName, asSDKKey}
+		legacy, ok := module.Get(asSDKKey).(*toml.Tree)
 		if !ok {
 			return nil, fmt.Errorf("cannot migrate %s: expected a table; field retained", JoinConfigPath(parts...))
 		}
@@ -126,7 +134,7 @@ func migrateLegacySDKScopes(tree, legacy *toml.Tree, sdk *SDKEntry, configDir, s
 				if err := checkLegacySDKFields(record, recordPath, "path"); err != nil {
 					return err
 				}
-				if explicit, ok := tree.GetPath([]string{"sdks", sdkName, "scopes", key, "is-module"}).(bool); ok && !explicit {
+				if explicit, ok := configSDKScopeIsModule(tree, sdkName, key); ok && !explicit {
 					return fmt.Errorf("cannot migrate %s: SDK %q scope %q explicitly sets is-module = false; field retained", JoinConfigPath(recordPath...), sdkName, key)
 				}
 				scope.IsModule = true
@@ -154,8 +162,14 @@ func sortedConfigKeys(tree *toml.Tree) []string {
 }
 
 func checkLegacySDKFields(tree *toml.Tree, parts []string, allowed ...string) error {
+	known := map[string]bool{}
+	for _, name := range allowed {
+		if key, found := configDecoderKey(tree, name); found {
+			known[key] = true
+		}
+	}
 	for _, key := range sortedConfigKeys(tree) {
-		if !slices.Contains(allowed, key) {
+		if !known[key] {
 			return fmt.Errorf("cannot migrate %s: unsupported legacy field %s; field retained", JoinConfigPath(parts...), JoinConfigPath(append(slices.Clone(parts), key)...))
 		}
 	}
@@ -163,7 +177,11 @@ func checkLegacySDKFields(tree *toml.Tree, parts []string, allowed ...string) er
 }
 
 func legacySDKString(tree *toml.Tree, key string, parts []string, required bool) (string, error) {
-	value := tree.GetPath([]string{key})
+	actual, found := configDecoderKey(tree, key)
+	var value any
+	if found {
+		value = tree.Get(actual)
+	}
 	if value == nil && !required {
 		return "", nil
 	}
@@ -178,7 +196,11 @@ func legacySDKString(tree *toml.Tree, key string, parts []string, required bool)
 }
 
 func legacySDKRecords(tree *toml.Tree, key string, parts []string) ([]*toml.Tree, error) {
-	value := tree.GetPath([]string{key})
+	actual, found := configDecoderKey(tree, key)
+	var value any
+	if found {
+		value = tree.Get(actual)
+	}
 	if value == nil {
 		return nil, nil
 	}
@@ -213,8 +235,14 @@ func legacySDKClient(tree *toml.Tree, parts []string) (string, map[string]any, e
 		target += "@" + pin
 	}
 	settings := map[string]any{}
+	known := map[string]bool{}
+	for _, name := range []string{"path", "module", "pin"} {
+		if key, found := configDecoderKey(tree, name); found {
+			known[key] = true
+		}
+	}
 	for _, key := range sortedConfigKeys(tree) {
-		if key == "path" || key == "module" || key == "pin" {
+		if known[key] {
 			continue
 		}
 		// The beta schema stored client options as extra string fields.
@@ -225,4 +253,25 @@ func legacySDKClient(tree *toml.Tree, parts []string) (string, map[string]any, e
 		settings[key] = value
 	}
 	return target, settings, nil
+}
+
+func configSDKScopeIsModule(tree *toml.Tree, sdkName, scopeKey string) (bool, bool) {
+	sdksKey, found := configDecoderKey(tree, "sdks")
+	if !found {
+		return false, false
+	}
+	sdks, _ := tree.Get(sdksKey).(*toml.Tree)
+	sdk, _ := sdks.Get(sdkName).(*toml.Tree)
+	scopesKey, found := configDecoderKey(sdk, "scopes")
+	if !found {
+		return false, false
+	}
+	scopes, _ := sdk.Get(scopesKey).(*toml.Tree)
+	scope, _ := scopes.Get(scopeKey).(*toml.Tree)
+	isModuleKey, found := configDecoderKey(scope, "is-module")
+	if !found {
+		return false, false
+	}
+	explicit, ok := scope.Get(isModuleKey).(bool)
+	return explicit, ok
 }
