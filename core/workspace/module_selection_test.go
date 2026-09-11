@@ -123,3 +123,28 @@ func TestSelectModuleUpdates(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, selections, 1)
 }
+
+func TestSelectModuleLocalPathCharacters(t *testing.T) {
+	for _, source := range []string{"./node_modules/@acme/tools", "./tools#old", "./tools@", "./tools#", "node_modules/@acme/tools", "../tools#old", "/work/tools@v1"} {
+		t.Run(source, func(t *testing.T) {
+			modules := map[string]ModuleEntry{"tools": {Source: source}}
+			for _, allowVersion := range []bool{false, true} {
+				selected, err := SelectModule(modules, "/work", "/work", source, allowVersion)
+				require.NoError(t, err)
+				require.Equal(t, "tools", selected.Name)
+				require.Empty(t, selected.Version)
+			}
+			split, version, hasVersion, err := SplitModuleVersion(source)
+			require.NoError(t, err)
+			require.Equal(t, source, split)
+			require.Empty(t, version)
+			require.False(t, hasVersion)
+			selections, err := SelectModuleUpdates(modules, "/work", "/work", []string{source}, "")
+			require.NoError(t, err)
+			require.Len(t, selections, 1)
+			require.Empty(t, selections[0].Version)
+			_, err = SelectModuleUpdates(modules, "/work", "/work", []string{source}, "v2")
+			require.ErrorContains(t, err, "local module source")
+		})
+	}
+}

@@ -74,8 +74,11 @@ func SelectModule(modules map[string]ModuleEntry, configDir, cwd, selector strin
 
 // SplitModuleVersion separates a module request without fetching the source.
 // SSH user names are not version selectors. Explicit Git URLs retain their
-// subdirectory when their #ref selector is removed.
+// subdirectory when their #ref selector is removed. Local paths remain literal.
 func SplitModuleVersion(ref string) (source, version string, hasVersion bool, err error) {
+	if IsLocalRef(ref, "") {
+		return ref, "", false, nil
+	}
 	if repo, fragment, ok := strings.Cut(ref, "#"); ok {
 		version, subdir, _ := strings.Cut(fragment, ":")
 		if version == "" || strings.Contains(fragment, "#") {
