@@ -701,7 +701,8 @@ source = "github.com/acme/custom-go-sdk"
 		scope, ok := cfg.SDKs["go"].Scopes[filepath.ToSlash(filepath.Join("services", "api", "libs", "dep"))]
 		require.True(t, ok)
 		require.True(t, scope.IsModule)
-		require.Equal(t, "dep", scope.Name)
+		// "dep" matches the scope directory name, so it is inferred and not written.
+		require.Empty(t, scope.Name)
 	})
 }
 

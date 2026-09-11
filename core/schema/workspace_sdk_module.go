@@ -223,29 +223,10 @@ func resolveSDKModuleInit(ws *core.Workspace, pathArg, nameArg string) (string, 
 // Default init records an entrypoint installation, which preserves its name
 // even when the SDK chooses a different directory for the module.
 func resolveSDKModuleName(ws *core.Workspace, cfg *workspace.Config, configDir, scopePath, name string) (string, error) {
-	if name == "" && cfg != nil && scopePath != "" {
-		var entrypoints []string
-		for installedName, entry := range cfg.Modules {
-			if !entry.Entrypoint || !workspace.IsLocalRef(entry.Source, entry.Pin) {
-				continue
-			}
-			sourcePath, err := workspace.ResolveSDKManagedPath(configDir, entry.Source)
-			if err != nil {
-				return "", fmt.Errorf("entrypoint module %q: %w", installedName, err)
-			}
-			if sourcePath == cleanWorkspaceRelPath(scopePath) {
-				entrypoints = append(entrypoints, installedName)
-			}
-		}
-		if len(entrypoints) > 1 {
-			sort.Strings(entrypoints)
-			return "", fmt.Errorf("module scope %q has multiple entrypoint names %q; set an explicit scope name", scopePath, entrypoints)
-		}
-		if len(entrypoints) == 1 {
-			name = entrypoints[0]
-		}
+	if name != "" {
+		return workspace.ModuleInitName(name, scopePath, configDir, workspaceRootDirectoryName(ws))
 	}
-	return workspace.ModuleInitName(name, scopePath, configDir, workspaceRootDirectoryName(ws))
+	return workspace.InferSDKModuleName(cfg, configDir, scopePath, workspaceRootDirectoryName(ws))
 }
 
 func workspaceRootDirectoryName(ws *core.Workspace) string {

@@ -68,7 +68,9 @@ func addMigratedModuleSDK(wsCfg *Config, sdkSource, preferredInstallName, module
 	}
 	scope := sdk.Scopes[modulePath]
 	scope.IsModule = true
-	scope.Name = migratedModuleName
+	if scope.Name == "" && migratedScopeNeedsName(wsCfg, modulePath, migratedModuleName) {
+		scope.Name = migratedModuleName
+	}
 	for _, client := range clients {
 		if !slices.Contains(scope.Clients, client) {
 			scope.Clients = append(scope.Clients, client)
@@ -76,6 +78,17 @@ func addMigratedModuleSDK(wsCfg *Config, sdkSource, preferredInstallName, module
 	}
 	sdk.Scopes[modulePath] = scope
 	wsCfg.SDKs[sdkName] = sdk
+}
+
+// migratedScopeNeedsName reports whether a migrated module keeps its name only
+// through an explicit scope name. The inferred name is not written, matching
+// module init: the scope directory name, or the installed name of the local
+// entrypoint at that path, already resolves to the module's name. Inference is
+// evaluated relative to the config directory, so a root scope with no
+// entrypoint cannot be inferred here and keeps its explicit name.
+func migratedScopeNeedsName(wsCfg *Config, modulePath, migratedModuleName string) bool {
+	inferred, err := InferSDKModuleName(wsCfg, ".", modulePath, "")
+	return err != nil || inferred != migratedModuleName
 }
 
 // RegisterMigratedModuleSDK adds the migrated module's scope without replacing

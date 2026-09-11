@@ -36,6 +36,8 @@ dagger workspace migrate
 
 This will interpret your `dagger.json` as a workspace configuration, and translate it to an equivalent `dagger.toml`.
 
+Each migrated module is registered as a scope of its SDK. The scope gets an explicit `name` only when the module's name differs from the name Dagger infers from the scope directory or its entrypoint installation. See the [`[sdks.<name>]` reference](../reference/config-files/dagger-toml.mdx#sdksname).
+
 | `dagger.json` field | Translation |
 | -- | -- |
 | `sdk` | Create a module at `.dagger/modules/<name>`, install it in `dagger.toml`, make it the workspace entrypoint |

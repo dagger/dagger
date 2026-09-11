@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -35,6 +36,45 @@ func PlanModuleInit(explicitPath, explicitName bool, install, entrypoint *bool) 
 	plan.AutomaticInstall = plan.Install && install == nil && (entrypoint == nil || !*entrypoint)
 	plan.AutomaticEntrypoint = plan.Entrypoint && entrypoint == nil
 	return plan, nil
+}
+
+// InferSDKModuleName returns the name an unnamed module scope resolves to. A
+// scope that is the source of exactly one local entrypoint install takes that
+// installed name. Otherwise it takes the scope directory name, falling back to
+// a "-dev" name derived from configDir or rootName for a root scope. Multiple
+// matching entrypoint names are an error: such a scope needs an explicit name.
+func InferSDKModuleName(cfg *Config, configDir, scopePath, rootName string) (string, error) {
+	name := ""
+	if cfg != nil && scopePath != "" {
+		var entrypoints []string
+		for installedName, entry := range cfg.Modules {
+			if !entry.Entrypoint || !IsLocalRef(entry.Source, entry.Pin) {
+				continue
+			}
+			sourcePath, err := ResolveSDKManagedPath(configDir, entry.Source)
+			if err != nil {
+				return "", fmt.Errorf("entrypoint module %q: %w", installedName, err)
+			}
+			if sourcePath == cleanScopeRelPath(scopePath) {
+				entrypoints = append(entrypoints, installedName)
+			}
+		}
+		if len(entrypoints) > 1 {
+			sort.Strings(entrypoints)
+			return "", fmt.Errorf("module scope %q has multiple entrypoint names %q; set an explicit scope name", scopePath, entrypoints)
+		}
+		if len(entrypoints) == 1 {
+			name = entrypoints[0]
+		}
+	}
+	return ModuleInitName(name, scopePath, configDir, rootName)
+}
+
+func cleanScopeRelPath(p string) string {
+	if p == "" || p == "." {
+		return "."
+	}
+	return filepath.Clean(p)
 }
 
 // ModuleInitName infers a module name before the SDK chooses its default path.

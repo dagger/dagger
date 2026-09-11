@@ -735,7 +735,8 @@ type Myapp {
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `[sdks.dang.scopes."libs/foo"]`)
 		require.Contains(t, wsOut, `is-module = true`)
-		require.Contains(t, wsOut, `name = "foo"`)
+		// "foo" is the scope directory name, so it is inferred and not written.
+		require.NotContains(t, wsOut, `name = "foo"`)
 		// The runtime is resolved to its real ref, matching a generic SDK-module install,
 		// not left as the bare "dang" short name.
 		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)

@@ -331,7 +331,9 @@ func TestPlanMigrationWritesSDK(t *testing.T) {
 	require.Contains(t, configData, `module = "dagger-go-sdk"`)
 	require.Contains(t, configData, "[sdks.go.scopes.\".\"]")
 	require.Contains(t, configData, `is-module = true`)
-	require.Contains(t, configData, `name = "myapp"`)
+	// The scope is the entrypoint's source, so "myapp" is inferred at load
+	// time and is not written as an override.
+	require.NotContains(t, configData, `name = "myapp"`)
 }
 
 func TestMigrationSDKInstallName(t *testing.T) {

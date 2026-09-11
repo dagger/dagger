@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Migration no longer writes a redundant `name` on SDK module scopes. The
+  scope name is only written when it differs from the inferred name, matching
+  `dagger module init`.
+time: 2026-09-11T13:15:00Z
+custom:
+  Author: shykes
