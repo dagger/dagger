@@ -152,25 +152,38 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	return checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, frozen.Self(), frozen.Self().SelectedEnv())
 }
 
-// commitBase materializes a clean full-history checkout, regardless of the
-// source repository's keepGitDir option. This pure helper owns the snapshot.
-func (s *workspaceSchema) commitBase(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
-	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("commit base requires a frozen workspace; call snapshot first")
-	}
+func (s *workspaceSchema) workspaceGitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.WorkspaceGit], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return inst, fmt.Errorf("withCommit requires a Git-backed workspace: %w", err)
+	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "head"}); err != nil {
+		return inst, fmt.Errorf("workspace Git checkout requires a HEAD commit: %w", err)
 	}
+	// Bypass the repository's keepGitDir option and the default shallow depth.
+	// Tree returns a newly owned, materialized snapshot rooted at /; expose its
+	// metadata directly without an intermediate private GraphQL field.
 	dir, err := head.Self().Backend.Tree(ctx, srv, false, 0, false)
 	if err != nil {
 		return inst, err
 	}
+	dir.Dir.SetValue("/.git")
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// workspaceGitCheckout composes a clean full-history checkout from the public
+// Git metadata API. The repository is local to the engine, so checking it out
+// does not fetch history from the original remote again.
+func workspaceGitCheckout(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*core.Workspace]) (inst dagql.ObjectResult[*core.Directory], err error) {
+	err = srv.Select(ctx, ws, &inst,
+		dagql.Selector{Field: "git"},
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{Field: "asGit"},
+		dagql.Selector{Field: "head"},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.NewInt(0)}}},
+	)
+	return inst, err
 }
 
 func (s *workspaceSchema) commitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -185,8 +198,8 @@ func (s *workspaceSchema) commitDirectory(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	var base dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &base, dagql.Selector{Field: "__commitBase"}); err != nil {
+	base, err := workspaceGitCheckout(ctx, srv, parent)
+	if err != nil {
 		return inst, err
 	}
 	var changes dagql.ObjectResult[*core.Changeset]

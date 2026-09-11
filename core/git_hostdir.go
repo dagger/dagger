@@ -325,7 +325,10 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// branch HEAD symbolically points at (set just above): this is a
 		// scratch reconstruction with no meaningful work tree, so git's
 		// "refusing to fetch into checked-out branch" guard does not apply.
-		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*"}); err != nil {
+		// HEAD is also advertised by PackCheckout and can be the only ref in
+		// a detached checkout, such as a materialized Workspace.git.directory.
+		// Fetch it explicitly so its objects exist before restoring HEAD below.
+		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*", "HEAD"}); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 
