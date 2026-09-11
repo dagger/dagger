@@ -63,14 +63,12 @@ func (r PhpClientDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		OriginalWorkspace  *dagger.Directory
 		Workspace          *dagger.Directory
-		DoctumConfigPath   string
 		SourcePath         string
 		ClientDockerConfig *dagger.Secret
 		Ws                 *dagger.Workspace
 	}
 	concrete.OriginalWorkspace = r.OriginalWorkspace
 	concrete.Workspace = r.Workspace
-	concrete.DoctumConfigPath = r.DoctumConfigPath
 	concrete.SourcePath = r.SourcePath
 	concrete.ClientDockerConfig = r.ClientDockerConfig
 	concrete.Ws = r.Ws
@@ -81,7 +79,6 @@ func (r *PhpClientDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		OriginalWorkspace  *dagger.Directory
 		Workspace          *dagger.Directory
-		DoctumConfigPath   string
 		SourcePath         string
 		ClientDockerConfig *dagger.Secret
 		Ws                 *dagger.Workspace
@@ -92,7 +89,6 @@ func (r *PhpClientDev) UnmarshalJSON(bs []byte) error {
 	}
 	r.OriginalWorkspace = concrete.OriginalWorkspace
 	r.Workspace = concrete.Workspace
-	r.DoctumConfigPath = concrete.DoctumConfigPath
 	r.SourcePath = concrete.SourcePath
 	r.ClientDockerConfig = concrete.ClientDockerConfig
 	r.Ws = concrete.Ws
@@ -224,7 +220,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*PhpClientDev).API(&parent, ctx)
+			return (*PhpClientDev).API(&parent), nil
 		case "BaseContainer":
 			var parent PhpClientDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -253,13 +249,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PhpClientDev).DevContainer(&parent, runInstall), nil
-		case "DoctumConfig":
-			var parent PhpClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpClientDev).DoctumConfig(&parent), nil
 		case "PhpCodeSniffer":
 			var parent PhpClientDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -372,13 +361,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PhpClientDev).WithGeneratedClient(&parent), nil
-		case "WithGeneratedDocs":
-			var parent PhpClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*PhpClientDev).WithGeneratedDocs(&parent, ctx)
 		case "":
 			var parent PhpClientDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -399,13 +381,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourcePath", err))
 				}
 			}
-			var doctumConfigPath string
-			if inputArgs["doctumConfigPath"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["doctumConfigPath"]), &doctumConfigPath)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg doctumConfigPath", err))
-				}
-			}
 			var clientDockerConfig *dagger.Secret
 			if inputArgs["clientDockerConfig"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["clientDockerConfig"]), &clientDockerConfig)
@@ -420,7 +395,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
 				}
 			}
-			return New(workspaceDir, sourcePath, doctumConfigPath, clientDockerConfig, ws), nil
+			return New(workspaceDir, sourcePath, clientDockerConfig, ws), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -428,97 +403,86 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		return dag.Module().
 			WithDescription("Toolchain to develop the Dagger PHP SDK (experimental)\n").
 			WithObject(
-				dag.TypeDef().WithObject("PhpClientDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 23, 6)}).
+				dag.TypeDef().WithObject("PhpClientDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 19, 6)}).
 					WithFunction(
 						dag.Function("API",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the PHP SDK API").
-							WithSourceMap(dag.SourceMap("main.go", 150, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 136, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("BaseContainer",
 							dag.TypeDef().WithObject("Container")).
-							WithSourceMap(dag.SourceMap("main.go", 61, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 52, 1))).
 					WithFunction(
 						dag.Function("Changes",
 							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 161, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 140, 1))).
 					WithFunction(
 						dag.Function("DevContainer",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Returns the PHP SDK workspace mounted in a dev container,\nand working directory set to the SDK source").
-							WithSourceMap(dag.SourceMap("main.go", 88, 1)).
-							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Run composer install before returning the container", SourceMap: dag.SourceMap("main.go", 91, 2), DefaultValue: dagger.JSON("\"false\"")})).
-					WithFunction(
-						dag.Function("DoctumConfig",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("DoctumConfig returns the doctum configuration file").
-							WithSourceMap(dag.SourceMap("main.go", 114, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 79, 1)).
+							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Run composer install before returning the container", SourceMap: dag.SourceMap("main.go", 82, 2), DefaultValue: dagger.JSON("\"false\"")})).
 					WithFunction(
 						dag.Function("PhpCodeSniffer",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)").
-							WithSourceMap(dag.SourceMap("main.go", 120, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 106, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("PhpStan",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Analyze the PHP code with PHPStan (https://phpstan.org)").
-							WithSourceMap(dag.SourceMap("main.go", 130, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 116, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Release",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish the PHP SDK").
-							WithSourceMap(dag.SourceMap("main.go", 245, 1)).
-							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The source git repository to release", SourceMap: dag.SourceMap("main.go", 250, 2), DefaultPath: "/"}).
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The source git tag to release", SourceMap: dag.SourceMap("main.go", 253, 2)}).
-							WithArg("dest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 257, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger-php-sdk.git\"")}).
-							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 259, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 193, 1)).
+							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The source git repository to release", SourceMap: dag.SourceMap("main.go", 198, 2), DefaultPath: "/"}).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The source git tag to release", SourceMap: dag.SourceMap("main.go", 201, 2)}).
+							WithArg("dest", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 205, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger-php-sdk.git\"")}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 207, 2)})).
 					WithFunction(
 						dag.Function("ReleaseDryRun",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the publishing process").
-							WithSourceMap(dag.SourceMap("main.go", 214, 1)).
-							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source git repository to fake-release", SourceMap: dag.SourceMap("main.go", 218, 2), DefaultPath: "/"}).
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 221, 2), DefaultValue: dagger.JSON("\"HEAD\"")}).
-							WithArg("destRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Target git remote to fake-release *to*", SourceMap: dag.SourceMap("main.go", 224, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger-php-sdk.git\"")})).
+							WithSourceMap(dag.SourceMap("main.go", 162, 1)).
+							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source git repository to fake-release", SourceMap: dag.SourceMap("main.go", 166, 2), DefaultPath: "/"}).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 169, 2), DefaultValue: dagger.JSON("\"HEAD\"")}).
+							WithArg("destRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Target git remote to fake-release *to*", SourceMap: dag.SourceMap("main.go", 172, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger-php-sdk.git\"")})).
 					WithFunction(
 						dag.Function("Source",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Source returns the source directory for the PHP SDK").
-							WithSourceMap(dag.SourceMap("main.go", 109, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 100, 1))).
 					WithFunction(
 						dag.Function("Test",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the PHP SDK with PHPUnit (https://phpunit.de/)").
-							WithSourceMap(dag.SourceMap("main.go", 141, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 127, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("VersionFromTag",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Get v1.2.3 from sdk/php/v1.2.3").
-							WithSourceMap(dag.SourceMap("main.go", 239, 1)).
-							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 239, 38)})).
+							WithSourceMap(dag.SourceMap("main.go", 187, 1)).
+							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 187, 38)})).
 					WithFunction(
 						dag.Function("WithGeneratedClient",
 							dag.TypeDef().WithObject("PhpClientDev")).
-							WithSourceMap(dag.SourceMap("main.go", 165, 1))).
-					WithFunction(
-						dag.Function("WithGeneratedDocs",
-							dag.TypeDef().WithObject("PhpClientDev")).
-							WithDescription("Generate reference docs from the generated client\nNOTE: it's the caller's responsibility to ensure the generated client is up-to-date\n(see WithGeneratedClient)").
-							WithSourceMap(dag.SourceMap("main.go", 185, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 144, 1))).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("PhpClientDev")).
 							WithDescription("Develop the Dagger PHP SDK (experimental)").
-							WithSourceMap(dag.SourceMap("main.go", 33, 1)).
-							WithArg("workspaceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 37, 2), DefaultPath: "/", Ignore: []string{"*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"}}).
-							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 40, 2), DefaultValue: dagger.JSON("\"sdk/php\"")}).
-							WithArg("doctumConfigPath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the doctum config in the workspace", SourceMap: dag.SourceMap("main.go", 43, 2), DefaultValue: dagger.JSON("\"docs/doctum-config.php\"")}).
-							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 46, 2)}).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a\ndirect call; dependencies don't inherit it, so callers must forward it.", SourceMap: dag.SourceMap("main.go", 49, 2)}))), nil
+							WithSourceMap(dag.SourceMap("main.go", 28, 1)).
+							WithArg("workspaceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 32, 2), DefaultPath: "/", Ignore: []string{"*", "!sdk/php", "sdk/php/.changes"}}).
+							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 35, 2), DefaultValue: dagger.JSON("\"sdk/php\"")}).
+							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 38, 2)}).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a\ndirect call; dependencies don't inherit it, so callers must forward it.", SourceMap: dag.SourceMap("main.go", 41, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

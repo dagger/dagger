@@ -84,15 +84,6 @@ func (r *PhpClientDev) DevContainer(opts ...PhpClientDevDevContainerOpts) *Conta
 	}
 }
 
-// DoctumConfig returns the doctum configuration file
-func (r *PhpClientDev) DoctumConfig() *File {
-	q := r.query.Select("doctumConfig")
-
-	return &File{
-		query: q,
-	}
-}
-
 // A unique identifier for this PhpClientDev.
 func (r *PhpClientDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -277,17 +268,6 @@ func (r *PhpClientDev) WithGeneratedClient() *PhpClientDev {
 	}
 }
 
-// Generate reference docs from the generated client
-// NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
-// (see WithGeneratedClient)
-func (r *PhpClientDev) WithGeneratedDocs() *PhpClientDev {
-	q := r.query.Select("withGeneratedDocs")
-
-	return &PhpClientDev{
-		query: q,
-	}
-}
-
 // PhpClientDevOpts contains options for Query.PhpClientDev
 type PhpClientDevOpts struct {
 	// A directory with all the files needed to develop the SDK
@@ -296,10 +276,6 @@ type PhpClientDevOpts struct {
 	//
 	// Default: "sdk/php"
 	SourcePath string
-	// The path of the doctum config in the workspace
-	//
-	// Default: "docs/doctum-config.php"
-	DoctumConfigPath string
 	// A docker config file with credentials to install on clients.
 	ClientDockerConfig *Secret
 }
@@ -315,10 +291,6 @@ func (r *Query) PhpClientDev(ws *Workspace, opts ...PhpClientDevOpts) *PhpClient
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
-		}
-		// `doctumConfigPath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DoctumConfigPath) {
-			q = q.Arg("doctumConfigPath", opts[i].DoctumConfigPath)
 		}
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
