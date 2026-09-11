@@ -606,6 +606,30 @@ sleep infinity
 	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", result.Disposition)
+
+	// A fresh CLI with an identity file but no SSH_AUTH_SOCK can push without
+	// receiving a checkout or an explicit socket capability. The source history
+	// is already frozen in the engine; only agent signing requests reach the CLI.
+	sourceID, err := committed.Git().Head().ID(ctx)
+	require.NoError(t, err)
+	destinationID, err := c.Git(repoURL, dagger.GitOpts{
+		ExperimentalServiceHost: sshSvc,
+		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
+	}).ID(ctx)
+	require.NoError(t, err)
+	cli := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "openssh-client"}).
+		WithEnvVariable("SSH_AUTH_SOCK", "").
+		WithNewFile("/root/.ssh/id_rsa", userPrivateKey, dagger.ContainerWithNewFileOpts{Permissions: 0600})
+	out, err := cli.With(daggerQuery(`{ node(id: %q) { ... on GitRef { push(to: %q, branch: "auto-agent-push") { disposition sha } } } }`, sourceID, destinationID)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "CREATED")
+	// Starting an ordinary read must not auto-load the identity file.
+	serviceID, err := sshSvc.ID(ctx)
+	require.NoError(t, err)
+	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
@@ -2140,6 +2164,8 @@ replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
+		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
+		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
 		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
 		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
 		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
