@@ -20,6 +20,38 @@ func TestMigrationCommands(t *testing.T) {
 	}
 }
 
+func TestMigrationDisposition(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		apply          bool
+		noApply        bool
+		runningInAgent bool
+		want           changesetDisposition
+		wantErr        string
+	}{
+		{name: "human prompt", want: changesetDispositionPrompt},
+		{name: "agent requires choice", runningInAgent: true, want: changesetDispositionPrompt, wantErr: "dagger workspace migrate requires an explicit changeset choice"},
+		{name: "agent apply", apply: true, runningInAgent: true, want: changesetDispositionApply},
+		{name: "agent no apply", noApply: true, runningInAgent: true, want: changesetDispositionNoApply},
+		{name: "human apply", apply: true, want: changesetDispositionApply},
+		{name: "human no apply", noApply: true, want: changesetDispositionNoApply},
+		{name: "conflicting choices", apply: true, noApply: true, want: changesetDispositionPrompt, wantErr: "cannot be used together"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := testRootCommand()
+			cmd, _, err := root.Find([]string{"workspace", "migrate"})
+			require.NoError(t, err)
+			got, err := migrationDisposition(cmd, tc.apply, tc.noApply, tc.runningInAgent)
+			require.Equal(t, tc.want, got)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestOptionalModuleCandidatesSkippedWithAutoApply(t *testing.T) {
 	old := autoApply
 	autoApply = true

@@ -42,6 +42,16 @@ This will interpret your `dagger.json` as a workspace configuration, and transla
 | `toolchains` | Each installed toolchain is migrated as a 1.0 module (see "migrating a module") then installed in `dagger.toml`. Its customizations are converted to module settings, when possible |
 | `blueprint` | This field cannot be migrated |
 
+## Coding agents
+
+When Dagger detects that a coding agent is running `dagger workspace migrate` or `dagger module migrate`, it requires an explicit choice up front. Pass `-y` to apply the migration, or `--no-apply` to show the changes without writing them:
+
+```shell
+dagger workspace migrate --no-apply
+```
+
+Optional module candidates are skipped in both cases. Use `dagger module migrate PATH` to migrate one explicitly.
+
 ## Migration report
 
 After migration, a report is written to `.dagger/migration-report.md`. Read it to know which parts of your `dagger.json` may not have been successfully migrated.

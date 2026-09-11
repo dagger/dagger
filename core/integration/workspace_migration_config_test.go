@@ -123,3 +123,55 @@ arbitrary = { nested = true }
 	require.NoError(t, err)
 	require.Equal(t, original, unchanged)
 }
+
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateAgentDisposition(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	original := `[modules.dagger-custom-sdk]
+source = './sdk'
+
+[modules.dagger-custom-sdk.as-sdk]
+name = 'custom'
+[[modules.dagger-custom-sdk.as-sdk.modules]]
+path = './app'
+`
+	agent := workspaceBase(t, c).
+		WithNewFile("dagger.toml", original).
+		WithNewFile("sdk/dagger-module.toml", "name = 'custom-sdk'\n").
+		WithNewFile("app/dagger.json", `{"name":"app","sdk":"../sdk"}`).
+		WithEnvVariable("CODEX_CI", "1")
+
+	requireUnchanged := func(t *testctx.T, ctr *dagger.Container) {
+		data, err := ctr.File("dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, original, data)
+		data, err = ctr.File("app/dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `{"name":"app","sdk":"../sdk"}`, data)
+	}
+
+	t.Run("workspace migrate requires an explicit choice", func(ctx context.Context, t *testctx.T) {
+		failed := agent.With(daggerExecFail("ws", "migrate"))
+		out, err := failed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "dagger workspace migrate requires an explicit changeset choice")
+		require.Contains(t, out, "-y/--auto-apply")
+		require.Contains(t, out, "--no-apply")
+		requireUnchanged(t, failed)
+	})
+
+	t.Run("module migrate requires an explicit choice", func(ctx context.Context, t *testctx.T) {
+		failed := agent.With(daggerExecFail("module", "migrate", "app"))
+		out, err := failed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "dagger module migrate requires an explicit changeset choice")
+		requireUnchanged(t, failed)
+	})
+
+	t.Run("no apply previews without exporting", func(ctx context.Context, t *testctx.T) {
+		previewed := agent.With(daggerExec("ws", "migrate", "--no-apply"))
+		out, err := previewed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "dagger.toml")
+		requireUnchanged(t, previewed)
+	})
+}
