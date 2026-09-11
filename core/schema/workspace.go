@@ -2610,6 +2610,24 @@ func (s *workspaceSchema) seedDeltaRootParents(
 		if !exists {
 			continue
 		}
+
+		// Parents from earlier edits are already in the accumulated delta.
+		// withNewDirectory commits a snapshot even when MkdirAll is a no-op,
+		// so only seed parents that are currently missing from the delta.
+		var alreadySeeded dagql.Boolean
+		if err := srv.Select(ctx, delta, &alreadySeeded, dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("inspect overlay delta root parent %q: %w", dir, err)
+		}
+		if alreadySeeded {
+			continue
+		}
+
 		var info *core.Stat
 		if err := srv.Select(ctx, base, &info, dagql.Selector{
 			Field: "stat",
