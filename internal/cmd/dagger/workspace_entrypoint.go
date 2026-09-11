@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
@@ -80,7 +81,7 @@ func writeWorkspaceEntrypoint(ctx context.Context, ws *dagger.Workspace, name st
 		return err
 	}
 	if configFile == "" {
-		return workspace.SetEntrypoint(nil, name)
+		return workspace.SetEntrypoint(nil, ".", name)
 	}
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {
@@ -101,7 +102,7 @@ func writeWorkspaceEntrypoint(ctx context.Context, ws *dagger.Workspace, name st
 	if err != nil {
 		return err
 	}
-	if err := workspace.SetEntrypoint(cfg, name); err != nil {
+	if err := workspace.SetEntrypoint(cfg, filepath.Dir(configFile), name); err != nil {
 		return err
 	}
 	updated, err := workspace.UpdateConfigBytes([]byte(data), cfg)

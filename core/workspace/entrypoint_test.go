@@ -51,10 +51,10 @@ arbitrary = 'keep'
 	require.NoError(t, err)
 	for _, name := range []string{"missing", "./tools", "tool.box@v2"} {
 		before := cloneConfig(cfg)
-		require.ErrorContains(t, SetEntrypoint(cfg, name), "is not installed")
+		require.ErrorContains(t, SetEntrypoint(cfg, ".", name), "is not installed")
 		require.Equal(t, before, cfg, "a rejected name must not change any flags")
 	}
-	require.NoError(t, SetEntrypoint(cfg, "tool.box"))
+	require.NoError(t, SetEntrypoint(cfg, ".", "tool.box"))
 	updated, err := UpdateConfigBytes(original, cfg)
 	require.NoError(t, err)
 	require.Equal(t, `# keep
@@ -72,11 +72,11 @@ name = 'custom'
 [env.test.modules.old.settings]
 arbitrary = 'keep'
 `, string(updated))
-	require.NoError(t, SetEntrypoint(cfg, "tool.box"))
+	require.NoError(t, SetEntrypoint(cfg, ".", "tool.box"))
 	again, err := UpdateConfigBytes(updated, cfg)
 	require.NoError(t, err)
 	require.Equal(t, updated, again)
-	require.NoError(t, SetEntrypoint(cfg, ""))
+	require.NoError(t, SetEntrypoint(cfg, ".", ""))
 	name, err := EntrypointName(cfg)
 	require.NoError(t, err)
 	require.Empty(t, name)
@@ -88,10 +88,40 @@ func TestSetEntrypointRepairsAmbiguousConfig(t *testing.T) {
 		"b": {Source: "./b", Entrypoint: true},
 		"c": {Source: "./c"},
 	}}
-	require.NoError(t, SetEntrypoint(cfg, "c"))
+	require.NoError(t, SetEntrypoint(cfg, ".", "c"))
 	name, err := EntrypointName(cfg)
 	require.NoError(t, err)
 	require.Equal(t, "c", name)
 	require.False(t, cfg.Modules["a"].Entrypoint)
 	require.False(t, cfg.Modules["b"].Entrypoint)
+}
+
+func TestSetEntrypointPreservesScopeNames(t *testing.T) {
+	for _, next := range []string{"", "other", "demo-dev"} {
+		t.Run("select="+next, func(t *testing.T) {
+			cfg := &Config{
+				Modules: map[string]ModuleEntry{
+					"demo-dev": {Source: "../generated/api", Entrypoint: true},
+					"other":    {Source: "other"},
+				},
+				SDKs: map[string]SDKEntry{
+					"test": {Scopes: map[string]SDKScope{
+						"/generated/api":   {IsModule: true},
+						"../generated/api": {IsModule: true, Name: "explicit"},
+						"other":            {IsModule: true},
+					}},
+					"client": {Scopes: map[string]SDKScope{"../generated/api": {}}},
+				},
+			}
+			require.NoError(t, SetEntrypoint(cfg, "project", next))
+			want := "demo-dev"
+			if next == "demo-dev" {
+				want = ""
+			}
+			require.Equal(t, want, cfg.SDKs["test"].Scopes["/generated/api"].Name)
+			require.Equal(t, "explicit", cfg.SDKs["test"].Scopes["../generated/api"].Name)
+			require.Empty(t, cfg.SDKs["test"].Scopes["other"].Name)
+			require.Empty(t, cfg.SDKs["client"].Scopes["../generated/api"].Name)
+		})
+	}
 }

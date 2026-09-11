@@ -104,7 +104,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := planSDKModuleInitInstall(staged.Config, moduleName, modulePath, explicitPath, args.Name != "", install, entrypoint); err != nil {
+	if err := planSDKModuleInitInstall(staged.Config, staged.ConfigDir, moduleName, modulePath, explicitPath, args.Name != "", install, entrypoint); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if owner, found, err := moduleScopeOwner(staged.Config, staged.ConfigDir, scopePath); err != nil {
@@ -151,7 +151,7 @@ func optionalInitControl(value dagql.Optional[dagql.Boolean]) *bool {
 	return &result
 }
 
-func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath string, explicitPath, explicitName bool, install, entrypoint *bool) error {
+func planSDKModuleInitInstall(cfg *workspace.Config, configDir, moduleName, sourcePath string, explicitPath, explicitName bool, install, entrypoint *bool) error {
 	plan, err := workspace.PlanModuleInit(explicitPath, explicitName, install, entrypoint)
 	if err != nil {
 		return err
@@ -179,7 +179,7 @@ func planSDKModuleInitInstall(cfg *workspace.Config, moduleName, sourcePath stri
 		return err
 	}
 	if plan.Entrypoint {
-		return workspace.SetEntrypoint(cfg, moduleName)
+		return workspace.SetEntrypoint(cfg, configDir, moduleName)
 	}
 	return nil
 }

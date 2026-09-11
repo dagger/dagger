@@ -193,19 +193,19 @@ func TestResolveSDKModuleName(t *testing.T) {
 func TestPlanSDKModuleInitInstall(t *testing.T) {
 	t.Run("default name and path install an entrypoint", func(t *testing.T) {
 		cfg := &workspace.Config{}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
 		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo", Entrypoint: true}, cfg.Modules["demo"])
 	})
 
 	t.Run("explicit name installs a namespaced module", func(t *testing.T) {
 		cfg := &workspace.Config{}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, true, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, true, nil, nil))
 		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo"}, cfg.Modules["demo"])
 	})
 
 	t.Run("custom path", func(t *testing.T) {
 		cfg := &workspace.Config{}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", "apps/demo", true, false, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", "apps/demo", true, false, nil, nil))
 		require.Empty(t, cfg.Modules)
 	})
 
@@ -213,9 +213,9 @@ func TestPlanSDKModuleInitInstall(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"demo": {Source: ".dagger/modules/demo"},
 		}}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
 		require.True(t, cfg.Modules["demo"].Entrypoint)
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
 		require.True(t, cfg.Modules["demo"].Entrypoint)
 	})
 
@@ -223,7 +223,7 @@ func TestPlanSDKModuleInitInstall(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"demo": {Source: ".dagger/modules/demo", Entrypoint: true},
 		}}
-		require.NoError(t, planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, true, nil, nil))
+		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, true, nil, nil))
 		require.True(t, cfg.Modules["demo"].Entrypoint)
 	})
 
@@ -231,7 +231,7 @@ func TestPlanSDKModuleInitInstall(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"existing": {Source: "existing", Entrypoint: true},
 		}}
-		err := planSDKModuleInitInstall(cfg, "demo", ".dagger/modules/demo", false, false, nil, nil)
+		err := planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil)
 		require.EqualError(t, err, `workspace already has entrypoint module "existing"; pass --name to initialize an additional namespaced module`)
 		require.NotContains(t, cfg.Modules, "demo")
 	})
@@ -665,7 +665,7 @@ func TestPlanSDKModuleInitInstallControls(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{"existing": {Source: "existing", Entrypoint: true}}}
-			err := planSDKModuleInitInstall(cfg, "demo", "custom", tc.path, false, tc.install, tc.entrypoint)
+			err := planSDKModuleInitInstall(cfg, ".", "demo", "custom", tc.path, false, tc.install, tc.entrypoint)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
 				require.Equal(t, map[string]workspace.ModuleEntry{"existing": {Source: "existing", Entrypoint: true}}, cfg.Modules)
@@ -682,7 +682,7 @@ func TestPlanSDKModuleInitInstallControls(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"existing": {Source: "existing", Entrypoint: true}, "demo": {Source: "other"},
 		}}
-		require.Error(t, planSDKModuleInitInstall(cfg, "demo", "custom", true, true, nil, &yes))
+		require.Error(t, planSDKModuleInitInstall(cfg, ".", "demo", "custom", true, true, nil, &yes))
 		require.True(t, cfg.Modules["existing"].Entrypoint)
 		require.False(t, cfg.Modules["demo"].Entrypoint)
 	})

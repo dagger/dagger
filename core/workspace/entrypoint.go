@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -30,7 +31,7 @@ func EntrypointName(cfg *Config) (string, error) {
 // SetEntrypoint selects an exact installed name and clears all other entrypoint
 // flags. An empty name clears the selection. Validation precedes mutation, so
 // callers can write the resulting config in one operation.
-func SetEntrypoint(cfg *Config, name string) error {
+func SetEntrypoint(cfg *Config, configDir, name string) error {
 	if name != "" {
 		if cfg == nil {
 			return fmt.Errorf("module %q is not installed; use an installed name from `dagger mod list`", name)
@@ -42,6 +43,40 @@ func SetEntrypoint(cfg *Config, name string) error {
 	if cfg == nil {
 		return nil
 	}
+	// Unnamed module scopes inherit the local entrypoint's installed name.
+	// Record that name before removing the association, so regeneration cannot
+	// fall back to the directory basename and rename an existing module.
+	names := map[string][]string{}
+	for installed, entry := range cfg.Modules {
+		if !entry.Entrypoint || !IsLocalRef(entry.Source, entry.Pin) {
+			continue
+		}
+		path, err := ResolveSDKManagedPath(configDir, entry.Source)
+		if err != nil {
+			return err
+		}
+		names[path] = append(names[path], installed)
+	}
+	sdks := maps.Clone(cfg.SDKs)
+	for sdkName, sdk := range sdks {
+		sdk.Scopes = maps.Clone(sdk.Scopes)
+		for key, scope := range sdk.Scopes {
+			if !scope.IsModule || scope.Name != "" {
+				continue
+			}
+			path, err := ResolveSDKManagedPath(configDir, key)
+			if err != nil {
+				return err
+			}
+			// Ambiguous entrypoints have no unique inferred name to preserve.
+			if previous := names[path]; len(previous) == 1 && previous[0] != name {
+				scope.Name = previous[0]
+				sdk.Scopes[key] = scope
+			}
+		}
+		sdks[sdkName] = sdk
+	}
+	cfg.SDKs = sdks
 	for installed, entry := range cfg.Modules {
 		entry.Entrypoint = name != "" && installed == name
 		cfg.Modules[installed] = entry
