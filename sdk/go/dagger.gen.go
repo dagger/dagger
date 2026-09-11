@@ -16628,9 +16628,13 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Write this workspace's pending changes to its local Git workspace on the current client's host.
+// Write this workspace's changes to a local Git checkout on the calling client.
 //
-// Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host.
+// Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+//
+// For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
+//
+// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
 func (r *Workspace) Export(ctx context.Context) error {
 	if r.export != nil {
 		return nil
