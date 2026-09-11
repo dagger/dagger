@@ -1321,6 +1321,11 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	return fe.handleForm(ctx, func() *huh.Form { return form })
+}
+
+// Build on the UI goroutine when the form needs current terminal dimensions.
+func (fe *frontendPretty) handleForm(ctx context.Context, create func() *huh.Form) error {
 	if fe.reportOnly {
 		return ErrNonInteractive
 	}
@@ -1329,6 +1334,7 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	wrapCh := make(chan *teav1.Wrap, 1)
 
 	fe.dispatch(func() {
+		form := create()
 		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
 			done <- formCompletionError(f)
 		})
@@ -1367,7 +1373,11 @@ func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
 	fe.formWrap = nil
 	fe.formModel = nil
 	fe.keymapBar.Update()
-	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	if fe.editlineFocused && fe.textInput != nil {
+		fe.tui.SetFocus(fe.textInput)
+	} else {
+		fe.applyTuistFocus()
+	}
 	fe.Update()
 }
 
@@ -1395,6 +1405,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	fe.formModel = form.
 		WithTheme(frontendFormTheme()).
 		WithKeyMap(frontendFormKeyMap()).
+		WithWidth(fe.window.Width).
 		WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
 	wrap := fe.formWrap
@@ -1416,9 +1427,22 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 			fe.quitAction(ErrInterrupted)
 		}
 	})
-	// Insert before keymapBar
+	// Keep permission questions immediately above the shell input. The form
+	// owns focus while active; the draft remains visible and is left untouched.
+	if fe.promptFrame != nil {
+		fe.tui.RemoveChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
+	if fe.promptFrame != nil {
+		fe.tui.AddChild(fe.promptFrame)
+	}
+	if fe.statusLine != nil {
+		fe.tui.AddChild(fe.statusLine)
+	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.keymapBar.Update()
 	fe.tui.SetFocus(fe.formWrap)
@@ -5471,6 +5495,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	old := fe.window
 	fe.window = msg
+	if fe.formModel != nil {
+		// Huh fixes its width at 80 under TERM=dumb, including headless
+		// consoles. The pretty frontend owns layout and must override it.
+		fe.formModel.WithWidth(msg.Width)
+	}
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
@@ -7188,31 +7217,18 @@ type TermOutput interface {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
-	done := make(chan error, 1)
-
-	fe.dispatch(func() {
-		fe.handlePromptForm(
-			huh.NewForm(
-				huh.NewGroup(
-					NewExplicitConfirm("Yes", "No", dest).
-						Title(title).
-						Description(strings.TrimSpace((&Markdown{
-							Content: message,
-							Width:   fe.window.Width,
-						}).View())),
-				),
-			),
-			func(f *huh.Form) { done <- formCompletionError(f) },
-		)
-		fe.Update()
+	return fe.handleForm(ctx, func() *huh.Form {
+		field := NewExplicitConfirm("Yes", "No", dest).Title(title)
+		if title == "" {
+			// A self-contained question needs no separate Markdown description.
+			field.Title(message).Inline(true)
+		} else if message == "" {
+			field.Inline(true)
+		} else {
+			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width}).View()))
+		}
+		return huh.NewForm(huh.NewGroup(field))
 	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		return err
-	}
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
