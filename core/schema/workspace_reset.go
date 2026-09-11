@@ -8,44 +8,26 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// workspaceResetArgs are the inputs shared by the pure internal reset helpers.
-// The public withReset adds hard, which only shapes the composition: the
-// scratch-repository reset itself is always a clean checkout of the commit.
-type workspaceResetArgs struct {
+type workspaceWithResetArgs struct {
 	Commit string
+	Hard   bool `default:"false"`
 }
 
-func (args workspaceResetArgs) validate() error {
+func (args workspaceWithResetArgs) validate() error {
 	if !core.IsFullGitSHA(args.Commit) {
 		return fmt.Errorf("withReset commit must be a full lowercase commit hash, got %q", args.Commit)
 	}
 	return nil
 }
 
-func (args workspaceResetArgs) selectors() []dagql.NamedInput {
-	return []dagql.NamedInput{{Name: "commit", Value: dagql.NewString(args.Commit)}}
-}
-
-type workspaceWithResetArgs struct {
-	Commit string
-	Hard   bool `default:"false"`
-}
-
-// reset narrows the public args to the shared internal-helper form. The two
-// structs stay separate rather than embedded: dagql decodes argument structs
-// reflectively, and an unexported embedded struct's fields cannot be set that
-// way.
-func (args workspaceWithResetArgs) reset() workspaceResetArgs {
-	return workspaceResetArgs{Commit: args.Commit}
-}
-
 // withReset crosses the host approval boundary once, like withCommit, then
 // returns a composition over a frozen receiver: the reset checkout, with the
 // previous working tree overlaid as uncommitted changes unless hard.
 func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceWithResetArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
-	if err := args.reset().validate(); err != nil {
+	if err := args.validate(); err != nil {
 		return inst, err
 	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -54,10 +36,27 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, frozen, &repo, dagql.Selector{
-		Field: "__resetRepository", Args: args.reset().selectors(),
-	}); err != nil {
+	// Start with the frozen workspace's reachable objects, then materialize
+	// the target's reachable history. This validates the target locally and
+	// prevents a later reset from recovering orphaned descendant commits.
+	base, err := workspaceGitCheckout(ctx, srv, frozen)
+	if err != nil {
+		return inst, err
+	}
+	var dir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, base, &dir,
+		dagql.Selector{Field: "asGit"},
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(args.Commit)}}},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.NewInt(0)}}},
+	); err != nil {
+		return inst, fmt.Errorf("commit %s is not in this workspace's repository: %w", args.Commit, err)
+	}
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, frozen, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
+	repo, err := gitRepositoryWithDirectory(ctx, srv, head.Self().Repo, dir)
+	if err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst,
@@ -108,32 +107,4 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		inst = overlaid
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, frozen.Self(), frozen.Self().SelectedEnv())
-}
-
-func (s *workspaceSchema) resetDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceResetArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	if !parent.Self().IsValueWorkspace() {
-		return inst, fmt.Errorf("reset requires a frozen workspace; call snapshot first")
-	}
-	if err := args.validate(); err != nil {
-		return inst, err
-	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-	base, err := workspaceGitCheckout(ctx, srv, parent)
-	if err != nil {
-		return inst, err
-	}
-	dir, err := core.WorkspaceReset(ctx, base, args.Commit)
-	if err != nil {
-		return inst, fmt.Errorf("withReset: %w", err)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-}
-
-func (s *workspaceSchema) resetRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceResetArgs) (dagql.ObjectResult[*core.GitRepository], error) {
-	return workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{
-		Field: "__resetDirectory", Args: args.selectors(),
-	})
 }
