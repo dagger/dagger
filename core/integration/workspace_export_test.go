@@ -2,12 +2,33 @@ package core
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
+
+func workspaceExportCheckout(ctx context.Context, t *testctx.T) (string, func(...string) string) {
+	t.Helper()
+	checkout := t.TempDir()
+	initGitRepo(ctx, t, checkout)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = checkout
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("base"), 0o644))
+	git("add", ".")
+	git("commit", "-m", "initial")
+	return checkout, git
+}
 
 func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

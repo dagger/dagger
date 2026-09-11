@@ -1,0 +1,103 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+)
+
+func (WorkspaceSuite) TestWorkspaceWithCommitGitConfigIdentity(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := checkpointCheckoutBase(ctx, t, c).
+		WithEnvVariable("GIT_CONFIG_NOSYSTEM", "1").
+		WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/author.gitconfig")
+	repoURL, err := base.WithExec([]string{"git", "remote", "get-url", "origin"}).Stdout(ctx)
+	require.NoError(t, err)
+	repoURL = strings.TrimSpace(repoURL)
+	for _, tc := range []struct {
+		name, global, localName, localEmail, wantName, wantEmail string
+		authorArgs                                               string
+		value, outside                                           bool
+	}{
+		{name: "checkout inherits global", global: "[user]\nname = Personal\nemail = personal@example.com\n", wantName: "Personal", wantEmail: "personal@example.com"},
+		{name: "checkout overrides global", global: "[user]\nname = Personal\nemail = personal@example.com\n", localName: "Work", localEmail: "work@example.com", wantName: "Work", wantEmail: "work@example.com"},
+		{name: "checkout overrides email only", global: "[user]\nname = Personal\nemail = personal@example.com\n", localEmail: "work@example.com", wantName: "Personal", wantEmail: "work@example.com"},
+		{name: "value uses caller checkout overrides", value: true, global: "[user]\nname = Personal\nemail = personal@example.com\n", localName: "Work", localEmail: "work@example.com", wantName: "Work", wantEmail: "work@example.com"},
+		{name: "value outside checkout uses global", value: true, outside: true, global: "[user]\nname = Personal\nemail = personal@example.com\n", localName: "Work", localEmail: "work@example.com", wantName: "Personal", wantEmail: "personal@example.com"},
+		{name: "same value different client config", value: true, global: "[user]\nname = Another\nemail = another@example.com\n", wantName: "Another", wantEmail: "another@example.com"},
+		{name: "value without config", value: true, wantName: "Dagger", wantEmail: "dagger@localhost"},
+		{name: "value with partial config", value: true, global: "[user]\nemail = personal@example.com\n", wantName: "Dagger", wantEmail: "personal@example.com"},
+		{name: "checkout without config", wantName: "Dagger", wantEmail: "dagger@localhost"},
+		{name: "explicit name", value: true, global: "[user]\nname = Personal\nemail = personal@example.com\n", authorArgs: `, authorName: "Explicit"`, wantName: "Explicit", wantEmail: "personal@example.com"},
+		{name: "explicit email", value: true, global: "[user]\nname = Personal\nemail = personal@example.com\n", authorArgs: `, authorEmail: "explicit@example.com"`, wantName: "Personal", wantEmail: "explicit@example.com"},
+		{name: "explicit identity", value: true, authorArgs: `, authorName: "Explicit", authorEmail: "explicit@example.com"`, wantName: "Explicit", wantEmail: "explicit@example.com"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			configured := base.WithNewFile("/tmp/author.gitconfig", tc.global)
+			if tc.localName != "" {
+				configured = configured.WithExec([]string{"git", "config", "user.name", tc.localName})
+			}
+			if tc.localEmail != "" {
+				configured = configured.WithExec([]string{"git", "config", "user.email", tc.localEmail})
+			}
+			if tc.outside {
+				configured = configured.WithWorkdir("/tmp")
+			}
+			selection := `currentWorkspace { %s }`
+			resultPath := "currentWorkspace"
+			if tc.value {
+				selection = fmt.Sprintf(`git(url: %q) { head { asWorkspace { %%s } } }`, repoURL)
+				resultPath = "git.head.asWorkspace"
+			}
+			query := "{" + fmt.Sprintf(selection, `withNewFile(path: "authored.txt", contents: "authored") {
+				withCommit(message: "authored", date: "2026-09-05T12:00:00Z" __AUTHOR_ARGS__) {
+					git { head { targetCommit { authorName authorEmail committerName committerEmail } } }
+				}
+			}`) + "}"
+			query = strings.ReplaceAll(query, "__AUTHOR_ARGS__", tc.authorArgs)
+			out, err := configured.With(daggerQuery(query)).Stdout(ctx)
+			require.NoError(t, err)
+			commit := gjson.Get(out, resultPath+".withNewFile.withCommit.git.head.targetCommit")
+			require.True(t, commit.Exists(), out)
+			require.Equal(t, tc.wantName, commit.Get("authorName").String())
+			require.Equal(t, tc.wantEmail, commit.Get("authorEmail").String())
+			require.Equal(t, tc.wantName, commit.Get("committerName").String())
+			require.Equal(t, tc.wantEmail, commit.Get("committerEmail").String())
+		})
+	}
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := checkpointCheckoutBase(ctx, t, c).
+		WithEnvVariable("GIT_CONFIG_NOSYSTEM", "1").
+		WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/author.gitconfig").
+		WithNewFile("/tmp/author.gitconfig", "[user]\nname = Module Caller\nemail = module-caller@example.com\n")
+	repoURL, err := base.WithExec([]string{"git", "remote", "get-url", "origin"}).Stdout(ctx)
+	require.NoError(t, err)
+	repoURL = strings.TrimSpace(repoURL)
+	// A module's SDK client holds no host session attachables (an in-engine
+	// dang client is even denied them outright), so resolving the omitted
+	// author identity must hop to the nearest non-module ancestor client's Git
+	// config — the flow of an agent's commit tool — rather than failing with a
+	// PermissionDenied attachables error.
+	out, err := base.
+		WithNewFile("dagger.toml", "[modules.prober]\nsource = \"modules/prober\"\n").
+		WithNewFile("modules/prober/dagger.json", `{"name":"prober","engineVersion":"latest","sdk":{"source":"dang"}}`).
+		WithNewFile("modules/prober/main.dang", fmt.Sprintf(`type Prober {
+  commitAuthor: String! {
+    let commit = git(%q).head.asWorkspace
+      .withNewFile("authored.txt", "authored")
+      .withCommit("authored", date: "2026-09-05T12:00:00Z")
+      .git.head.targetCommit
+    `+"`${commit.authorName} <${commit.authorEmail}>`"+`
+  }
+}`, repoURL)).
+		With(daggerCallAt("modules/prober", "commit-author")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Module Caller <module-caller@example.com>", strings.TrimSpace(out))
+}

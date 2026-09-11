@@ -68,6 +68,31 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
 			).
 			PassthroughTelemetry(),
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before committing").
+			Doc("Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.",
+				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.",
+				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
+			),
+		dagql.NodeFunc("__commitBase", s.commitBase).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Materialize a frozen workspace's Git checkout with full history."),
+		dagql.NodeFunc("__commitRepository", s.commitRepository).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Open the committed repository, preserving its logical origin."),
+		dagql.NodeFunc("__commitDirectory", s.commitDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Create a commit in a frozen workspace's scratch repository."),
 		dagql.NodeFunc("snapshot", s.snapshot).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").
