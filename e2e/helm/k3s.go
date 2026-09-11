@@ -15,11 +15,13 @@ type k3sCluster struct {
 
 func newK3S(dag *dagger.Client, name string) k3sCluster {
 	kubeconfigName := fmt.Sprintf("k3s-%d.yaml", time.Now().UnixNano())
+	// Each cluster owns its mutable state, even when service names match.
+	cacheKey := name + "_" + kubeconfigName
 	kubeconfigPath := "/etc/rancher/k3s/" + kubeconfigName
 	kubeconfigCachePath := "/cache/k3s/" + kubeconfigName
 	waitForKubeconfig := fmt.Sprintf(`while [ ! -f "%s" ]; do echo "%s not ready, is server started?. waiting.. " && sleep 0.5; done`, kubeconfigCachePath, kubeconfigName)
 	k3s := k3sCluster{
-		configCache: dag.CacheVolume("k3s_config_" + name),
+		configCache: dag.CacheVolume("k3s_config_" + cacheKey),
 	}
 
 	k3s.service = dag.Container().
@@ -36,7 +38,7 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 		WithMountedCache("/etc/rancher/k3s", k3s.configCache).
 		WithMountedTemp("/etc/lib/cni").
 		WithMountedTemp("/var/lib/kubelet").
-		WithMountedCache("/var/lib/rancher", dag.CacheVolume("k3s_cache_"+name)).
+		WithMountedCache("/var/lib/rancher", dag.CacheVolume("k3s_cache_"+cacheKey)).
 		WithEnvVariable("CACHEBUST", time.Now().String()).
 		WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/", "/etc/rancher/k3s/k3s.yaml", kubeconfigPath}).
 		WithMountedTemp("/var/log").
