@@ -91,7 +91,7 @@ without a prompt, or --no-apply to preview without changing files.`
 	if !moduleOnly {
 		cmd.Flags().StringArray("module", nil, "Also migrate this module explicitly (repeatable)")
 	}
-	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayProduceOutput)
+	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayProduceOutput, mayRenderPipeline)
 	setWorkspaceFlagPolicy(cmd)
 	return cmd
 }

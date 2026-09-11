@@ -287,6 +287,7 @@ func init() {
 		shellCmd,
 		mcpCmd,
 		workspaceExecCmd,
+		initCmd,
 		moduleInitCmd,
 		moduleRecommendCmd,
 		moduleClientAddCmd,

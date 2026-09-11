@@ -22,8 +22,8 @@ func (WorkspaceSuite) TestModuleRecommend(ctx context.Context, t *testctx.T) {
 	for _, command := range []string{"mod", "module"} {
 		out, err := hostDaggerExecRaw(ctx, t, workdir, command, "recommend")
 		require.NoError(t, err, "%s", out)
-		require.Contains(t, string(out), "Skipped in non-interactive mode")
-		require.Contains(t, string(out), "--auto-apply")
+		require.Contains(t, string(out), "No modules were installed. Run the commands for the modules you select.")
+		require.Contains(t, string(out), "dagger module install dagger.io/python/ruff")
 		require.NotContains(t, string(out), "Cloud account")
 		require.NotContains(t, string(out), "Workspace migration")
 		require.NotContains(t, string(out), "Setup complete.")

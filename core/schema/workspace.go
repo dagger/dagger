@@ -35,9 +35,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
 
+	// Each invocation plans separately, but its result must remain attached so
+	// callers can save the plan ID and reuse the same preview for export.
 	migrateField := dagql.Func("migrate", s.migrate).
 		View(AfterVersion("v1.0.0-0")).
-		DoNotCache("Plans workspace migration against live host filesystem").
+		WithInput(dagql.PerCallInput).
 		Doc("Plan the explicit migration needed for the current workspace.",
 			"Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.",
 			"The returned plan has an empty changeset and no steps when no migration is needed.").
@@ -58,7 +60,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Fail if legacy configuration needs workspace migration."),
 		dagql.Func("migrateModule", s.migrateModule).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Plans module migration against live host filesystem").
+			WithInput(dagql.PerCallInput).
 			Doc("Plan migration of one local module without migrating its dependencies or creating a workspace configuration.",
 				"Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.").
 			Args(

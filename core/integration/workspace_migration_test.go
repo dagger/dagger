@@ -35,6 +35,71 @@ func materializeModuleFiles(refString string) dagger.WithContainerFunc {
 	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
 }
 
+func (WorkspaceMigrationSuite) TestMigrationPlanIdentity(ctx context.Context, t *testctx.T) {
+	for _, moduleOnly := range []bool{false, true} {
+		name := "workspace"
+		if moduleOnly {
+			name = "module"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			root := t.TempDir()
+			initGitRepo(ctx, t, root)
+			if !moduleOnly {
+				writeWorkspaceConfigFile(t, root, "[modules.app]\nsource = './app'\n")
+			}
+			require.NoError(t, os.Mkdir(filepath.Join(root, "app"), 0o755))
+			configPath := filepath.Join(root, "app/dagger.json")
+			require.NoError(t, os.WriteFile(configPath, []byte(`{"name":"first","sdk":"go"}`), 0o644))
+			c := connect(ctx, t, dagger.WithWorkdir(root))
+			wsID, err := c.CurrentWorkspace().ID(ctx)
+			require.NoError(t, err)
+			ws := dagger.Ref[*dagger.Workspace](c, wsID)
+			planFor := func(ws *dagger.Workspace) *dagger.WorkspaceMigration {
+				if moduleOnly {
+					return ws.MigrateModule(dagger.WorkspaceMigrateModuleOpts{Path: "app"})
+				}
+				return ws.Migrate()
+			}
+			plan := planFor(ws)
+			id, err := plan.ID(ctx)
+			require.NoError(t, err, "migration plans must have reusable engine IDs")
+			saved := dagger.Ref[*dagger.WorkspaceMigration](c, id)
+			patch, err := saved.Changes().AsPatch().Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, patch, "first")
+			steps, err := saved.Steps(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, steps)
+			for _, step := range steps {
+				_, err := step.Changes().ID(ctx)
+				require.NoError(t, err)
+			}
+
+			// Each invocation gets its own plan, even for the same workspace.
+			repeatedID, err := plan.ID(ctx)
+			require.NoError(t, err)
+			require.NotEqual(t, id, repeatedID)
+			// Workspace edits create a new snapshot. Planning that snapshot
+			// must not change a previously saved plan or write host files.
+			changed := ws.WithNewFile("/app/dagger.json", `{"name":"second","sdk":"go"}`)
+			nextID, err := planFor(changed).ID(ctx)
+			require.NoError(t, err)
+			next := dagger.Ref[*dagger.WorkspaceMigration](c, nextID)
+			nextPatch, err := next.Changes().AsPatch().Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, nextPatch, "second")
+			require.NotEqual(t, patch, nextPatch)
+			unchanged, err := saved.Changes().AsPatch().Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, patch, unchanged)
+			original, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.Equal(t, `{"name":"first","sdk":"go"}`, string(original))
+			require.NoFileExists(t, filepath.Join(root, "app/dagger-module.toml"), "planning must not export files")
+		})
+	}
+}
+
 // TestWorkspaceMigratePreviewAndApply should cover the main CLI lifecycle:
 // preview via the workspace `migrate` API (non-mutating) and apply via
 // `dagger workspace migrate --auto-apply`.
@@ -1152,7 +1217,7 @@ type Inner {
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "root dagger.json has not been migrated")
-		require.Contains(t, out, "dagger -W /work workspace migrate")
+		require.Contains(t, out, "migrate the workspace root first")
 
 		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
 		require.NoError(t, err, "migration should not write a nested workspace config")

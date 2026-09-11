@@ -544,6 +544,17 @@ func TestMayRenderPipelineFlags(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSetupProgressFlags(t *testing.T) {
+	root := testRootCommand()
+	for _, command := range [][]string{{"init"}, {"workspace", "migrate"}, {"module", "migrate"}} {
+		for _, flag := range []string{"--silent", "--quiet", "--progress=report"} {
+			args := append(append([]string{}, command...), flag, "--auto-apply")
+			require.NoError(t, validateFlagCapabilities(root, args), "%v", args)
+		}
+	}
+	require.Error(t, validateFlagCapabilities(root, []string{"setup", "--silent"}), "deprecated setup does not render a pipeline")
+}
+
 func TestWorkspaceConfigCommands(t *testing.T) {
 	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 	installGlobalFlags(flags)
@@ -659,12 +670,14 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger check",
 		"dagger core",
 		"dagger generate",
+		"dagger init",
 		"dagger listen",
 		"dagger mcp",
 		"dagger module client add",
 		"dagger module client rm",
 		"dagger module client update",
 		"dagger module init",
+		"dagger module migrate",
 		"dagger module recommend",
 		"dagger query",
 		"dagger run",
@@ -674,6 +687,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger trace",
 		"dagger up",
 		"dagger workspace exec",
+		"dagger workspace migrate",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayRenderPipeline))
 

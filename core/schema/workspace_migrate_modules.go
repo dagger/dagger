@@ -74,7 +74,7 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 		return nil, err
 	}
 	stage := &workspaceMigrationStage{legacy: legacy, configPath: ws.ConfigFile}
-	empty, err := legacy.Changes.IsEmpty(ctx)
+	empty, err := legacy.Changes.Self().IsEmpty(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +95,8 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 		return stage, nil
 	}
 
-	stage.base, stage.staged = legacy.Changes.Before, legacy.Changes.After
-	paths, err := legacy.Changes.ComputePaths(ctx)
+	stage.base, stage.staged = legacy.Changes.Self().Before, legacy.Changes.Self().After
+	paths, err := legacy.Changes.Self().ComputePaths(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +161,9 @@ func (stage *workspaceMigrationStage) resolveSDKs(ctx context.Context, configs [
 	if err != nil {
 		return err
 	}
-	stage.legacy.Changes = changes.Self()
+	stage.legacy.Changes = changes
 	for _, step := range stage.legacy.Steps {
-		step.Changes = changes.Self()
+		step.Changes = changes
 	}
 	return nil
 }
@@ -340,7 +340,7 @@ func (p *moduleMigrationPlanner) result(ctx context.Context, base, staged dagql.
 	if err != nil {
 		return nil, err
 	}
-	migration := &core.WorkspaceMigration{Changes: changes.Self(), ConfigFile: p.configPath}
+	migration := &core.WorkspaceMigration{Changes: changes, ConfigFile: p.configPath}
 	moduleChanges, err := workspaceMigrationChanges(ctx, staged, moduleBase)
 	if err != nil {
 		return nil, err
@@ -352,7 +352,7 @@ func (p *moduleMigrationPlanner) result(ctx context.Context, base, staged dagql.
 	if !empty || len(p.warnings) > 0 {
 		migration.Steps = []*core.WorkspaceMigrationStep{{
 			Code: "local-modules", Description: "Migrated local modules",
-			Warnings: p.warnings, Changes: moduleChanges.Self(),
+			Warnings: p.warnings, Changes: moduleChanges,
 		}}
 	}
 	return migration, nil

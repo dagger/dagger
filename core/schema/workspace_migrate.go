@@ -58,8 +58,12 @@ func (s *workspaceSchema) migrateLegacy(
 		return nil, fmt.Errorf("workspace migration is local-only")
 	}
 
-	emptyChanges, err := core.NewEmptyChangeset(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
+		return nil, err
+	}
+	var emptyChanges dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, srv.Root(), &emptyChanges, dagql.Selector{Field: "changeset"}); err != nil {
 		return nil, err
 	}
 
@@ -719,54 +723,53 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx context.Context,
 	ws *core.Workspace,
 	plans workspaceMigrationPlanBundle,
-) (_ *core.Changeset, rerr error) {
+) (changes dagql.ObjectResult[*core.Changeset], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	updatedDir := baseDir
 
 	lockMoves, err := workspaceMigrationLegacyLockMoves(ctx, ws, baseDir, plans)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 
 	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	for _, move := range lockMoves {
 		targetPaths = append(targetPaths, move.TargetPath)
 	}
 	if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, targetPaths); err != nil {
-		return nil, err
+		return changes, err
 	}
 
 	updatedDir, err = applyWorkspaceMigrationLegacyLockMoves(ctx, updatedDir, lockMoves)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	updatedDir, err = applyWorkspaceMigrationGitignoreCleanups(ctx, updatedDir, plans.GitignoreCleanups)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	updatedDir, err = applyWorkspaceMigrationWorkspacePlans(ctx, ws, updatedDir, plans.WorkspacePlans)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	updatedDir, err = applyWorkspaceMigrationModuleConfigConversions(ctx, ws, updatedDir, plans.ModuleConfigConversions)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	updatedDir, err = applyWorkspaceMigrationParentPlans(ctx, ws, updatedDir, plans.ParentPlans)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 
-	var changes dagql.ObjectResult[*core.Changeset]
 	if err := func() (rerr error) {
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
@@ -774,9 +777,9 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		changes, err = workspaceMigrationChanges(diffCtx, updatedDir, baseDir)
 		return err
 	}(); err != nil {
-		return nil, fmt.Errorf("migration changeset: %w", err)
+		return changes, fmt.Errorf("migration changeset: %w", err)
 	}
-	return changes.Self(), nil
+	return changes, nil
 }
 
 func applyWorkspaceMigrationGitignoreCleanups(
