@@ -440,12 +440,12 @@ func verifySkippedModule(ctx context.Context, generated dagql.ObjectResult[*Dire
 		Field: "asModuleSource",
 		Args:  []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.NewString(filepath.ToSlash(failure.Dir))}},
 	}); err != nil {
-		rerr = LoadFailureCause("still fails to load with this run's changes: ", err)
+		rerr = LoadFailureCause("still fails to load with this run's changes: ", err, ModuleLoadRepairing)
 		return
 	}
 	var mod dagql.ObjectResult[*Module]
 	if err := dag.Select(ctx, src, &mod, dagql.Selector{Field: "asModule"}); err != nil {
-		rerr = LoadFailureCause("still fails to load with this run's changes: ", err)
+		rerr = LoadFailureCause("still fails to load with this run's changes: ", err, ModuleLoadRepairing)
 		return
 	}
 }

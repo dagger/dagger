@@ -28,10 +28,10 @@ func (s *workspaceSchema) workspacePrimaryModules(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	include []string,
-	bestEffort bool,
+	mode core.ModuleLoadMode,
 ) ([]dagql.ObjectResult[*core.Module], []core.ModuleLoadFailure, error) {
 	if parent.Self().IsValueWorkspace() {
-		loaded, failures, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, bestEffort)
+		loaded, failures, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, mode)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -41,7 +41,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 		}
 		return mods, failures, nil
 	}
-	failures, err := ensureWorkspaceModulesLoaded(ctx, include, bestEffort)
+	failures, err := ensureWorkspaceModulesLoaded(ctx, include, mode)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -82,7 +82,7 @@ func (s *workspaceSchema) workspaceOverlayModules(
 	parent dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]overlayModule, error) {
-	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, false)
+	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, core.ModuleLoadStrict)
 	return loaded, err
 }
 
@@ -90,7 +90,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	include []string,
-	bestEffort bool,
+	mode core.ModuleLoadMode,
 ) ([]overlayModule, []core.ModuleLoadFailure, error) {
 	ws := parent.Self()
 	if ws == nil || ws.ConfigFile == "" {
@@ -181,10 +181,10 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			return mod, true, err
 		}()
 		if err != nil {
-			if !bestEffort {
+			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err)}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, mode)}
 			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}
