@@ -67,3 +67,26 @@ func TestCheckpointDropPolicy(t *testing.T) {
 	require.Error(t, applyCheckpointDecision(policy, nil, checkpointCancel))
 	require.Error(t, applyCheckpointDecision(policy, nil, "unknown"))
 }
+
+func TestCheckpointIncludeOmitsNestedRepositories(t *testing.T) {
+	policy := &gitsession.CaptureGitPolicy{}
+	candidates := []*gitsession.CaptureGitCandidate{
+		{Path: "notes.txt", ApprovalToken: "tok-notes"},
+		{Path: "wt/", Classification: gitsession.CaptureClassificationNestedRepository, ApprovalToken: "tok-wt"},
+	}
+	require.NoError(t, applyCheckpointDecision(policy, candidates, checkpointInclude))
+	require.Equal(t, []string{"tok-notes"}, policy.ApprovalTokens, "a nested repository's state token must never be approved")
+	require.Equal(t, []string{"wt/"}, policy.Exclude, "Include proceeds by excluding the nested boundary")
+	require.False(t, policy.DropUntracked)
+}
+
+func TestCheckpointApprovalSummaryNamesNestedRepositories(t *testing.T) {
+	summary := checkpointApprovalSummary([]*gitsession.CaptureGitCandidate{
+		{Path: "notes.txt", Bytes: 8, ApprovalToken: "tok-notes"},
+		{Path: "wt/", Classification: gitsession.CaptureClassificationNestedRepository, ApprovalToken: "tok-wt"},
+	})
+	require.Contains(t, summary, `"notes.txt"`)
+	require.Contains(t, summary, `"wt/"`)
+	require.Contains(t, summary, "nested repository")
+	require.NotContains(t, summary, "tok-wt", "a boundary that is never captured has no reviewable state")
+}
