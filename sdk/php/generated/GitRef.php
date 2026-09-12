@@ -14,24 +14,21 @@ namespace Dagger;
 class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Creates a synthetic workspace from this git ref.
+     * A unique identifier for this GitRef.
      */
-    public function asWorkspace(?string $cwd = '/'): Workspace
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
-        if (null !== $cwd) {
-        $innerQueryBuilder->setArgument('cwd', $cwd);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * The resolved commit id at this ref.
+     * The commit this ref resolves to.
      */
-    public function commit(): string
+    public function targetCommit(): GitCommit
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('targetCommit');
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -44,40 +41,30 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Find the best common ancestor between this ref and another ref.
+     * The filesystem tree at this ref.
      */
-    public function commonAncestor(GitRef $other): GitRef
+    public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commonAncestor');
-        $innerQueryBuilder->setArgument('other', $other);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
+        if (null !== $discardGitDir) {
+        $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
+        }
+        if (null !== $depth) {
+        $innerQueryBuilder->setArgument('depth', $depth);
+        }
+        if (null !== $includeTags) {
+        $innerQueryBuilder->setArgument('includeTags', $includeTags);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * A unique identifier for this GitRef.
+     * The resolved commit id at this ref.
      */
-    public function id(): Id
+    public function commit(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
-     */
-    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
-        if (null !== $limit) {
-        $leafQueryBuilder->setArgument('limit', $limit);
-        }
-        if (null !== $paths) {
-        $leafQueryBuilder->setArgument('paths', $paths);
-        }
-        if (null !== $base) {
-        $leafQueryBuilder->setArgument('base', $base);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
     }
 
     /**
@@ -99,29 +86,42 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The commit this ref resolves to.
+     * Find the best common ancestor between this ref and another ref.
      */
-    public function targetCommit(): GitCommit
+    public function commonAncestor(GitRef $other): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('targetCommit');
-        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commonAncestor');
+        $innerQueryBuilder->setArgument('other', $other);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The filesystem tree at this ref.
+     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
      */
-    public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
+    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
-        if (null !== $discardGitDir) {
-        $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
         }
-        if (null !== $depth) {
-        $innerQueryBuilder->setArgument('depth', $depth);
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
         }
-        if (null !== $includeTags) {
-        $innerQueryBuilder->setArgument('includeTags', $includeTags);
+        if (null !== $base) {
+        $leafQueryBuilder->setArgument('base', $base);
         }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
+    }
+
+    /**
+     * Creates a synthetic workspace from this git ref.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

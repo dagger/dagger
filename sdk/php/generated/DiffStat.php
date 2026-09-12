@@ -11,15 +11,6 @@ namespace Dagger;
 class DiffStat extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Number of added lines for this path.
-     */
-    public function addedLines(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedLines');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'addedLines');
-    }
-
-    /**
      * A unique identifier for this DiffStat.
      */
     public function id(): Id
@@ -29,12 +20,12 @@ class DiffStat extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Type of change.
+     * Path of the changed file or directory.
      */
-    public function kind(): DiffStatKind
+    public function path(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\DiffStatKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'path');
     }
 
     /**
@@ -47,12 +38,21 @@ class DiffStat extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Path of the changed file or directory.
+     * Type of change.
      */
-    public function path(): string
+    public function kind(): DiffStatKind
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'path');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
+        return \Dagger\DiffStatKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+    }
+
+    /**
+     * Number of added lines for this path.
+     */
+    public function addedLines(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('addedLines');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'addedLines');
     }
 
     /**

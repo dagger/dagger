@@ -14,21 +14,21 @@ namespace Dagger;
 class EnumTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * A doc string for the enum, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this EnumTypeDef.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The members of the enum.
+     */
+    public function values(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
     }
 
     /**
@@ -47,6 +47,15 @@ class EnumTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * A doc string for the enum, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -70,14 +79,5 @@ class EnumTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
-    }
-
-    /**
-     * The members of the enum.
-     */
-    public function values(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
     }
 }

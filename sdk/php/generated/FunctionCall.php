@@ -23,39 +23,13 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The argument values the function is being invoked with.
+     * Set the return value of the function call to the provided value.
      */
-    public function inputArgs(): array
+    public function returnValue(Json $value): void
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('inputArgs');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'inputArgs');
-    }
-
-    /**
-     * The name of the function being called.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
-     */
-    public function parent(): Json
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parent');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'parent'));
-    }
-
-    /**
-     * The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
-     */
-    public function parentName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'parentName');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('returnValue');
+        $leafQueryBuilder->setArgument('value', $value);
+        $this->queryLeaf($leafQueryBuilder, 'returnValue');
     }
 
     /**
@@ -69,12 +43,38 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Set the return value of the function call to the provided value.
+     * The name of the function being called.
      */
-    public function returnValue(Json $value): void
+    public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('returnValue');
-        $leafQueryBuilder->setArgument('value', $value);
-        $this->queryLeaf($leafQueryBuilder, 'returnValue');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
+     */
+    public function parentName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'parentName');
+    }
+
+    /**
+     * The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
+     */
+    public function parent(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parent');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'parent'));
+    }
+
+    /**
+     * The argument values the function is being invoked with.
+     */
+    public function inputArgs(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('inputArgs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'inputArgs');
     }
 }

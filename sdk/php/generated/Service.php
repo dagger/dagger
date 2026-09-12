@@ -14,6 +14,53 @@ namespace Dagger;
 class Service extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
+     * A unique identifier for this Service.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Forces evaluation of the pipeline in the engine.
+     */
+    public function sync(): Service
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
+    }
+
+    /**
+     * Retrieves a hostname which can be used by clients to reach this container.
+     */
+    public function hostname(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hostname');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'hostname');
+    }
+
+    /**
+     * Configures a hostname which can be used by clients within the session to reach this container.
+     */
+    public function withHostname(string $hostname): Service
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostname');
+        $innerQueryBuilder->setArgument('hostname', $hostname);
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the list of ports provided by the service.
+     */
+    public function ports(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ports');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
+    }
+
+    /**
      * Retrieves an endpoint that clients can use to reach this container.
      *
      * If no port is specified, the first exposed port is used. If none exist an error is returned.
@@ -33,33 +80,6 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     }
 
     /**
-     * Retrieves a hostname which can be used by clients to reach this container.
-     */
-    public function hostname(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hostname');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'hostname');
-    }
-
-    /**
-     * A unique identifier for this Service.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Retrieves the list of ports provided by the service.
-     */
-    public function ports(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ports');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
-    }
-
-    /**
      * Start the service and wait for its health checks to succeed.
      *
      * Services bound to a Container do not need to be manually started.
@@ -69,38 +89,6 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
         $this->queryLeaf($leafQueryBuilder, 'start');
         return $this;
-    }
-
-    /**
-     * Stop the service.
-     */
-    public function stop(?bool $kill = false): Service
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
-        if (null !== $kill) {
-        $leafQueryBuilder->setArgument('kill', $kill);
-        }
-        $this->queryLeaf($leafQueryBuilder, 'stop');
-        return $this;
-    }
-
-    /**
-     * Forces evaluation of the pipeline in the engine.
-     */
-    public function sync(): Service
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
-    }
-
-    public function terminal(?array $cmd = []): Service
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
-        if (null !== $cmd) {
-        $innerQueryBuilder->setArgument('cmd', $cmd);
-        }
-        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -119,12 +107,24 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     }
 
     /**
-     * Configures a hostname which can be used by clients within the session to reach this container.
+     * Stop the service.
      */
-    public function withHostname(string $hostname): Service
+    public function stop(?bool $kill = false): Service
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostname');
-        $innerQueryBuilder->setArgument('hostname', $hostname);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
+        if (null !== $kill) {
+        $leafQueryBuilder->setArgument('kill', $kill);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'stop');
+        return $this;
+    }
+
+    public function terminal(?array $cmd = []): Service
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

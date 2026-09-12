@@ -14,15 +14,6 @@ namespace Dagger;
 class ScalarTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * A doc string for the scalar, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this ScalarTypeDef.
      */
     public function id(): Id
@@ -38,6 +29,15 @@ class ScalarTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * A doc string for the scalar, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**

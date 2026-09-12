@@ -14,12 +14,21 @@ namespace Dagger;
 class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Whether the module is the workspace entrypoint (functions aliased to Query root).
+     * A unique identifier for this WorkspaceModule.
      */
-    public function entrypoint(): bool
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * List constructor-backed settings for this module.
+     */
+    public function settings(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('settings');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'settings');
     }
 
     /**
@@ -32,15 +41,6 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * A unique identifier for this WorkspaceModule.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * The module name.
      */
     public function name(): string
@@ -50,12 +50,12 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * List constructor-backed settings for this module.
+     * Whether the module is the workspace entrypoint (functions aliased to Query root).
      */
-    public function settings(): array
+    public function entrypoint(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('settings');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'settings');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
     }
 
     /**

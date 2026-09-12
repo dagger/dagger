@@ -14,54 +14,12 @@ namespace Dagger;
 class EnvFile extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Return as a file
-     */
-    public function asFile(): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFile');
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Check if a variable exists
-     */
-    public function exists(string $name): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
-        $leafQueryBuilder->setArgument('name', $name);
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
-    }
-
-    /**
-     * Lookup a variable (last occurrence wins) and return its value, or an empty string
-     */
-    public function get(string $name, ?bool $raw = null): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('get');
-        $leafQueryBuilder->setArgument('name', $name);
-        if (null !== $raw) {
-        $leafQueryBuilder->setArgument('raw', $raw);
-        }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'get');
-    }
-
-    /**
      * A unique identifier for this EnvFile.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
-     */
-    public function namespace(string $prefix): EnvFile
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('namespace');
-        $innerQueryBuilder->setArgument('prefix', $prefix);
-        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -94,6 +52,48 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVariable');
         $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Lookup a variable (last occurrence wins) and return its value, or an empty string
+     */
+    public function get(string $name, ?bool $raw = null): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('get');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $raw) {
+        $leafQueryBuilder->setArgument('raw', $raw);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'get');
+    }
+
+    /**
+     * Check if a variable exists
+     */
+    public function exists(string $name): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('name', $name);
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
+    }
+
+    /**
+     * Return as a file
+     */
+    public function asFile(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFile');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+     */
+    public function namespace(string $prefix): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('namespace');
+        $innerQueryBuilder->setArgument('prefix', $prefix);
         return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

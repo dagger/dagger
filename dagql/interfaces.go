@@ -22,6 +22,7 @@ type Interface struct {
 	description string
 	fields      map[string][]*InterfaceFieldSpec
 	fieldsL     *sync.Mutex
+	fieldOrder  []string
 
 	// relationsL protects the schema relationships that can change after an
 	// interface has been installed. Query parsing reads implementors to decide
@@ -89,6 +90,9 @@ func (iface *Interface) ViewFilter() ViewFilter {
 func (iface *Interface) AddField(spec InterfaceFieldSpec) {
 	iface.fieldsL.Lock()
 	defer iface.fieldsL.Unlock()
+	if _, exists := iface.fields[spec.Name]; !exists {
+		iface.fieldOrder = append(iface.fieldOrder, spec.Name)
+	}
 	iface.fields[spec.Name] = append(iface.fields[spec.Name], &spec)
 }
 
@@ -98,24 +102,17 @@ func (iface *Interface) FieldSpecs(view call.View) []FieldSpec {
 	defer iface.fieldsL.Unlock()
 
 	var specs []FieldSpec
-	seen := map[string]struct{}{}
-	for name, versions := range iface.fields {
-		if _, ok := seen[name]; ok {
-			continue
-		}
+	for _, name := range iface.fieldOrder {
+		versions := iface.fields[name]
 		// take the last matching version (same precedence logic as Class)
 		for i := len(versions) - 1; i >= 0; i-- {
 			f := versions[i]
 			if f.MinVersion == "" || f.MinVersion == view {
 				specs = append(specs, f.FieldSpec)
-				seen[name] = struct{}{}
 				break
 			}
 		}
 	}
-	sort.Slice(specs, func(i, j int) bool {
-		return specs[i].Name < specs[j].Name
-	})
 	return specs
 }
 

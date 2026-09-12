@@ -14,24 +14,6 @@ namespace Dagger;
 class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The reason this enum member is deprecated, if any.
-     */
-    public function deprecated(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
-    }
-
-    /**
-     * A doc string for the enum member, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this EnumValueTypeDef.
      */
     public function id(): Id
@@ -50,6 +32,24 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble, N
     }
 
     /**
+     * The value of the enum member
+     */
+    public function value(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+    }
+
+    /**
+     * A doc string for the enum member, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
      * The location of this enum member declaration.
      */
     public function sourceMap(): ?SourceMap
@@ -64,11 +64,11 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble, N
     }
 
     /**
-     * The value of the enum member
+     * The reason this enum member is deprecated, if any.
      */
-    public function value(): string
+    public function deprecated(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
     }
 }
