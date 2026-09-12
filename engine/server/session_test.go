@@ -4825,3 +4825,24 @@ func sessionTestModuleResultWithGitSource(t *testing.T, name, cloneRef, commit s
 	require.NoError(t, err)
 	return res
 }
+
+func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
+	t.Parallel()
+
+	// A core Query field that neither list claims looks like an unknown field
+	// to filterPendingWorkspaceModulesForRootFields, which then guesses it
+	// might be an entrypoint function and loads the entrypoint for it.
+	// requestRootFieldDemand resolves `node` from its id instead, so it is the
+	// one core field deliberately left out.
+	for _, field := range []string{
+		"blob",
+		"currentNode",
+		"engineVolume",
+		"id",
+		"schema",
+		"sshfsVolume",
+	} {
+		require.True(t, isCoreRootField(field), field)
+	}
+	require.False(t, isCoreRootField("node"))
+}

@@ -1784,18 +1784,23 @@ func isCoreRootField(field string) bool {
 		"_httpState",
 		"_remoteGitMirror",
 		"address",
+		"blob",
 		"cacheVolume",
 		"changeset",
 		"cloud",
 		"container",
 		"currentFunctionCall",
 		"currentModule",
+		// currentNode resolves the receiver of the current module function
+		// call, whose module is served to that client by definition
+		"currentNode",
 		// currentWorkspace's selector resolvers load on demand from their
 		// include argument, so the root field demands nothing here
 		"currentWorkspace",
 		"defaultPlatform",
 		"directory",
 		"engine",
+		"engineVolume",
 		// NOTE: "env" is intentionally absent — it needs the full workspace
 		// (see rootFieldsRequireFullWorkspaceSchema)
 		"envFile",
@@ -1806,14 +1811,17 @@ func isCoreRootField(field string) bool {
 		"git",
 		"host",
 		"http",
+		"id",
 		"json",
 		"llm",
 		"module",
 		"moduleSource",
 		"pipeline",
+		"schema",
 		"secret",
 		"setSecret",
 		"sourceMap",
+		"sshfsVolume",
 		"typeDef",
 		"version":
 		return true
