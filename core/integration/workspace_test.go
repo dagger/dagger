@@ -99,6 +99,21 @@ func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrok
 	})
 }
 
+// TestSingleQueryCoreRootFieldSkipsBrokenEntrypoint locks in that a raw query
+// rooted only at core fields loads no workspace module at all. An unrecognized
+// root field is taken for an entrypoint function and loads the pending
+// entrypoint to resolve it, so a core field missing from isCoreRootField makes
+// an unloadable entrypoint break queries that never mention it.
+func (WorkspaceSuite) TestSingleQueryCoreRootFieldSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken-entrypoint")
+
+	out, err := base.With(daggerQuery(`{ blob(name: "probe.txt", contents: "aGVsbG8=") { contents } }`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"blob":{"contents":"hello"}}`, out)
+}
+
 // TestWorkspaceGit exercises the happy path for the Workspace.git API from a
 // real Dagger query. It checks that the reported HEAD commit matches the local
 // repository, that a clean repository reports an empty uncommitted changeset,
