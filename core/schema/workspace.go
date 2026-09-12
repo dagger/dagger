@@ -3778,7 +3778,82 @@ func (s *workspaceSchema) checks(
 		allChecks = append(allChecks, filtered...)
 	}
 
+	// loadWorkspaceConfigForOverlay hard-errors on a legacy compat workspace, so
+	// an unmigrated workspace must not reach it, and one without SDKs has
+	// nothing to derive anyway.
+	if !noGenerate && parent.ConfigFile != "" && len(cfg.SDKs) > 0 {
+		staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
+		if err != nil {
+			return nil, err
+		}
+		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, allChecks)
+		if err != nil {
+			return nil, err
+		}
+		allChecks = append(allChecks, derived...)
+	}
+
 	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
+}
+
+// syntheticSDKGeneratorChecks derives one check per configured SDK from the
+// engine-injected generators `dagger generate` already lists, so a workspace
+// keeps the generate-derived check it had when its SDK declared its own
+// +generate function. syntheticSDKGenerators applies the include patterns.
+func (s *workspaceSchema) syntheticSDKGeneratorChecks(
+	ctx context.Context,
+	staged *stagedWorkspaceConfig,
+	include []string,
+	skip []string,
+	entrypoints map[string]bool,
+	ignoreChecks map[string][]string,
+	existing []*core.Check,
+) ([]*core.Check, error) {
+	generators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
+	if err != nil {
+		return nil, err
+	}
+
+	// An explicit +check at the same name wins, as it does for a function
+	// annotated with both +check and +generate.
+	taken := make(map[string]struct{}, len(existing))
+	for _, check := range existing {
+		taken[check.Name()] = struct{}{}
+	}
+
+	derived := make([]*core.Check, 0, len(generators))
+	for _, generator := range generators {
+		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
+		if _, exists := taken[check.Name()]; exists {
+			continue
+		}
+		// The generator is namespaced under its SDK's provider module, and an
+		// SDK names exactly one installed module, so that module's configured
+		// check skips apply to this check alone.
+		filtered, err := filterNodesByExclude(
+			ctx,
+			[]*core.Check{check},
+			ignoreChecks[generator.Node.Path()[0]],
+			true,
+			func(check *core.Check) *core.ModTreeNode { return check.Node },
+			func(check *core.Check) string { return check.Name() },
+			"check",
+		)
+		if err != nil {
+			return nil, err
+		}
+		derived = append(derived, filtered...)
+	}
+
+	return filterNodesByExclude(
+		ctx,
+		derived,
+		skip,
+		false,
+		func(check *core.Check) *core.ModTreeNode { return check.Node },
+		func(check *core.Check) string { return check.Name() },
+		"check",
+	)
 }
 
 type workspaceGeneratorModule struct {
