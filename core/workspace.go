@@ -39,58 +39,6 @@ func InvalidateCurrentWorkspace(ctx context.Context) error {
 	return workspaceInvalidator(ctx)
 }
 
-// workspaceReadEpoch hooks expose the calling client's "workspace read epoch":
-// a monotonically bumped token folded into cached host reads (Workspace.file /
-// Workspace.directory) so a single long-lived session can invalidate them when
-// the workspace's on-disk content changes out from under it.
-//
-// host.directory reads are cached per client for the client's whole lifetime
-// (dagql.PerClientInput), so within one session — such as a `dagger agent`
-// conversation — a file read earlier in the session keeps returning its
-// original snapshot even after the agent's edits are exported to disk. Bumping
-// the epoch on Workspace.export (and on Workspace.reloaded, when an agent
-// discards its overlay to re-sync with the host) gives subsequent reads a
-// fresh per-client cache namespace, so they re-read the (now updated) host
-// instead of the stale snapshot.
-//
-// Both hooks are registered by engine/server (which owns the per-client cache);
-// nil in contexts without a server, where the epoch is empty and bumping is a
-// no-op.
-var (
-	workspaceReadEpochGetter func(context.Context) (string, error)
-	workspaceReadEpochBumper func(context.Context) error
-)
-
-// SetWorkspaceReadEpochHooks registers the getter/bumper used to scope and
-// invalidate a client's cached workspace host reads. Mirrors
-// SetWorkspaceInvalidator.
-func SetWorkspaceReadEpochHooks(
-	get func(context.Context) (string, error),
-	bump func(context.Context) error,
-) {
-	workspaceReadEpochGetter = get
-	workspaceReadEpochBumper = bump
-}
-
-// WorkspaceReadEpoch returns the calling client's current workspace read epoch,
-// or "" when no server has registered the hook (nothing to scope by).
-func WorkspaceReadEpoch(ctx context.Context) (string, error) {
-	if workspaceReadEpochGetter == nil {
-		return "", nil
-	}
-	return workspaceReadEpochGetter(ctx)
-}
-
-// BumpWorkspaceReadEpoch advances the calling client's workspace read epoch so
-// cached host reads made before the bump are no longer served. A no-op when no
-// server has registered the hook.
-func BumpWorkspaceReadEpoch(ctx context.Context) error {
-	if workspaceReadEpochBumper == nil {
-		return nil
-	}
-	return workspaceReadEpochBumper(ctx)
-}
-
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// source is the private backing source for workspace filesystem and git
@@ -137,6 +85,12 @@ type Workspace struct {
 	// an SDK, whose nested client does not inherit the parent client's ambient
 	// workspace selection.
 	selectedEnv string
+
+	// ExportBase binds a prepared integration to a snapshot of the destination.
+	// It is not a host-read route or permission: export always uses the caller.
+	ExportBase        dagql.ObjectResult[*Workspace]
+	ExportPath        string
+	ExportStateDigest string
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
@@ -428,6 +382,9 @@ func (ws *Workspace) ExportHostPath() (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
 	}
+	if ws.ExportPath != "" {
+		return ws.ExportPath, nil
+	}
 	switch src := ws.BaseSource().(type) {
 	case *WorkspaceSourceClientLocal:
 		if src.HostPath == "" {
@@ -540,6 +497,14 @@ func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path 
 	return cp
 }
 
+// MountPoints returns the sorted workspace-root-relative mount paths.
+func (ws *Workspace) MountPoints() []string {
+	if ws == nil {
+		return nil
+	}
+	return slices.Clone(ws.mountPoints)
+}
+
 // MountedPath reports whether a workspace-root-relative path is at or under
 // one of the workspace's mount points.
 func (ws *Workspace) MountedPath(resolvedPath string) bool {
@@ -600,18 +565,21 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
-	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
-	MountPoints     []string                      `json:"mountPoints,omitempty"`
-	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
-	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
-	Address         string                        `json:"address,omitempty"`
-	Cwd             string                        `json:"cwd,omitempty"`
-	ConfigFile      string                        `json:"configFile,omitempty"`
-	LockFile        string                        `json:"lockFile,omitempty"`
-	ClientID        string                        `json:"clientID,omitempty"`
-	HostPath        string                        `json:"hostPath,omitempty"`
-	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
+	ExportBaseResultID uint64                        `json:"exportBaseResultID,omitempty"`
+	ExportPath         string                        `json:"exportPath,omitempty"`
+	ExportStateDigest  string                        `json:"exportStateDigest,omitempty"`
+	RootfsResultID     uint64                        `json:"rootfsResultID,omitempty"`
+	MountsResultID     uint64                        `json:"mountsResultID,omitempty"`
+	MountPoints        []string                      `json:"mountPoints,omitempty"`
+	Source             *persistedWorkspaceSource     `json:"source,omitempty"`
+	CompatWorkspace    *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	Address            string                        `json:"address,omitempty"`
+	Cwd                string                        `json:"cwd,omitempty"`
+	ConfigFile         string                        `json:"configFile,omitempty"`
+	LockFile           string                        `json:"lockFile,omitempty"`
+	ClientID           string                        `json:"clientID,omitempty"`
+	HostPath           string                        `json:"hostPath,omitempty"`
+	SelectedEnv        string                        `json:"selectedEnv,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -754,14 +722,23 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace: ws.compatWorkspace,
-		Address:         ws.Address,
-		Cwd:             ws.Cwd,
-		ConfigFile:      ws.ConfigFile,
-		LockFile:        ws.LockFile,
-		ClientID:        ws.ClientID,
-		HostPath:        ws.hostPath,
-		SelectedEnv:     ws.selectedEnv,
+		ExportPath:        ws.ExportPath,
+		ExportStateDigest: ws.ExportStateDigest,
+		CompatWorkspace:   ws.compatWorkspace,
+		Address:           ws.Address,
+		Cwd:               ws.Cwd,
+		ConfigFile:        ws.ConfigFile,
+		LockFile:          ws.LockFile,
+		ClientID:          ws.ClientID,
+		HostPath:          ws.hostPath,
+		SelectedEnv:       ws.selectedEnv,
+	}
+	if ws.ExportBase.Self() != nil {
+		id, err := encodePersistedObjectRef(cache, ws.ExportBase, "workspace export base")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.ExportBaseResultID = id
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -838,17 +815,26 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:          rootfs,
-		mounts:          mounts,
-		mountPoints:     persisted.MountPoints,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
-		selectedEnv:     persisted.SelectedEnv,
+		ExportPath:        persisted.ExportPath,
+		ExportStateDigest: persisted.ExportStateDigest,
+		rootfs:            rootfs,
+		mounts:            mounts,
+		mountPoints:       persisted.MountPoints,
+		compatWorkspace:   persisted.CompatWorkspace,
+		Address:           persisted.Address,
+		Cwd:               cwd,
+		ConfigFile:        configFile,
+		LockFile:          lockFile,
+		ClientID:          persisted.ClientID,
+		hostPath:          persisted.HostPath,
+		selectedEnv:       persisted.SelectedEnv,
+	}
+	if persisted.ExportBaseResultID != 0 {
+		var err error
+		ws.ExportBase, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.ExportBaseResultID, "workspace export base")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -871,6 +857,18 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	var deps []dagql.AnyResult
+	if ws.ExportBase.Self() != nil {
+		attached, err := attach(ws.ExportBase)
+		if err != nil {
+			return nil, err
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace export base: unexpected result %T", attached)
+		}
+		ws.ExportBase = typed
+		deps = append(deps, typed)
+	}
 
 	if ws.rootfs.Self() != nil {
 		attached, err := attach(ws.rootfs)

@@ -590,18 +590,46 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	entries, err := c.Git(repoURL, dagger.GitOpts{
+	repo := c.Git(repoURL, dagger.GitOpts{
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 		SSHAuthSocket:           c.Host().UnixSocket(sock),
-	}).
-		Branch("main").
+	})
+	entries, err := repo.Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			DiscardGitDir: true,
 		}).
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
+	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").WithCommit("SSH push", workspaceCommitDate)
+	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
+	require.NoError(t, err)
+	require.Equal(t, "CREATED", result.Disposition)
+
+	// A fresh CLI with an identity file but no SSH_AUTH_SOCK can push without
+	// receiving a checkout or an explicit socket capability. The source history
+	// is already frozen in the engine; only agent signing requests reach the CLI.
+	sourceID, err := committed.Git().Head().ID(ctx)
+	require.NoError(t, err)
+	destinationID, err := c.Git(repoURL, dagger.GitOpts{
+		ExperimentalServiceHost: sshSvc,
+		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
+	}).ID(ctx)
+	require.NoError(t, err)
+	cli := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "openssh-client"}).
+		WithEnvVariable("SSH_AUTH_SOCK", "").
+		WithNewFile("/root/.ssh/id_rsa", userPrivateKey, dagger.ContainerWithNewFileOpts{Permissions: 0600})
+	out, err := cli.With(daggerQuery(`{ node(id: %q) { ... on GitRef { push(to: %q, branch: "auto-agent-push") { disposition sha } } } }`, sourceID, destinationID)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "CREATED")
+	// Starting an ordinary read must not auto-load the identity file.
+	serviceID, err := sshSvc.ID(ctx)
+	require.NoError(t, err)
+	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
@@ -1272,6 +1300,72 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	c1 := connect(ctx, t)
 	c2 := connect(ctx, t)
 	require.Equal(t, hostname(c1), hostname(c2))
+}
+
+func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init"}).
+			WithExec([]string{"sh", "-c", `echo one > file && git add file && git commit -m "one" && echo two > file && git commit -am "two"`})
+
+		// an older commit: not the tip of any ref, so only object-database
+		// resolution can find it
+		oldCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+		require.NoError(t, err)
+		oldCommit = strings.TrimSpace(oldCommit)
+
+		git := ctr.Directory(".").AsGit()
+
+		// ref() expands an abbreviated SHA to the full commit
+		resolved, err := git.Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, resolved)
+
+		// commit() accepts an abbreviated SHA too
+		sha, err := git.Commit(oldCommit[:7]).Sha(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, sha)
+
+		// a ref whose name looks like a hex prefix wins over prefix expansion
+		branchCtr := ctr.WithExec([]string{"git", "branch", oldCommit[:7]})
+		headCommit, err := branchCtr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		headCommit = strings.TrimSpace(headCommit)
+		resolved, err = branchCtr.Directory(".").AsGit().Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, headCommit, resolved)
+
+		// a prefix that matches nothing errors
+		_, err = git.Ref("deadbeefdead").CommitSHA(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc})
+
+		full, err := repo.Branch("main").CommitSHA(ctx)
+		require.NoError(t, err)
+
+		// nothing fetched yet: ls-remote only advertises refs, so the prefix
+		// cannot be expanded
+		_, err = repo.Ref(full[:7]).CommitSHA(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "already-fetched")
+
+		// once the commit's objects are fetched, the same prefix resolves
+		_, err = repo.Branch("main").Tree().Sync(ctx)
+		require.NoError(t, err)
+		resolved, err := repo.Ref(full[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, full, resolved)
+	})
 }
 
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
@@ -2136,6 +2230,10 @@ replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
+		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
+		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
+		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
+		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
 		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
 		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
 

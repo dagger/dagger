@@ -1,5 +1,8 @@
 import { usePluginData } from "@docusaurus/useGlobalData";
-import { useActiveVersion } from "@docusaurus/plugin-content-docs/client";
+import {
+  useActiveVersion,
+  useVersions,
+} from "@docusaurus/plugin-content-docs/client";
 
 // Mirrors the model produced by plugins/dagger-api-reference/schema.js.
 export type NamedKind =
@@ -145,13 +148,26 @@ export function typeHref(name: string, versionPath = "/"): string {
 
 export function useTypeHref(): (name: string) => string {
   const activeVersion = useActiveVersion(undefined);
+  const versions = useVersions(undefined);
   return (name: string) => {
     const slug = typeSlug(name);
     const docIds = typeDocPrefixes.map((prefix) => `${prefix}/${slug}`);
     const activeVersionDoc = activeVersion?.docs.find((doc) =>
       docIds.includes(doc.id)
     );
-    return activeVersionDoc?.path ?? typeHref(name, activeVersion?.path ?? "/");
+    if (activeVersionDoc) {
+      return activeVersionDoc.path;
+    }
+    // The schema model is shared across versions. A newly added type may
+    // only have a page in the current docs, so use an existing page before
+    // constructing a URL in a snapshot that predates the type.
+    const fallbackDoc = versions
+      .flatMap((version) => version.docs)
+      .find((doc) => docIds.includes(doc.id));
+    return (
+      fallbackDoc?.path ??
+      typeHref(name, activeVersion?.path ?? "/")
+    );
   };
 }
 

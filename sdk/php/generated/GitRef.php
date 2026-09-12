@@ -14,6 +14,17 @@ namespace Dagger;
 class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * Return this ref's repository with HEAD pinned to the selected commit.
+     *
+     * Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+     */
+    public function asRepository(): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asRepository');
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a synthetic workspace from this git ref.
      */
     public function asWorkspace(?string $cwd = '/'): Workspace
@@ -90,6 +101,31 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Push this ref's commit and history to a remote repository using the destination's credentials.
+     *
+     * The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+     *
+     * A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+     */
+    public function push(
+        ?GitRepository $to = null,
+        ?string $branch = '',
+        ?string $expectedRemoteSHA = '',
+    ): GitPushResult {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('push');
+        if (null !== $to) {
+        $innerQueryBuilder->setArgument('to', $to);
+        }
+        if (null !== $branch) {
+        $innerQueryBuilder->setArgument('branch', $branch);
+        }
+        if (null !== $expectedRemoteSHA) {
+        $innerQueryBuilder->setArgument('expectedRemoteSHA', $expectedRemoteSHA);
+        }
+        return new \Dagger\GitPushResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved ref name at this ref.
      */
     public function ref(): string
@@ -123,5 +159,44 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('includeTags', $includeTags);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a single-parent commit on this ref by applying a changeset's edits.
+     *
+     * Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+     *
+     * Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+     */
+    public function withCommit(
+        Changeset $changes,
+        string $message,
+        string $date,
+        string $authorName,
+        string $authorEmail,
+        ?string $committerName = null,
+        ?string $committerEmail = null,
+        ?string $committerDate = null,
+        ?bool $allowEmpty = false,
+    ): GitRef {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        $innerQueryBuilder->setArgument('message', $message);
+        $innerQueryBuilder->setArgument('date', $date);
+        $innerQueryBuilder->setArgument('authorName', $authorName);
+        $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        if (null !== $committerName) {
+        $innerQueryBuilder->setArgument('committerName', $committerName);
+        }
+        if (null !== $committerEmail) {
+        $innerQueryBuilder->setArgument('committerEmail', $committerEmail);
+        }
+        if (null !== $committerDate) {
+        $innerQueryBuilder->setArgument('committerDate', $committerDate);
+        }
+        if (null !== $allowEmpty) {
+        $innerQueryBuilder->setArgument('allowEmpty', $allowEmpty);
+        }
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

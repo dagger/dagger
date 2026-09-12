@@ -52,6 +52,21 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 	return remote, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA against the repository's
+// own object database, which is fully available locally.
+func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return sha, nil
+}
+
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
 	var gitDir string
 	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {

@@ -385,12 +385,4 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryDoesNotPinHostContent(ctx contex
 		require.NoError(t, err)
 		require.NotContains(t, modified, "target/keep.txt")
 	})
-
-	t.Run("a later edit after reloading", func(ctx context.Context, t *testctx.T) {
-		changes := merged.Reloaded().WithNewFile("elsewhere.txt", "x").
-			Changes(dagger.WorkspaceChangesOpts{From: ws})
-		modified, err := changes.ModifiedPaths(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, modified, "target/keep.txt")
-	})
 }

@@ -30,6 +30,7 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
+		NotReplayable("Requires the originating workspace client").
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
@@ -67,6 +68,68 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
 			).
 			PassthroughTelemetry(),
+		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before planning integration").
+			Doc("Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.",
+				"Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures local receivers before integrating commits").
+			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
+				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.",
+				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
+			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
+				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
+				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
+		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__exportDirectory", s.exportDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Prepared integration is bound to a client checkout").Doc("(Internal-only) Bundle a prepared integration and its before/after worktrees."),
+		dagql.NodeFunc("__withExportBase", s.withExportBase).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Bind a prepared integration to its captured checkout."),
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before committing").
+			Doc("Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.",
+				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified. Changes outside the selected paths remain uncommitted.",
+				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
+			),
+		dagql.NodeFunc("withReset", s.withReset).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Freezes host-backed receivers before resetting").
+			Doc("Move this workspace's Git HEAD to a commit and return the resulting stable workspace.",
+				"A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.",
+				"With hard, the working tree is reset to the commit and every uncommitted change is discarded.",
+				"Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.").
+			Args(
+				dagql.Arg("commit").Doc("Full commit hash to reset HEAD to."),
+				dagql.Arg("hard").Doc("Discard uncommitted changes, resetting the working tree to the commit."),
+			),
+		dagql.NodeFunc("snapshot", s.snapshot).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Captures the client's current Git state after approval").
+			Doc("Return a snapshot of this workspace as a stable value.",
+				"Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.",
+				"Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.",
+				"Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.",
+				"The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only."),
+		dagql.NodeFunc("withConfigPaths", s.withConfigPaths).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.").
+			Args(dagql.Arg("configFile").Doc("Config file path."), dagql.Arg("lockFile").Doc("Lockfile path.")),
+		dagql.NodeFunc("withConfigEnvironment", s.withConfigEnvironment).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Select the config environment carried by this workspace.").
+			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceSDK", s.workspaceSDK).
@@ -394,13 +457,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Writes pending workspace changes to the calling client's host").
-			Doc("Write this workspace's pending changes to its local Git workspace on the current client's host.",
-				"Like Directory.export, the write is a side effect on the client that makes the call — never on the client that created the workspace. Inside a module, this cannot reach the caller's host."),
-		dagql.NodeFunc("reloaded", s.reloaded).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerCallInput).
-			Doc("Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session."),
+			DoNotCache("Writes workspace commits and changes to the calling client's host").
+			Doc("Write this workspace's changes to a local Git checkout on the calling client.",
+				"Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.",
+				"For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.",
+				"Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host."),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -486,6 +547,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
@@ -497,6 +562,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) The git repository backing this workspace git state."),
 		dagql.NodeFunc("head", s.workspaceGitHead).
 			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("directory", s.workspaceGitDirectory).
+			IsPersistable().
+			Doc("Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.",
+				"Mount this directory at .git alongside workspace.directory(\"/\") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.",
+				"This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
 	}.Install(srv)
@@ -896,7 +966,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 	}
 
 	if ws.HostPath() != "" {
-		ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
+		ctx, err = s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return inst, err
 		}
@@ -1002,7 +1072,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
+	hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return inst, err
 	}
@@ -2320,10 +2390,20 @@ func (s *workspaceSchema) export(
 	ws := parent.Self()
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
-		return core.Void{}, err
+		return core.Void{}, fmt.Errorf("%w; integrate into currentWorkspace with withCommitsFrom first", err)
 	}
 
 	changes, ok := ws.OverlayChanges()
+	wrote := false
+	defer func() {
+		if wrote {
+			invalidateExportedWorkspace(ctx)
+		}
+	}()
+	if ws.ExportBase.Self() != nil {
+		wrote = true
+		return core.Void{}, s.exportWorkspaceGit(ctx, parent, hostPath)
+	}
 	if !ok || changes.Self() == nil {
 		return core.Void{}, nil
 	}
@@ -2356,68 +2436,17 @@ func (s *workspaceSchema) export(
 	// Deliberately no withWorkspaceClientContext here: export is a side
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
+	wrote = true // Filesync can partially write before returning an error.
 	if err := changes.Self().Export(ctx, hostPath); err != nil {
 		return core.Void{}, err
-	}
-	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
-		slog.Warn("could not invalidate workspace after export", "error", err)
-	}
-	// The export just changed the workspace's on-disk content, so host reads
-	// (Workspace.file / .directory) cached earlier in this session are stale —
-	// they are cached per client for the client's whole lifetime
-	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
-	// land in a fresh per-client cache namespace and re-read the live host.
-	// Like the invalidation above, this only matters when the caller owns the
-	// workspace: a non-owner's export never touched the owner's host, and this
-	// workspace's reads resolve under the owner's epoch, so the bump is a
-	// harmless no-op. Best-effort: a bookkeeping failure must not fail an
-	// export that already succeeded.
-	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
-		slog.Warn("could not bump workspace read epoch after export", "error", err)
 	}
 	return core.Void{}, nil
 }
 
-// reloaded returns the workspace unchanged, having invalidated the workspace
-// owner's cached host reads.
-//
-// Workspace.file / Workspace.directory resolve through host.directory, which is
-// cached per client for the client's whole lifetime (dagql.PerClientInput). In
-// a long-lived session — a `dagger agent` conversation — a file read early on
-// keeps returning that original snapshot even after the files change on disk
-// underneath it. Export bumps the read epoch itself, since it is the operation
-// that changed them; this field covers the other direction, where an agent
-// discards its pending overlay to re-sync with whatever the host now holds
-// (the CLI's ctrl+u), and any other caller that knows its cached reads are
-// stale.
-func (s *workspaceSchema) reloaded(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
-) (dagql.ObjectResult[*core.Workspace], error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
+func invalidateExportedWorkspace(ctx context.Context) {
+	if err := core.InvalidateCurrentWorkspace(ctx); err != nil {
+		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
-	// Bump under the workspace's owning client, the context
-	// withWorkspaceHostReadContext reads the epoch from — a
-	// bump under the caller's own client would be a silent no-op whenever the
-	// caller is not the owner (e.g. a module handed the workspace). A value
-	// workspace has no owning client and no host reads to invalidate, so the
-	// bump is skipped rather than failed.
-	if parent.Self().ClientID != "" {
-		bumpCtx, err := withWorkspaceClientContext(ctx, parent.Self())
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		// Best-effort, like export's invalidation: failing to bump only falls
-		// back to the prior (stale) read behavior, which is not worth failing
-		// over.
-		if err := core.BumpWorkspaceReadEpoch(bumpCtx); err != nil {
-			slog.Warn("could not bump workspace read epoch", "error", err)
-		}
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
 }
 
 func (s *workspaceSchema) overlayWorkspaceWithMutation(
@@ -2804,7 +2833,7 @@ func (s *workspaceSchema) sparseHostBase(
 
 	includes := sparseIncludePatterns(touched)
 
-	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
+	ctx, err = s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
@@ -3110,16 +3139,11 @@ func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 	if err != nil {
 		return inst, false, err
 	}
-	epoch, err := core.WorkspaceReadEpoch(clientCtx)
-	if err != nil {
-		return inst, false, err
-	}
-
 	var scratch dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(clientCtx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
 		return inst, false, err
 	}
-	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "epoch:"+epoch)
+	canonical, err := core.MaterializeHostGitCheckout(clientCtx, srv, scratch, ws.HostPath(), "workspace")
 	if err != nil {
 		return inst, false, err
 	}
@@ -3206,18 +3230,9 @@ func (s *workspaceSchema) materializeWorkspaceGit(
 	if err != nil {
 		return dir, err
 	}
-	// Pin the reconstruction to the session's cached view of the checkout by
-	// keying it on the workspace read epoch rather than the checkout's live
-	// ref state: a checkout that advances mid-session must NOT be silently
-	// re-read, or a staged-commit export could fast-forward over the user's
-	// own commit instead of detecting that the local branch moved. The epoch
-	// bumps on export/reload, exactly when the pinned view should be refreshed
-	// -- the same scoping Workspace.file/.directory host reads use.
-	epoch, err := core.WorkspaceReadEpoch(clientCtx)
-	if err != nil {
-		return dir, err
-	}
-	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "epoch:"+epoch)
+	// Live workspaces retain their session-local Git view. Call snapshot to
+	// capture a fresh, independently stable workspace from the live checkout.
+	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "workspace")
 	if errors.Is(err, core.ErrNoGitContext) {
 		// No .git at all: leave the original directory so downstream callers
 		// surface the plain "not a git repository" failure, matching
@@ -4456,27 +4471,6 @@ func filterNodesByInclude[T any](
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
-}
-
-// withWorkspaceHostReadContext is withWorkspaceClientContext plus the client's
-// current workspace read epoch folded into the per-client cache namespace, so
-// cached host.directory reads are scoped per epoch. When the epoch is bumped
-// (Workspace.export, after the agent's changes are written to disk, or
-// Workspace.reloaded when its overlay is discarded instead), reads issued
-// afterwards land in a fresh namespace and
-// re-read the live host instead of returning a per-client snapshot cached
-// earlier in the same session. Use it for host reads that must reflect on-disk
-// content (Workspace.file / Workspace.directory and the diff base of edits).
-func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	ctx, err := withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	epoch, err := core.WorkspaceReadEpoch(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

@@ -30,6 +30,10 @@ type GitRepository struct {
 	remoteMu sync.Mutex
 
 	DiscardGitDir bool
+
+	// PushURLs is captured routing metadata, not a credential grant. Empty
+	// means use URL; multiple URLs require an explicit push destination.
+	PushURLs []string
 }
 
 type GitRepositoryBackend interface {
@@ -37,6 +41,12 @@ type GitRepositoryBackend interface {
 	Remote(ctx context.Context) (*gitutil.Remote, error)
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
+
+	// ResolveShortSHA expands an abbreviated commit SHA (a 4-40 character hex
+	// prefix) to the full SHA of the single matching commit, using only
+	// locally available objects. Backends that merely proxy a remote cannot
+	// expand prefixes of commits that were never fetched.
+	ResolveShortSHA(ctx context.Context, prefix string) (string, error)
 
 	// Dirty returns a Directory representing the repository in it's current state.
 	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
@@ -288,6 +298,16 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 	return remote, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA the way `git rev-parse`
+// does, using the repository's locally available objects. Workspace-backed
+// and other engine-side repositories carry their whole object database, so
+// any commit's prefix resolves. A remote repository is resolved via
+// ls-remote, which only advertises refs: its prefixes can only be expanded
+// against commits that have already been fetched into the engine's mirror.
+func (repo *GitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	return repo.Backend.ResolveShortSHA(ctx, prefix)
+}
+
 // CloneWithBackend returns a repository with fresh remote metadata state. This
 // is used when changing authentication so metadata loaded with one credential
 // set cannot be reused with another.
@@ -297,6 +317,7 @@ func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRe
 
 	clone := &GitRepository{
 		URL:           repo.URL,
+		PushURLs:      slices.Clone(repo.PushURLs),
 		Backend:       backend,
 		Remote:        &gitutil.Remote{},
 		DiscardGitDir: repo.DiscardGitDir,
@@ -493,6 +514,7 @@ const (
 type persistedGitRepositoryPayload struct {
 	Form          string          `json:"form"`
 	URL           string          `json:"url,omitempty"`
+	PushURLs      []string        `json:"pushURLs,omitempty"`
 	DiscardGitDir bool            `json:"discardGitDir,omitempty"`
 	RemoteJSON    json.RawMessage `json:"remoteJson,omitempty"`
 
@@ -520,6 +542,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository remote: %w", err)
 	}
 	payload := persistedGitRepositoryPayload{
+		PushURLs:      repo.PushURLs,
 		DiscardGitDir: repo.DiscardGitDir,
 		RemoteJSON:    remoteJSON,
 	}
@@ -571,6 +594,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 
 	repo := &GitRepository{
 		Remote:        &remote,
+		PushURLs:      slices.Clone(persisted.PushURLs),
 		DiscardGitDir: persisted.DiscardGitDir,
 	}
 	if persisted.URL != "" {

@@ -133,6 +133,27 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA against the engine's
+// local mirror of the remote. Remote repositories are resolved via ls-remote,
+// which only advertises refs: a prefix can only be expanded when the commit's
+// objects were already fetched (e.g. by a previous tree checkout). Nothing is
+// fetched to answer the expansion.
+func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+			return "", fmt.Errorf("%w; a remote repository can only expand an abbreviated SHA against already-fetched commits: use the full SHA or a named ref", err)
+		}
+		return "", err
+	}
+	return sha, nil
+}
+
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -207,11 +228,22 @@ func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.Object
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	return repo.setupWithSSHAuthSock(ctx, "")
+}
+
+// sshAuthSock is an operation-local agent mount, never a repository capability.
+func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAuthSock string) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	if repo.URL.Scheme == gitutil.SSHProtocol && repo.SSHAuthSocket.Self() == nil && sshAuthSock == "" {
+		return nil, nil, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	var opts []gitutil.Option
+	if sshAuthSock != "" {
+		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
+	}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {

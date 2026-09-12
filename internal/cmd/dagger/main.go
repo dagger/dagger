@@ -987,6 +987,7 @@ func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 }
 
 func Main() {
+	runSSHAskpass()
 	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
 		cmd, _ := resolveCommand(rootCmd, os.Args[1:])

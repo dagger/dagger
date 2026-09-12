@@ -2798,6 +2798,31 @@ func TestViewsFilterNonObjectTypes(t *testing.T) {
 	require.Contains(t, futureSchema.Directives, "viewFilteredDirective")
 }
 
+// Inferring an interface in the current view must not expose it in an older
+// view where one of the implementing fields does not exist.
+func TestViewsFilterInterfacesWithHiddenFields(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	srv.View = "future"
+	iface := dagql.NewInterface("ViewFilteredInterface", "interface with a future implementation")
+	iface.AddField(dagql.InterfaceFieldSpec{FieldSpec: dagql.FieldSpec{
+		Name: "value", Type: dagql.String(""),
+	}})
+	srv.InstallInterface(iface)
+	class := dagql.NewClass[viewFilteredInterfaceObject](srv)
+	class.Install(dagql.Func("value", func(context.Context, viewFilteredInterfaceObject, struct{}) (dagql.String, error) {
+		return "value", nil
+	}).View(dagql.ExactView("future")))
+	srv.InstallObject(class)
+	future := srv.SchemaForView("future")
+	require.Contains(t, future.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	old := srv.SchemaForView("old")
+	require.Contains(t, old.Types, "ViewFilteredInterface")
+	require.NotContains(t, old.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	require.Nil(t, old.Types["ViewFilteredInterfaceObject"].Fields.ForName("value"))
+	future = srv.SchemaForView("future")
+	require.Contains(t, future.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+}
+
 type CoolInt struct {
 	Val int `field:"true"`
 }

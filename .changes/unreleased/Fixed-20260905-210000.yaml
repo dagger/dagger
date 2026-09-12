@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Preserve empty-directory edits when checkpointing workspace overlays,
+  including permissions and directory-to-file replacements. Normalization
+  records directory edits alongside the Git patch without retaining live
+  workspace references in the frozen recipe.
+time: 2026-09-05T21:00:00Z
+custom:
+  Author: vito
+  PR: ""
