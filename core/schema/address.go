@@ -229,7 +229,7 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	// the recorded error here without reloading, and ModTree runs nodes
 	// without fail-fast — so only the node that genuinely needs the broken
 	// module fails, and repair generators keep running.
-	if _, err := q.Server.EnsureWorkspaceModules(ctx, []string{name}, false); err != nil {
+	if _, err := q.Server.EnsureWorkspaceModules(ctx, []string{name}, core.ModuleLoadStrict); err != nil {
 		return nil, true, err
 	}
 	deps, err := q.Server.CurrentServedDeps(ctx)

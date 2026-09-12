@@ -173,7 +173,7 @@ func loadWorkspaceOwnerContext(ctx context.Context, ws dagql.ObjectResult[*Works
 	if err != nil {
 		return nil, err
 	}
-	if _, err := query.EnsureWorkspaceModules(wsCtx, nil, false); err != nil {
+	if _, err := query.EnsureWorkspaceModules(wsCtx, nil, ModuleLoadStrict); err != nil {
 		return nil, fmt.Errorf("ensure workspace modules: %w", err)
 	}
 	return wsCtx, nil

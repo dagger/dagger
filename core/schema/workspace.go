@@ -3718,7 +3718,7 @@ func (s *workspaceSchema) checks(
 	// Best-effort: a module that can't load becomes a failing check below
 	// rather than aborting the modules that can. check stays a gate -- the run
 	// still fails -- but a broken module no longer costs the whole report.
-	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, true)
+	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadBestEffort)
 	if err != nil {
 		return nil, err
 	}
@@ -3931,7 +3931,7 @@ func (s *workspaceSchema) generators(
 	// is skipped with a warning instead of failing the whole run, and its
 	// failure message is carried on loadFailures so the CLI can honor
 	// --require-load.
-	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, true)
+	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadRepairing)
 	if err != nil {
 		return nil, err
 	}
@@ -4066,7 +4066,7 @@ func (s *workspaceSchema) services(
 	}
 
 	// up is strict: a module that can't load is a failure, by design.
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
 	if err != nil {
 		return nil, err
 	}
@@ -4201,7 +4201,7 @@ func (s *workspaceSchema) workspaceTargetModules(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	include []string,
 ) ([]dagql.ObjectResult[*core.Module], error) {
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
 	if err != nil {
 		return nil, err
 	}
@@ -4369,15 +4369,15 @@ func matchWorkspaceIncludePath(
 
 // ensureWorkspaceModulesLoaded loads the workspace modules the include patterns
 // demand (all when they don't narrow). Selector fields validate against the
-// core schema, so loading can wait until resolution. With bestEffort, per-module
-// load failures are collected and returned instead of aborting (used by unscoped
-// 'dagger generate'); the check/up resolvers pass false to stay strict.
-func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) ([]core.ModuleLoadFailure, error) {
+// core schema, so loading can wait until resolution. In a best-effort mode,
+// per-module load failures are collected and returned instead of aborting
+// (`dagger generate`, `dagger check`); up and the target resolvers stay strict.
+func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, mode core.ModuleLoadMode) ([]core.ModuleLoadFailure, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return query.Server.EnsureWorkspaceModules(ctx, include, bestEffort)
+	return query.Server.EnsureWorkspaceModules(ctx, include, mode)
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {

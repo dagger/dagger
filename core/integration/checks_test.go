@@ -456,6 +456,18 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 		require.Regexp(t, `good:verify.*OK`, out)
 		require.NotContains(t, out, "modules/bad")
 	})
+
+	t.Run("a module missing its generated files is still told to generate", func(ctx context.Context, t *testctx.T) {
+		// The reason best-effort loading cannot reuse generate's phrasing:
+		// generate drops the "run `dagger generate`" advice because that is
+		// what is running, and for check it is the fix (see ModuleLoadMode).
+		out, err := workspaceFixture(t, c, "generate-load-failures").
+			With(daggerExecFail("check", "ungenerated", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "run `dagger generate`")
+		require.NotContains(t, out, "skipped until it is generated")
+	})
 }
 
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
