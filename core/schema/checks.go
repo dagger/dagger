@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -60,7 +61,11 @@ func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{})
 }
 
 func (s checksSchema) originalModule(_ context.Context, parent *core.Check, args struct{}) (*core.Module, error) {
-	return parent.OriginalModule(), nil
+	module := parent.OriginalModule()
+	if module == nil {
+		return nil, fmt.Errorf("check %q is engine-injected and has no original module", parent.Name())
+	}
+	return module, nil
 }
 
 func (s checksSchema) checkType(_ context.Context, parent *core.Check, args struct{}) (string, error) {
@@ -78,7 +83,7 @@ func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args stru
 func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct {
 	FailFast dagql.Optional[dagql.Boolean]
 }) (*core.CheckGroup, error) {
-	return parent.Run(ctx, args.FailFast.GetOr(false).Bool())
+	return parent.Run(ctx, args.FailFast.GetOr(false).Bool(), runSyntheticSDKGeneratorAsCheck)
 }
 
 func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (dagql.ObjectResult[*core.File], error) {
@@ -86,5 +91,5 @@ func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args 
 }
 
 func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct{}) (*core.Check, error) {
-	return parent.Run(ctx)
+	return parent.Run(ctx, runSyntheticSDKGeneratorAsCheck)
 }

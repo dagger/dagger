@@ -97,7 +97,7 @@ func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, 
 	if err != nil {
 		return nil, err
 	}
-	aggregate, err := runSDKModuleGeneratorGraph(ctx, base, specs)
+	aggregate, err := runSDKModuleGeneratorGraph(ctx, base, specs, true)
 	if err != nil {
 		return nil, err
 	}

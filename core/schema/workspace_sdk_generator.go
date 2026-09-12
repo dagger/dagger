@@ -69,11 +69,31 @@ func runSyntheticSDKGenerator(
 	ctx context.Context,
 	spec *core.SyntheticGeneratorSpec,
 ) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
+	return runSyntheticSDKGeneratorGraph(ctx, spec, true)
+}
+
+// runSyntheticSDKGeneratorAsCheck is runSyntheticSDKGenerator without the
+// per-provider generator span. A check already opened its own span for this
+// work, and a nested span carrying GeneratorNameAttr would also surface the
+// run as a generator in the TUI. The module-declared generate-as-check path
+// avoids the same duplication by calling runGeneratorLocally directly.
+func runSyntheticSDKGeneratorAsCheck(
+	ctx context.Context,
+	spec *core.SyntheticGeneratorSpec,
+) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
+	return runSyntheticSDKGeneratorGraph(ctx, spec, false)
+}
+
+func runSyntheticSDKGeneratorGraph(
+	ctx context.Context,
+	spec *core.SyntheticGeneratorSpec,
+	generatorSpans bool,
+) (base, generated dagql.ObjectResult[*core.Workspace], err error) {
 	base, err = syntheticGeneratorWorkspace(ctx, dagql.ObjectResult[*core.Workspace]{})
 	if err != nil {
 		return base, generated, err
 	}
-	generated, err = runSDKModuleGeneratorGraph(ctx, base, []*core.SyntheticGeneratorSpec{spec})
+	generated, err = runSDKModuleGeneratorGraph(ctx, base, []*core.SyntheticGeneratorSpec{spec}, generatorSpans)
 	return base, generated, err
 }
 
@@ -352,6 +372,7 @@ func runSDKModuleGeneratorGraph(
 	ctx context.Context,
 	base dagql.ObjectResult[*core.Workspace],
 	specs []*core.SyntheticGeneratorSpec,
+	generatorSpans bool,
 ) (_ dagql.ObjectResult[*core.Workspace], rerr error) {
 	s := &workspaceSchema{}
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, base.Self(), workspaceConfigMustExist, false)
@@ -371,19 +392,21 @@ func runSDKModuleGeneratorGraph(
 	// matching span so its rolled-up detail remains useful.
 	providerCtx := make(map[string]context.Context, len(specs))
 	var spans []trace.Span
-	for _, spec := range specs {
-		if spec == nil {
-			continue
+	if generatorSpans {
+		for _, spec := range specs {
+			if spec == nil {
+				continue
+			}
+			generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
+				trace.WithAttributes(
+					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+					attribute.String(telemetry.GeneratorNameAttr, spec.Name),
+				),
+			)
+			providerCtx[spec.Provider] = generatorCtx
+			spans = append(spans, span)
 		}
-		generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
-			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-				attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-				attribute.String(telemetry.GeneratorNameAttr, spec.Name),
-			),
-		)
-		providerCtx[spec.Provider] = generatorCtx
-		spans = append(spans, span)
 	}
 	defer func() {
 		for _, span := range spans {

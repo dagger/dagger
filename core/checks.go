@@ -7,7 +7,10 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Check represents a validation check with its result
@@ -21,6 +24,13 @@ type Check struct {
 	// IsGenerate indicates this check was derived from a +generate function.
 	// When true, the check passes if the generator produces an empty changeset.
 	IsGenerate bool
+
+	// Synthetic is set when the check was derived from an engine-injected
+	// generator rather than a field on a module's schema. Node then exists only
+	// for naming and pattern matching, so running the check goes through the
+	// SyntheticGeneratorRunner the schema package supplies. Always paired with
+	// IsGenerate.
+	Synthetic *SyntheticGeneratorSpec
 }
 
 type CheckGroup struct {
@@ -90,7 +100,7 @@ func (r *CheckGroup) List() []*Check {
 }
 
 // Run all the checks in the group.
-func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error) {
+func (r *CheckGroup) Run(ctx context.Context, failFast bool, syntheticRunner SyntheticGeneratorRunner) (*CheckGroup, error) {
 	r = r.Clone()
 
 	// Run the checks against the workspace this group was rolled up from, so
@@ -107,12 +117,7 @@ func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error
 		check.Completed = false
 		check.Passed = false
 		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
-			var err error
-			if check.IsGenerate {
-				err = check.Node.RunGeneratorAsCheck(ctx, nil, nil)
-			} else {
-				err = check.Node.RunCheck(ctx, nil, nil)
-			}
+			err := check.run(ctx, syntheticRunner)
 			check.Completed = true
 			if err != nil {
 				check.Passed = false
@@ -236,18 +241,64 @@ func (c *Check) CheckType() string {
 func (c *Check) Clone() *Check {
 	cp := *c
 	cp.Node = c.Node.Clone()
+	if c.Synthetic != nil {
+		synthetic := *c.Synthetic
+		synthetic.Path = append([]string(nil), c.Synthetic.Path...)
+		cp.Synthetic = &synthetic
+	}
 	return &cp
 }
 
-func (c *Check) Run(ctx context.Context) (*Check, error) {
+func (c *Check) run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) error {
+	switch {
+	case c.Synthetic != nil:
+		return c.runSynthetic(ctx, syntheticRunner)
+	case c.IsGenerate:
+		return c.Node.RunGeneratorAsCheck(ctx, nil, nil)
+	default:
+		return c.Node.RunCheck(ctx, nil, nil)
+	}
+}
+
+// runSynthetic runs an engine-injected generator and passes when it changes
+// nothing. The generator is transient: it exists to reuse Generator's synthetic
+// dispatch and workspace-to-changeset conversion, not to become check state.
+func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, c.Name(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetry.CheckNameAttr, c.Name()),
+		),
+	)
+	defer func() {
+		span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
+		telemetry.EndWithCause(span, &rerr)
+	}()
+
+	generator, err := (&Generator{Node: c.Node, Synthetic: c.Synthetic}).Run(ctx, syntheticRunner)
+	if err != nil {
+		return err
+	}
+	changes, err := generator.RequireChanges(ctx, "check")
+	if err != nil {
+		return err
+	}
+	empty, err := changes.IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
+			c.Node.PathString(), c.Node.PathString())
+	}
+	return nil
+}
+
+func (c *Check) Run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (*Check, error) {
 	c = c.Clone()
 
-	var err error
-	if c.IsGenerate {
-		err = c.Node.RunGeneratorAsCheck(ctx, nil, nil)
-	} else {
-		err = c.Node.RunCheck(ctx, nil, nil)
-	}
+	err := c.run(ctx, syntheticRunner)
 	c.Completed = true
 	if err != nil {
 		c.Passed = false
