@@ -60,7 +60,18 @@ func planWorkspaceInstallConfig(
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
-		if !workspace.SameModuleRequest(existing.Source, ".", sourcePath, ".") {
+		switch {
+		case existing.Source == "":
+			// An entry with no source overrides a module an included config
+			// provides; installing under that name is not a conflict, it fills
+			// the source in and keeps the overrides. A pin recorded for the
+			// inherited ref goes with it — same source/pin coupling the merge
+			// uses.
+			existing.Source = sourcePath
+			existing.Pin = ""
+			cfg.Modules[name] = existing
+			plan.Changed = true
+		case !workspace.SameModuleRequest(existing.Source, ".", sourcePath, "."):
 			if workspace.ModuleSourceIdentity(existing.Source, ".") == workspace.ModuleSourceIdentity(sourcePath, ".") {
 				return plan, fmt.Errorf("module %q is already installed from %q; use dagger mod update %s --version VERSION to change its version", name, existing.Source, name)
 			}

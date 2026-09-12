@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  An explicit HTTP(S) port survives a remote ref round trip. `gitref.Parse`
+  rebuilt the clone ref without the port for `http://` and `https://` refs —
+  only SSH put it back — so `https://host:8443/acme/repo` came back addressing
+  port 443: a different remote, with different credentials and different cache
+  keys. Every such ref is affected, whether it names a module source or a
+  workspace passed to `dagger -W`.
+time: 2026-09-02T12:00:00.000000000+00:00
+custom:
+  Author: eunomie
+  PR: "13882"
