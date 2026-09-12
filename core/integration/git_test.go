@@ -1302,6 +1302,72 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	require.Equal(t, hostname(c1), hostname(c2))
 }
 
+func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init"}).
+			WithExec([]string{"sh", "-c", `echo one > file && git add file && git commit -m "one" && echo two > file && git commit -am "two"`})
+
+		// an older commit: not the tip of any ref, so only object-database
+		// resolution can find it
+		oldCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+		require.NoError(t, err)
+		oldCommit = strings.TrimSpace(oldCommit)
+
+		git := ctr.Directory(".").AsGit()
+
+		// ref() expands an abbreviated SHA to the full commit
+		resolved, err := git.Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, resolved)
+
+		// commit() accepts an abbreviated SHA too
+		sha, err := git.Commit(oldCommit[:7]).Sha(ctx)
+		require.NoError(t, err)
+		require.Equal(t, oldCommit, sha)
+
+		// a ref whose name looks like a hex prefix wins over prefix expansion
+		branchCtr := ctr.WithExec([]string{"git", "branch", oldCommit[:7]})
+		headCommit, err := branchCtr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		headCommit = strings.TrimSpace(headCommit)
+		resolved, err = branchCtr.Directory(".").AsGit().Ref(oldCommit[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, headCommit, resolved)
+
+		// a prefix that matches nothing errors
+		_, err = git.Ref("deadbeefdead").CommitSHA(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc})
+
+		full, err := repo.Branch("main").CommitSHA(ctx)
+		require.NoError(t, err)
+
+		// nothing fetched yet: ls-remote only advertises refs, so the prefix
+		// cannot be expanded
+		_, err = repo.Ref(full[:7]).CommitSHA(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "already-fetched")
+
+		// once the commit's objects are fetched, the same prefix resolves
+		_, err = repo.Branch("main").Tree().Sync(ctx)
+		require.NoError(t, err)
+		resolved, err := repo.Ref(full[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, full, resolved)
+	})
+}
+
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().
