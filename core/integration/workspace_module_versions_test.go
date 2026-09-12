@@ -94,7 +94,8 @@ source = 'github.com/does/notexist/tools@v2'
 		require.Contains(t, string(out), `Matched installed module "tools" by source "github.com/does/notexist/tools".`)
 		data, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
-		require.Equal(t, strings.Replace(config, "[modules.tools]\nsource = 'github.com/does/notexist/tools@v1'\n", "", 1), string(data))
+		// The blank line before the removed table goes with it.
+		require.Equal(t, strings.Replace(config, "\n[modules.tools]\nsource = 'github.com/does/notexist/tools@v1'\n", "", 1), string(data))
 	})
 	t.Run("source version does not select one of two installations", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, config+"\n[modules.older]\nsource = 'github.com/does/notexist/tools@v0'\n")

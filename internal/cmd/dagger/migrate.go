@@ -38,7 +38,7 @@ prompt, or --no-apply to preview without changing files.`,
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{showFinalProgressKey: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			disposition, err := workspaceExecDisposition(autoApply, noApply)
+			disposition, err := migrationDisposition(cmd, autoApply, noApply, idtui.RunningInAgent())
 			if err != nil {
 				return err
 			}
@@ -94,6 +94,22 @@ without a prompt, or --no-apply to preview without changing files.`
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayWriteWorkspaceConfig, mayProduceOutput, mayRenderPipeline)
 	setWorkspaceFlagPolicy(cmd)
 	return cmd
+}
+
+// migrationDisposition resolves the changeset choice for a migration command.
+// A coding agent cannot answer the interactive prompts, so it must choose
+// --auto-apply or --no-apply explicitly, as dagger generate already requires.
+func migrationDisposition(cmd *cobra.Command, apply, noApply, runningInAgent bool) (changesetDisposition, error) {
+	disposition, err := workspaceExecDisposition(apply, noApply)
+	if err != nil {
+		return disposition, err
+	}
+	if disposition == changesetDispositionPrompt && runningInAgent {
+		return disposition, fmt.Errorf(`%s requires an explicit changeset choice when run by a coding agent:
+  pass -y/--auto-apply to apply the migration
+  pass --no-apply to preview the migration without applying it`, cmd.CommandPath())
+	}
+	return disposition, nil
 }
 
 // runMigration presents an engine-owned plan and exports it only after approval.

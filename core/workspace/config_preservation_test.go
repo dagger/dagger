@@ -79,6 +79,14 @@ func TestConfigPreservation(t *testing.T) {
 		require.Equal(t, strings.Replace(preservationConfig, "entrypoint = false # keep this comment\n", "", 1), string(out))
 	})
 
+	t.Run("unset last setting removes its section and separator", func(t *testing.T) {
+		out, err := DeleteConfigValue([]byte(preservationConfig), `modules."my.module".settings."some.key"`)
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, `modules."my.module".settings.empty`)
+		require.NoError(t, err)
+		require.Equal(t, strings.Replace(preservationConfig, "[modules.\"my.module\".settings]\n\"some.key\" = 'old' # setting notes\nempty = []\n\n", "", 1), string(out))
+	})
+
 	t.Run("SDK edit preserves other declarations", func(t *testing.T) {
 		cfg, err := ParseConfig([]byte(preservationConfig))
 		require.NoError(t, err)
@@ -133,6 +141,16 @@ func TestConfigPreservation(t *testing.T) {
 		parsed, err := ParseConfig(out)
 		require.NoError(t, err)
 		require.Equal(t, cfg, parsed)
+	})
+
+	t.Run("removal takes the comment attached to a removed module", func(t *testing.T) {
+		input := "# header\n\n[modules.kept]\nsource = './kept'\n\n# about old\n[modules.old]\nsource = './old'\n\n# separate\n\n[modules.last]\nsource = './last'\n"
+		cfg, err := ParseConfig([]byte(input))
+		require.NoError(t, err)
+		delete(cfg.Modules, "old")
+		out, err := UpdateConfigBytes([]byte(input), cfg)
+		require.NoError(t, err)
+		require.Equal(t, "# header\n\n[modules.kept]\nsource = './kept'\n\n# separate\n\n[modules.last]\nsource = './last'\n", string(out))
 	})
 
 	t.Run("removal includes unknown fields in removed module", func(t *testing.T) {
