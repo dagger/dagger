@@ -521,6 +521,12 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 	var summary strings.Builder
 	summary.WriteString("Include these workspace changes in the checkpoint?\n")
 	for _, candidate := range candidates {
+		if candidate.GetClassification() == gitsession.CaptureClassificationNestedRepository {
+			// A nested repository's contents never travel with a checkpoint,
+			// so there is no byte count or reviewed state to show.
+			fmt.Fprintf(&summary, "\n- %s (untracked nested repository; never captured — Include and Drop both omit it)", strconv.Quote(candidate.Path))
+			continue
+		}
 		kind := "untracked"
 		if candidate.Tracked {
 			kind = "tracked"
@@ -749,6 +755,14 @@ func applyCheckpointDecision(policy *gitsession.CaptureGitPolicy, candidates []*
 		policy.ApprovalTokens = nil
 	case checkpointInclude:
 		for _, candidate := range candidates {
+			if candidate.GetClassification() == gitsession.CaptureClassificationNestedRepository {
+				// Approving a nested repository would ask capture to carry its
+				// contents as plain files, which it never does. Include keeps
+				// the other selections and omits the boundary, as the prompt
+				// summary states.
+				policy.Exclude = append(policy.Exclude, candidate.GetPath())
+				continue
+			}
 			if candidate.ApprovalToken == "" {
 				return fmt.Errorf("workspace snapshot approval candidate %s has no state token", strconv.Quote(candidate.Path))
 			}

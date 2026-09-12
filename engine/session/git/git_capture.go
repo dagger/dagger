@@ -27,6 +27,13 @@ import (
 
 const captureGitFormatVersion = 2
 
+// CaptureClassificationNestedRepository marks an approval candidate that is an
+// untracked nested repository boundary: a scratch clone or a linked `git
+// worktree` checkout inside the captured checkout. Its contents are never
+// captured as plain files; the candidate exists so the owner can drop or
+// exclude the boundary instead of hitting a hard failure that names no path.
+const CaptureClassificationNestedRepository = "nested-repository"
+
 const (
 	captureHeadRef     = "refs/dagger/checkpoint/head"
 	captureWorktreeRef = "refs/dagger/checkpoint/worktree"
@@ -692,17 +699,25 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 			return nil, 0, 0, 0, errors.New("enumerate untracked worktree files failed")
 		}
 	}
+	// With --others, git reports an untracked nested repository — a scratch
+	// clone or a linked `git worktree` checkout — as a single directory entry.
+	// Its contents never travel as plain files, but the boundary still joins
+	// the approval flow below so the owner is offered Drop (or an exclusion)
+	// instead of a hard failure that names no path.
+	var nestedRepos []string
 	for _, p := range splitNullPaths(untrackedOut) {
+		if !strings.HasSuffix(p, "/") {
+			continue
+		}
 		if matchesAnyCapturePattern(p, policy.GetExclude()) {
 			continue
 		}
 		if len(policy.GetInclude()) > 0 && !matchesAnyCapturePattern(p, policy.GetInclude()) {
 			continue
 		}
-		if strings.HasSuffix(p, "/") {
-			return nil, 0, 0, 0, errors.New("capture rejected an untracked nested repository")
-		}
+		nestedRepos = append(nestedRepos, p)
 	}
+	sort.Strings(nestedRepos)
 
 	var candidates []struct {
 		path    string
@@ -717,6 +732,9 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		}
 	}
 	for _, p := range splitNullPaths(untrackedOut) {
+		if strings.HasSuffix(p, "/") {
+			continue
+		}
 		if matchesAnyCapturePattern(p, policy.GetExclude()) {
 			continue
 		}
@@ -775,6 +793,30 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		}
 		selected = append(selected, cp)
 	}
+	var approvedNested []string
+	for _, p := range nestedRepos {
+		token, err := captureApprovalToken(capturedPath{path: p}, CaptureClassificationNestedRepository)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		_, retriedApproval := approvals[token]
+		if retriedApproval || matchesAnyCapturePattern(p, policy.GetInclude()) {
+			// Approval means "carry these bytes", and a nested repository's
+			// contents still never travel as plain files. Fail closed, naming
+			// the boundary so the owner can exclude or drop it.
+			approvedNested = append(approvedNested, strconv.Quote(p))
+			continue
+		}
+		approvalCandidates = append(approvalCandidates, &CaptureGitCandidate{
+			Path:           p,
+			Classification: CaptureClassificationNestedRepository,
+			ApprovalToken:  token,
+		})
+		missingApproval = true
+	}
+	if len(approvedNested) > 0 {
+		return nil, 0, 0, 0, fmt.Errorf("capture cannot include untracked nested repositories as plain files: %s; drop untracked files or exclude these paths", strings.Join(approvedNested, ", "))
+	}
 	if untrackedCount > limits.untrackedFiles || untrackedBytes > limits.untrackedTotal {
 		return nil, 0, 0, 0, errors.New("untracked content exceeds the configured aggregate bounds")
 	}
@@ -782,6 +824,7 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		return nil, 0, 0, 0, errors.New("selected content exceeds the configured capture bound")
 	}
 	if missingApproval {
+		sort.Slice(approvalCandidates, func(i, j int) bool { return approvalCandidates[i].GetPath() < approvalCandidates[j].GetPath() })
 		return nil, 0, 0, 0, &captureApprovalError{candidates: approvalCandidates}
 	}
 	return selected, trackedCount, untrackedCount, worktreeBytes, nil

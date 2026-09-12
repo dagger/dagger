@@ -571,6 +571,65 @@ func TestCaptureGitDropUntracked(t *testing.T) {
 	}
 }
 
+func TestCaptureGitNestedRepositoryApprovalFlow(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home, _ := initCaptureRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "notes.txt"), []byte("scratch\n"), 0o600))
+	nested := filepath.Join(repo, "nested")
+	require.NoError(t, os.Mkdir(nested, 0o700))
+	gitCmd(t, home, nested, "init")
+	gitCmd(t, home, repo, "worktree", "add", "wt")
+
+	// Nested repositories surface as approval candidates alongside the other
+	// untracked content instead of aborting the capture outright.
+	rejected := captureGit(t, repo, &CaptureGitPolicy{})
+	meta := rejected.metadata(t)
+	require.Equal(t, CAPTURE_REJECTED, meta.GetError().GetType())
+	require.Len(t, rejected.responses, 1, "a rejected preflight must not stream payload chunks")
+	require.Len(t, meta.GetApprovalCandidates(), 3)
+	var paths, classifications, tokens []string
+	for _, candidate := range meta.GetApprovalCandidates() {
+		paths = append(paths, candidate.GetPath())
+		classifications = append(classifications, candidate.GetClassification())
+		tokens = append(tokens, candidate.GetApprovalToken())
+		require.NotEmpty(t, candidate.GetApprovalToken())
+		require.False(t, candidate.GetTracked())
+	}
+	require.Equal(t, []string{"nested/", "notes.txt", "wt/"}, paths)
+	require.Equal(t, []string{CaptureClassificationNestedRepository, "", CaptureClassificationNestedRepository}, classifications)
+
+	// Approving a nested boundary still cannot carry its contents as plain
+	// files; the refusal names the offending paths so the owner can exclude
+	// or drop them.
+	approved := captureGit(t, repo, &CaptureGitPolicy{ApprovalTokens: tokens})
+	approvedMeta := approved.metadata(t)
+	require.Equal(t, CAPTURE_FAILED, approvedMeta.GetError().GetType())
+	require.Contains(t, approvedMeta.GetError().GetMessage(), `"nested/"`)
+	require.Contains(t, approvedMeta.GetError().GetMessage(), `"wt/"`)
+	require.Len(t, approved.responses, 1)
+
+	// Include patterns are the noninteractive spelling of the same approval.
+	included := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"nested/", "notes.txt", "wt/"}})
+	require.Equal(t, CAPTURE_FAILED, included.metadata(t).GetError().GetType())
+	require.Contains(t, included.metadata(t).GetError().GetMessage(), `"nested/"`)
+
+	// Excluding the boundaries captures everything else...
+	excluded := captureGit(t, repo, &CaptureGitPolicy{
+		Include: []string{"notes.txt"},
+		Exclude: []string{"nested/", "wt/"},
+	})
+	require.Nil(t, excluded.metadata(t).GetError())
+	require.Equal(t, int32(1), excluded.metadata(t).GetUntrackedFiles())
+
+	// ...and dropping untracked content skips them entirely, leaving the
+	// local checkouts untouched.
+	dropped := captureGit(t, repo, &CaptureGitPolicy{DropUntracked: true})
+	require.Nil(t, dropped.metadata(t).GetError())
+	require.Zero(t, dropped.metadata(t).GetUntrackedFiles())
+	require.DirExists(t, filepath.Join(repo, "nested", ".git"))
+	require.FileExists(t, filepath.Join(repo, "wt", ".git"))
+}
+
 func TestCaptureGitLocalFallbackStillRequiresApproval(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, _ := initCaptureRepo(t)
@@ -660,15 +719,6 @@ func TestCaptureGitRejectsUnsupportedAndUnboundedState(t *testing.T) {
 		require.Empty(t, srv.metadata(t).RemoteUrl)
 		require.Equal(t, srv.metadata(t).HeadSha, srv.metadata(t).BaseSha)
 		require.NotEmpty(t, srv.metadata(t).CheckoutStateDigest)
-	})
-	t.Run("nested repository", func(t *testing.T) {
-		repo, home, _ := initCaptureRepo(t)
-		nested := filepath.Join(repo, "nested")
-		require.NoError(t, os.Mkdir(nested, 0o700))
-		gitCmd(t, home, nested, "init")
-		srv := captureGit(t, repo, &CaptureGitPolicy{})
-		require.Contains(t, srv.metadata(t).GetError().GetMessage(), "nested repository")
-		require.Len(t, srv.responses, 1)
 	})
 	t.Run("committed bounds", func(t *testing.T) {
 		repo, home, _ := initCaptureRepo(t)
