@@ -133,6 +133,27 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
+// ResolveShortSHA expands an abbreviated commit SHA against the engine's
+// local mirror of the remote. Remote repositories are resolved via ls-remote,
+// which only advertises refs: a prefix can only be expanded when the commit's
+// objects were already fetched (e.g. by a previous tree checkout). Nothing is
+// fetched to answer the expansion.
+func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		var err error
+		sha, err = git.ResolveShortSHA(ctx, prefix)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+			return "", fmt.Errorf("%w; a remote repository can only expand an abbreviated SHA against already-fetched commits: use the full SHA or a named ref", err)
+		}
+		return "", err
+	}
+	return sha, nil
+}
+
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
