@@ -5,4 +5,11 @@ type Good {
   pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
     workdir.withNewFile("generated.txt", "hello from good").changes(workdir)
   }
+
+  """
+  A trivial check. Used to prove the module loaded for `dagger check`.
+  """
+  pub verify: Void @check {
+    null
+  }
 }
