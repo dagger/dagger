@@ -1,0 +1,6 @@
+kind: Added
+body: Git refs and commits now accept abbreviated commit SHAs (unambiguous hex prefixes, like `git rev-parse`) anywhere a ref or commit identifier is accepted. Ambiguous prefixes error with the number of matching commits. Remote repositories are resolved via ls-remote, so they can only expand prefixes of commits that were already fetched.
+time: 2026-09-11T23:30:00Z
+custom:
+  Author: vito
+  PR: ""
