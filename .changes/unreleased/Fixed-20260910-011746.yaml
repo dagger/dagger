@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix intermittent remote Git fetch failures caused by background maintenance overlapping a later shallow fetch.
+time: 2026-09-10T01:17:46.643811412Z
+custom:
+    Author: sipsma
+    PR: "14097"

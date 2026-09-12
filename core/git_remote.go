@@ -211,7 +211,12 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
-	var opts []gitutil.Option
+	// Keep automatic maintenance inside the mirror lock and mount lifetime.
+	// Detached repacks can otherwise rewrite shallow during a later fetch.
+	opts := []gitutil.Option{gitutil.WithConfig(map[string]string{
+		"gc.autoDetach":          "false",
+		"maintenance.autoDetach": "false",
+	})}
 
 	cleanups := cleanups.Cleanups{}
 	defer func() {
