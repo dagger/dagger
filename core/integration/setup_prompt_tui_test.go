@@ -58,7 +58,6 @@ func (WorkspaceSuite) TestSetupPromptReadsInputAfterTUI(ctx context.Context, t *
 	// The TUI is gone now; this prompt reads stdin directly.
 	_, err = console.ExpectString("Run this command? [Y/n]")
 	require.NoError(t, err)
-	time.Sleep(300 * time.Millisecond)
 	_, err = console.SendLine("n")
 	require.NoError(t, err)
 

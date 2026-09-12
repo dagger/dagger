@@ -187,6 +187,8 @@ func confirm(cmd *cobra.Command, question string) bool {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s [skipped: non-interactive — use --auto-apply to accept]\n", question)
 		return false
 	}
+	// Install the TUI passthrough before advertising that input is accepted.
+	in := promptInput(cmd)
 	fmt.Fprintf(cmd.OutOrStdout(), "%s [Y/n] ", question)
 
 	type readResult struct {
@@ -195,7 +197,7 @@ func confirm(cmd *cobra.Command, question string) bool {
 	}
 	done := make(chan readResult, 1)
 	go func() {
-		reader := bufio.NewReader(promptInput(cmd))
+		reader := bufio.NewReader(in)
 		line, err := reader.ReadString('\n')
 		done <- readResult{line: line, err: err}
 	}()
