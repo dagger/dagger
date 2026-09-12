@@ -42,6 +42,12 @@ type GitRepositoryBackend interface {
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 
+	// ResolveShortSHA expands an abbreviated commit SHA (a 4-40 character hex
+	// prefix) to the full SHA of the single matching commit, using only
+	// locally available objects. Backends that merely proxy a remote cannot
+	// expand prefixes of commits that were never fetched.
+	ResolveShortSHA(ctx context.Context, prefix string) (string, error)
+
 	// Dirty returns a Directory representing the repository in it's current state.
 	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
 	// Cleaned returns a Directory representing the repository with all uncommitted changes discarded.
@@ -290,6 +296,16 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 	}
 	repo.Remote = remote
 	return remote, nil
+}
+
+// ResolveShortSHA expands an abbreviated commit SHA the way `git rev-parse`
+// does, using the repository's locally available objects. Workspace-backed
+// and other engine-side repositories carry their whole object database, so
+// any commit's prefix resolves. A remote repository is resolved via
+// ls-remote, which only advertises refs: its prefixes can only be expanded
+// against commits that have already been fetched into the engine's mirror.
+func (repo *GitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	return repo.Backend.ResolveShortSHA(ctx, prefix)
 }
 
 // CloneWithBackend returns a repository with fresh remote metadata state. This
