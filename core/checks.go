@@ -2,15 +2,17 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 // Check represents a validation check with its result
@@ -31,6 +33,39 @@ type Check struct {
 	// SyntheticGeneratorRunner the schema package supplies. Always paired with
 	// IsGenerate.
 	Synthetic *SyntheticGeneratorSpec
+
+	// LoadFailure is set on a check standing in for a workspace module that
+	// could not be loaded. `dagger check` loads best-effort so the modules
+	// that do load still run; the one that did not is reported as a check that
+	// fails, so it can neither abort the run nor pass unnoticed.
+	LoadFailure *ModuleLoadFailure
+}
+
+// moduleLoadCheckName is the leaf the load-failure check is reported under, so
+// it reads as "<module>:load" everywhere checks are named. Naming it after the
+// module alone would collide with a real check of that name (an entrypoint
+// module's checks drop their prefix), and the frontends dedupe by check name.
+const moduleLoadCheckName = "load"
+
+// NewModuleLoadFailureCheck is the always-failing check that stands in for a
+// workspace module `dagger check` could not load. Its nodes are naming-only
+// (the shape reparentWorkspaceTreeRoot gives a module root) because the
+// module's own tree is exactly what could not be built.
+func NewModuleLoadFailureCheck(failure ModuleLoadFailure) *Check {
+	return &Check{
+		Node: &ModTreeNode{
+			Parent: &ModTreeNode{
+				Parent: &ModTreeNode{},
+				Name:   failure.Name,
+			},
+			Name: moduleLoadCheckName,
+			// Summary first: consumers that render a description as a single
+			// line (`dagger check -l`) would otherwise print the whole load
+			// error, which the skipped-module report already carries.
+			Description: "this workspace module could not be loaded\n" + failure.Message,
+		},
+		LoadFailure: &failure,
+	}
 }
 
 type CheckGroup struct {
@@ -232,10 +267,14 @@ func (c *Check) Name() string {
 }
 
 func (c *Check) CheckType() string {
-	if c.IsGenerate {
+	switch {
+	case c.LoadFailure != nil:
+		return "load"
+	case c.IsGenerate:
 		return "generate"
+	default:
+		return "check"
 	}
-	return "check"
 }
 
 func (c *Check) Clone() *Check {
@@ -249,8 +288,11 @@ func (c *Check) Clone() *Check {
 	return &cp
 }
 
+// run dispatches the check to whatever produces its outcome.
 func (c *Check) run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) error {
 	switch {
+	case c.LoadFailure != nil:
+		return c.reportLoadFailure(ctx)
 	case c.Synthetic != nil:
 		return c.runSynthetic(ctx, syntheticRunner)
 	case c.IsGenerate:
@@ -260,10 +302,11 @@ func (c *Check) run(ctx context.Context, syntheticRunner SyntheticGeneratorRunne
 	}
 }
 
-// runSynthetic runs an engine-injected generator and passes when it changes
-// nothing. The generator is transient: it exists to reuse Generator's synthetic
-// dispatch and workspace-to-changeset conversion, not to become check state.
-func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (rerr error) {
+// runAsCheckSpan runs fn under the check span the frontends build the checks
+// report from (ModTreeNode.runAsCheck emits it for a check backed by a module
+// field). A check with no field behind it has to emit the span here, or the
+// report never counts it and a failure reads as all-passed.
+func (c *Check) runAsCheckSpan(ctx context.Context, fn func(context.Context) error) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, c.Name(),
 		trace.WithAttributes(
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
@@ -275,24 +318,40 @@ func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGener
 		span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
 		telemetry.EndWithCause(span, &rerr)
 	}()
+	return fn(ctx)
+}
 
-	generator, err := (&Generator{Node: c.Node, Synthetic: c.Synthetic}).Run(ctx, syntheticRunner)
-	if err != nil {
-		return err
-	}
-	changes, err := generator.RequireChanges(ctx, "check")
-	if err != nil {
-		return err
-	}
-	empty, err := changes.IsEmpty(ctx)
-	if err != nil {
-		return err
-	}
-	if !empty {
-		return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
-			c.Node.PathString(), c.Node.PathString())
-	}
-	return nil
+// runSynthetic runs an engine-injected generator and passes when it changes
+// nothing. The generator is transient: it exists to reuse Generator's synthetic
+// dispatch and workspace-to-changeset conversion, not to become check state.
+func (c *Check) runSynthetic(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) error {
+	return c.runAsCheckSpan(ctx, func(ctx context.Context) error {
+		generator, err := (&Generator{Node: c.Node, Synthetic: c.Synthetic}).Run(ctx, syntheticRunner)
+		if err != nil {
+			return err
+		}
+		changes, err := generator.RequireChanges(ctx, "check")
+		if err != nil {
+			return err
+		}
+		empty, err := changes.IsEmpty(ctx)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
+				c.Node.PathString(), c.Node.PathString())
+		}
+		return nil
+	})
+}
+
+// reportLoadFailure fails the check from the module's recorded load error.
+// There is no function to run: the module is exactly what could not be loaded.
+func (c *Check) reportLoadFailure(ctx context.Context) error {
+	return c.runAsCheckSpan(ctx, func(context.Context) error {
+		return errors.New(c.LoadFailure.Message)
+	})
 }
 
 func (c *Check) Run(ctx context.Context, syntheticRunner SyntheticGeneratorRunner) (*Check, error) {

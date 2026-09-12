@@ -132,8 +132,9 @@ func (g *Generator) RequireChanges(ctx context.Context, field string) (*Changese
 	return changes.Self(), nil
 }
 
-// ModuleLoadFailure is a workspace module that best-effort `dagger generate`
-// could not load and skipped.
+// ModuleLoadFailure is a module a best-effort load skipped, for the caller to
+// report: generate lists it as a skipped module, check stands it up as a check
+// that fails (see NewModuleLoadFailureCheck).
 type ModuleLoadFailure struct {
 	// Name is the module's workspace name (what the skipped-module span is
 	// called).
