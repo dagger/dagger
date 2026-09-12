@@ -3715,8 +3715,10 @@ func (s *workspaceSchema) checks(
 		noGenerate = true
 	}
 
-	// check is strict: a module that can't load is a failure, by design.
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, false)
+	// Best-effort: a module that can't load becomes a failing check below
+	// rather than aborting the modules that can. check stays a gate -- the run
+	// still fails -- but a broken module no longer costs the whole report.
+	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, true)
 	if err != nil {
 		return nil, err
 	}
@@ -3793,6 +3795,14 @@ func (s *workspaceSchema) checks(
 			return nil, err
 		}
 		allChecks = append(allChecks, derived...)
+	}
+
+	// Every check that resolved leads, derived ones included; the modules that
+	// did not resolve follow. They are reported whatever include/skip patterns
+	// are in play: the checks those patterns would have matched are precisely
+	// what failed to enumerate.
+	for _, failure := range loadFailures {
+		allChecks = append(allChecks, core.NewModuleLoadFailureCheck(failure))
 	}
 
 	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil

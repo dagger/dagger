@@ -408,6 +408,56 @@ check.skip = ["failing-check", "failing-container"]
 	require.NotContains(t, out, "hello-with-checks:failing-container")
 }
 
+// TestChecksReportUnloadableModules covers `dagger check`'s handling of a
+// workspace module that cannot be loaded: the modules that do load still run,
+// and the one that does not is reported as a check that fails. check stays a
+// gate -- the run exits non-zero even when every check that ran passed -- but a
+// broken module no longer costs the whole report, and listing no longer aborts.
+func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("listing succeeds and names the module that could not be loaded", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:verify")
+		require.Contains(t, out, "bad:load")
+		require.Contains(t, out, "this workspace module could not be loaded")
+	})
+
+	t.Run("running reports the load failure as a failed check and still runs the rest", func(ctx context.Context, t *testctx.T) {
+		// good:verify passes, so the non-zero exit can only come from the
+		// module that could not be loaded.
+		out, err := base.
+			With(daggerExecFail("check", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `good:verify.*OK`, out)
+		require.Regexp(t, `bad:load.*ERROR`, out)
+		require.Contains(t, out, `loading module "/work/.dagger/modules/bad"`)
+	})
+
+	t.Run("scoping to the broken module reports its load failure", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("check", "bad", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `bad:load.*ERROR`, out)
+	})
+
+	t.Run("scoping to the healthy module passes and never mentions the broken one", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("check", "good", "--no-generate", "--progress=report")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `good:verify.*OK`, out)
+		require.NotContains(t, out, "modules/bad")
+	})
+}
+
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)

@@ -39,7 +39,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			Doc("The original module in which the check has been defined"),
 		dagql.Func("checkType", s.checkType).
 			View(AfterVersion("v0.21.0")).
-			Doc("The type of check: 'check' for annotated checks, 'generate' for generate-as-checks"),
+			Doc("The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded"),
 
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
@@ -62,10 +62,17 @@ func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{})
 
 func (s checksSchema) originalModule(_ context.Context, parent *core.Check, args struct{}) (*core.Module, error) {
 	module := parent.OriginalModule()
-	if module == nil {
-		return nil, fmt.Errorf("check %q is engine-injected and has no original module", parent.Name())
+	if module != nil {
+		return module, nil
 	}
-	return module, nil
+	// Module! cannot resolve to nothing, so report which kind of module-less
+	// check this is. A check standing in for a module that could not be loaded
+	// answers with why it could not: that module is the failure.
+	if parent.LoadFailure != nil {
+		return nil, fmt.Errorf("check %q stands in for a workspace module that could not be loaded: %s",
+			parent.Name(), parent.LoadFailure.Message)
+	}
+	return nil, fmt.Errorf("check %q is engine-injected and has no original module", parent.Name())
 }
 
 func (s checksSchema) checkType(_ context.Context, parent *core.Check, args struct{}) (string, error) {
