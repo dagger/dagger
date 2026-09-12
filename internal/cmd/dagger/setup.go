@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mattn/go-isatty"
@@ -186,6 +187,8 @@ func confirm(cmd *cobra.Command, question string) bool {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s [skipped: non-interactive — use --auto-apply to accept]\n", question)
 		return false
 	}
+	// Install the TUI passthrough before advertising that input is accepted.
+	in := promptInput(cmd)
 	fmt.Fprintf(cmd.OutOrStdout(), "%s [Y/n] ", question)
 
 	type readResult struct {
@@ -194,7 +197,7 @@ func confirm(cmd *cobra.Command, question string) bool {
 	}
 	done := make(chan readResult, 1)
 	go func() {
-		reader := bufio.NewReader(cmd.InOrStdin())
+		reader := bufio.NewReader(in)
 		line, err := reader.ReadString('\n')
 		done <- readResult{line: line, err: err}
 	}()
@@ -212,4 +215,18 @@ func confirm(cmd *cobra.Command, question string) bool {
 		line := strings.TrimSpace(strings.ToLower(r.line))
 		return line == "" || line == "y" || line == "yes"
 	}
+}
+
+// promptInput is stdin for prompts that run after the TUI. Its terminal keeps
+// the only reader on stdin and discards input once stopped, so read what it
+// forwards instead.
+func promptInput(cmd *cobra.Command) io.Reader {
+	in := cmd.InOrStdin()
+	if in != os.Stdin {
+		return in
+	}
+	if fe, ok := Frontend.(idtui.TerminalStdin); ok {
+		return fe.Stdin()
+	}
+	return in
 }
