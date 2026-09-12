@@ -82,7 +82,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("ref", s.ref).
 			Doc(`Returns details of a ref.`).
 			Args(
-				dagql.Arg("name").Doc(`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
+				dagql.Arg("name").Doc(
+					`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`,
+					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.`),
 			),
 		dagql.NodeFunc("branch", s.branch).
 			View(AllVersion).
@@ -101,7 +103,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Returns details of a commit.`).
 			Args(
 				// TODO: id is normally a reserved word; we should probably rename this
-				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+				dagql.Arg("id").Doc(
+					`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`,
+					`May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.`),
 			),
 		dagql.NodeFunc("commit", s.commitRef).
 			View(BeforeVersion("v1.0.0-0")).
@@ -1413,6 +1417,21 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	}
 	ref, err := remote.Lookup(args.Name)
 	if err != nil {
+		// No exact ref matched. A name that looks like a hex prefix may be an
+		// abbreviated commit SHA (tools routinely print short hashes): expand
+		// it against the locally available object database, like `git
+		// rev-parse` would. Named refs always win over prefixes, matching
+		// git's own precedence.
+		if gitutil.IsCommitSHAPrefix(args.Name) {
+			sha, shaErr := repo.ResolveShortSHA(ctx, args.Name)
+			if shaErr == nil {
+				return s.gitRefResult(ctx, parent, &gitutil.Ref{
+					Name: sha,
+					SHA:  sha,
+				})
+			}
+			err = errors.Join(err, shaErr)
+		}
 		return inst, err
 	}
 	if args.Commit != "" && args.Commit != ref.SHA {
@@ -1517,7 +1536,17 @@ func supportsStrictRefs(ctx context.Context) bool {
 
 func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitCommit], _ error) {
 	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
-		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
+		if !gitutil.IsCommitSHAPrefix(args.ID) {
+			return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
+		}
+		// An abbreviated SHA: expand it to the full SHA of the single
+		// matching commit, like `git rev-parse` would. Only locally available
+		// objects can answer this; see GitRepository.ResolveShortSHA.
+		sha, err := parent.Self().ResolveShortSHA(ctx, args.ID)
+		if err != nil {
+			return inst, err
+		}
+		args.ID = sha
 	}
 	ref, err := parent.Self().Remote.Lookup(args.ID)
 	if err != nil {
@@ -1527,7 +1556,7 @@ func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.
 }
 
 func (s *gitSchema) commitRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
-	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
+	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) && !gitutil.IsCommitSHAPrefix(args.ID) {
 		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
 	}
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
