@@ -22,9 +22,9 @@ func TestIsCommitSHAPrefix(t *testing.T) {
 			"01234567890abcdef01234567890abcdef012345", // full SHA is a prefix of itself
 		},
 		false: {
-			"",     // empty string
-			"012",  // too short for git to disambiguate
-			"g123", // not hex
+			"",        // empty string
+			"012",     // too short for git to disambiguate
+			"g123",    // not hex
 			"DB59252", // git object names are lowercase
 			"12345678901234567890123456789012345678901", // longer than a full SHA
 		},
