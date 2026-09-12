@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -467,4 +468,236 @@ source = "../%s"
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestChecksSyntheticSDKGenerateAsCheck covers the check `dagger check`
+// derives from an engine-injected SDK generator. A module-declared +generate
+// function has always produced such a check; a workspace that moved to its
+// SDK's built-in generate mechanism must keep it.
+func (ChecksSuite) TestChecksSyntheticSDKGenerateAsCheck(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const alphaOnly = `[modules.alpha-sdk]
+source = ".dagger/modules/alpha-sdk"
+
+[sdks.alpha]
+module = "alpha-sdk"
+
+[sdks.alpha.scopes."alpha"]
+is-module = true
+name = "alpha"
+`
+	// beta's scope generates a client for alpha's module scope, so beta's
+	// generation depends on alpha's.
+	const bothSDKs = alphaOnly + `
+[modules.beta-sdk]
+source = ".dagger/modules/beta-sdk"
+
+[sdks.beta]
+module = "beta-sdk"
+
+[sdks.beta.scopes."beta"]
+clients = ["./alpha"]
+`
+
+	// beta owns its own module scope here, so the two SDKs share no dependency
+	// edge and one stale scope can only fail its owner's check.
+	const independentSDKs = alphaOnly + `
+[modules.beta-sdk]
+source = ".dagger/modules/beta-sdk"
+
+[sdks.beta]
+module = "beta-sdk"
+
+[sdks.beta.scopes."beta"]
+is-module = true
+name = "beta"
+`
+
+	const alphaMarker = "/work/alpha/generated/alpha.txt"
+
+	// generated returns the fixture with config applied and every SDK scope
+	// already generated, which is the state a derived check passes in.
+	generated := func(ctx context.Context, t *testctx.T, config string) *dagger.Container {
+		t.Helper()
+		ctr := workspaceFixture(t, c, "sdk-generate-check").
+			WithNewFile("dagger.toml", config).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+			With(nonNestedDevEngine(c)).
+			With(daggerNonNestedExec("generate", "-y"))
+		// Evaluate here so a setup failure reports what generate printed
+		// instead of surfacing as a bare exit code from a later assertion.
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		return ctr
+	}
+
+	t.Run("generating twice changes nothing", func(ctx context.Context, t *testctx.T) {
+		// The derived check is only meaningful if regenerating an already
+		// generated scope is a no-op, so assert that before anything else.
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("generate", "-y")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "no changes to apply")
+	})
+
+	t.Run("list includes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		// The "Did you ..." comment is how the CLI renders a check whose type
+		// is "generate", so matching it proves the derived check is one.
+		require.Regexp(t, `alpha-sdk:generate\s+# Did you "`, out)
+	})
+
+	t.Run("no-generate excludes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("check", "-l", "--no-generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("generate only includes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("check", "-l", "--generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("check-generated false excludes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, "check-generated = false\n\n"+alphaOnly).
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("skip excludes the derived check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("check", "-l", "--skip", "alpha-sdk:generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("a configured module skip excludes the derived check", func(ctx context.Context, t *testctx.T) {
+		config := alphaOnly + `
+[modules.alpha-sdk.check]
+skip = ["generate"]
+`
+		out, err := generated(ctx, t, config).
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("an entrypoint provider drops the module prefix", func(ctx context.Context, t *testctx.T) {
+		config := strings.Replace(alphaOnly,
+			`source = ".dagger/modules/alpha-sdk"`,
+			`source = ".dagger/modules/alpha-sdk"
+entrypoint = true`, 1)
+		out, err := generated(ctx, t, config).
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `(?m)^\s*generate\b`, out)
+		require.NotContains(t, out, "alpha-sdk:generate")
+	})
+
+	t.Run("the derived check passes when the scope is generated", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `alpha-sdk:generate.*OK`, out)
+	})
+
+	t.Run("the derived check fails when the scope is stale", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			WithoutFile(alphaMarker).
+			With(daggerNonNestedExecFail("--progress=report", "check", "alpha-sdk:generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
+		require.Contains(t, out, "run 'dagger generate alpha-sdk:generate' to apply")
+	})
+
+	t.Run("an explicit check at the same name wins", func(ctx context.Context, t *testctx.T) {
+		// alpha-sdk-checked is alpha-sdk plus its own `generate` check, under
+		// the same workspace module name.
+		config := strings.Replace(alphaOnly,
+			`.dagger/modules/alpha-sdk"`,
+			`.dagger/modules/alpha-sdk-checked"`, 1)
+		base := generated(ctx, t, config)
+
+		out, err := base.
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Equal(t, 1, strings.Count(out, "alpha-sdk:generate"))
+
+		// The explicit check passes on a stale scope; the derived check would
+		// have failed, so this proves which one survived the dedup.
+		out, err = base.
+			WithoutFile(alphaMarker).
+			With(daggerNonNestedExec("--progress=report", "check", "alpha-sdk:generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `alpha-sdk:generate.*OK`, out)
+	})
+
+	t.Run("each SDK gets its own check", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, bothSDKs).
+			With(daggerNonNestedExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "alpha-sdk:generate")
+		require.Contains(t, out, "beta-sdk:generate")
+	})
+
+	t.Run("a stale dependency fails the dependent SDK's check too", func(ctx context.Context, t *testctx.T) {
+		// A derived check verifies its SDK's scopes and the scopes they depend
+		// on, so stale output in alpha's scope also fails beta's check.
+		out, err := generated(ctx, t, bothSDKs).
+			WithoutFile(alphaMarker).
+			With(daggerNonNestedExecFail("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
+		require.Regexp(t, `beta-sdk:generate.*ERROR`, out)
+	})
+
+	t.Run("an independent SDK's check is unaffected", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, independentSDKs).
+			WithoutFile(alphaMarker).
+			With(daggerNonNestedExecFail("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `alpha-sdk:generate.*ERROR`, out)
+		require.Regexp(t, `beta-sdk:generate.*OK`, out)
+	})
+
+	t.Run("originalModule reports that the check is engine-defined", func(ctx context.Context, t *testctx.T) {
+		out, err := generated(ctx, t, alphaOnly).
+			WithNewFile("/query.graphql", `{
+  currentWorkspace {
+    checks(include: ["alpha-sdk:generate"]) {
+      list {
+        name
+        originalModule { name }
+      }
+    }
+  }
+}
+`).
+			With(daggerNonNestedExecFail("api", "query", "--doc=/query.graphql")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "has no original module")
+	})
 }
