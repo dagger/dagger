@@ -3790,6 +3790,11 @@ type GitRepository implements Node {
   commit(
     """
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+
+    May be abbreviated to an unambiguous hex prefix (4-40 characters), which is
+    expanded against locally available objects. Remote repositories (resolved
+    via ls-remote) can only expand prefixes of already-fetched commits; use the
+    full SHA otherwise.
     """
     id: String!
   ): GitCommit!
@@ -3815,6 +3820,13 @@ type GitRepository implements Node {
   ref(
     """
     Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+
+    Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40
+    characters) of a commit SHA resolves like git rev-parse, with named refs
+    taking precedence. Abbreviated SHAs resolve against locally available
+    objects, so remote repositories (resolved via ls-remote) can only expand
+    prefixes of already-fetched commits; use the full SHA or a named ref
+    otherwise.
     """
     name: String!
   ): GitRef!
