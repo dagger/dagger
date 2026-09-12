@@ -2,6 +2,7 @@ package call
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
@@ -417,5 +418,30 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	}
 	if got := decoded.Call().GetArgs()[0].GetValue().GetDigestedString().GetValue(); got != canary {
 		t.Fatalf("raw recipe lost digested-string value: got %q", got)
+	}
+}
+
+func TestRootFieldsCollectsQueryRootedCalls(t *testing.T) {
+	typ := &ast.Type{NamedType: "String", NonNull: true}
+
+	argID := New().Append(typ, "directory")
+	id := New().
+		Append(typ, "good").
+		Append(typ, "verify", WithArgs(NewArgument("dir", NewLiteralID(argID), false))).
+		Append(typ, "stdout")
+
+	fields := id.RootFields()
+	if want := []string{"directory", "good"}; !slices.Equal(want, fields) {
+		t.Fatalf("expected root fields %v, got %v", want, fields)
+	}
+}
+
+func TestRootFieldsEmptyForZeroID(t *testing.T) {
+	var id ID
+	if fields := id.RootFields(); fields != nil {
+		t.Fatalf("expected no root fields, got %v", fields)
+	}
+	if fields := New().RootFields(); fields != nil {
+		t.Fatalf("expected no root fields for nil ID, got %v", fields)
 	}
 }
