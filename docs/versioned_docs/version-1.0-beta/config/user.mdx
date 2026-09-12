@@ -14,24 +14,19 @@ The file is shared with other Dagger subsystems (such as `[llm]`). Workspace ove
 # Always applied when working in the github.com/acme/api workspace:
 [workspaces."github.com/acme/api".modules.aws.settings]
 profile = "alice-dev"
-
-# A personal environment, selected with `dagger --env dev ...`:
-[workspaces."github.com/acme/api".env.dev.modules.aws.settings]
-region = "us-west-2"
 ```
 
 ## Merge order
 
-Dagger merges the effective configuration in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments add to the repository's, all without modifying `dagger.toml`.
+Dagger merges your user-level overrides on top of the repository's `dagger.toml`. User-level values shadow repository values key by key, without modifying `dagger.toml`.
 
 ## Writing values
 
-You don't have to edit the file by hand. Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
+You don't have to edit the file by hand. Pass `-g/--global` to `dagger module settings` or `dagger workspace config` to store a value user-level instead of in the repository:
 
 ```shell
-dagger settings -g aws profile alice-dev             # always applied here
-dagger settings -g --env dev aws region us-west-2    # personal env overlay
-dagger settings -g -u aws profile                    # remove the override
+dagger module settings -g aws profile alice-dev             # always applied here
+dagger module settings -g -u aws profile                    # remove the override
 dagger workspace config -g modules.aws.settings.profile alice-dev
 ```
 
@@ -45,7 +40,7 @@ dagger -W https://github.com/acme/api settings -g aws profile alice-dev
 
 ## What can be stored
 
-Only module settings: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
+Only module settings: `modules.<name>.settings.*`. Because one key spans every branch and clone of a repository, an entry for a module that doesn't exist in the current checkout is ignored there rather than being an error.
 
 ## Workspace key
 
