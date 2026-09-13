@@ -7,33 +7,31 @@
       "collapsed": false,
       "items": [
         "getting-started/introduction",
+        {
+          "type": "doc",
+          "id": "getting-started/install",
+          "label": "Install"
+        },
+        "getting-started/try-dagger",
         "getting-started/quickstart",
-        "getting-started/workspace-setup",
-        "getting-started/pre-push",
-        "getting-started/post-push"
+        "getting-started/cloud-checks"
       ]
     },
     {
       "type": "category",
-      "label": "CLI",
+      "label": "Using Dagger",
       "collapsible": true,
       "collapsed": false,
       "items": [
-        "cli/install",
-        "cli/checking",
-        "cli/generating",
-        "cli/services",
-        "cli/calling-functions",
-        {
-          "type": "doc",
-          "id": "cli/reference/index",
-          "label": "Reference"
-        }
+        "using/checking",
+        "using/generating",
+        "using/services",
+        "using/calling-functions"
       ]
     },
     {
       "type": "category",
-      "label": "Configuration",
+      "label": "Configuring your Workspace",
       "link": {
         "type": "doc",
         "id": "config/index"
@@ -41,193 +39,230 @@
       "collapsible": true,
       "collapsed": true,
       "items": [
-        "config/environments",
         "config/user",
         "config/module-wiring",
-        "config/migrate-dagger-json",
+        "config/migrate-dagger-json"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Reference",
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "reference/cli/index",
+          "label": "CLI"
+        },
         {
           "type": "category",
-          "label": "Reference",
+          "label": "Modules",
           "link": {
             "type": "doc",
-            "id": "config/reference/index"
+            "id": "reference/modules/index"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "config/reference/dagger-toml"
+            "reference/modules/go",
+            {
+              "type": "category",
+              "label": "JavaScript",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "reference/modules/js/deno",
+                "reference/modules/js/jest",
+                "reference/modules/js/vitest",
+                "reference/modules/js/playwright",
+                "reference/modules/js/eslint",
+                "reference/modules/js/prettier",
+                "reference/modules/js/biome"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "Python",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "reference/modules/python/pytest"
+              ]
+            },
+            "reference/modules/shellcheck",
+            {
+              "type": "category",
+              "label": ".NET",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "reference/modules/dotnet/PsScriptAnalyzer"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "Kubernetes",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                "reference/modules/kubernetes/helm"
+              ]
+            }
           ]
-        }
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Modules",
-      "link": {
-        "type": "doc",
-        "id": "modules/index"
-      },
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
-        "modules/go",
-        "modules/deno",
-        "modules/pytest",
-        "modules/jest",
-        "modules/vitest",
-        "modules/playwright",
-        "modules/eslint",
-        "modules/prettier",
-        "modules/biomejs",
-        "modules/shellcheck",
-        "modules/psscriptanalyzer",
-        "modules/helm"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "SDKs",
-      "link": {
-        "type": "doc",
-        "id": "sdks/index"
-      },
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
-        "sdks/dang",
-        "sdks/go",
-        "sdks/typescript",
-        "sdks/python",
-        "sdks/java",
-        "sdks/php",
-        "sdks/elixir"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "API",
-      "link": {
-        "type": "doc",
-        "id": "api/index"
-      },
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
+        },
         {
           "type": "category",
-          "label": "Reference",
+          "label": "SDKs",
           "link": {
             "type": "doc",
-            "id": "api/reference/index"
+            "id": "reference/sdks/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "reference/sdks/dang",
+            "reference/sdks/go",
+            "reference/sdks/typescript",
+            "reference/sdks/python",
+            "reference/sdks/java",
+            "reference/sdks/php",
+            "reference/sdks/elixir"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "API",
+          "link": {
+            "type": "doc",
+            "id": "reference/api/index"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
             {
               "type": "doc",
-              "id": "api/reference/query",
+              "id": "reference/api/query",
               "label": "Query (top-level)"
             },
-            "api/reference/container",
-            "api/reference/directory",
-            "api/reference/file",
-            "api/reference/service",
-            "api/reference/secret",
-            "api/reference/cache-volume",
-            "api/reference/git-repository",
-            "api/reference/llm",
-            "api/reference/changeset",
-            "api/reference/workspace",
+            "reference/api/container",
+            "reference/api/directory",
+            "reference/api/file",
+            "reference/api/service",
+            "reference/api/secret",
+            "reference/api/cache-volume",
+            "reference/api/git-repository",
+            "reference/api/llm",
+            "reference/api/changeset",
+            "reference/api/workspace",
             {
               "type": "category",
               "label": "Other types",
               "collapsible": true,
               "collapsed": true,
               "items": [
-                "api/reference/address",
-                "api/reference/agent",
-                "api/reference/agent-group",
-                "api/reference/check",
-                "api/reference/check-group",
-                "api/reference/client-filesync-mirror",
-                "api/reference/cloud",
-                "api/reference/current-module",
-                "api/reference/diff-stat",
-                "api/reference/engine",
-                "api/reference/engine-cache",
-                "api/reference/engine-cache-entry",
-                "api/reference/engine-cache-entry-set",
-                "api/reference/enum-type-def",
-                "api/reference/enum-value-type-def",
-                "api/reference/env-file",
-                "api/reference/env-variable",
-                "api/reference/error",
-                "api/reference/error-value",
-                "api/reference/exportable",
-                "api/reference/field-type-def",
-                "api/reference/function",
-                "api/reference/function-arg",
-                "api/reference/function-call",
-                "api/reference/function-call-arg-value",
-                "api/reference/generated-code",
-                "api/reference/generator",
-                "api/reference/generator-group",
-                "api/reference/git-bundle",
-                "api/reference/git-bundle-ref",
-                "api/reference/git-commit",
-                "api/reference/git-ref",
-                "api/reference/healthcheck-config",
-                "api/reference/host",
-                "api/reference/http-state",
-                "api/reference/input-type-def",
-                "api/reference/interface-type-def",
-                "api/reference/json-value",
-                "api/reference/label",
-                "api/reference/list-type-def",
-                "api/reference/llm-content-block",
-                "api/reference/llm-message",
-                "api/reference/llm-skill",
-                "api/reference/llm-token-usage",
-                "api/reference/module",
-                "api/reference/module-config-client",
-                "api/reference/module-source",
-                "api/reference/node",
-                "api/reference/object-type-def",
-                "api/reference/port",
-                "api/reference/remote-git-mirror",
-                "api/reference/scalar-type-def",
-                "api/reference/schema",
-                "api/reference/sdk-config",
-                "api/reference/search-result",
-                "api/reference/search-submatch",
-                "api/reference/socket",
-                "api/reference/source-map",
-                "api/reference/stat",
-                "api/reference/syncer",
-                "api/reference/terminal",
-                "api/reference/terminal-group",
-                "api/reference/terminal-target",
-                "api/reference/type-def",
-                "api/reference/up",
-                "api/reference/up-group",
-                "api/reference/volume",
-                "api/reference/workspace-git",
-                "api/reference/workspace-migration",
-                "api/reference/workspace-migration-step",
-                "api/reference/workspace-module",
-                "api/reference/workspace-module-setting",
-                "api/reference/workspace-sdk"
+                "reference/api/address",
+                "reference/api/agent",
+                "reference/api/agent-group",
+                "reference/api/check",
+                "reference/api/check-group",
+                "reference/api/client-filesync-mirror",
+                "reference/api/cloud",
+                "reference/api/current-module",
+                "reference/api/diff-stat",
+                "reference/api/engine",
+                "reference/api/engine-cache",
+                "reference/api/engine-cache-entry",
+                "reference/api/engine-cache-entry-set",
+                "reference/api/enum-type-def",
+                "reference/api/enum-value-type-def",
+                "reference/api/env-file",
+                "reference/api/env-variable",
+                "reference/api/error",
+                "reference/api/error-value",
+                "reference/api/exportable",
+                "reference/api/field-type-def",
+                "reference/api/function",
+                "reference/api/function-arg",
+                "reference/api/function-call",
+                "reference/api/function-call-arg-value",
+                "reference/api/generated-code",
+                "reference/api/generator",
+                "reference/api/generator-group",
+                "reference/api/git-bundle",
+                "reference/api/git-bundle-ref",
+                "reference/api/git-commit",
+                "reference/api/git-ref",
+                "reference/api/healthcheck-config",
+                "reference/api/host",
+                "reference/api/http-state",
+                "reference/api/input-type-def",
+                "reference/api/interface-type-def",
+                "reference/api/json-value",
+                "reference/api/label",
+                "reference/api/list-type-def",
+                "reference/api/llm-content-block",
+                "reference/api/llm-message",
+                "reference/api/llm-skill",
+                "reference/api/llm-token-usage",
+                "reference/api/module",
+                "reference/api/module-config-client",
+                "reference/api/module-source",
+                "reference/api/node",
+                "reference/api/object-type-def",
+                "reference/api/port",
+                "reference/api/remote-git-mirror",
+                "reference/api/scalar-type-def",
+                "reference/api/schema",
+                "reference/api/sdk-config",
+                "reference/api/search-result",
+                "reference/api/search-submatch",
+                "reference/api/socket",
+                "reference/api/source-map",
+                "reference/api/stat",
+                "reference/api/syncer",
+                "reference/api/terminal",
+                "reference/api/terminal-group",
+                "reference/api/terminal-target",
+                "reference/api/type-def",
+                "reference/api/up",
+                "reference/api/up-group",
+                "reference/api/volume",
+                "reference/api/workspace-git",
+                "reference/api/workspace-migration",
+                "reference/api/workspace-migration-step",
+                "reference/api/workspace-module",
+                "reference/api/workspace-module-setting",
+                "reference/api/workspace-sdk"
               ]
             },
-            "api/reference/all"
+            "reference/api/all"
           ]
         },
         {
           "type": "doc",
-          "id": "api/clients/index",
-          "label": "Clients"
+          "id": "reference/client-libraries/index",
+          "label": "Client libraries"
+        },
+        {
+          "type": "category",
+          "label": "Configuration files",
+          "link": {
+            "type": "doc",
+            "id": "reference/config-files/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "reference/config-files/dagger-toml"
+          ]
         }
       ]
+    },
+    {
+      "type": "doc",
+      "id": "self-hosting/index",
+      "label": "Self-hosting"
     }
   ]
 }

@@ -395,7 +395,9 @@ func (WorkspaceAPISuite) TestRootlessCurrentWorkspaceIgnoresIrrelevantDaggerJSON
 }
 `)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	// JSON is written to stdout. Compatibility diagnostics on stderr are not
+	// part of the query response.
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
 		"currentWorkspace": {

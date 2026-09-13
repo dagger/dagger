@@ -16306,6 +16306,7 @@ type Workspace struct {
 	configRead  *string
 	cwd         *string
 	detectScope *string
+	entrypoint  *string
 	export      *Void
 	findUp      *string
 	id          *ID
@@ -16532,6 +16533,21 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
+// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // List named environments defined in the workspace configuration.
 func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	q := r.query.Select("envList")
@@ -16718,11 +16734,50 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// WorkspaceMigrateOpts contains options for Workspace.Migrate
+type WorkspaceMigrateOpts struct {
+	// Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	Modules []string
+}
+
 // Plan the explicit migration needed for the current workspace.
 //
+// Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+//
 // The returned plan has an empty changeset and no steps when no migration is needed.
-func (r *Workspace) Migrate() *WorkspaceMigration {
+func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
 	q := r.query.Select("migrate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+	}
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// WorkspaceMigrateModuleOpts contains options for Workspace.MigrateModule
+type WorkspaceMigrateModuleOpts struct {
+	// Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	//
+	// Default: "."
+	Path string
+}
+
+// Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+//
+// Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+func (r *Workspace) MigrateModule(opts ...WorkspaceMigrateModuleOpts) *WorkspaceMigration {
+	q := r.query.Select("migrateModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+	}
 
 	return &WorkspaceMigration{
 		query: q,
@@ -17096,6 +17151,18 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
+// Return this workspace with an installed module selected as its entrypoint.
+//
+// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+func (r *Workspace) WithEntrypoint(name string) *Workspace {
+	q := r.query.Select("withEntrypoint")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithFileOpts contains options for Workspace.WithFile
 type WorkspaceWithFileOpts struct {
 	// Permissions of the added file. Defaults to the source file permissions.
@@ -17126,6 +17193,10 @@ type WorkspaceWithInitModuleOpts struct {
 	Name string
 	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
 	Path string
+	// Install the module. When omitted, install only if path is omitted.
+	Install bool
+	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
 }
@@ -17144,12 +17215,31 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
 		}
+		// `install` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Install) {
+			q = q.Arg("install", opts[i].Install)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
+		}
 		// `settings` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Settings) {
 			q = q.Arg("settings", opts[i].Settings)
 		}
 	}
 	q = q.Arg("sdk", sdk)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a native configuration, without changing an existing configuration.
+//
+// Fail if legacy configuration needs workspace migration.
+func (r *Workspace) WithInitialized() *Workspace {
+	q := r.query.Select("withInitialized")
 
 	return &Workspace{
 		query: q,
@@ -17349,11 +17439,13 @@ func (r *Workspace) WithUpdatedLock(opts ...WorkspaceWithUpdatedLockOpts) *Works
 
 // WorkspaceWithUpdatedModulesOpts contains options for Workspace.WithUpdatedModules
 type WorkspaceWithUpdatedModulesOpts struct {
-	// Installed module names to refresh. An empty list refreshes all installed modules.
+	// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
 	Names []string
+	// New version request for exactly one selected module. Cannot be combined with a version suffix.
+	Version string
 }
 
-// Return this workspace with refreshed lockfile state for installed modules.
+// Return this workspace with updated module versions and lockfile state.
 //
 // An SDK client scope is regenerated when it targets an updated module.
 func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
@@ -17362,6 +17454,10 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 		// `names` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Names) {
 			q = q.Arg("names", opts[i].Names)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 
@@ -17458,6 +17554,15 @@ func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfi
 func (r *Workspace) WithoutDirectory(path string) *Workspace {
 	q := r.query.Select("withoutDirectory")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with no module selected as its entrypoint.
+func (r *Workspace) WithoutEntrypoint() *Workspace {
+	q := r.query.Select("withoutEntrypoint")
 
 	return &Workspace{
 		query: q,
@@ -17611,7 +17716,8 @@ func (r *WorkspaceGit) AsNode() Node {
 type WorkspaceMigration struct {
 	query *querybuilder.Selection
 
-	id *ID
+	configFile *string
+	id         *ID
 }
 
 func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
@@ -17627,6 +17733,19 @@ func (r *WorkspaceMigration) Changes() *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+func (r *WorkspaceMigration) ConfigFile(ctx context.Context) (string, error) {
+	if r.configFile != nil {
+		return *r.configFile, nil
+	}
+	q := r.query.Select("configFile")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this WorkspaceMigration.
@@ -17667,6 +17786,16 @@ func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+func (r *WorkspaceMigration) ModuleCandidates(ctx context.Context) ([]string, error) {
+	q := r.query.Select("moduleCandidates")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Logical migration steps, each identified by a stable code.

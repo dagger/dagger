@@ -1733,11 +1733,13 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "cannot access Git repository")
+		requireErrOut(t, err, "git authentication failed")
 
 		_, err = repo.URL(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "failed to determine Git URL protocol")
+		requireErrOut(t, err, "cannot access Git repository")
+		requireErrOut(t, err, "git authentication failed")
 	})
 }
 

@@ -1,0 +1,5 @@
+kind: Fixed
+body: The plain-text prompts `dagger ws migrate` and `dagger init` ask after the TUI closes, such as "Run this command? [Y/n]" before enabling Cloud checks, now accept input. They previously ignored every keystroke because the TUI's stdin reader kept consuming and discarding it.
+time: 2026-09-11T17:00:00.000000+00:00
+custom:
+    Author: grouville

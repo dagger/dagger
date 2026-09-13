@@ -1,0 +1,5 @@
+kind: Fixed
+body: Workspace migration reuses installed named SDK providers and their pins for unversioned module runtimes, including versioned and vanity SDK references.
+time: 2026-09-11T22:41:50.528026+00:00
+custom:
+    Author: vito

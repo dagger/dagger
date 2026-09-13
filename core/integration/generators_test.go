@@ -780,6 +780,8 @@ name = "project"
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
+		require.Contains(t, out, `Automatically installed module "shop-dev" as entrypoint.`)
+
 		moduleRoot := "/work/apps/shop/.dagger/modules/shop-dev"
 		_, err = initialized.File(moduleRoot + "/dagger-module.toml").Contents(ctx)
 		require.NoError(t, err)

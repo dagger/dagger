@@ -790,11 +790,56 @@ func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts 
 		cfg = &Config{}
 	}
 
-	if err := setConfigValue(cfg, parts, valueFor(parts)); err != nil {
+	value := valueFor(parts)
+	if err := setConfigValue(cfg, parts, value); err != nil {
 		return nil, err
 	}
+	if err := ValidateSDKs(cfg); err != nil {
+		return nil, err
+	}
+	// setConfigValue coerces schema fields such as ignore and skip to arrays,
+	// and sources to strings. Write the resulting typed value.
+	value, err = configValueAtPath(reflect.ValueOf(cfg), parts)
+	if err != nil {
+		return nil, err
+	}
+	// The requested key is explicit, even if its value equals an implicit
+	// default and therefore produces no difference between typed configs.
+	doc, err := parseConfigText(existingData)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := doc.set(parts, value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ParseConfig(updated); err != nil {
+		return nil, fmt.Errorf("validate edited config: %w", err)
+	}
+	return updated, nil
+}
 
-	return UpdateConfigBytes(existingData, cfg)
+func configValueAtPath(value reflect.Value, parts []string) (any, error) {
+	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+		value = value.Elem()
+	}
+	if value.IsValid() {
+		if len(parts) == 0 {
+			return value.Interface(), nil
+		}
+		switch value.Kind() {
+		case reflect.Map:
+			return configValueAtPath(value.MapIndex(reflect.ValueOf(parts[0])), parts[1:])
+		case reflect.Struct:
+			for i := 0; i < value.NumField(); i++ {
+				name, _, _ := strings.Cut(value.Type().Field(i).Tag.Get("toml"), ",")
+				if name == parts[0] {
+					return configValueAtPath(value.Field(i), parts[1:])
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("config value %q was not set", JoinConfigPath(parts...))
 }
 
 // DeleteConfigValue removes the value at the given dotted key from config TOML.
@@ -846,23 +891,6 @@ func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
 
 	collapsed := collapseEmptiedConfigTables(tree, parts)
 
-	if configPathRequiresSerializeFallback(collapsed) {
-		// Same trade-off as writes: document edits can't address quoted or
-		// all-digit path segments, so fall back to a full canonical rewrite.
-		if err := tree.DeletePath(collapsed); err != nil {
-			return nil, fmt.Errorf("delete config path %q: %w", JoinConfigPath(collapsed...), err)
-		}
-		rendered, err := tree.ToTomlString()
-		if err != nil {
-			return nil, fmt.Errorf("render config after delete: %w", err)
-		}
-		cfg, err := ParseConfig([]byte(rendered))
-		if err != nil {
-			return nil, err
-		}
-		return SerializeConfig(cfg), nil
-	}
-
 	return deleteConfigDocumentPath(existingData, parts, collapsed)
 }
 
@@ -900,15 +928,6 @@ func collapseEmptiedConfigTables(tree *toml.Tree, parts []string) []string {
 		del = parent
 	}
 	return del
-}
-
-func configPathRequiresSerializeFallback(parts []string) bool {
-	for _, part := range parts {
-		if pathSegmentUnsafeForDocumentUpdate(part) {
-			return true
-		}
-	}
-	return false
 }
 
 func flattenTOMLTree(prefix string, tree *toml.Tree) string {

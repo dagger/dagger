@@ -169,6 +169,19 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+
+  Reflects the selected env's effective view. Fails if several modules are selected.
+  """
+  @spec entrypoint(t()) :: {:ok, String.t()} | {:error, term()}
+  def entrypoint(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("entrypoint")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   List named environments defined in the workspace configuration.
   """
   @spec env_list(t()) :: {:ok, [String.t()]} | {:error, term()}
@@ -309,12 +322,34 @@ defmodule Dagger.Workspace do
   @doc """
   Plan the explicit migration needed for the current workspace.
 
+  Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+
   The returned plan has an empty changeset and no steps when no migration is needed.
   """
-  @spec migrate(t()) :: Dagger.WorkspaceMigration.t()
-  def migrate(%__MODULE__{} = workspace) do
+  @spec migrate(t(), [{:modules, [String.t()]}]) :: Dagger.WorkspaceMigration.t()
+  def migrate(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("migrate")
+      workspace.query_builder
+      |> QB.select("migrate")
+      |> QB.maybe_put_arg("modules", optional_args[:modules])
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+
+  Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+  """
+  @spec migrate_module(t(), [{:path, String.t() | nil}]) :: Dagger.WorkspaceMigration.t()
+  def migrate_module(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("migrateModule")
+      |> QB.maybe_put_arg("path", optional_args[:path])
 
     %Dagger.WorkspaceMigration{
       query_builder: query_builder,
@@ -615,6 +650,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with an installed module selected as its entrypoint.
+
+  Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+  """
+  @spec with_entrypoint(t(), String.t()) :: Dagger.Workspace.t()
+  def with_entrypoint(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("withEntrypoint") |> QB.put_arg("name", name)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a file added or replaced, without mutating the source.
   """
   @spec with_file(t(), String.t(), Dagger.File.t(), [{:permissions, integer() | nil}]) ::
@@ -641,6 +692,8 @@ defmodule Dagger.Workspace do
   @spec with_init_module(t(), String.t(), [
           {:name, String.t() | nil},
           {:path, String.t() | nil},
+          {:install, boolean() | nil},
+          {:entrypoint, boolean() | nil},
           {:settings, Dagger.JSON.t() | nil}
         ]) :: Dagger.Workspace.t()
   def with_init_module(%__MODULE__{} = workspace, sdk, optional_args \\ []) do
@@ -650,7 +703,25 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("sdk", sdk)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("path", optional_args[:path])
+      |> QB.maybe_put_arg("install", optional_args[:install])
+      |> QB.maybe_put_arg("entrypoint", optional_args[:entrypoint])
       |> QB.maybe_put_arg("settings", optional_args[:settings])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a native configuration, without changing an existing configuration.
+
+  Fail if legacy configuration needs workspace migration.
+  """
+  @spec with_initialized(t()) :: Dagger.Workspace.t()
+  def with_initialized(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withInitialized")
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -823,16 +894,18 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with refreshed lockfile state for installed modules.
+  Return this workspace with updated module versions and lockfile state.
 
   An SDK client scope is regenerated when it targets an updated module.
   """
-  @spec with_updated_modules(t(), [{:names, [String.t()]}]) :: Dagger.Workspace.t()
+  @spec with_updated_modules(t(), [{:names, [String.t()]}, {:version, String.t() | nil}]) ::
+          Dagger.Workspace.t()
   def with_updated_modules(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withUpdatedModules")
       |> QB.maybe_put_arg("names", optional_args[:names])
+      |> QB.maybe_put_arg("version", optional_args[:version])
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -920,6 +993,20 @@ defmodule Dagger.Workspace do
   def without_directory(%__MODULE__{} = workspace, path) do
     query_builder =
       workspace.query_builder |> QB.select("withoutDirectory") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with no module selected as its entrypoint.
+  """
+  @spec without_entrypoint(t()) :: Dagger.Workspace.t()
+  def without_entrypoint(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutEntrypoint")
 
     %Dagger.Workspace{
       query_builder: query_builder,

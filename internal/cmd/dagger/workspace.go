@@ -90,6 +90,98 @@ var workspaceCwdCmd = &cobra.Command{
 	},
 }
 
+var workspaceLsCmd = &cobra.Command{
+	Use:   "ls [PATH...]",
+	Short: "List directories or files in the selected workspace",
+	Long: `List directories or files in the selected workspace, one entry per line.
+
+PATH defaults to the workspace's current directory. Relative paths start
+at that directory. Absolute paths start at the workspace root.
+
+Directory listings include hidden entries and end directory names with /.
+For a file, print the supplied path.
+With multiple paths, list targets in argument order and label directories.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			args = []string{"."}
+		}
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			var errs []error
+			var printed bool
+			for _, target := range args {
+				entries, err := ws.Directory(target, dagger.WorkspaceDirectoryOpts{
+					Include: []string{"*"},
+					Exclude: []string{"*/*"},
+				}).Entries(ctx)
+				isDir := err == nil
+				if err != nil {
+					// A file cannot be listed as a directory. Validate it before
+					// printing its path, retaining the directory error if both fail.
+					if _, fileErr := ws.File(target).Sync(ctx); fileErr != nil {
+						errs = append(errs, fmt.Errorf("list workspace path %q: %w", target, err))
+						continue
+					}
+					entries = []string{target}
+				}
+				if len(args) > 1 {
+					if printed {
+						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+							return err
+						}
+					}
+					if isDir {
+						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s:\n", target); err != nil {
+							return err
+						}
+					}
+					printed = true
+				}
+				for _, entry := range entries {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), entry); err != nil {
+						return err
+					}
+				}
+			}
+			return errors.Join(errs...)
+		})
+	},
+}
+
+var workspaceCatCmd = &cobra.Command{
+	Use:   "cat PATH [PATH...]",
+	Short: "Print files from the selected workspace",
+	Long: `Print file contents from the selected workspace in argument order.
+
+Relative paths start at the workspace's current directory.
+Absolute paths start at the workspace root.
+
+The output preserves line endings and does not add a final newline.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			ws := engineClient.Dagger().CurrentWorkspace()
+			var errs []error
+			for _, target := range args {
+				contents, err := ws.File(target).Contents(ctx)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("read workspace file %q: %w", target, err))
+					continue
+				}
+				if _, err := io.WriteString(cmd.OutOrStdout(), contents); err != nil {
+					return err
+				}
+			}
+			return errors.Join(errs...)
+		})
+	},
+}
+
 var workspaceConfigFileCmd = &cobra.Command{
 	Use:   "config-file",
 	Short: "Print the selected workspace config file",
@@ -172,6 +264,13 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
+	workspaceCmd.AddCommand(workspaceExecCmd)
+	workspaceCmd.AddCommand(workspaceExportCmd)
+	workspaceCmd.AddCommand(workspaceFindCmd)
+	workspaceCmd.AddCommand(workspaceLsCmd)
+	workspaceCmd.AddCommand(workspaceCatCmd)
+	workspaceCmd.AddCommand(workspaceGitCmd)
+	workspaceCmd.AddCommand(workspaceGrepCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
@@ -460,6 +559,7 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 		}
 		comparisonRef = path.Clean(path.Join(strings.TrimPrefix(filepath.ToSlash(cwd), "/"), filepath.ToSlash(ref)))
 	}
+	installedSources := map[string]workspacepkg.ModuleEntry{}
 	for _, module := range modules {
 		source, err := module.Source(ctx)
 		if err != nil {
@@ -468,6 +568,14 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 		if filepath.ToSlash(source) == comparisonRef {
 			return module.Name(ctx)
 		}
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		installedSources[name] = workspacepkg.ModuleEntry{Source: source}
+	}
+	if selection, err := workspacepkg.SelectModule(installedSources, ".", ".", comparisonRef, true); err == nil {
+		return selection.Name, nil
 	}
 	refWithoutVersion, _, _ := strings.Cut(ref, "@")
 	name := path.Base(filepath.ToSlash(refWithoutVersion))
@@ -1177,6 +1285,8 @@ type workspaceAutocheckState struct {
 	SelectedRepos  []string
 }
 
+var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
+
 func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress) (workspaceAutocheckState, bool, error) {
 	client, err := workspaceAutocheckClient(ctx, false)
 	if err != nil {
@@ -1224,7 +1334,7 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	}
 	source, ok := workspaceSourceForRepo(sources, repo)
 	if !ok || source.OrgName == nil {
-		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
 	}
 	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
 	if err != nil {
@@ -1232,7 +1342,7 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	}
 	mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID)
 	if !ok {
-		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
+		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
 	}
 	selected, enabled := workspaceSelectedRepos(mapped.Repositories, repo)
 	return workspaceAutocheckState{

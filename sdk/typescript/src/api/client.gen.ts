@@ -3239,6 +3239,20 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceMigrateOpts = {
+  /**
+   * Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  modules?: string[]
+}
+
+export type WorkspaceMigrateModuleOpts = {
+  /**
+   * Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  path?: string
+}
+
 export type WorkspaceSearchOpts = {
   /**
    * Directory or file paths to search
@@ -3360,6 +3374,16 @@ export type WorkspaceWithInitModuleOpts = {
   path?: string
 
   /**
+   * Install the module. When omitted, install only if path is omitted.
+   */
+  install?: boolean
+
+  /**
+   * Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   */
+  entrypoint?: boolean
+
+  /**
    * Explicit SDK-module constructor setting overrides for this scope.
    */
   settings?: JSON
@@ -3427,9 +3451,14 @@ export type WorkspaceWithUpdatedLockOpts = {
 
 export type WorkspaceWithUpdatedModulesOpts = {
   /**
-   * Installed module names to refresh. An empty list refreshes all installed modules.
+   * Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
    */
   names?: string[]
+
+  /**
+   * New version request for exactly one selected module. Cannot be combined with a version suffix.
+   */
+  version?: string
 }
 
 export type WorkspaceWithoutClientOpts = {
@@ -15262,6 +15291,7 @@ export class Workspace extends BaseClient {
   private readonly _configRead?: string = undefined
   private readonly _cwd?: string = undefined
   private readonly _detectScope?: string = undefined
+  private readonly _entrypoint?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
 
@@ -15276,6 +15306,7 @@ export class Workspace extends BaseClient {
     _configRead?: string,
     _cwd?: string,
     _detectScope?: string,
+    _entrypoint?: string,
     _export?: Void,
     _findUp?: string,
   ) {
@@ -15287,6 +15318,7 @@ export class Workspace extends BaseClient {
     this._configRead = _configRead
     this._cwd = _cwd
     this._detectScope = _detectScope
+    this._entrypoint = _entrypoint
     this._export = _export
     this._findUp = _findUp
   }
@@ -15440,6 +15472,23 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+   *
+   * Reflects the selected env's effective view. Fails if several modules are selected.
+   */
+  entrypoint = async (): Promise<string> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * List named environments defined in the workspace configuration.
    */
   envList = async (): Promise<string[]> => {
@@ -15554,10 +15603,24 @@ export class Workspace extends BaseClient {
   /**
    * Plan the explicit migration needed for the current workspace.
    *
+   * Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+   *
    * The returned plan has an empty changeset and no steps when no migration is needed.
+   * @param opts.modules Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
    */
-  migrate = (): WorkspaceMigration => {
-    const ctx = this._ctx.select("migrate")
+  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate", { ...opts })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+   *
+   * Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+   * @param opts.path Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+   */
+  migrateModule = (opts?: WorkspaceMigrateModuleOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrateModule", { ...opts })
     return new WorkspaceMigration(ctx)
   }
 
@@ -15758,6 +15821,17 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with an installed module selected as its entrypoint.
+   *
+   * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+   * @param name Exact installed module name.
+   */
+  withEntrypoint = (name: string): Workspace => {
+    const ctx = this._ctx.select("withEntrypoint", { name })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a file added or replaced, without mutating the source.
    * @param path Destination path. Relative paths resolve from the workspace cwd.
    * @param source File to add.
@@ -15779,6 +15853,8 @@ export class Workspace extends BaseClient {
    * @param sdk Workspace SDK name or module entry name to use. Required.
    * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
    * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
+   * @param opts.install Install the module. When omitted, install only if path is omitted.
+   * @param opts.entrypoint Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
@@ -15786,6 +15862,16 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithInitModuleOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withInitModule", { sdk, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a native configuration, without changing an existing configuration.
+   *
+   * Fail if legacy configuration needs workspace migration.
+   */
+  withInitialized = (): Workspace => {
+    const ctx = this._ctx.select("withInitialized")
     return new Workspace(ctx)
   }
 
@@ -15892,10 +15978,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with refreshed lockfile state for installed modules.
+   * Return this workspace with updated module versions and lockfile state.
    *
    * An SDK client scope is regenerated when it targets an updated module.
-   * @param opts.names Installed module names to refresh. An empty list refreshes all installed modules.
+   * @param opts.names Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
+   * @param opts.version New version request for exactly one selected module. Cannot be combined with a version suffix.
    */
   withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
     const ctx = this._ctx.select("withUpdatedModules", { ...opts })
@@ -15971,6 +16058,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with no module selected as its entrypoint.
+   */
+  withoutEntrypoint = (): Workspace => {
+    const ctx = this._ctx.select("withoutEntrypoint")
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a file removed, without mutating the source.
    * @param path Path of the file to remove. Relative paths resolve from the workspace cwd.
    */
@@ -15983,7 +16078,7 @@ export class Workspace extends BaseClient {
    * Return this workspace with a module removed from its config.
    *
    * When the session selects an env, only that env's overlay entry is removed.
-   * @param name Name of the installed module entry to remove.
+   * @param name Installed module name or source to remove. Version selectors are not accepted.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
   withoutModule = (
@@ -16066,14 +16161,16 @@ export class WorkspaceGit extends BaseClient {
  */
 export class WorkspaceMigration extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _configFile?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID) {
+  constructor(ctx?: Context, _id?: ID, _configFile?: string) {
     super(ctx)
 
     this._id = _id
+    this._configFile = _configFile
   }
 
   /**
@@ -16097,6 +16194,32 @@ export class WorkspaceMigration extends BaseClient {
   changes = (): Changeset => {
     const ctx = this._ctx.select("changes")
     return new Changeset(ctx)
+  }
+
+  /**
+   * Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+   */
+  configFile = async (): Promise<string> => {
+    if (this._configFile) {
+      return this._configFile
+    }
+
+    const ctx = this._ctx.select("configFile")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+   */
+  moduleCandidates = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("moduleCandidates")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 
   /**

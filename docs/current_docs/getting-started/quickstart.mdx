@@ -14,19 +14,33 @@ Dagger configures the project that you run it in. Run every command in this guid
 
 ## Install modules
 
-Scan the project for suitable modules:
+Initialize the workspace:
 
 ```shell
-dagger setup
+dagger init
 ```
 
-Select the modules that match your project. Then select **Install selected**.
+This creates an empty `dagger.toml`, or uses the existing file. This file holds the workspace configuration for everyone who uses the repository.
 
-The first install creates `dagger.toml` at the repository root. This file holds the workspace configuration for everyone who uses the repository.
+In interactive mode, follow the optional setup prompts. Select modules that match your project. Then select **Install selected**.
 
-If Dagger migrates an old configuration, run `dagger setup` again.
+In non-interactive mode, `init` prints commands to run in order:
 
-### If setup finds no modules
+```shell
+#!/bin/sh
+
+# 1. Find and install recommended modules.
+dagger module recommend
+
+# 2. Enable Cloud checks (optional).
+dagger cloud checks on
+```
+
+If `init` detects a legacy workspace, it stops without changing files. Run `dagger workspace migrate` to review the migration. After migration, Dagger offers the same next steps.
+
+Migration includes installed local modules. Other module candidates are optional and can include fixtures. Non-interactive migration skips these candidates, including with `--auto-apply`. To migrate one explicitly, run `dagger module migrate PATH`.
+
+### If no modules are recommended
 
 If Dagger reports `No recommendations`, search for a module by the name of a tool in your project. For example, if the project uses ESLint:
 

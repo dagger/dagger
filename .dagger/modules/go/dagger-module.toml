@@ -1,5 +1,5 @@
 name = "go"
-engineVersion = "v0.21.9"
+engineVersion = "v1.0.0-0"
 include = ["../../../go.sum", "../../../go.mod", "../../../util/parallel"]
 
 [runtime]

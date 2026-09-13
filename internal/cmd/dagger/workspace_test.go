@@ -76,6 +76,60 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.Equal(t, []string{"i"}, args)
 }
 
+func TestWorkspaceLsCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "ls"})
+		require.NoError(t, err)
+		require.Same(t, workspaceLsCmd, cmd)
+		require.NoError(t, cmd.ValidateArgs(nil))
+		require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+		require.NoError(t, cmd.ValidateArgs([]string{"src", "other"}))
+	}
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "ls", "-W", "github.com/dagger/dagger"}))
+}
+
+func TestWorkspaceCatCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "cat"})
+		require.NoError(t, err)
+		require.Same(t, workspaceCatCmd, cmd)
+		require.Error(t, cmd.ValidateArgs(nil))
+		require.NoError(t, cmd.ValidateArgs([]string{"README.md"}))
+		require.NoError(t, cmd.ValidateArgs([]string{"README.md", "go.mod"}))
+	}
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "cat", "README.md", "-W", "github.com/dagger/dagger"}))
+}
+
+func TestWorkspaceFindCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "find"})
+		require.NoError(t, err)
+		require.Same(t, workspaceFindCmd, cmd)
+		require.NoError(t, cmd.ValidateArgs(nil))
+		require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+		require.NoError(t, cmd.ValidateArgs([]string{"src", "other"}))
+	}
+	require.NotNil(t, workspaceFindCmd.Flags().Lookup("name"))
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "find", "-W", "github.com/dagger/dagger"}))
+}
+
+func TestWorkspaceExportCommand(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{command, "export"})
+		require.NoError(t, err)
+		require.Same(t, workspaceExportCmd, cmd)
+	}
+
+	cmd := newWorkspaceExportCmd()
+	require.NoError(t, cmd.ValidateArgs(nil))
+	require.NoError(t, cmd.ValidateArgs([]string{"src"}))
+	require.Error(t, cmd.ValidateArgs([]string{"src", "other"}))
+	require.Equal(t, "o", cmd.Flags().Lookup("output").Shorthand)
+	require.NotNil(t, cmd.Flags().Lookup("include"))
+	require.NotNil(t, cmd.Flags().Lookup("exclude"))
+	require.NoError(t, validateFlagCapabilities(testRootCommand(), []string{"workspace", "export", "src", "-o", "dest", "-W", "github.com/dagger/dagger"}))
+}
+
 func TestCosmeticCommandAliases(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"api", "call"})
 	require.NoError(t, err)
@@ -246,11 +300,12 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	for _, name := range []string{
 		"check",
 		"generate",
+		"init",
 		"install",
 		"module",
 		"settings",
-		"setup",
 		"uninstall",
+		"update",
 		"up",
 		"version",
 		"api",
@@ -280,15 +335,15 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"query",
 		"run",
 		"session",
+		"setup",
 		"installed",
 		"search",
-		"update",
 		"activity",
 	} {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"check", "generate", "setup", "up"} {
+	for _, leaf := range []string{"check", "generate", "init", "up"} {
 		for _, parent := range []string{"api", "cloud", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
@@ -486,13 +541,20 @@ func TestParseGlobalFlagsLeavesHelpToCobra(t *testing.T) {
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	oldWorkspaceEnv := workspaceEnv
+	oldEntrypointUnset := workspaceEntrypointUnset
 	t.Cleanup(func() {
 		workspaceRef = oldWorkspaceRef
 		workspaceEnv = oldWorkspaceEnv
+		workspaceEntrypointUnset = oldEntrypointUnset
 	})
 
 	workspaceRef = "github.com/acme/ws"
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(newWorkspaceUpdateCmd(false), nil), "must be a local path")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, []string{"tools"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, nil))
+	workspaceEntrypointUnset = true
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, nil), "must be a local path")
+	workspaceEntrypointUnset = false
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz", "qux"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))

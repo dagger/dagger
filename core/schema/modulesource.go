@@ -374,7 +374,7 @@ func (s *moduleSourceSchema) moduleSource(
 	case core.ModuleSourceKindGit:
 		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
-			return inst, err
+			return inst, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(args.RefString), err)
 		}
 	default:
 		return inst, fmt.Errorf("unknown module source kind: %s", parsedRef.Kind)
@@ -792,14 +792,15 @@ func (s *moduleSourceSchema) gitModuleSource(
 		ConfigFilename: modules.Filename,
 		Kind:           core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
-			HTMLRepoURL:  parsed.RepoRoot.Repo,
-			RepoRootPath: parsed.RepoRoot.Root,
-			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
-			VersionQuery: versionQuery,
-			Selector:     parsed.Selector,
-			Commit:       gitRef.Self().Ref.SHA,
-			Ref:          gitRef.Self().Ref.Name,
-			CloneRef:     parsed.SourceCloneRef,
+			HTMLRepoURL:      parsed.RepoRoot.Repo,
+			RepoRootPath:     parsed.RepoRoot.Root,
+			Version:          cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
+			VersionQuery:     versionQuery,
+			Selector:         parsed.Selector,
+			Commit:           gitRef.Self().Ref.SHA,
+			Ref:              gitRef.Self().Ref.Name,
+			CloneRef:         parsed.SourceCloneRef,
+			ResolvedCloneRef: gitRef.Self().Repo.Self().URL.Value.String(),
 		},
 	}
 
@@ -988,11 +989,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		cloneRef := ref.Repo.Self().URL.Value.String()
 		src.Kind = core.ModuleSourceKindGit
 		src.Git = &core.GitModuleSource{
-			CloneRef:    cloneRef,
-			HTMLRepoURL: cloneRef,
-			Version:     cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
-			Commit:      ref.Ref.SHA,
-			Ref:         ref.Ref.Name,
+			CloneRef:         cloneRef,
+			ResolvedCloneRef: cloneRef,
+			HTMLRepoURL:      cloneRef,
+			Version:          cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
+			Commit:           ref.Ref.SHA,
+			Ref:              ref.Ref.Name,
 		}
 		src.Git.Symbolic = cloneRef
 		if sourceRootPath != "." {

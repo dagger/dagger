@@ -35,11 +35,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
 
+	// Each invocation plans separately, but its result must remain attached so
+	// callers can save the plan ID and reuse the same preview for export.
 	migrateField := dagql.Func("migrate", s.migrate).
 		View(AfterVersion("v1.0.0-0")).
-		DoNotCache("Plans workspace migration against live host filesystem").
+		WithInput(dagql.PerCallInput).
 		Doc("Plan the explicit migration needed for the current workspace.",
+			"Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.",
 			"The returned plan has an empty changeset and no steps when no migration is needed.").
+		Args(
+			dagql.Arg("modules").Doc("Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
+		).
 		PassthroughTelemetry()
 
 	dagql.Fields[*core.Query]{
@@ -47,6 +53,20 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("withInitialized", s.withInitialized).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with a native configuration, without changing an existing configuration.",
+				"Fail if legacy configuration needs workspace migration."),
+		dagql.Func("migrateModule", s.migrateModule).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc("Plan migration of one local module without migrating its dependencies or creating a workspace configuration.",
+				"Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.").
+			Args(
+				dagql.Arg("path").Doc("Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root."),
+			).
+			PassthroughTelemetry(),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceSDK", s.workspaceSDK).
@@ -224,7 +244,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a module removed from its config.",
 				"When the session selects an env, only that env's overlay entry is removed.").
 			Args(
-				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
+				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withSDK", s.withSDK).
@@ -245,6 +265,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with an installed module selected as its entrypoint.",
+				"Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.").
+			Args(
+				dagql.Arg("name").Doc("Exact installed module name."),
+			),
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with no module selected as its entrypoint."),
 		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",
@@ -253,6 +285,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use. Required."),
 				dagql.Arg("name").Doc("Module name. The engine infers it from path, the active config file, or the workspace root when omitted."),
 				dagql.Arg("path").Doc("Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config."),
+				dagql.Arg("install").View(AfterVersion("v1.0.0-0")).Doc("Install the module. When omitted, install only if path is omitted."),
+				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
@@ -335,10 +369,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with refreshed lockfile state for installed modules.",
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with updated module versions and lockfile state.",
 				"An SDK client scope is regenerated when it targets an updated module.").
 			Args(
-				dagql.Arg("names").Doc("Installed module names to refresh. An empty list refreshes all installed modules."),
+				dagql.Arg("names").Doc("Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules."),
+				dagql.Arg("version").View(AfterVersion("v1.0.0-0")).Doc("New version request for exactly one selected module. Cannot be combined with a version suffix."),
 			),
 		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).
@@ -375,6 +411,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
+		dagql.Func("entrypoint", s.entrypoint).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live config from host").
+			Doc("Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.",
+				"Reflects the selected env's effective view. Fails if several modules are selected."),
 		dagql.Func("envList", s.envList).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -2569,6 +2610,24 @@ func (s *workspaceSchema) seedDeltaRootParents(
 		if !exists {
 			continue
 		}
+
+		// Parents from earlier edits are already in the accumulated delta.
+		// withNewDirectory commits a snapshot even when MkdirAll is a no-op,
+		// so only seed parents that are currently missing from the delta.
+		var alreadySeeded dagql.Boolean
+		if err := srv.Select(ctx, delta, &alreadySeeded, dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
+			},
+		}); err != nil {
+			return delta, fmt.Errorf("inspect overlay delta root parent %q: %w", dir, err)
+		}
+		if alreadySeeded {
+			continue
+		}
+
 		var info *core.Stat
 		if err := srv.Select(ctx, base, &info, dagql.Selector{
 			Field: "stat",

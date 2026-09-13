@@ -30,12 +30,34 @@ defmodule Dagger.WorkspaceMigration do
   end
 
   @doc """
+  Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+  """
+  @spec config_file(t()) :: {:ok, String.t()} | {:error, term()}
+  def config_file(%__MODULE__{} = workspace_migration) do
+    query_builder =
+      workspace_migration.query_builder |> QB.select("configFile")
+
+    Client.execute(workspace_migration.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this WorkspaceMigration.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = workspace_migration) do
     query_builder =
       workspace_migration.query_builder |> QB.select("id")
+
+    Client.execute(workspace_migration.client, query_builder)
+  end
+
+  @doc """
+  Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+  """
+  @spec module_candidates(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def module_candidates(%__MODULE__{} = workspace_migration) do
+    query_builder =
+      workspace_migration.query_builder |> QB.select("moduleCandidates")
 
     Client.execute(workspace_migration.client, query_builder)
   end

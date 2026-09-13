@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -113,6 +114,13 @@ func ParseConfigAt(ctx context.Context, data []byte, configDir string) (*Config,
 	cfg, err := ParseConfig(data)
 	if err != nil {
 		return nil, err
+	}
+	warnings, err := ConfigWarnings(data, filepath.ToSlash(filepath.Join(configDir, ConfigFileName)))
+	if err != nil {
+		return nil, err
+	}
+	for _, warning := range warnings {
+		slog.GlobalLogger(ctx, "dagger/workspace").Warn(warning)
 	}
 	if err := reconcileSDKScopes(ctx, cfg, configDir); err != nil {
 		return nil, err

@@ -1,0 +1,51 @@
+---
+title: "Pytest"
+slug: /reference/modules/python/pytest
+description: "Run Pytest as a Dagger workspace check."
+---
+
+# Pytest
+
+The Pytest module runs your Python tests with Pytest, the same way locally, in CI, and in Dagger Cloud. It discovers Python projects in your workspace. It can use a custom Python container when the default environment is not enough.
+
+## Add it to your workspace
+
+```bash
+dagger module install dagger.io/python/pytest
+```
+
+## Run the tests
+
+```bash
+dagger check                 # run every check in the workspace
+dagger check pytest:test-all # run Pytest against the selected projects
+```
+
+`pytest:test-all` injects `pytest_otel` automatically, so individual Python tests appear as spans in the Dagger TUI and Dagger Cloud with no project changes. The module uses uv to install the project dependencies, pytest, and `pytest_otel` together.
+
+## Test options
+
+The `pytest:test-all` check uses the module settings:
+
+- `version` (default `3.14`) is the Python version the default container provisions, such as `3.13` or `3.12`. It cannot be combined with a custom `base`.
+- `args` (default `["-v"]`) are arguments passed straight to `pytest`, such as `["-x", "--tb=short"]`.
+
+Keep this module focused on tests; use separate modules for formatting, linting, shell scripts, or generated files.
+
+## Configure it
+
+List the current settings and their values with `dagger module settings pytest`, then set one with `dagger module settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`:
+
+- `scope` (default: `["**"]`) selects project roots to test. Paths are relative to the workspace root.
+- `base` (default: none) is a custom container that already has Python and uv installed. Set it when tests need system packages, a private index, or other tools.
+
+```toml
+[modules.pytest.settings]
+scope = ["service"]
+```
+
+## Working with other modules
+
+This module is a good first check for Python repos. Once it passes locally, it is a natural candidate for autocheck and PR validation.
+
+[source code](https://github.com/dagger/python/tree/main/pytest)

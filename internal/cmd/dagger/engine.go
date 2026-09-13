@@ -246,13 +246,8 @@ func configuredRunnerHost() string {
 	}
 }
 
-// withSetupSessions runs fn under a single Frontend (one live TUI) while letting
-// it open more than one engine session via connect. dagger setup needs both:
-// its prompts are Frontend forms (which require the single-TUI run), and its
-// recommended-module install must run in a FRESH session so it re-detects the
-// workspace migrated earlier in the same command — the per-client workspace is
-// detected once and cached for a session's lifetime, so reusing the migrate
-// session would keep seeing the legacy dagger.json ("run dagger setup first").
+// withSetupSessions runs initialization, migration, and optional setup under
+// one frontend. Each operation requests a session when it needs the engine.
 func withSetupSessions(
 	ctx context.Context,
 	before func(context.Context),
@@ -288,12 +283,11 @@ func withSetupSessions(
 			return nil
 		})
 
-		fp, err := finalizeEngineParams(ctx, params)
-		if err != nil {
-			return cleanup.Run, err
-		}
-
 		connect := func(ctx context.Context) (*client.Client, func(), error) {
+			fp, err := finalizeEngineParams(ctx, params)
+			if err != nil {
+				return nil, nil, err
+			}
 			sess, err := client.Connect(ctx, fp)
 			if err != nil {
 				return nil, nil, err

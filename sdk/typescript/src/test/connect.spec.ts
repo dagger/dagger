@@ -192,7 +192,8 @@ describe("TypeScript sdk Connect", function () {
     })
 
     it("Should download and unpack the CLI binary automatically", async function () {
-      this.timeout(30000)
+      // Provisioning includes downloading and starting an uncached engine image.
+      this.timeout(300000)
 
       // ignore DAGGER_SESSION_PORT
       delete process.env.DAGGER_SESSION_PORT

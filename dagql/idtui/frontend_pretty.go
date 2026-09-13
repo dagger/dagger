@@ -92,6 +92,9 @@ type frontendPretty struct {
 	consoleMu sync.Mutex
 
 	// updated by Run
+	term        tuist.Terminal
+	termStopped bool
+	termStdin   io.Reader
 	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
 	runCtx      context.Context
@@ -889,6 +892,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
+		term:          term,
 		tui:           tui,
 		spinnerEpoch:  time.Now(),
 		window:        windowSize{Width: -1, Height: -1}, // be clear that it's not set
@@ -1966,6 +1970,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 		select {
 		case <-fe.quit:
 			fe.tui.Stop()
+			fe.termStopped = true
 
 			// if the ctx was canceled, we don't need to return whatever random garbage
 			// error string we got back; just return the ctx err.
@@ -2396,6 +2401,27 @@ func (fe FrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmet
 
 func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
 	return nil
+}
+
+// TerminalStdin is implemented by frontends whose terminal keeps the only
+// reader on stdin after they stop.
+type TerminalStdin interface {
+	Stdin() io.Reader
+}
+
+// Stdin returns the input the terminal reader forwards. tuist's reader lives
+// for the process and discards input once the TUI stops, so a prompt reading
+// os.Stdin after Run never sees a key.
+func (fe *frontendPretty) Stdin() io.Reader {
+	if !fe.termStopped {
+		return os.Stdin
+	}
+	if fe.termStdin == nil {
+		pr, pw := io.Pipe()
+		fe.term.SetInputPassthrough(pw)
+		fe.termStdin = pr
+	}
+	return fe.termStdin
 }
 
 func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
@@ -3828,11 +3854,15 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	}
 }
 
-// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
+// applyTuistFocus keeps an active prompt focused, or selects the active view: the fullscreen
 // test view in tests mode, the SpanTreeView for the selected span in trace mode,
 // or fe itself when no span is selected. Skipped when editline or search has
 // focus.
 func (fe *frontendPretty) applyTuistFocus() {
+	if fe.formWrap != nil {
+		fe.tui.SetFocus(fe.formWrap)
+		return
+	}
 	if fe.editlineFocused || fe.searchActive || fe.logSearchInput != nil {
 		return
 	}
@@ -4387,13 +4417,13 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
+		if fe.formWrap == nil && !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
+		if fe.formWrap == nil && !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
 			}

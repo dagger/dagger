@@ -50,8 +50,36 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, "go", entry.Source)
 		require.Equal(t, SDKEntry{Module: "dagger-go-sdk", Scopes: map[string]SDKScope{
-			"libs/foo": {IsModule: true, Name: "foo"},
+			"libs/foo": {IsModule: true},
 		}}, cfg.SDKs["go"])
+	})
+
+	t.Run("writes the name only when it differs from the directory name", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{}}
+		AddMigratedModuleSDK(cfg, "go", "libs/foo", "bar")
+		require.Equal(t, map[string]SDKScope{
+			"libs/foo": {IsModule: true, Name: "bar"},
+		}, cfg.SDKs["go"].Scopes)
+	})
+
+	t.Run("root scope infers the local entrypoint name", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"myapp": {Source: ".", Entrypoint: true},
+		}}
+		AddMigratedModuleSDK(cfg, "go", ".", "myapp")
+		require.Equal(t, map[string]SDKScope{
+			".": {IsModule: true},
+		}, cfg.SDKs["go"].Scopes)
+	})
+
+	t.Run("root scope without an entrypoint keeps its name", func(t *testing.T) {
+		cfg := &Config{Modules: map[string]ModuleEntry{
+			"myapp": {Source: "."},
+		}}
+		AddMigratedModuleSDK(cfg, "go", ".", "myapp")
+		require.Equal(t, map[string]SDKScope{
+			".": {IsModule: true, Name: "myapp"},
+		}, cfg.SDKs["go"].Scopes)
 	})
 
 	t.Run("shares one entry across modules with the same runtime", func(t *testing.T) {
@@ -60,8 +88,8 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		AddMigratedModuleSDK(cfg, "go", "libs/foo", "foo")
 		require.Len(t, cfg.Modules, 1)
 		require.Equal(t, map[string]SDKScope{
-			".dagger/modules/myapp": {IsModule: true, Name: "myapp"},
-			"libs/foo":              {IsModule: true, Name: "foo"},
+			".dagger/modules/myapp": {IsModule: true},
+			"libs/foo":              {IsModule: true},
 		}, cfg.SDKs["go"].Scopes)
 	})
 
@@ -80,7 +108,7 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, "github.com/acme/custom-sdk", entry.Source)
 		require.Equal(t, SDKEntry{Module: "custom-sdk", Scopes: map[string]SDKScope{
-			"libs/foo": {IsModule: true, Name: "foo"},
+			"libs/foo": {IsModule: true},
 		}}, cfg.SDKs["custom"])
 	})
 }
