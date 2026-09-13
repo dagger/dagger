@@ -27,7 +27,7 @@ func TestWorkspaceChangesRendering(t *testing.T) {
 		p.Outgoing = append(p.Outgoing, changesCommit{SHA: strings.Repeat("a", 40), MessageHeadline: fmt.Sprintf("commit %02d", i)})
 	}
 	text := ansi.Strip(p.render(80))
-	require.Contains(t, text, "Files since checkpoint\npending.txt")
+	require.Contains(t, text, "Uncommitted changes\npending.txt")
 	require.Contains(t, text, "Commits to save (20+)")
 	require.Contains(t, text, "commit 19")
 	require.NotContains(t, text, "commit 20")
@@ -138,11 +138,33 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, s.updateChangesPreview(s.llm))
 	require.Contains(t, changes.Body(80), "Commits to save (1)")
 	require.Contains(t, changes.Body(80), "agent commit")
-	require.Contains(t, changes.Body(80), "saved.txt")
+	require.NotContains(t, changes.Body(80), "saved.txt")
 	require.NotContains(t, changes.Body(80), "base.txt")
 	require.NotContains(t, changes.Body(80), "History unavailable")
 	require.NotContains(t, changes.Body(80), "Uncommitted")
 	require.Len(t, changes.KeyMap, 2)
+
+	// File stats describe only the edits above HEAD, not the total diff from
+	// the checkpoint. Even undoing a committed addition is a pending deletion.
+	for _, tc := range []struct {
+		name string
+		ws   *dagger.Workspace
+		want patchpreview.Entry
+	}{
+		{"addition", committed.WithNewFile("pending.txt", "new\n"), patchpreview.Entry{Path: "pending.txt", Kind: "ADDED", Added: 1}},
+		{"modification", committed.WithNewFile("saved.txt", "pending\n"), patchpreview.Entry{Path: "saved.txt", Kind: "MODIFIED", Added: 1, Removed: 1}},
+		{"deletion", committed.WithoutFile("saved.txt"), patchpreview.Entry{Path: "saved.txt", Kind: "REMOVED", Removed: 1}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			preview, err := previewWorkspaceChanges(ctx, dag, tc.ws, baseline)
+			require.NoError(t, err)
+			require.Equal(t, []patchpreview.Entry{tc.want}, preview.Files)
+			require.Len(t, preview.Outgoing, 1)
+			text := ansi.Strip(preview.render(80))
+			require.Less(t, strings.Index(text, "Uncommitted changes"), strings.Index(text, "Commits to save"))
+		})
+	}
+
 	_, err = os.Stat(filepath.Join(checkout, "saved.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	sha, err := committed.Git().Head().CommitSHA(ctx)
@@ -164,7 +186,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	// A later edit to the same path remains separate from its committed version.
 	s.llm = s.llm.WithWorkspace(s.llm.Workspace().WithNewFile("saved.txt", "pending\n"))
 	require.NoError(t, s.updateChangesPreview(s.llm))
-	require.Contains(t, changes.Body(80), "Files since checkpoint")
+	require.Contains(t, changes.Body(80), "Uncommitted changes")
 	require.NotContains(t, changes.Body(80), "Commits to save")
 	require.NoError(t, s.ExportChanges(ctx))
 	contents, err := os.ReadFile(filepath.Join(checkout, "saved.txt"))
