@@ -3846,6 +3846,19 @@ func TestSpecificClientAttachableConnRejectsInertClient(t *testing.T) {
 		require.NotSame(t, parentConn, conn)
 	}
 
+	for _, ifAvailable := range []bool{false, true} {
+		t.Run(fmt.Sprintf("direct caller ifAvailable=%t", ifAvailable), func(t *testing.T) {
+			// CallerStatFS reaches this gateway directly, rather than going
+			// through SpecificClientAttachableConn. An inert client must be
+			// rejected here too, not wait for attachables that will never exist.
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, child.clientID, ifAvailable)
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Nil(t, caller)
+		})
+	}
+
 	caller, err := sess.resolveHostServiceCaller(t.Context(), child.clientID)
 	require.Error(t, err)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))

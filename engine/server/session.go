@@ -3250,7 +3250,16 @@ func (srv *Server) clientAttachableCaller(
 	if err != nil {
 		return nil, err
 	}
+	// Filesystem operations reach this gateway directly, without passing through
+	// resolveClientAttachableCaller. In-engine SDK clients never register
+	// attachables, so reject them here too rather than waiting out the timeout.
+	record.daggerSession.scopeMu.Lock()
+	inertAttachables := record.inertAttachables
 	attachablesClientID := record.attachablesClientID
+	record.daggerSession.scopeMu.Unlock()
+	if inertAttachables {
+		return nil, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
+	}
 	if attachablesClientID == "" {
 		attachablesClientID = record.clientID
 	}
