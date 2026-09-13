@@ -53,12 +53,22 @@ dagger --env dev call tla-check one --config=resources
 # the full suite: REQUIRED before pushing changes under dagql/tla,
 # expensive otherwise - well over an hour wall with four TLC JVMs; the
 # largest configurations each exceed 40 million distinct states
-# (attach_release_reader ~863M distinct states - the reader-conversion
-# retries opened its space up and it now takes nearly two hours alone -
-# and resources_gated_growth ~114M, resources_restart ~110M,
+# (resources_gated_growth ~114M, resources_restart ~110M,
 # lazy_import ~62M, resources_latedep_cascade ~57M, persist ~47M)
 dagger --env dev check tla-check:cache-lifecycle
 ```
+
+Configuration budget: target every configuration under ~20 minutes on a
+dev box. The scenario-scoping constants (`ReleaseSessions`,
+`PersistableIntent`) narrow which external events a configuration
+explores, in the existing style — configurations select scenarios, never
+implementations — and their defaults preserve every prior state space
+exactly. When a configuration is re-scoped, its comment records the
+one-time exhaustive bound the scope replaced (`attach_release_reader`:
+~863M distinct states unscoped, ~26M scoped; its re-break evidence was
+re-verified at the reduced scope). A configuration whose `ReleaseSessions`
+is a proper subset of `Sessions` must not declare session symmetry
+(`SymmCalls` instead of `Symm`).
 
 Every run compares each configuration's outcome to the `expectedOutcome`
 map in `.dagger/modules/tla-check/main.go` (a new config must be added
