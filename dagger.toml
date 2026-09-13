@@ -116,11 +116,11 @@ source = ".dagger/modules/tla-check"
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
 
-[modules.dagger-dang-sdk]
-source = "github.com/dagger/dang-sdk@v0.1"
+[modules.dang-sdk]
+source = "dagger.io/sdk/dang@main"
 
-[modules.dagger-go-sdk]
-source = "github.com/dagger/go-sdk@v0.1"
+[modules.go-sdk]
+source = "dagger.io/sdk/go@main"
 
 [env.dev.modules.engine-lab]
 source = ".dagger/modules/engine-lab"
@@ -135,7 +135,7 @@ source = ".dagger/modules/mcp-lab"
 source = "github.com/vito/editor"
 
 [sdks.dang]
-module = "dagger-dang-sdk"
+module = "dang-sdk"
 
 [sdks.dang.scopes.".dagger/modules/changelog"]
 is-module = true
@@ -180,7 +180,7 @@ is-module = true
 name = "markdown-lint"
 
 [sdks.go]
-module = "dagger-go-sdk"
+module = "go-sdk"
 
 [sdks.go.scopes.".dagger/modules/cli-dev"]
 is-module = true
