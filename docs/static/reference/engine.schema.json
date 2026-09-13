@@ -31,6 +31,10 @@
           },
           "type": "object",
           "description": "Registries configures custom registry mirrors, root CAs, and insecure/HTTP access."
+        },
+        "telemetry": {
+          "$ref": "#/$defs/TelemetryConfig",
+          "description": "Telemetry configures the engine's telemetry collection."
         }
       },
       "additionalProperties": false,
@@ -191,6 +195,16 @@
         "insecureRootCapabilities": {
           "type": "boolean",
           "description": "InsecureRootCapabilities controls whether the argument of the same name is permitted in Container.withExec - it is allowed by default. Disabling this option ensures that dagger build containers do not run as privileged, and is a basic form of security hardening."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "TelemetryConfig": {
+      "properties": {
+        "cgroupSampleInterval": {
+          "$ref": "#/$defs/Duration",
+          "description": "CgroupSampleInterval is how often container resource metrics (CPU, memory, IO, network) are sampled from each running container's cgroup, e.g. \"5s\" or \"500ms\". Unset uses the built-in default (5s)."
         }
       },
       "additionalProperties": false,
