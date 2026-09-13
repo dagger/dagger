@@ -113,10 +113,21 @@ func exportOAuthCredential(provider string, p *llmconfig.Provider) {
 // exportOAuthEnv refreshes provider's token if it is due and exports the
 // result.
 func exportOAuthEnv(ctx context.Context, provider string) error {
-	if _, ok := oauthEnvVars[provider]; !ok {
+	vars, ok := oauthEnvVars[provider]
+	if !ok {
 		return nil
 	}
-	p, err := llmconfig.RefreshOAuthProviderIfNeeded(ctx, provider)
+	llmEnvMu.Lock()
+	current, set := os.LookupEnv(vars.token)
+	exported, ours := llmEnvExports[vars.token]
+	explicit := set && (!ours || exported != current)
+	llmEnvMu.Unlock()
+	if explicit {
+		// A user-supplied bearer is not the config's credential. In particular,
+		// its rejection must not rotate an unrelated subscription login.
+		return nil
+	}
+	p, err := llmconfig.RefreshOAuthProviderAfterRejection(ctx, provider, secretprovider.RejectedEnvValue(ctx))
 	if err != nil {
 		return err
 	}

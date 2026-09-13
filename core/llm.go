@@ -1073,10 +1073,17 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 }
 
 func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
+	return r.loadConfig(ctx, getenv, getenv)
+}
+
+func (r *LLMRouter) loadConfig(ctx context.Context, getenv, reloadEnv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
 	if getenv == nil {
 		getenv = func(_ context.Context, key string) (string, error) {
 			return os.Getenv(key), nil
 		}
+	}
+	if reloadEnv == nil {
+		reloadEnv = getenv
 	}
 
 	save := func(key string, dest *string) error {
@@ -1121,7 +1128,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		}
 		if v != "" {
 			r.AnthropicAuthToken = v
-			r.reloadAnthropicAuthToken = credentialReloader(getenv, "ANTHROPIC_AUTH_TOKEN")
+			r.reloadAnthropicAuthToken = credentialReloader(reloadEnv, "ANTHROPIC_AUTH_TOKEN")
 			anthropicTokenSet = true
 		}
 		return nil
@@ -1155,7 +1162,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		}
 		if v != "" {
 			r.OpenAICodexAuthToken = v
-			r.reloadCodexAuthToken = credentialReloader(getenv, "OPENAI_CODEX_AUTH_TOKEN")
+			r.reloadCodexAuthToken = credentialReloader(reloadEnv, "OPENAI_CODEX_AUTH_TOKEN")
 		}
 		return nil
 	})
@@ -1295,19 +1302,36 @@ func (r *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) (su
 			env = e
 		}
 	}
-	return r.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	getenv := func(ctx context.Context, k string, optional bool) (string, error) {
 		ctx = bindClient(ctx)
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)
 		}
 		// Second: lookup in client env directly
-		if v, err := loadSecret(ctx, "env://"+k); err == nil {
-			// Allow the env var itself to be a secret reference
-			return loadSecret(ctx, v)
+		v, err := loadSecret(ctx, "env://"+k)
+		if err != nil {
+			if optional {
+				return "", nil
+			}
+			return "", err
 		}
-		return "", nil
-	})
+		// Allow the env var itself to be a secret reference
+		return loadSecret(ctx, v)
+	}
+	return r.loadConfig(ctx,
+		func(ctx context.Context, k string) (string, error) {
+			// Discovery probes many unset variables, including from nested
+			// clients that inherit all their credentials from the main client.
+			return getenv(ctx, k, true)
+		},
+		func(ctx context.Context, k string) (string, error) {
+			// A live source was already configured. Its lookup failing is not
+			// an absent configuration: preserve the error rather than silently
+			// falling back to the SDK's routing-time credential.
+			return getenv(ctx, k, false)
+		},
+	)
 }
 
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
@@ -1396,10 +1420,10 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	// every provider request — including by an agent loop still stepping long
 	// after the request that first routed it completed — so binding resolution
 	// to this call's context would make the credential die with it. Scope it
-	// to the session instead, the same way the local-LLM tunnel is (see
-	// LLM.Endpoint), so it lives exactly as long as the client that supplies
-	// it. The scope is taken against the parent client, which is a session
-	// client by construction, rather than the possibly-module ambient one.
+	// to the session instead. This context supplies cancellation only: detach
+	// borrows execution authority from each active request, since this call's
+	// client lease will already be released. The parent client identifies the
+	// session rather than the possibly-module ambient client.
 	sessionCtx, err := query.Server.SessionScopedContext(
 		engine.ContextWithClientMetadata(ctx, parentClient))
 	if err != nil {
@@ -2321,17 +2345,15 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 				return backoff.Permanent(sendErr)
 			}
 			if isAuthFailure(sendErr) {
-				// A credential that rotated out from under a long conversation
-				// is worth exactly one retry: drop the cached one so the next
-				// attempt resolves a fresh token from the client. Exactly one,
-				// because a login that is really revoked would otherwise spin
-				// the backoff for its full MaxElapsedTime before telling the
-				// user the one thing they can act on.
+				// Retry a rejected credential exactly once. The transport has
+				// already invalidated the token actually used and arranged for
+				// the next lookup to request a refresh from the client. Do not
+				// invalidate again here: another concurrent request may already
+				// have resolved a newer credential in the meantime.
 				if authRetried || ep.AuthTokenSource == nil {
 					return backoff.Permanent(ep.credentialError(sendErr))
 				}
 				authRetried = true
-				ep.AuthTokenSource.Invalidate()
 				return sendErr
 			}
 			if !client.IsRetryable(sendErr) {

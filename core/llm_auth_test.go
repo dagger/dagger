@@ -122,10 +122,15 @@ func newLLMEndpointTestCtx(t *testing.T) (context.Context, *llmEnv) {
 // path — what is under test is which token went out, not what came back.
 func anthropic401Server(t *testing.T, onRequest func(auth string)) *httptest.Server {
 	t.Helper()
+	return anthropicErrorServer(t, http.StatusUnauthorized, onRequest)
+}
+
+func anthropicErrorServer(t *testing.T, status int, onRequest func(auth string)) *httptest.Server {
+	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		onRequest(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(status)
 		//nolint:errcheck
 		w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired"}}`))
 	}))
@@ -237,7 +242,9 @@ func TestLLMEndpointHonorsReportedExpiry(t *testing.T) {
 
 	var mu sync.Mutex
 	var seen []string
-	ts := anthropic401Server(t, func(auth string) {
+	// A 401 intentionally bypasses the expiry horizon; use a non-auth error
+	// to isolate the normal time-based refresh behavior.
+	ts := anthropicErrorServer(t, http.StatusBadRequest, func(auth string) {
 		mu.Lock()
 		defer mu.Unlock()
 		seen = append(seen, auth)
@@ -493,7 +500,7 @@ func TestLLMCredentialResolvesAgainstLoadingClient(t *testing.T) {
 
 	// The request that needs the credential comes from a nested client, which
 	// has no login of its own. Resolution must still land on the host's.
-	cred, err := router.reloadAnthropicAuthToken(withClient("nested-agent"))
+	cred, err := router.reloadAnthropicAuthToken.detach(withClient("host"))(withClient("nested-agent"))
 	require.NoError(t, err)
 	assert.Equal(t, "token-of-host", cred.Token)
 }

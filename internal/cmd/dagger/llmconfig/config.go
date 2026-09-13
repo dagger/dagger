@@ -2,6 +2,7 @@ package llmconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +33,18 @@ const oauthRefreshFloor = 30 * time.Second
 // different credential store starts from a clean slate. Guarded by
 // oauthRefreshMu.
 var lastOAuthRefresh = map[string]time.Time{}
+
+// Rejections can precede the recorded expiry. Allow one immediate forced
+// refresh per rejected token, independently of the proactive refresh floor.
+// Repeated failures keep their error instead of pretending the stale token is
+// usable. Guarded by oauthRefreshMu, like lastOAuthRefresh.
+var lastRejectedOAuthRefresh = map[string]rejectedOAuthRefresh{}
+
+type rejectedOAuthRefresh struct {
+	fingerprint string
+	at          time.Time
+	err         error
+}
 
 const (
 	ConfigFileName = "config.toml"
@@ -368,17 +381,32 @@ func Remove() error {
 // to the provider-specific refresh flow. It returns the (possibly updated)
 // provider and whether it changed.
 func refreshProviderToken(ctx context.Context, name string, provider Provider) (Provider, bool, error) {
+	return refreshProviderTokenAfterRejection(ctx, name, provider, "")
+}
+
+func refreshProviderTokenAfterRejection(ctx context.Context, name string, provider Provider, rejected string) (_ Provider, _ bool, rerr error) {
+	force := rejected != "" && rejected == fmt.Sprintf("%x", sha256.Sum256([]byte(provider.AuthToken)))
 	// A disabled provider's credentials are never exported (applyLLMConfigEnv
 	// skips it), so refreshing it would spend its single-use grant for nothing
 	// — and rotate a refresh token the user still expects to work when they
 	// re-enable the provider.
-	if !provider.Enabled || !provider.IsOAuth() || !IsTokenExpired(&provider) {
+	if !provider.Enabled || !provider.IsOAuth() || (!force && !IsTokenExpired(&provider)) {
 		return provider, false, nil
 	}
 	// Rate-limit per provider, so a pathologically short-lived token can't turn
 	// every resolution into another rotation. The caller holds oauthRefreshMu.
 	floorKey := ConfigFile + "\x00" + name
-	if time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
+	if force {
+		last := lastRejectedOAuthRefresh[floorKey]
+		if last.fingerprint == rejected && time.Since(last.at) < oauthRefreshFloor {
+			return provider, false, last.err
+		}
+		defer func() {
+			lastRejectedOAuthRefresh[floorKey] = rejectedOAuthRefresh{
+				fingerprint: rejected, at: time.Now(), err: rerr,
+			}
+		}()
+	} else if time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
 		return provider, false, nil
 	}
 	lastOAuthRefresh[floorKey] = time.Now()
@@ -443,6 +471,14 @@ func RefreshOAuthTokensIfNeeded(ctx context.Context) error {
 // provider. Used to keep a long-running session's bearer token fresh: the
 // client re-resolves the token on demand rather than only at startup.
 func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, error) {
+	return RefreshOAuthProviderAfterRejection(ctx, name, "")
+}
+
+// RefreshOAuthProviderAfterRejection reloads the provider from disk and refreshes
+// if due, or if rejected is the SHA-256 hex fingerprint of its current access
+// token. A different token on disk wins without forcing another rotation: a
+// concurrent process may already have recovered the credential for us.
+func RefreshOAuthProviderAfterRejection(ctx context.Context, name, rejected string) (*Provider, error) {
 	oauthRefreshMu.Lock()
 	defer oauthRefreshMu.Unlock()
 
@@ -456,7 +492,7 @@ func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, 
 		if !ok || !provider.IsOAuth() || !provider.Enabled {
 			return false, nil
 		}
-		refreshed, changed, err := refreshProviderToken(ctx, name, provider)
+		refreshed, changed, err := refreshProviderTokenAfterRejection(ctx, name, provider, rejected)
 		if err != nil {
 			return false, err
 		}

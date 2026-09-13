@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -137,6 +139,72 @@ func TestCredentialTransportLeavesRequestUnmodified(t *testing.T) {
 	resp.Body.Close()
 
 	require.Equal(t, "Bearer stale", req.Header.Get("Authorization"))
+}
+
+func TestCredentialTransportDoesNotRestoreInvalidatedSDKToken(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	resolveToken := "live-token"
+	src := newCredentialSource(func(context.Context) (Credential, error) {
+		return Credential{Token: resolveToken}, nil
+	})
+	_, err := src.Credential(t.Context())
+	require.NoError(t, err)
+	src.Invalidate()
+	resolveToken = ""
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer routing-time-token")
+	_, err = newCredentialTransport(nil, src, applyBearer).RoundTrip(req)
+	require.ErrorContains(t, err, "credential source returned an empty token")
+	require.Zero(t, calls.Load(), "do not send a request using the baked SDK token")
+}
+
+func TestCredentialSourceRejectOnlyCurrentToken(t *testing.T) {
+	clk := newTestClock()
+	var hints []string
+	var resolveErr error
+	resolve := credentialResolver(func(ctx context.Context) (Credential, error) {
+		hints = append(hints, secretprovider.RejectedEnvValue(ctx))
+		if resolveErr != nil {
+			return Credential{}, resolveErr
+		}
+		return Credential{Token: fmt.Sprintf("token-%d", len(hints))}, nil
+	}).detach(t.Context())
+	src := newTestCredentialSource(clk, resolve)
+	_, err := src.Credential(t.Context())
+	require.NoError(t, err)
+
+	src.reject("token-1")
+	resolveErr = fmt.Errorf("refresh unavailable")
+	_, err = src.Credential(t.Context())
+	require.ErrorContains(t, err, "refresh unavailable")
+	resolveErr = nil
+	cred, err := src.Credential(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "token-3", cred.Token)
+	rejected := fmt.Sprintf("%x", sha256.Sum256([]byte("token-1")))
+	require.Equal(t, []string{"", rejected, rejected}, hints,
+		"rejection survives detach and failed resolutions without sending the token")
+
+	// A late 401 for token-1 cannot discard the token-3 another request
+	// refreshed while that older HTTP request was still in flight.
+	src.reject("token-1")
+	cred, err = src.Credential(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "token-3", cred.Token)
+	require.Len(t, hints, 3)
+
+	clk.Advance(credentialRefreshTTL + time.Second)
+	_, err = src.Credential(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, hints[3], "successful resolution clears the rejection hint")
 }
 
 // TestCredentialTransportNoSourceIsPassthrough covers the plain-API-key path
@@ -432,8 +500,12 @@ func TestCredentialResolverDetach(t *testing.T) {
 	sessionCtx, closeSession := context.WithCancel(t.Context())
 	defer closeSession()
 
-	var hadDeadline bool
+	var hadDeadline, closeDuringResolve bool
 	resolve := credentialResolver(func(ctx context.Context) (Credential, error) {
+		if closeDuringResolve {
+			closeSession()
+			<-ctx.Done()
+		}
 		if err := ctx.Err(); err != nil {
 			return Credential{}, err
 		}
@@ -449,8 +521,10 @@ func TestCredentialResolverDetach(t *testing.T) {
 	require.Equal(t, "tok", cred.Token)
 	require.True(t, hadDeadline, "a resolution must be bounded, or a hung client hangs the LLM call")
 
-	// The session going away does end it.
-	closeSession()
+	// Session shutdown interrupts an in-flight lookup as well as future ones.
+	closeDuringResolve = true
+	_, err = resolve(t.Context())
+	require.ErrorIs(t, err, context.Canceled)
 	_, err = resolve(t.Context())
 	require.ErrorIs(t, err, context.Canceled)
 }

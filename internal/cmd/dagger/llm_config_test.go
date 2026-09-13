@@ -2,10 +2,15 @@ package daggercmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -116,6 +121,104 @@ func TestExplicitAuthTokenNotClobbered(t *testing.T) {
 	}
 	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "user-token" {
 		t.Errorf("refresher hook overwrote ANTHROPIC_AUTH_TOKEN with %q", got)
+	}
+}
+
+type oauthRefreshTestTransport func(*http.Request) (*http.Response, error)
+
+func (f oauthRefreshTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestOAuthRejectionRefreshesManagedCredential(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit=%t", explicit), func(t *testing.T) {
+			origRoot, origFile := llmconfig.ConfigRoot, llmconfig.ConfigFile
+			t.Cleanup(func() { llmconfig.ConfigRoot, llmconfig.ConfigFile = origRoot, origFile })
+			llmconfig.ConfigRoot = t.TempDir()
+			llmconfig.ConfigFile = filepath.Join(llmconfig.ConfigRoot, llmconfig.ConfigFileName)
+			for _, key := range []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN_EXPIRES_AT"} {
+				t.Setenv(key, "")
+				os.Unsetenv(key)
+			}
+			llmEnvMu.Lock()
+			origExports := llmEnvExports
+			llmEnvExports = map[string]string{}
+			llmEnvMu.Unlock()
+			t.Cleanup(func() {
+				llmEnvMu.Lock()
+				llmEnvExports = origExports
+				llmEnvMu.Unlock()
+			})
+
+			var grants int
+			origTransport := http.DefaultTransport
+			t.Cleanup(func() { http.DefaultTransport = origTransport })
+			http.DefaultTransport = oauthRefreshTestTransport(func(req *http.Request) (*http.Response, error) {
+				var body string
+				switch req.URL.Path {
+				case "/v1/oauth/token":
+					var grant struct {
+						RefreshToken string `json:"refresh_token"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&grant); err != nil {
+						return nil, err
+					}
+					if grant.RefreshToken != "rt-0" {
+						return nil, errors.New("refresh grant was spent more than once")
+					}
+					grants++
+					body = `{"access_token":"refreshed-token","refresh_token":"rt-1","expires_in":3600}`
+				case "/api/oauth/profile":
+					body = `{}`
+				default:
+					return nil, fmt.Errorf("unexpected OAuth request path: %s", req.URL.Path)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+			})
+			cfg := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+				"anthropic": {
+					AuthType: "oauth", AuthToken: "rejected-token", RefreshToken: "rt-0",
+					TokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(), Enabled: true,
+				},
+			}}}
+			if err := cfg.Save(); err != nil {
+				t.Fatal(err)
+			}
+			applyLLMConfigEnv()
+			if grants != 0 {
+				t.Fatal("unexpired credential was refreshed at startup")
+			}
+			if explicit {
+				t.Setenv("ANTHROPIC_AUTH_TOKEN", "user-override")
+			}
+			rejected := fmt.Sprintf("%x", sha256.Sum256([]byte(os.Getenv("ANTHROPIC_AUTH_TOKEN"))))
+			ctx := secretprovider.ContextWithRejectedEnvValue(t.Context(), rejected)
+			resolve, name, err := secretprovider.ResolverForID("env://ANTHROPIC_AUTH_TOKEN")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				got, err := resolve(ctx, name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "refreshed-token"
+				if explicit {
+					want = "user-override"
+				}
+				if string(got) != want {
+					t.Fatalf("resolved credential = %q, want %q", got, want)
+				}
+			}
+			wantGrants := 1
+			if explicit {
+				wantGrants = 0
+			}
+			if grants != wantGrants {
+				t.Fatalf("refresh grants = %d, want %d", grants, wantGrants)
+			}
+		})
 	}
 }
 
