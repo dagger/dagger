@@ -41,8 +41,14 @@ type File struct {
 	storedDiagnostics *storedSnapshotDiagnostics
 	stored            *storedSnapshot
 	Lazy              Lazy[*File]
-	File              *LazyAccessor[string, *File]
-	Snapshot          *LazyAccessor[bkcache.ImmutableRef, *File]
+
+	// Keep the producer independently of the operational lazy pointer.
+	completedRecipe     Lazy[*File]
+	completedRecipeKind string
+	completedRecipeJSON json.RawMessage
+
+	File     *LazyAccessor[string, *File]
+	Snapshot *LazyAccessor[bkcache.ImmutableRef, *File]
 }
 
 func (*File) Type() *ast.Type {
@@ -127,6 +133,9 @@ func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
 		lazy := file.Lazy
 		if err := lazy.Evaluate(ctx, file); err != nil {
 			return err
+		}
+		if _, restored := lazy.(*FileRestoreLazy); !restored {
+			file.completedRecipe = lazy
 		}
 		if file.Lazy == lazy {
 			file.Lazy = nil
@@ -230,6 +239,20 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 	}
 	if identity, ok := file.snapshotIdentity(); ok {
 		payload.Form = persistedFileFormSnapshot
+		payload.LazyKind = file.completedRecipeKind
+		payload.LazyJSON = file.completedRecipeJSON
+		recipe := file.completedRecipe
+		if recipe == nil && file.Lazy != nil {
+			if _, restored := file.Lazy.(*FileRestoreLazy); !restored {
+				recipe = file.Lazy
+			}
+		}
+		if recipe != nil {
+			payload.LazyKind, payload.LazyJSON, err = encodePersistedFileLazy(ctx, enc, recipe)
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
@@ -286,6 +309,8 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 			return nil, err
 		}
 		file.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		file.completedRecipeKind = persisted.LazyKind
+		file.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
 		file.storedDiagnostics = newStoredSnapshotDiagnostics()
 		file.File.setValue(persisted.File)
 		file.Lazy = &FileRestoreLazy{LazyState: NewLazyState()}

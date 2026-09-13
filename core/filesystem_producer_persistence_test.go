@@ -1,0 +1,189 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/stretchr/testify/require"
+)
+
+// This adapter lets the actual selection producers stat a temporary tree.
+// Snapshot reopening and persistence still use the existing test manager.
+type producerTreeRef struct {
+	*cacheVolumeTestImmutableRef
+	root string
+}
+
+type producerTreeMount string
+
+func (r *producerTreeRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
+	return producerTreeMount(r.root), nil
+}
+
+func (m producerTreeMount) Mount() ([]mount.Mount, func() error, error) {
+	return []mount.Mount{{Type: "bind", Source: string(m)}}, func() error { return nil }, nil
+}
+
+func TestFilesystemCompletedProducerPersistence(t *testing.T) {
+	for _, kind := range []string{"Directory", "File", "Container.rootfs"} {
+		t.Run(kind, func(t *testing.T) {
+			env := newPersistedFamiliesTestEnv(t, "completed-filesystem")
+			ctx, cache, srv := env.open(t)
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "selected", "nested"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "selected", "nested", "name.txt"), []byte("saved producer\n"), 0o644))
+			source := containerPersistenceTestDirectory("producer-tree", "/selected")
+			source.Snapshot.setValue(&producerTreeRef{
+				cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "producer-tree", snapshotID: "producer-tree"},
+				root:                        root,
+			})
+			var parent, otherParent dagql.AnyResult
+			var value dagql.Typed
+			var wantKind, wantPath, wantInputPath string
+			if kind == "Container.rootfs" {
+				ctr := NewContainer(source.Platform)
+				ctr.FS.setValue(source)
+				parent = env.attach(t, ctx, cache, srv, "producer-parent", ctr)
+				otherParent = env.attach(t, ctx, cache, srv, "producer-other", NewContainer(source.Platform))
+				value = &Directory{
+					Platform: source.Platform,
+					Dir:      new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+					Lazy: &ContainerRootFSLazy{LazyState: NewLazyState(), Parent: parent.(dagql.ObjectResult[*Container])},
+				}
+				wantKind, wantPath = persistedDirectoryLazyKindContainerRootFS, "/selected"
+			} else {
+				parent = env.attach(t, ctx, cache, srv, "producer-parent", source)
+				otherParent = env.attach(t, ctx, cache, srv, "producer-other", containerPersistenceTestDirectory("other-tree", "/other"))
+				parentDir := parent.(dagql.ObjectResult[*Directory])
+				if kind == "Directory" {
+					var err error
+					value, err = source.Subdirectory(ctx, parentDir, "nested")
+					require.NoError(t, err)
+					wantKind, wantPath, wantInputPath = persistedDirectoryLazyKindSubdirectory, "/selected/nested", "nested"
+				} else {
+					var err error
+					value, err = source.Subfile(ctx, parentDir, "nested/name.txt")
+					require.NoError(t, err)
+					wantKind, wantPath, wantInputPath = persistedFileLazyKindDirectoryFile, "/selected/nested/name.txt", "nested/name.txt"
+				}
+			}
+			parentID, otherID := persistedRowID(t, cache, parent), persistedRowID(t, cache, otherParent)
+			child := env.attach(t, ctx, cache, srv, "producer-child", value)
+			pending := coreRelocationRecord(t, ctx, cache, child)
+			var pendingPayload persistedDirectoryPayload // File has the same producer fields.
+			require.NoError(t, json.Unmarshal(pending.Envelope.ObjectJSON, &pendingPayload))
+			require.NoError(t, cache.Evaluate(ctx, child))
+			path, err := storedSnapshotTestPath(ctx, child)
+			require.NoError(t, err)
+			require.Equal(t, wantPath, path)
+			require.False(t, dagql.HasPendingLazyEvaluation(child))
+			rec := coreRelocationRecord(t, ctx, cache, child)
+			var payload persistedDirectoryPayload
+			require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &payload))
+			require.Equal(t, "snapshot", payload.Form)
+			require.Equal(t, wantKind, payload.LazyKind)
+			require.JSONEq(t, string(pendingPayload.LazyJSON), string(payload.LazyJSON))
+			var producer struct {
+				ParentResultID uint64 `json:"parentResultID"`
+				Subdir         string `json:"subdir"`
+				Path           string `json:"path"`
+			}
+			require.NoError(t, json.Unmarshal(payload.LazyJSON, &producer))
+			require.Equal(t, parentID, producer.ParentResultID)
+			require.Equal(t, wantInputPath, producer.Subdir+producer.Path)
+			require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "producer-tree"}}, rec.SnapshotLinks)
+
+			if dir, ok := value.(*Directory); ok {
+				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another")
+				require.NoError(t, err)
+				require.Nil(t, derived.completedRecipe)
+				require.Empty(t, derived.completedRecipeJSON)
+				encoded, err := derived.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+				require.NoError(t, err)
+				var own persistedDirectoryPayload
+				require.NoError(t, json.Unmarshal(encoded.JSON, &own))
+				var op persistedDirectorySubdirectoryLazy
+				require.NoError(t, json.Unmarshal(own.LazyJSON, &op))
+				require.Equal(t, rec.ResultID, op.ParentResultID)
+				require.Equal(t, "another", op.Subdir)
+			}
+
+			opens := env.manager.openCount("producer-tree")
+			ctx, cache, srv = env.restart(t, ctx, cache)
+			assertParentsUnloaded := func() {
+				t.Helper()
+				found := 0
+				for _, row := range cache.DebugEGraphSnapshot().Results {
+					if row.SharedResultID == parentID || row.SharedResultID == otherID {
+						require.False(t, row.HasValue, "parent %d was decoded", row.SharedResultID)
+						found++
+					}
+				}
+				require.Equal(t, 2, found)
+			}
+			assertParentsUnloaded()
+			loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, rec.ResultID)
+			require.NoError(t, err)
+			path, err = storedSnapshotTestPath(ctx, loaded)
+			require.NoError(t, err)
+			require.Equal(t, wantPath, path)
+			require.Equal(t, opens, env.manager.openCount("producer-tree"))
+			assertParentsUnloaded()
+			enc := dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call)
+			assertEncoding := func() {
+				t.Helper()
+				encoded, err := loaded.Unwrap().(dagql.PersistedObject).EncodePersistedObject(ctx, enc)
+				require.NoError(t, err)
+				require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(encoded.JSON))
+				assertParentsUnloaded()
+			}
+			assertEncoding()
+			wantErr := errors.New("local snapshot unavailable")
+			env.manager.beforeOpen = func(context.Context, string) error { return wantErr }
+			require.ErrorIs(t, cache.Evaluate(ctx, loaded), wantErr)
+			assertEncoding()
+			env.manager.beforeOpen = nil
+			require.NoError(t, cache.Evaluate(ctx, loaded))
+			require.Equal(t, opens+2, env.manager.openCount("producer-tree"))
+			require.False(t, dagql.HasPendingLazyEvaluation(loaded))
+			assertEncoding()
+
+			reloc := &relocationVisitor{mapping: map[uint64]uint64{rec.ResultID: rec.ResultID, parentID: otherID}}
+			out, err := dagql.VisitEncodedReferences(rec, reloc.visit)
+			require.NoError(t, err)
+			require.Equal(t, map[string]uint64{"objectJSON.lazyJSON.parentResultID": parentID}, reloc.childIDs())
+			var relocated persistedDirectoryPayload
+			require.NoError(t, json.Unmarshal(out.Envelope.ObjectJSON, &relocated))
+			require.NoError(t, json.Unmarshal(relocated.LazyJSON, &producer))
+			require.Equal(t, otherID, producer.ParentResultID)
+			codec := loaded.Unwrap().(dagql.PersistedObjectDecoder)
+			decoded, err := codec.DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, out.ResultID, out.Call), out.Envelope.ObjectJSON)
+			require.NoError(t, err)
+			again, err := decoded.(dagql.PersistedObject).EncodePersistedObject(ctx, enc)
+			require.NoError(t, err)
+			require.JSONEq(t, string(out.Envelope.ObjectJSON), string(again.JSON))
+			assertParentsUnloaded()
+
+			// Preserve the type-specific path while removing only producer fields.
+			var old map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &old))
+			delete(old, "lazyKind")
+			delete(old, "lazyJSON")
+			oldJSON, err := json.Marshal(old)
+			require.NoError(t, err)
+			decoded, err = codec.DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, rec.ResultID, rec.Call), oldJSON)
+			require.NoError(t, err)
+			again, err = decoded.(dagql.PersistedObject).EncodePersistedObject(ctx, enc)
+			require.NoError(t, err)
+			require.JSONEq(t, string(oldJSON), string(again.JSON))
+			assertParentsUnloaded()
+		})
+	}
+}

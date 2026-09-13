@@ -316,9 +316,6 @@ var persistedDirectoryVisitor = persistedStructVisitor(dagql.PersistedRefOutputR
 	if err := w.services("services", p.Services); err != nil {
 		return err
 	}
-	if p.Form != persistedDirectoryFormLazy {
-		return nil
-	}
 	return visitPersistedLazyKind(w, "lazyJSON", p.LazyKind, &p.LazyJSON, persistedDirectoryLazyVisitors, "directory")
 })
 
@@ -326,15 +323,12 @@ var persistedFileVisitor = persistedStructVisitor(dagql.PersistedRefOutputRole, 
 	if err := w.services("services", p.Services); err != nil {
 		return err
 	}
-	if p.Form != persistedFileFormLazy {
-		return nil
-	}
 	return visitPersistedLazyKind(w, "lazyJSON", p.LazyKind, &p.LazyJSON, persistedFileLazyVisitors, "file")
 })
 
 // persistedContainerVisitor walks metadata references, per-part service
-// bindings and, for a pending recipe, the payload selected by the recorded
-// call's field, which container decode also dispatches on.
+// bindings and producer payloads selected by the recorded call's field,
+// which pending container decode also dispatches on.
 var persistedContainerVisitor = persistedPayloadVisitorFunc(func(v dagql.PersistedPayloadVisit, visit dagql.PersistedRefVisitor) (json.RawMessage, error) {
 	if err := newPersistedRefWalker(visit, v.Path).roles(dagql.PersistedRefOutputRole, v.SnapshotLinks); err != nil {
 		return nil, err

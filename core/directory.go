@@ -50,8 +50,14 @@ type Directory struct {
 	storedDiagnostics *storedSnapshotDiagnostics
 	stored            *storedSnapshot
 	Lazy              Lazy[*Directory]
-	Dir               *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
-	Snapshot          *LazyAccessor[bkcache.ImmutableRef, *Directory]
+
+	// Keep the producer independently of the operational lazy pointer.
+	completedRecipe     Lazy[*Directory]
+	completedRecipeKind string
+	completedRecipeJSON json.RawMessage
+
+	Dir      *LazyAccessor[string, *Directory] // a selected subdir of the rootfs of the on-disk Result, if any
+	Snapshot *LazyAccessor[bkcache.ImmutableRef, *Directory]
 }
 
 func (*Directory) Type() *ast.Type {
@@ -138,6 +144,9 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 		lazy := dir.Lazy
 		if err := lazy.Evaluate(ctx, dir); err != nil {
 			return err
+		}
+		if _, restored := lazy.(*DirectoryRestoreLazy); !restored {
+			dir.completedRecipe = lazy
 		}
 		if dir.Lazy == lazy {
 			dir.Lazy = nil
@@ -245,6 +254,20 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 	}
 	if identity, ok := dir.snapshotIdentity(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
+		payload.LazyKind = dir.completedRecipeKind
+		payload.LazyJSON = dir.completedRecipeJSON
+		recipe := dir.completedRecipe
+		if recipe == nil && dir.Lazy != nil {
+			if _, restored := dir.Lazy.(*DirectoryRestoreLazy); !restored {
+				recipe = dir.Lazy
+			}
+		}
+		if recipe != nil {
+			payload.LazyKind, payload.LazyJSON, err = encodePersistedDirectoryLazy(ctx, enc, recipe)
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
@@ -307,6 +330,8 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 			return nil, err
 		}
 		dir.stored = &storedSnapshot{SnapshotID: link.RefKey}
+		dir.completedRecipeKind = persisted.LazyKind
+		dir.completedRecipeJSON = slices.Clone(persisted.LazyJSON)
 		dir.storedDiagnostics = newStoredSnapshotDiagnostics()
 		dir.Dir.setValue(persisted.Dir)
 		dir.Lazy = &DirectoryRestoreLazy{LazyState: NewLazyState()}
