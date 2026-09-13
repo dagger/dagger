@@ -76,7 +76,9 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			}
 			parentID, otherID := persistedRowID(t, cache, parent), persistedRowID(t, cache, otherParent)
 			child := env.attach(t, ctx, cache, srv, "producer-child", value)
-			pending := coreRelocationRecord(t, ctx, cache, child)
+			pending, err := cache.CapturePersistedRecord(ctx, child)
+			require.NoError(t, err)
+			require.True(t, dagql.HasPendingLazyEvaluation(child), "capture leaves the producer unstarted")
 			var pendingPayload persistedDirectoryPayload // File has the same producer fields.
 			require.NoError(t, json.Unmarshal(pending.Envelope.ObjectJSON, &pendingPayload))
 			require.NoError(t, cache.Evaluate(ctx, child))
@@ -84,7 +86,8 @@ func TestFilesystemCompletedProducerPersistence(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, wantPath, path)
 			require.False(t, dagql.HasPendingLazyEvaluation(child))
-			rec := coreRelocationRecord(t, ctx, cache, child)
+			rec, err := cache.CapturePersistedRecord(ctx, child)
+			require.NoError(t, err)
 			var payload persistedDirectoryPayload
 			require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &payload))
 			require.Equal(t, "snapshot", payload.Form)
