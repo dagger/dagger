@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 )
 
 //nolint:gocyclo // Independent restart subtests share engine fixtures; the metric counts their bodies together.
@@ -109,18 +110,11 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	}
 
 	type savedSnapshotRow struct {
-		ID      uint64 `json:"shared_result_id"`
-		Payload string `json:"payload_state"`
-		Call    *struct {
-			Field string `json:"field"`
-			Type  *struct {
-				Elem *struct {
-					NamedType string `json:"namedType"`
-				} `json:"elem"`
-			} `json:"type"`
-		} `json:"result_call"`
-		Links []struct{ RefKey, Role string } `json:"snapshot_links"`
-		Value *struct {
+		ID      uint64                          `json:"shared_result_id"`
+		Payload string                          `json:"payload_state"`
+		Call    *dagql.ResultCall               `json:"result_call"`
+		Links   []struct{ RefKey, Role string } `json:"snapshot_links"`
+		Value   *struct {
 			StoredSnapshotID string            `json:"storedSnapshotID"`
 			OpenSnapshotID   string            `json:"openSnapshotID"`
 			Counts           map[string]uint64 `json:"counts"`
@@ -174,6 +168,96 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		t.Logf("%s: %s", checkpoint, data)
 	}
+
+	t.Run("changeset merge producer survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "changeset-producer-" + identity.NewID()
+		opts := snapshotTestOptions(ctx, t)
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		base := a.Directory().WithNewFile("base.txt", "base")
+		ours := base.WithNewFile("ours.txt", "ours").Changes(base)
+		theirs := base.WithNewFile("theirs.txt", "theirs").Changes(base)
+		third := base.WithNewFile("third.txt", "third").Changes(base)
+		empty := base.Changes(base)
+		oursID, err := ours.ID(ctx)
+		require.NoError(t, err)
+		theirsID, err := theirs.ID(ctx)
+		require.NoError(t, err)
+		thirdID, err := third.ID(ctx)
+		require.NoError(t, err)
+		cases := []struct {
+			field  string
+			value  *dagger.Changeset
+			inputs []dagger.ID
+		}{
+			{"__mergeWithChangeset", ours.WithChangeset(theirs, dagger.ChangesetWithChangesetOpts{OnConflict: dagger.ChangesetMergeConflictFail}), []dagger.ID{theirsID}},
+			{"__mergeWithChangesets", ours.WithChangesets([]*dagger.Changeset{empty, theirs, empty, third}, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFail}), []dagger.ID{theirsID, thirdID}},
+		}
+		var savedIDs []dagger.ID
+		var afterIDs []dagger.ID
+		var beforeIDs []dagger.ID
+		for _, tc := range cases {
+			contents, err := tc.value.After().File("ours.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ours", contents)
+			contents, err = tc.value.After().File("theirs.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "theirs", contents)
+			if len(tc.inputs) == 2 {
+				contents, err = tc.value.After().File("third.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "third", contents)
+			}
+			id, err := tc.value.ID(ctx)
+			require.NoError(t, err)
+			savedIDs = append(savedIDs, id)
+			afterID, err := tc.value.After().ID(ctx)
+			require.NoError(t, err)
+			afterIDs = append(afterIDs, afterID)
+			beforeID, err := tc.value.Before().ID(ctx)
+			require.NoError(t, err)
+			beforeIDs = append(beforeIDs, beforeID)
+			frame := readSnapshotRows(ctx, t, c, upA)[snapshotResultID(t, string(afterID))].Call
+			require.NotNil(t, frame)
+			require.Equal(t, dagql.ResultCallKindField, frame.Kind)
+			require.Equal(t, tc.field, frame.Field)
+			require.NotNil(t, frame.Receiver)
+			require.Equal(t, snapshotResultID(t, string(oursID)), frame.Receiver.ResultID)
+			args := map[string]*dagql.ResultCallLiteral{}
+			for _, arg := range frame.Args {
+				args[arg.Name] = arg.Value
+			}
+			require.NotNil(t, args["onConflict"])
+			require.NotNil(t, args["changes"])
+			require.Equal(t, "FAIL", args["onConflict"].EnumValue)
+			inputs := args["changes"].ListItems
+			if len(tc.inputs) == 1 {
+				inputs = []*dagql.ResultCallLiteral{args["changes"]}
+			}
+			require.Len(t, inputs, len(tc.inputs))
+			for i, input := range inputs {
+				require.NotNil(t, input.ResultRef)
+				require.Equal(t, snapshotResultID(t, string(tc.inputs[i])), input.ResultRef.ResultID)
+			}
+		}
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		for i, id := range savedIDs {
+			restored := dagger.Ref[*dagger.Changeset](b, id)
+			afterID, err := restored.After().ID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, afterIDs[i], afterID)
+			beforeID, err := restored.Before().ID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, beforeIDs[i], beforeID)
+			contents, err := restored.After().File("theirs.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "theirs", contents)
+		}
+	})
 
 	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

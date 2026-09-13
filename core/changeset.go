@@ -1172,18 +1172,18 @@ func (proto ChangesetMergeConflict) ToLiteral() call.Literal {
 	return ChangesetMergeConflictEnum.Literal(proto)
 }
 
-// WithChangeset merges another changeset into this one using git-based 3-way merge.
+// MergeWithChangeset produces the merged directory using git-based 3-way merge.
 // The onConflictStrategy determines how conflicts are handled:
 //   - FailEarlyOnConflict: fail before merge if file-level conflicts are detected
 //   - FailOnConflict: attempt merge, fail if git merge fails
 //   - LeaveConflictMarkers: let git create conflict markers, keep modified for modify/delete
 //   - PreferOursOnConflict: use -X ours strategy
 //   - PreferTheirsOnConflict: use -X theirs strategy
-func (ch *Changeset) WithChangeset(
+func (ch *Changeset) MergeWithChangeset(
 	ctx context.Context,
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
-) (*Changeset, error) {
+) (*Directory, error) {
 	ourPaths, err := ch.ComputePaths(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("compute our paths: %w", err)
@@ -1199,7 +1199,7 @@ func (ch *Changeset) WithChangeset(
 		return nil, conflicts.Error()
 	}
 
-	before, err := mergeBeforeDirectories(ctx, ch, other)
+	before, err := MergeBeforeDirectories(ctx, ch, other)
 	if err != nil {
 		return nil, err
 	}
@@ -1223,7 +1223,7 @@ func (ch *Changeset) WithChangeset(
 		return nil, err
 	}
 
-	return newChangesetFromMerge(ctx, before, afterDir)
+	return afterDir, nil
 }
 
 // maxParallelChangesets bounds how many changesets are worked on at once.
@@ -1241,15 +1241,9 @@ func changesetJobs() parallel.Jobs {
 		WithLimit(maxParallelChangesets)
 }
 
-// WithChangesets merges multiple changesets into this one using git's octopus merge strategy.
-// The onConflictStrategy determines how conflicts are handled:
-//   - FailEarlyOnConflicts: fail before merge if file-level conflicts are detected
-//   - FailOnConflicts: attempt merge, fail if git merge fails
-func (ch *Changeset) WithChangesets(
-	ctx context.Context,
-	others []*Changeset,
-	onConflictStrategy WithChangesetsMergeConflict,
-) (*Changeset, error) {
+// FilterNonemptyChangesets keeps the effective merge inputs in their original
+// order, retaining the result handles used to record the Directory producer.
+func FilterNonemptyChangesets(ctx context.Context, others []dagql.ObjectResult[*Changeset]) ([]dagql.ObjectResult[*Changeset], error) {
 	// Before wasting any effort, remove any changesets that are empty.
 	//
 	// This asks ComputePaths rather than IsEmpty: every surviving changeset
@@ -1257,39 +1251,40 @@ func (ch *Changeset) WithChangesets(
 	// IsEmpty would mount and walk both trees all over again for each one. It
 	// also counts directory-only changes, which IsEmpty deliberately ignores
 	// the way `git diff --quiet` does.
-	filtered := make([]*Changeset, len(others))
+	keep := make([]bool, len(others))
 	jobs := changesetJobs()
 	for i, other := range others {
 		jobs = jobs.WithJob(fmt.Sprintf("changeset %d paths", i), func(ctx context.Context) error {
-			paths, err := other.ComputePaths(ctx)
+			paths, err := other.Self().ComputePaths(ctx)
 			if err != nil {
 				return fmt.Errorf("compute paths for changeset %d: %w", i, err)
 			}
-			if !changesetPathsEmpty(paths) {
-				filtered[i] = other
-			}
+			keep[i] = !changesetPathsEmpty(paths)
 			return nil
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	others = slices.DeleteFunc(filtered, func(cs *Changeset) bool { return cs == nil })
-
-	if len(others) == 0 {
-		return ch, nil
-	}
-
-	// Single element uses more efficient 2-way merge
-	if len(others) == 1 {
-		var twoWayStrategy WithChangesetMergeConflict
-		switch onConflictStrategy {
-		case FailEarlyOnConflicts:
-			twoWayStrategy = FailEarlyOnConflict
-		default:
-			twoWayStrategy = FailOnConflict
+	filtered := make([]dagql.ObjectResult[*Changeset], 0, len(others))
+	for i, other := range others {
+		if keep[i] {
+			filtered = append(filtered, other)
 		}
-		return ch.WithChangeset(ctx, others[0], twoWayStrategy)
+	}
+	return filtered, nil
+}
+
+// MergeWithChangesets produces the merged directory using git's octopus merge
+// strategy. Its caller has already filtered empty changesets before recording
+// the Directory-producing call.
+func (ch *Changeset) MergeWithChangesets(
+	ctx context.Context,
+	others []*Changeset,
+	onConflictStrategy WithChangesetsMergeConflict,
+) (*Directory, error) {
+	if len(others) < 2 {
+		return nil, fmt.Errorf("multi-changeset merge requires at least two changesets")
 	}
 
 	err := enginetel.Task(ctx, "checking pairwise conflicts", func(ctx context.Context) error {
@@ -1300,7 +1295,7 @@ func (ch *Changeset) WithChangesets(
 	}
 
 	before, err := enginetel.TaskRet(ctx, "merging before directories", func(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
-		return mergeBeforeDirectories(ctx, ch, others...)
+		return MergeBeforeDirectories(ctx, ch, others...)
 	})
 	if err != nil {
 		return nil, err
@@ -1339,14 +1334,12 @@ func (ch *Changeset) WithChangesets(
 		return nil, err
 	}
 
-	return enginetel.TaskRet(ctx, "new changeset from merge", func(ctx context.Context) (*Changeset, error) {
-		return newChangesetFromMerge(ctx, before, afterDir)
-	})
+	return afterDir, nil
 }
 
-// mergeBeforeDirectories merges the "before" directories from all changesets,
+// MergeBeforeDirectories merges the "before" directories from all changesets,
 // excluding .git since the merge process creates its own temporary .git directory.
-func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Changeset) (dagql.ObjectResult[*Directory], error) {
+func MergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Changeset) (dagql.ObjectResult[*Directory], error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*Directory]{}, err
@@ -1419,46 +1412,6 @@ func withDirectorySelector(dirID *call.ID) dagql.Selector {
 			{Name: "source", Value: dagql.NewID[*Directory](dirID)},
 		},
 	}
-}
-
-func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Directory], afterDir *Directory) (*Changeset, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	afterRef, _ := afterDir.Snapshot.Peek()
-	if afterRef == nil {
-		return nil, fmt.Errorf("evaluate merged directory snapshot: nil")
-	}
-	afterSelector, _ := afterDir.Dir.Peek()
-
-	after, err := dagql.NewObjectResultForCall(afterDir, srv, &dagql.ResultCall{
-		Kind:        dagql.ResultCallKindSynthetic,
-		Type:        dagql.NewResultCallType(afterDir.Type()),
-		SyntheticOp: "changeset_merge_output",
-		ImplicitInputs: []*dagql.ResultCallArg{
-			{
-				Name: "snapshotID",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: afterRef.SnapshotID(),
-				},
-			},
-			{
-				Name: "dir",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: afterSelector,
-				},
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create synthetic merged directory result: %w", err)
-	}
-
-	return NewChangeset(ctx, before, after)
 }
 
 func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Changeset) error {

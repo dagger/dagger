@@ -386,6 +386,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
+		dagql.NodeFunc("__mergeWithChangeset", s.changesetMergeWithChangeset).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Produce the directory obtained by merging another changeset.`),
+		dagql.NodeFunc("__mergeWithChangesets", s.changesetMergeWithChangesets).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Produce the directory obtained by merging two or more ordered, nonempty changesets.`),
 		dagql.NodeFunc("withChangesets", s.changesetWithChangesets).
 			IsPersistable().
 			// ensure we are not exposing this feature on engines < v0.15.0
@@ -1570,9 +1578,21 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 		return nil, err
 	}
 
-	onConflictStrategy := mergeConflictStrategyToCore(args.OnConflict)
-
-	return parent.Self().WithChangeset(ctx, change.Self(), onConflictStrategy)
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &after, dagql.Selector{
+		Field: "__mergeWithChangeset",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: args.Changes},
+			{Name: "onConflict", Value: args.OnConflict},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	before, err := core.MergeBeforeDirectories(ctx, parent.Self(), change.Self())
+	if err != nil {
+		return nil, err
+	}
+	return core.NewChangeset(ctx, before, after)
 }
 
 type changesetWithChangesetsArgs struct {
@@ -1586,6 +1606,75 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 		return nil, err
 	}
 
+	changes := make([]dagql.ObjectResult[*core.Changeset], len(args.Changes))
+	for i, changeID := range args.Changes {
+		change, err := changeID.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load changeset %d: %w", i, err)
+		}
+		changes[i] = change
+	}
+
+	changes, err = core.FilterNonemptyChangesets(ctx, changes)
+	if err != nil {
+		return nil, err
+	}
+	if len(changes) == 0 {
+		return parent.Self(), nil
+	}
+	changeIDs := make(dagql.ArrayInput[dagql.ID[*core.Changeset]], len(changes))
+	changeValues := make([]*core.Changeset, len(changes))
+	for i, change := range changes {
+		id, err := change.ID()
+		if err != nil {
+			return nil, err
+		}
+		changeIDs[i] = dagql.NewID[*core.Changeset](id)
+		changeValues[i] = change.Self()
+	}
+	if len(changes) == 1 {
+		onConflict := core.FailOnMergeConflict
+		if mergeConflictsStrategyToCore(args.OnConflict) == core.FailEarlyOnConflicts {
+			onConflict = core.FailEarlyOnMergeConflict
+		}
+		return s.changesetWithChangeset(ctx, parent, changesetWithChangesetArgs{
+			Changes: changeIDs[0], OnConflict: onConflict,
+		})
+	}
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &after, dagql.Selector{
+		Field: "__mergeWithChangesets",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: changeIDs},
+			{Name: "onConflict", Value: args.OnConflict},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	before, err := core.MergeBeforeDirectories(ctx, parent.Self(), changeValues...)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewChangeset(ctx, before, after)
+}
+
+func (s *directorySchema) changesetMergeWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Directory, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	change, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return parent.Self().MergeWithChangeset(ctx, change.Self(), mergeConflictStrategyToCore(args.OnConflict))
+}
+
+func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Directory, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	changes := make([]*core.Changeset, len(args.Changes))
 	for i, changeID := range args.Changes {
 		change, err := changeID.Load(ctx, srv)
@@ -1594,10 +1683,7 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 		}
 		changes[i] = change.Self()
 	}
-
-	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
-
-	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
+	return parent.Self().MergeWithChangesets(ctx, changes, mergeConflictsStrategyToCore(args.OnConflict))
 }
 
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
