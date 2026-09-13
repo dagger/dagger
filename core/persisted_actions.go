@@ -12,8 +12,7 @@ import (
 // terminal targets with their groups. Every payload carries one node table
 // shared by its members so parent sharing survives, and each group records
 // its exact bound workspace. Decoding restores data and references only: no
-// action runs and no terminal or service starts. The @agent middleware values
-// (Agent, AgentGroup) are deferred with the LLM conversation batch.
+// action runs and no terminal or service starts.
 
 type persistedCheckPayload struct {
 	NodeID        int    `json:"nodeID,omitempty"`

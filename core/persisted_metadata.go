@@ -12,9 +12,7 @@ import (
 
 // Codecs for ordinary metadata and report values that a module or core field
 // can return and that previously had no persisted representation. Plain data
-// members are inline; separately attached results are references. The LLM
-// conversation values (messages, content blocks, skills) are deferred to the
-// conversation batch and have no codec here.
+// members are inline; separately attached results are references.
 
 type persistedEnvVariablePayload struct {
 	Name  string `json:"name"`

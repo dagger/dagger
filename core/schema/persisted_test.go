@@ -97,8 +97,7 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 // source-backed reason. None of them is excluded inside a codec: an admitted
 // value of one of these types still fails the whole save, as it does today.
 var persistedSchemaExpectedWithoutCodec = []string{
-	// The @agent middleware values are deferred with the LLM conversation
-	// batch by the Human's scope reduction.
+	// These runtime and middleware values have no persisted representation.
 	"Agent(*core.Agent encode=false decode=false family=false)",
 	"AgentMessage(*core.AgentMessage encode=false decode=false family=false)",
 	"AgentMiddleware(*core.AgentMiddleware encode=false decode=false family=false)",
@@ -110,8 +109,7 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"EngineCache(*core.EngineCache encode=false decode=false family=false)",
 	"EngineCacheEntry(*core.EngineCacheEntry encode=false decode=false family=false)",
 	"EngineCacheEntrySet(*core.EngineCacheEntrySet encode=false decode=false family=false)",
-	// The complete LLM conversation and its message, block and skill values
-	// belong to the separately commissioned conversation batch.
+	// These conversation values have no persisted representation.
 	"LLM(*core.LLM encode=false decode=false family=false)",
 	"LLMContentBlock(*core.LLMContentBlock encode=false decode=false family=false)",
 	"LLMMessage(*core.LLMMessage encode=false decode=false family=false)",
