@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -95,6 +96,9 @@ type ContainerExecState struct {
 	ExecMD        *engineutil.ExecutionMetadata
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
+
+	// ExecMD changes during execution and retries. Persist the supplied input.
+	originalExecMD *engineutil.ExecutionMetadata
 }
 
 type ContainerExecLazy struct {
@@ -254,8 +258,21 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, enc *dagql.P
 		ParentResultID:        parentID,
 		ModuleContextResultID: moduleContextID,
 		Opts:                  lazy.State.Opts,
-		ExecMD:                lazy.State.ExecMD,
+		ExecMD:                lazy.State.originalExecMD,
 	})
+}
+
+// execMeta copies the metadata by value, but mutates HostAliases in place.
+func copyExecInputMetadata(input *engineutil.ExecutionMetadata) *engineutil.ExecutionMetadata {
+	if input == nil {
+		return nil
+	}
+	copy := *input
+	copy.HostAliases = maps.Clone(input.HostAliases)
+	for host, aliases := range copy.HostAliases {
+		copy.HostAliases[host] = slices.Clone(aliases)
+	}
+	return &copy
 }
 
 func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, container *Container) error {
@@ -1267,12 +1284,13 @@ func (container *Container) WithExec(
 	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          opts,
-		ExecMD:        execMD,
-		ModuleContext: moduleContext,
-		FunctionCall:  functionCall,
+		LazyState:      NewLazyState(),
+		Parent:         parent,
+		Opts:           opts,
+		ExecMD:         execMD,
+		ModuleContext:  moduleContext,
+		FunctionCall:   functionCall,
+		originalExecMD: copyExecInputMetadata(execMD),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -2394,11 +2412,12 @@ func decodePersistedContainerExecLazy(
 		return nil, err
 	}
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          persisted.Opts,
-		ExecMD:        persisted.ExecMD,
-		ModuleContext: moduleContext,
+		LazyState:      NewLazyState(),
+		Parent:         parent,
+		Opts:           persisted.Opts,
+		ExecMD:         persisted.ExecMD,
+		ModuleContext:  moduleContext,
+		originalExecMD: copyExecInputMetadata(persisted.ExecMD),
 	}
 	return &ContainerExecLazy{State: state}, nil
 }
