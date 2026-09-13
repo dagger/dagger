@@ -17,6 +17,7 @@ type workspaceWithCommitArgs struct {
 	Date        string
 	AuthorName  dagql.Optional[dagql.String]
 	AuthorEmail dagql.Optional[dagql.String]
+	Signoff     bool `default:"false"`
 }
 
 type workspaceCommitOpts struct {
@@ -26,7 +27,7 @@ type workspaceCommitOpts struct {
 
 func (args workspaceWithCommitArgs) opts(ws *core.Workspace) (workspaceCommitOpts, error) {
 	opts := workspaceCommitOpts{GitCommitOpts: core.GitCommitOpts{
-		Message: args.Message, Date: args.Date,
+		Message: args.Message, Date: args.Date, Signoff: args.Signoff,
 		AuthorName: args.AuthorName.Value.String(), AuthorEmail: args.AuthorEmail.Value.String(),
 	}}
 	if _, err := time.Parse(time.RFC3339, args.Date); err != nil {
@@ -68,6 +69,7 @@ func (args workspaceWithCommitArgs) selectors() []dagql.NamedInput {
 		{Name: "paths", Value: paths},
 		{Name: "authorName", Value: args.AuthorName},
 		{Name: "authorEmail", Value: args.AuthorEmail},
+		{Name: "signoff", Value: dagql.NewBoolean(args.Signoff)},
 	}
 }
 
@@ -150,7 +152,7 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
-	commitArgs := gitRefWithCommitArgs{Changes: dagql.NewID[*core.Changeset](changesID), Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail}
+	commitArgs := gitRefWithCommitArgs{Changes: dagql.NewID[*core.Changeset](changesID), Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
 	var committed dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, frozen, &committed, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
 		return inst, err

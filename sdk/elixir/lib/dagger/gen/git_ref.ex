@@ -235,7 +235,8 @@ defmodule Dagger.GitRef do
           {:committer_name, String.t() | nil},
           {:committer_email, String.t() | nil},
           {:committer_date, String.t() | nil},
-          {:allow_empty, boolean() | nil}
+          {:allow_empty, boolean() | nil},
+          {:signoff, boolean() | nil}
         ]) :: Dagger.GitRef.t()
   def with_commit(
         %__MODULE__{} = git_ref,
@@ -258,6 +259,7 @@ defmodule Dagger.GitRef do
       |> QB.maybe_put_arg("committerEmail", optional_args[:committer_email])
       |> QB.maybe_put_arg("committerDate", optional_args[:committer_date])
       |> QB.maybe_put_arg("allowEmpty", optional_args[:allow_empty])
+      |> QB.maybe_put_arg("signoff", optional_args[:signoff])
 
     %Dagger.GitRef{
       query_builder: query_builder,

@@ -193,6 +193,64 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	require.Equal(t, headBefore, git("rev-parse", "HEAD"))
 }
 
+func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	git("config", "user.name", "Inherited Author")
+	git("config", "user.email", "inherited@example.com")
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	ws := c.CurrentWorkspace().WithNewFile("base.txt", "changed")
+	const message = "subject\n\nCommit body."
+
+	t.Run("does not sign off by default", func(ctx context.Context, t *testctx.T) {
+		got, err := ws.WithCommit(message, workspaceCommitDate).Git().Head().TargetCommit().Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, message, strings.TrimSpace(got))
+	})
+
+	for _, tc := range []struct {
+		name        string
+		opts        dagger.WorkspaceWithCommitOpts
+		authorName  string
+		authorEmail string
+	}{
+		{
+			name:       "inherited identity",
+			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true},
+			authorName: "Inherited Author", authorEmail: "inherited@example.com",
+		},
+		{
+			name:       "explicit identity",
+			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author", AuthorEmail: "explicit@example.com"},
+			authorName: "Explicit Author", authorEmail: "explicit@example.com",
+		},
+		{
+			name:       "explicit name with inherited email",
+			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author"},
+			authorName: "Explicit Author", authorEmail: "inherited@example.com",
+		},
+		{
+			name:       "inherited name with explicit email",
+			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorEmail: "explicit@example.com"},
+			authorName: "Inherited Author", authorEmail: "explicit@example.com",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			id, err := ws.WithCommit(message, workspaceCommitDate, tc.opts).ID(ctx)
+			require.NoError(t, err)
+			meta := dagger.Ref[*dagger.Workspace](c, id).Git().Head().TargetCommit()
+			got, err := meta.Message(ctx)
+			require.NoError(t, err)
+			require.Equal(t, message+"\n\nSigned-off-by: "+tc.authorName+" <"+tc.authorEmail+">", strings.TrimSpace(got))
+			name, err := meta.AuthorName(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.authorName, name)
+			email, err := meta.AuthorEmail(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.authorEmail, email)
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))

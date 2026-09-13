@@ -35,6 +35,8 @@ type GitCommitOpts struct {
 	CommitterEmail string
 	CommitterDate  string
 	AllowEmpty     bool
+	// Signoff adds a Signed-off-by trailer using the author identity.
+	Signoff bool
 }
 
 // GitCommitChangeset records already-reconciled changes in a scratch copy of
@@ -110,11 +112,17 @@ func GitCommitChangeset(
 		if strings.TrimSpace(staged) == "" && !opts.AllowEmpty {
 			return ErrNothingToCommit
 		}
-		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, env,
+		args := []string{
 			"-c", "commit.gpgsign=false",
 			"-c", "core.hooksPath=/dev/null",
 			"commit", "--allow-empty", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message,
-		); err != nil {
+		}
+		if opts.Signoff {
+			// git commit --signoff uses the committer, which may differ from
+			// the author. Supply the author trailer explicitly instead.
+			args = append(args, "--trailer", fmt.Sprintf("Signed-off-by: %s <%s>", opts.AuthorName, opts.AuthorEmail))
+		}
+		if _, err := runWorkspaceCommitGit(ctx, ws.workDir, env, args...); err != nil {
 			return err
 		}
 		return normalizeGitDirAfterCommit(ctx, ws.workDir)
