@@ -131,6 +131,11 @@ type Container struct {
 	// into schema children. Accessors hold only values opened in this process.
 	storedParts map[dagql.PartKey]containerStoredPart
 
+	// Keep producer inputs after Lazy clears. Completed rows restored from disk
+	// keep bytes so loading their value does not decode the producer's parents.
+	completedRecipe     Lazy[*Container]
+	completedRecipeJSON json.RawMessage
+
 	// lazyOpMu orders the op-pointer reads that no group-state guard
 	// covers (the resolution-phase read and the direct narrow force,
 	// which run before any group state is consulted) against the refined
@@ -1537,7 +1542,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	var recipe Lazy[*Container]
-	if len(envelope.LazyJSON) != 0 {
+	pending := !envelope.Metadata.Consumed
+	for _, part := range envelope.Parts {
+		pending = pending || part.Kind == containerPartPending
+	}
+	if !pending {
+		container.completedRecipeJSON = slices.Clone(envelope.LazyJSON)
+	} else if len(envelope.LazyJSON) != 0 {
 		if dec.Call() == nil {
 			return nil, fmt.Errorf("decode persisted container: missing call for recipe")
 		}

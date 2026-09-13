@@ -43,7 +43,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	lazy := container.lazyOpForRouting()
+	lazy, completedRecipe, recipeJSON := container.lazyOpsForPersistence()
 	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -56,26 +56,38 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputed(ctx, lazy, ContainerPartMetadata), Value: metadata},
 		Parts:    parts,
 	}
-	if pending {
-		if restore, ok := lazy.(*ContainerRestoreLazy); ok {
-			lazy = restore.recipe
-		}
-		if lazy == nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
-		}
-		payload.LazyJSON, err = lazy.EncodePersisted(ctx, enc)
+	recipe := lazy
+	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
+		recipe = restore.recipe
+	}
+	if !pending && recipe == nil {
+		recipe = completedRecipe
+	}
+	if pending && recipe == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
+	}
+	if recipe != nil {
+		payload.LazyJSON, err = recipe.EncodePersisted(ctx, enc)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
-		if len(payload.LazyJSON) == 0 {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
-		}
+	} else {
+		payload.LazyJSON = recipeJSON
+	}
+	if pending && len(payload.LazyJSON) == 0 {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
 	}
 	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+}
+
+func (container *Container) lazyOpsForPersistence() (Lazy[*Container], Lazy[*Container], json.RawMessage) {
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	return container.Lazy, container.completedRecipe, container.completedRecipeJSON
 }
 
 func containerStoredOpenGroup(part dagql.PartKey) dagql.LazyGroupKey {

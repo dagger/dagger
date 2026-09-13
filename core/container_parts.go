@@ -345,6 +345,13 @@ func (container *Container) lazyOpForRouting() Lazy[*Container] {
 // LazyMu, then lazyOpMu, one way).
 func (container *Container) consumeLazyOp() {
 	container.lazyOpMu.Lock()
+	recipe := container.Lazy
+	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
+		recipe = restore.recipe
+	}
+	if recipe != nil {
+		container.completedRecipe = recipe
+	}
 	container.Lazy = nil
 	container.lazyOpMu.Unlock()
 }
