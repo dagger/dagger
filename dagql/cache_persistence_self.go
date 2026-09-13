@@ -114,7 +114,9 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 			}
 		}
 	}
-	return encodePersistedResultEnvelope(ctx, NewPersistEncodeContext(cache, resultID, frame), res, true)
+	enc := NewPersistEncodeContext(cache, resultID, frame)
+	enc.quiescent, _ = ctx.Value(quiescentPersistKey{}).(bool)
+	return encodePersistedResultEnvelope(ctx, enc, res, true)
 }
 
 func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {

@@ -43,7 +43,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	unlock, err := container.lockForPersistence()
+	unlock, err := container.lockForPersistence(enc.Quiescent())
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
@@ -93,14 +93,12 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 // have a dagql attempt. LazyMu prevents whole-op bodies and new group runners;
 // each registered group's mutex excludes runners that already passed LazyMu.
 // No evaluation is started, and sibling groups still run in parallel normally.
-func (container *Container) lockForPersistence() (func(), error) {
-	container.lazyOpMu.Lock()
-	defer container.lazyOpMu.Unlock()
-	lazy := container.Lazy
+func (container *Container) lockForPersistence(quiescent bool) (func(), error) {
+	lazy, completedRecipe, _ := container.lazyOpsForPersistence()
 	if lazy == nil {
 		// An unrefined body may have cleared Lazy before returning. Its
 		// retained producer still carries the latch held by that body.
-		lazy = container.completedRecipe
+		lazy = completedRecipe
 	}
 	if lazy == nil {
 		return func() {}, nil
@@ -113,9 +111,16 @@ func (container *Container) lockForPersistence() (func(), error) {
 	if state == nil || state.LazyMu == nil {
 		return nil, fmt.Errorf("encode persisted container: missing lazy mutex for %T", lazy)
 	}
-	// Evaluation can take lazyOpMu under LazyMu when consuming the op.
-	// Only try-lock in this inverse order; never wait while holding lazyOpMu.
-	if !state.LazyMu.TryLock() {
+	// The op is only cleared after publication, never replaced, and restore
+	// wrappers share their recipe's state. Drop lazyOpMu before acquiring
+	// LazyMu: consumption takes those locks in the opposite order.
+	if quiescent {
+		// Operations have drained; a diagnostic reader may still briefly
+		// hold this latch. Waiting preserves ordinary shutdown persistence.
+		state.LazyMu.Lock()
+	} else if !state.LazyMu.TryLock() {
+		// Live capture may hold the cache's lazy lock, so it must not wait
+		// for a whole-op body that could itself need the cache.
 		return nil, fmt.Errorf("%w: container lazy state in use", dagql.ErrPersistStateNotReady)
 	}
 	locked := make([]*lazyGroupOnce, 0, len(state.groups))

@@ -25,17 +25,27 @@ import (
 // original handle or recipe form. Neither operation establishes value
 // equality; both only describe references the row already owns.
 type PersistEncodeContext struct {
-	cache    PersistedObjectCache
-	resultID uint64
-	call     *ResultCall
-	path     PersistedRefPath
+	cache     PersistedObjectCache
+	resultID  uint64
+	call      *ResultCall
+	path      PersistedRefPath
+	quiescent bool
 }
+
+type quiescentPersistKey struct{}
 
 // NewPersistEncodeContext returns an encode context for one owner row. cache
 // may be nil for detached encoding, in which case every ResultRef fails: a
 // detached codec cannot describe row references.
 func NewPersistEncodeContext(cache PersistedObjectCache, resultID uint64, call *ResultCall) *PersistEncodeContext {
 	return &PersistEncodeContext{cache: cache, resultID: resultID, call: call}
+}
+
+// Quiescent reports whether the shutdown persister is encoding after cache
+// operations drained. Codecs may wait for transient read-only latch holders
+// in this case. Live capture and detached encoding must not wait for bodies.
+func (enc *PersistEncodeContext) Quiescent() bool {
+	return enc != nil && enc.quiescent
 }
 
 // ResultID is the row being encoded, or zero for a detached (inline) value.
@@ -102,9 +112,10 @@ func (enc *PersistEncodeContext) SnapshotRole(role, refKey string) (PersistedSna
 // item returns the context for an inline list item of this row.
 func (enc *PersistEncodeContext) item(itemCall *ResultCall, index int) *PersistEncodeContext {
 	return &PersistEncodeContext{
-		cache: enc.Cache(),
-		call:  itemCall,
-		path:  enc.path.Field("items").Index(index),
+		cache:     enc.Cache(),
+		call:      itemCall,
+		path:      enc.path.Field("items").Index(index),
+		quiescent: enc.Quiescent(),
 	}
 }
 

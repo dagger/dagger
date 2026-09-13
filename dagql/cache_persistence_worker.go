@@ -477,6 +477,10 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	if snapshot == nil {
 		return PersistedResultEncoding{}, fmt.Errorf("persist result envelope: nil snapshot")
 	}
+	// Shutdown has drained cache operations, but diagnostic readers can still
+	// briefly hold object latches. This permission belongs only to the persister,
+	// never to live capture through the same codec.
+	ctx = context.WithValue(ctx, quiescentPersistKey{}, true)
 	if !snapshot.hasValue || snapshot.self == nil {
 		// A row without a value is an attached absent value: it keeps its
 		// identity and recorded call so restart restores the same row. The
