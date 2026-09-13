@@ -519,6 +519,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         ?array $paths = [],
         ?string $authorName = null,
         ?string $authorEmail = null,
+        ?bool $signoff = false,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
         $innerQueryBuilder->setArgument('message', $message);
@@ -531,6 +532,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $authorEmail) {
         $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
+        if (null !== $signoff) {
+        $innerQueryBuilder->setArgument('signoff', $signoff);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

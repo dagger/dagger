@@ -8917,6 +8917,7 @@ class GitRef(Type):
         committer_email: str | None = None,
         committer_date: str | None = None,
         allow_empty: bool | None = False,
+        signoff: bool | None = False,
     ) -> Self:
         """Create a single-parent commit on this ref by applying a changeset's
         edits.
@@ -8951,6 +8952,9 @@ class GitRef(Type):
         allow_empty:
             Allow a commit whose tree matches its parent, including when the
             supplied edits are already present. Defaults to false.
+        signoff:
+            Add a Signed-off-by trailer using the commit author's name and
+            email.
         """
         _args = [
             Arg("changes", changes),
@@ -8962,6 +8966,7 @@ class GitRef(Type):
             Arg("committerEmail", committer_email, None),
             Arg("committerDate", committer_date, None),
             Arg("allowEmpty", allow_empty, False),
+            Arg("signoff", signoff, False),
         ]
         _ctx = self._select("withCommit", _args)
         return GitRef(_ctx)
@@ -16410,6 +16415,7 @@ class Workspace(Type):
         paths: list[str] | None = None,
         author_name: str | None = None,
         author_email: str | None = None,
+        signoff: bool | None = False,
     ) -> Self:
         """Create a Git commit from this workspace's uncommitted changes and
         return a stable workspace with HEAD advanced.
@@ -16440,6 +16446,9 @@ class Workspace(Type):
             Author and committer email. Defaults to git config user.email in
             the calling client's working directory, otherwise
             dagger@localhost.
+        signoff:
+            Add a Signed-off-by trailer using the commit author's name and
+            email.
         """
         _args = [
             Arg("message", message),
@@ -16447,6 +16456,7 @@ class Workspace(Type):
             Arg("paths", [] if paths is None else paths, []),
             Arg("authorName", author_name, None),
             Arg("authorEmail", author_email, None),
+            Arg("signoff", signoff, False),
         ]
         _ctx = self._select("withCommit", _args)
         return Workspace(_ctx)

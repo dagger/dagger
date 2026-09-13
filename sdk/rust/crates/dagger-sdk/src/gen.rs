@@ -8962,6 +8962,9 @@ pub struct GitRefWithCommitOpts<'a> {
     /// Committer name. Defaults to authorName.
     #[builder(setter(into, strip_option), default)]
     pub committer_name: Option<&'a str>,
+    /// Add a Signed-off-by trailer using the commit author's name and email.
+    #[builder(setter(into, strip_option), default)]
+    pub signoff: Option<bool>,
 }
 impl IntoID<Id> for GitRef {
     fn into_id(
@@ -9290,6 +9293,9 @@ impl GitRef {
         }
         if let Some(allow_empty) = opts.allow_empty {
             query = query.arg("allowEmpty", allow_empty);
+        }
+        if let Some(signoff) = opts.signoff {
+            query = query.arg("signoff", signoff);
         }
         GitRef {
             proc: self.proc.clone(),
@@ -15833,6 +15839,9 @@ pub struct WorkspaceWithCommitOpts<'a> {
     /// Literal paths relative to the workspace cwd. Empty commits everything. Renames must include both paths.
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
+    /// Add a Signed-off-by trailer using the commit author's name and email.
+    #[builder(setter(into, strip_option), default)]
+    pub signoff: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithCommitsFromOpts<'a> {
@@ -16857,6 +16866,9 @@ impl Workspace {
         }
         if let Some(author_email) = opts.author_email {
             query = query.arg("authorEmail", author_email);
+        }
+        if let Some(signoff) = opts.signoff {
+            query = query.arg("signoff", signoff);
         }
         Workspace {
             proc: self.proc.clone(),

@@ -294,6 +294,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("committerEmail").Doc("Committer email. Defaults to authorEmail."),
 				dagql.Arg("committerDate").Doc("RFC3339 committer date. Defaults to date."),
 				dagql.Arg("allowEmpty").Doc("Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false."),
+				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
 			),
 		dagql.NodeFunc("__withCommitDirectory", s.gitRefWithCommitDirectory).
 			View(AfterVersion("v1.0.0-0")).

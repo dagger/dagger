@@ -646,7 +646,8 @@ defmodule Dagger.Workspace do
   @spec with_commit(t(), String.t(), String.t(), [
           {:paths, [String.t()]},
           {:author_name, String.t() | nil},
-          {:author_email, String.t() | nil}
+          {:author_email, String.t() | nil},
+          {:signoff, boolean() | nil}
         ]) :: Dagger.Workspace.t()
   def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
     query_builder =
@@ -657,6 +658,7 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("paths", optional_args[:paths])
       |> QB.maybe_put_arg("authorName", optional_args[:author_name])
       |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+      |> QB.maybe_put_arg("signoff", optional_args[:signoff])
 
     %Dagger.Workspace{
       query_builder: query_builder,

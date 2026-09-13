@@ -1966,6 +1966,11 @@ export type GitRefWithCommitOpts = {
    * Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
    */
   allowEmpty?: boolean
+
+  /**
+   * Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  signoff?: boolean
 }
 
 export type GitRepositoryAsWorkspaceOpts = {
@@ -3485,6 +3490,11 @@ export type WorkspaceWithCommitOpts = {
    * Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
    */
   authorEmail?: string
+
+  /**
+   * Add a Signed-off-by trailer using the commit author's name and email.
+   */
+  signoff?: boolean
 }
 
 export type WorkspaceWithCommitsFromOpts = {
@@ -10247,6 +10257,7 @@ export class GitRef extends BaseClient {
    * @param opts.committerEmail Committer email. Defaults to authorEmail.
    * @param opts.committerDate RFC3339 committer date. Defaults to date.
    * @param opts.allowEmpty Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+   * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
    */
   withCommit = (
     changes: Changeset,
@@ -16332,6 +16343,7 @@ export class Workspace extends BaseClient {
    * @param opts.date RFC3339 author and committer date. Required for reproducible commits.
    * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
    * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+   * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
    */
   withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
     const ctx = this._ctx.select("withCommit", { message, ...opts })

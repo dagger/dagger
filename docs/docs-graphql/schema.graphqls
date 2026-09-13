@@ -3433,6 +3433,9 @@ type GitRef implements Node {
     Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
     """
     allowEmpty: Boolean = false
+
+    """Add a Signed-off-by trailer using the commit author's name and email."""
+    signoff: Boolean = false
   ): GitRef!
 }
 
@@ -6270,6 +6273,9 @@ type Workspace implements Node {
     client's working directory, otherwise dagger@localhost.
     """
     authorEmail: String
+
+    """Add a Signed-off-by trailer using the commit author's name and email."""
+    signoff: Boolean = false
   ): Workspace!
 
   """
