@@ -78,6 +78,24 @@ func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
 		require.Equal(t, []string{parentSHA}, parents)
 	})
 
+	t.Run("does not sign off by default", func(ctx context.Context, t *testctx.T) {
+		message, err := result.TargetCommit().Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edit", strings.TrimSpace(message))
+	})
+
+	t.Run("signs off as author not committer", func(ctx context.Context, t *testctx.T) {
+		signed := commit(ours, changes, dagger.GitRefWithCommitOpts{
+			Signoff: true, CommitterName: "Committer", CommitterEmail: "committer@example.com",
+		})
+		message, err := signed.TargetCommit().Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edit\n\nSigned-off-by: Author <author@example.com>", strings.TrimSpace(message))
+		committer, err := signed.TargetCommit().CommitterName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Committer", committer)
+	})
+
 	t.Run("rejects conflicting edits", func(ctx context.Context, t *testctx.T) {
 		conflicting := before.WithNewFile("file.txt", strings.Replace(baseText, "one", "CONFLICT", 1)).Changes(before)
 		_, err := commit(ours, conflicting).CommitSHA(ctx)

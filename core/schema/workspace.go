@@ -102,6 +102,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
 				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
 				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
+				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
 			),
 		dagql.NodeFunc("withReset", s.withReset).
 			View(AfterVersion("v1.0.0-0")).

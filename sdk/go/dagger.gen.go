@@ -9702,6 +9702,8 @@ type GitRefWithCommitOpts struct {
 	CommitterDate string
 	// Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
 	AllowEmpty bool
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
 }
 
 // Create a single-parent commit on this ref by applying a changeset's edits.
@@ -9728,6 +9730,10 @@ func (r *GitRef) WithCommit(changes *Changeset, message string, date string, aut
 		// `allowEmpty` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AllowEmpty) {
 			q = q.Arg("allowEmpty", opts[i].AllowEmpty)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
 		}
 	}
 	q = q.Arg("changes", changes)
@@ -18199,6 +18205,8 @@ type WorkspaceWithCommitOpts struct {
 	AuthorName string
 	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
 	AuthorEmail string
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
 }
 
 // Create a Git commit from this workspace's uncommitted changes and return a stable workspace with HEAD advanced.
@@ -18220,6 +18228,10 @@ func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWit
 		// `authorEmail` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
 			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
 		}
 	}
 	q = q.Arg("message", message)

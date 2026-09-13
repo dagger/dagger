@@ -178,6 +178,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         ?string $committerEmail = null,
         ?string $committerDate = null,
         ?bool $allowEmpty = false,
+        ?bool $signoff = false,
     ): GitRef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
         $innerQueryBuilder->setArgument('changes', $changes);
@@ -196,6 +197,9 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $allowEmpty) {
         $innerQueryBuilder->setArgument('allowEmpty', $allowEmpty);
+        }
+        if (null !== $signoff) {
+        $innerQueryBuilder->setArgument('signoff', $signoff);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

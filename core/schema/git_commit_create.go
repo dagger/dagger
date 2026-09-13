@@ -20,10 +20,11 @@ type gitRefWithCommitArgs struct {
 	CommitterEmail dagql.Optional[dagql.String]
 	CommitterDate  dagql.Optional[dagql.String]
 	AllowEmpty     bool `default:"false"`
+	Signoff        bool `default:"false"`
 }
 
 func (args gitRefWithCommitArgs) opts() (core.GitCommitOpts, error) {
-	opts := core.GitCommitOpts{Message: args.Message, Date: args.Date, AuthorName: args.AuthorName, AuthorEmail: args.AuthorEmail, AllowEmpty: args.AllowEmpty,
+	opts := core.GitCommitOpts{Message: args.Message, Date: args.Date, AuthorName: args.AuthorName, AuthorEmail: args.AuthorEmail, AllowEmpty: args.AllowEmpty, Signoff: args.Signoff,
 		CommitterName: args.AuthorName, CommitterEmail: args.AuthorEmail, CommitterDate: args.Date}
 	if args.CommitterName.Valid {
 		opts.CommitterName = args.CommitterName.Value.String()
@@ -58,6 +59,7 @@ func (args gitRefWithCommitArgs) selectors() []dagql.NamedInput {
 		{Name: "changes", Value: args.Changes}, {Name: "message", Value: dagql.NewString(args.Message)},
 		{Name: "date", Value: dagql.NewString(args.Date)}, {Name: "authorName", Value: dagql.NewString(args.AuthorName)}, {Name: "authorEmail", Value: dagql.NewString(args.AuthorEmail)},
 		{Name: "committerName", Value: args.CommitterName}, {Name: "committerEmail", Value: args.CommitterEmail}, {Name: "committerDate", Value: args.CommitterDate}, {Name: "allowEmpty", Value: dagql.NewBoolean(args.AllowEmpty)},
+		{Name: "signoff", Value: dagql.NewBoolean(args.Signoff)},
 	}
 }
 
