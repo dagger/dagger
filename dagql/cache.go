@@ -3296,7 +3296,9 @@ func derefTyped(val Typed) (Typed, bool) {
 	return derefable.Deref()
 }
 
-func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (Result[T], error) {
+// WithContentDigest sets the content identity and optionally attaches the same
+// digest under additional informational labels. Existing labelled entries remain.
+func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (Result[T], error) {
 	if contentDigest == "" {
 		return r, fmt.Errorf("set content digest on %T: empty digest", r.Self())
 	}
@@ -3308,7 +3310,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		if err != nil {
 			return r, fmt.Errorf("set content digest on %T: current dagql cache: %w", r.Self(), err)
 		}
-		if err := cache.TeachContentDigest(ctx, r, contentDigest); err != nil {
+		if err := cache.TeachContentDigest(ctx, r, contentDigest, additionalLabels...); err != nil {
 			return r, err
 		}
 		return r, nil
@@ -3382,6 +3384,12 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			Label:  call.ExtraDigestLabelContent,
 			Digest: contentDigest,
 		})
+	}
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
 	}
 	return r, nil
 }
@@ -3599,8 +3607,8 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	return obj, nil
 }
 
-func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest) (ObjectResult[T], error) {
-	res, err := r.Result.WithContentDigest(ctx, contentDigest)
+func (r ObjectResult[T]) WithContentDigest(ctx context.Context, contentDigest digest.Digest, additionalLabels ...string) (ObjectResult[T], error) {
+	res, err := r.Result.WithContentDigest(ctx, contentDigest, additionalLabels...)
 	if err != nil {
 		return ObjectResult[T]{}, err
 	}

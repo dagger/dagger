@@ -71,6 +71,8 @@ const (
 
 const (
 	ExtraDigestLabelContent = "content"
+	// ExtraDigestLabelRemoteCache marks a digest safe to transfer ahead of bytes.
+	ExtraDigestLabelRemoteCache = "remote-cache"
 )
 
 type ExtraDigest struct {

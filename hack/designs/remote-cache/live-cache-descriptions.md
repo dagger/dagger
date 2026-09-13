@@ -12,7 +12,7 @@ The existing `Cache.Close` waits for quiescence before `persistCurrentState`; `s
 
 Hold rows and snapshots only for the actual capture and requested chain export. Encoding and chain export run outside the graph lock. Capture the extras known at that point; learning another extra later does not require changing the already captured bundle.
 
-Annotate extra digests with the requested transfer behavior. Ordinary local equivalence and extra-digest teaching do not change. Unsafe content extras are omitted from transferred metadata; safe pinned identities remain useful.
+Use the existing extra-digest label `remote-cache` to declare which extras may travel ahead of bytes. The pinned Container.from identity carries this label alongside its unchanged content label. Export includes marked extras and normal recipe identities; ordinary local equivalence and teaching still use every digest. Unmarked extras are omitted from remote metadata. No protobuf or local cache format change is needed for the label.
 
 Use the existing snapshot-chain export API. Export only chains requested by the caller; no extra retention while waiting for a service decision.
 
