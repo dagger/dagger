@@ -43,17 +43,22 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
+	unlock, err := container.lockForPersistence()
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	defer unlock()
 	lazy, completedRecipe, recipeJSON := container.lazyOpsForPersistence()
 	metadata, err := container.encodeContainerMetadata(enc)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
-	pending, parts, links, err := container.encodeContainerParts(ctx, enc, lazy)
+	pending, parts, links, err := container.encodeContainerPartsLocked(ctx, enc, lazy)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedContainerPayload{
-		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputed(ctx, lazy, ContainerPartMetadata), Value: metadata},
+		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata), Value: metadata},
 		Parts:    parts,
 	}
 	recipe := lazy
@@ -82,6 +87,54 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
 	}
 	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+}
+
+// lockForPersistence excludes direct object-side evaluation, which need not
+// have a dagql attempt. LazyMu prevents whole-op bodies and new group runners;
+// each registered group's mutex excludes runners that already passed LazyMu.
+// No evaluation is started, and sibling groups still run in parallel normally.
+func (container *Container) lockForPersistence() (func(), error) {
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	lazy := container.Lazy
+	if lazy == nil {
+		// An unrefined body may have cleared Lazy before returning. Its
+		// retained producer still carries the latch held by that body.
+		lazy = container.completedRecipe
+	}
+	if lazy == nil {
+		return func() {}, nil
+	}
+	provider, ok := lazy.(interface{ ContainerLazyState() *LazyState })
+	if !ok {
+		return nil, fmt.Errorf("encode persisted container: missing lazy state for %T", lazy)
+	}
+	state := provider.ContainerLazyState()
+	if state == nil || state.LazyMu == nil {
+		return nil, fmt.Errorf("encode persisted container: missing lazy mutex for %T", lazy)
+	}
+	// Evaluation can take lazyOpMu under LazyMu when consuming the op.
+	// Only try-lock in this inverse order; never wait while holding lazyOpMu.
+	if !state.LazyMu.TryLock() {
+		return nil, fmt.Errorf("%w: container lazy state in use", dagql.ErrPersistStateNotReady)
+	}
+	locked := make([]*lazyGroupOnce, 0, len(state.groups))
+	unlock := func() {
+		for _, group := range locked {
+			group.mu.Unlock()
+		}
+		state.LazyMu.Unlock()
+	}
+	for key, group := range state.groups {
+		// Bodies may consult LazyMu. A busy group must release every lock
+		// immediately, rather than waiting with LazyMu held.
+		if !group.mu.TryLock() {
+			unlock()
+			return nil, fmt.Errorf("%w: container group %q in use", dagql.ErrPersistStateNotReady, key)
+		}
+		locked = append(locked, group)
+	}
+	return unlock, nil
 }
 
 func (container *Container) lazyOpsForPersistence() (Lazy[*Container], Lazy[*Container], json.RawMessage) {
@@ -134,6 +187,20 @@ func (container *Container) HasPendingLazyComputation() bool {
 // same settled mapping before consuming its body. Other parts can still have
 // succeeded, such as an exec metadata copy beside an unsupported write target.
 func (container *Container) containerPartComputed(ctx context.Context, lazy Lazy[*Container], part dagql.PartKey) bool {
+	if op, ok := lazy.(LazyContainerParts); ok {
+		state := op.ContainerLazyState()
+		if state.LazyMu == nil {
+			return false
+		}
+		state.LazyMu.Lock()
+		defer state.LazyMu.Unlock()
+	}
+	return container.containerPartComputedLocked(ctx, lazy, part)
+}
+
+// containerPartComputedLocked requires the op's LazyMu or exclusive access to
+// an unpublished object. Restore wrappers and their recipes share this state.
+func (container *Container) containerPartComputedLocked(ctx context.Context, lazy Lazy[*Container], part dagql.PartKey) bool {
 	if _, stored := container.storedParts[part]; stored {
 		return true
 	}
@@ -151,14 +218,14 @@ func (container *Container) containerPartComputed(ctx context.Context, lazy Lazy
 		return false
 	}
 	state := op.ContainerLazyState()
-	if !state.GroupConsumed(ContainerLazyGroupMetadata) {
+	if !state.groupConsumedLocked(ContainerLazyGroupMetadata) {
 		return false
 	}
 	if part == ContainerPartMetadata {
 		return true
 	}
 	groups, err := op.ContainerLazyGroups(ctx, container, []dagql.PartKey{part})
-	return err == nil && len(groups) == 1 && state.GroupConsumed(groups[0])
+	return err == nil && len(groups) == 1 && state.groupConsumedLocked(groups[0])
 }
 
 // ContainerRestoreLazy is constructed only by persisted decode. Pending work
@@ -309,15 +376,17 @@ func (container *Container) containerPartValue(part dagql.PartKey) (containerSto
 	return value, nil
 }
 
-func (container *Container) encodeContainerParts(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
+// encodeContainerPartsLocked requires the persistence locks or exclusive access
+// to a quiescent object.
+func (container *Container) encodeContainerPartsLocked(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container]) (bool, map[dagql.PartKey]persistedContainerPart, []dagql.PersistedSnapshotRefLink, error) {
 	parts := make(map[dagql.PartKey]persistedContainerPart)
-	if !container.containerPartComputed(ctx, lazy, ContainerPartMetadata) {
+	if !container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata) {
 		return true, parts, nil, nil
 	}
 	pending := false
 	var links []dagql.PersistedSnapshotRefLink
 	for _, part := range containerSnapshotParts(container) {
-		if !container.containerPartComputed(ctx, lazy, part) {
+		if !container.containerPartComputedLocked(ctx, lazy, part) {
 			parts[part] = persistedContainerPart{Kind: containerPartPending}
 			pending = true
 			continue

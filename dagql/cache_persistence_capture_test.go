@@ -19,6 +19,7 @@ type captureTestValue struct {
 	lazy        LazyEvalFunc
 	encode      func(context.Context) error
 	release     func(context.Context) error
+	attach      func(context.Context) error
 	links       []PersistedSnapshotRefLink
 	encodeCalls atomic.Int32
 }
@@ -33,6 +34,12 @@ func (v *captureTestValue) OnRelease(ctx context.Context) error {
 		return v.release(ctx)
 	}
 	return nil
+}
+func (v *captureTestValue) AttachDependencyResults(ctx context.Context, _ AnyResult, _ func(AnyResult) (AnyResult, error)) ([]AnyResult, error) {
+	if v.attach != nil {
+		return nil, v.attach(ctx)
+	}
+	return nil, nil
 }
 func (v *captureTestValue) EncodePersistedObject(ctx context.Context, _ *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	v.encodeCalls.Add(1)
@@ -387,4 +394,107 @@ func TestCapturePersistedRecordErrorsAndClose(t *testing.T) {
 		require.NoError(t, <-done)
 		require.NoError(t, <-closed)
 	})
+}
+
+func TestCapturePersistedRecordInitialAttachment(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		name := "clean"
+		if fail {
+			name = "failed"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, c := newPartsTestCache(t, nil)
+			defer c.CloseDiscardingPersistence()
+			entered, allow := make(chan struct{}), make(chan struct{})
+			finish := sync.OnceFunc(func() { close(allow) })
+			defer finish()
+			attachErr := errors.New("initial attachment failed")
+			var released atomic.Int32
+			obj := &captureTestValue{text: "stable", release: func(context.Context) error {
+				released.Add(1)
+				return nil
+			}, attach: func(context.Context) error {
+				close(entered)
+				<-allow
+				if fail {
+					return attachErr
+				}
+				return nil
+			}}
+			srv := newDagqlServerForTest(t, &persistCodecRoot{})
+			srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
+			frame := persistCodecFrame("initial-attachment", obj)
+			done := make(chan error, 1)
+			go func() {
+				_, err := c.GetOrInitCall(ctx, "publisher", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+					return NewObjectResultForCall(obj, srv, frame)
+				})
+				done <- err
+			}()
+			<-entered
+			c.egraphMu.Lock()
+			var shared *sharedResult
+			for _, row := range c.resultsByID {
+				if row.loadPayloadState().self == obj {
+					shared = row
+					break
+				}
+			}
+			// Keep the failed publication registered so capture sees its failed
+			// barrier, instead of merely rejecting an already-collected row.
+			if shared != nil {
+				c.incrementIncomingOwnershipLocked(ctx, shared)
+			}
+			c.egraphMu.Unlock()
+			require.NotNil(t, shared)
+			res := Result[Typed]{shared: shared}
+			assertCaptureDoesNotLeak := func() error {
+				t.Helper()
+				c.egraphMu.RLock()
+				owners := shared.incomingOwnershipCount
+				c.egraphMu.RUnlock()
+				operations := c.activeGlobalOperations.Load()
+				_, err := c.CapturePersistedRecord(ctx, res)
+				c.egraphMu.RLock()
+				after := shared.incomingOwnershipCount
+				c.egraphMu.RUnlock()
+				require.Equal(t, owners, after)
+				require.Equal(t, operations, c.activeGlobalOperations.Load())
+				return err
+			}
+			require.Equal(t, resultAttachmentOpen, shared.attachmentState())
+			require.ErrorIs(t, assertCaptureDoesNotLeak(), ErrPersistStateNotReady)
+			require.Zero(t, obj.encodeCalls.Load())
+			finish()
+			if fail {
+				require.ErrorIs(t, <-done, attachErr)
+				require.Equal(t, resultAttachmentFailed, shared.attachmentState())
+				err := assertCaptureDoesNotLeak()
+				require.ErrorContains(t, err, "dependency attachment failed")
+				require.NotErrorIs(t, err, ErrPersistStateNotReady)
+				require.Zero(t, obj.encodeCalls.Load())
+			} else {
+				require.NoError(t, <-done)
+				require.Equal(t, resultAttachmentClean, shared.attachmentState())
+				first, err := c.CapturePersistedRecord(ctx, res)
+				require.NoError(t, err)
+				second, err := c.CapturePersistedRecord(ctx, res)
+				require.NoError(t, err)
+				require.Equal(t, first, second)
+				require.JSONEq(t, `"stable"`, string(first.Envelope.ObjectJSON))
+			}
+			c.egraphMu.Lock()
+			queue, err := c.decrementIncomingOwnershipLocked(ctx, shared, nil)
+			releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+			c.egraphMu.Unlock()
+			require.NoError(t, errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases)))
+			require.NoError(t, c.ReleaseSession(ctx, "publisher"))
+			require.Equal(t, int32(1), released.Load())
+			require.Zero(t, c.activeGlobalOperations.Load())
+			c.egraphMu.RLock()
+			_, remains := c.resultsByID[shared.id]
+			c.egraphMu.RUnlock()
+			require.False(t, remains)
+		})
+	}
 }

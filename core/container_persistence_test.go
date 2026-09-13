@@ -332,13 +332,13 @@ func TestContainerPersistedPartsIgnorePendingAccessorSeeds(t *testing.T) {
 	op := &containerPartsTestBaseOp{LazyState: NewLazyState()}
 	ctr := &Container{Lazy: op, MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container])}
 	ctr.MetaSnapshot.setValue(&cacheVolumeTestImmutableRef{id: "input", snapshotID: "input"})
-	pending, parts, links, err := ctr.encodeContainerParts(t.Context(), nil, op)
+	pending, parts, links, err := ctr.encodeContainerPartsLocked(t.Context(), nil, op)
 	require.NoError(t, err)
 	require.True(t, pending)
 	require.Empty(t, parts)
 	require.Empty(t, links)
 	require.NoError(t, op.EvaluateContainerGroup(t.Context(), ctr, ContainerLazyGroupMetadata))
-	pending, parts, links, err = ctr.encodeContainerParts(t.Context(), nil, op)
+	pending, parts, links, err = ctr.encodeContainerPartsLocked(t.Context(), nil, op)
 	require.NoError(t, err)
 	require.True(t, pending)
 	require.Equal(t, containerPartPending, parts[ContainerPartExecMeta].Kind)
@@ -368,7 +368,7 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 	require.Zero(t, manager.openCount("joint-fs"))
 	_, set := ctr.FS.Peek()
 	require.False(t, set)
-	pending, encoded, encodedLinks, err := ctr.encodeContainerParts(ctx, dagql.NewPersistEncodeContext(cache, 0, nil), ctr.lazyOpForRouting())
+	pending, encoded, encodedLinks, err := ctr.encodeContainerPartsLocked(ctx, dagql.NewPersistEncodeContext(cache, 0, nil), ctr.lazyOpForRouting())
 	require.NoError(t, err)
 	require.False(t, pending)
 	require.Equal(t, parts, encoded)
@@ -383,7 +383,7 @@ func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testi
 func TestContainerPersistedPartsRejectMissingCompletedValue(t *testing.T) {
 	ctr := &Container{FS: new(LazyAccessor[*Directory, *Container])}
 	ctr.FS.setValue(&Directory{Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])})
-	pending, _, _, err := ctr.encodeContainerParts(t.Context(), nil, nil)
+	pending, _, _, err := ctr.encodeContainerPartsLocked(t.Context(), nil, nil)
 	require.ErrorContains(t, err, "has no snapshot")
 	require.False(t, pending)
 

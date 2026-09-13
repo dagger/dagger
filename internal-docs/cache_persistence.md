@@ -393,6 +393,9 @@ often has two broad forms:
 
 - **snapshot form**
   - the object has a completed snapshot, open or retained by saved identity
+  - `lazyKind` and `lazyJSON` retain its completed producer's original inputs,
+    when present; completed-row decode keeps these raw bytes without loading
+    producer ancestors
 - **lazy form**
   - the object has not been fully materialized, but it still has a structured
     lazy operation that can be serialized
@@ -411,7 +414,9 @@ Today `Directory` and `File` explicitly do this when they have neither snapshot
 nor lazy state available to encode.
 
 `Container` uses one payload with consumed metadata, a record for each snapshot
-part, and its original recipe only while computation remains. Each part is
+part, and its original producer inputs even after computation completes.
+Completed-row decode retains the producer's raw bytes without decoding its
+ancestors. Each part is
 pending, absent, or a completed directory, file, or exec-metadata snapshot.
 Completion comes from object-side group consumption, including final parent
 copies, independently of cache bookkeeping completion. A settled mapping error

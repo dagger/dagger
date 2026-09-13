@@ -31,6 +31,14 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 		c.egraphMu.Unlock()
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
 	}
+	switch shared.attachmentState() {
+	case resultAttachmentOpen:
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
+	case resultAttachmentFailed:
+		c.egraphMu.Unlock()
+		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
+	}
 	c.incrementIncomingOwnershipLocked(ctx, shared)
 	c.egraphMu.Unlock()
 	defer func() {
