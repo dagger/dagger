@@ -466,7 +466,10 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 	return nil
 }
 
-// Keep commit-only changes visible after the overlay has been committed.
+// updateChangesPreview summarizes uncommitted edits above HEAD and commits
+// since the last-synced checkpoint. With unchanged history, compare edits to
+// the checkpoint so pre-existing or already-saved dirt is not reported as new
+// work. Keep commit-only changes visible after the overlay has been committed.
 func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
 	if s.workspaceBaseline == nil {
 		return nil

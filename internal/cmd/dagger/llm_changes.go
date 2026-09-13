@@ -54,17 +54,24 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 	if workspaceID == baselineID {
 		return preview, nil
 	}
-	entries, err := idtui.PreviewPatch(ctx, dag, ws.Changes(dagger.WorkspaceChangesOpts{From: baseline}))
-	if err != nil {
-		return preview, err
-	}
-	preview.Files = entries
+	changes := ws.Changes(dagger.WorkspaceChangesOpts{From: baseline})
 	if err := preview.loadHistory(ctx, dag, ws, baseline); err != nil {
 		// A non-Git/unborn checkout still has useful pending edits to display.
 		// Also avoid silently hiding commits on a failed history query.
 		preview.HistoryError = "History unavailable; could not compare checkpoint"
 		slog.Debug("could not preview workspace history", "error", err)
+	} else if len(preview.Outgoing) > 0 || len(preview.Incoming) > 0 {
+		// The commit list already accounts for changes to HEAD. Only show
+		// pending edits above it, including edits that undo a committed change.
+		// With unchanged history, retain the checkpoint comparison so saved
+		// or pre-existing dirt is not reported as new work.
+		changes = ws.Git().Uncommitted()
 	}
+	entries, err := idtui.PreviewPatch(ctx, dag, changes)
+	if err != nil {
+		return preview, err
+	}
+	preview.Files = entries
 	return preview, nil
 }
 
@@ -95,7 +102,7 @@ func (p *workspaceChangesPreview) loadHistory(ctx context.Context, dag *dagger.C
 func (p workspaceChangesPreview) render(width int) string {
 	var buf strings.Builder
 	if len(p.Files) > 0 {
-		buf.WriteString("Files since checkpoint\n")
+		buf.WriteString("Uncommitted changes\n")
 		patchpreview.Summarize(idtui.NewOutput(&buf), p.Files, width)
 	}
 	section := func(title string, commits []changesCommit) {
