@@ -109,7 +109,12 @@ directory in a scratch snapshot (`core/git_hostdir.go`):
 4. detached HEAD: `git update-ref --no-deref HEAD <head_sha>`
 5. `git read-tree HEAD` — the index is derived state, rebuilt stat-zeroed
    so identical ref states reconstruct identical bytes
-6. `git pack-refs --all`; strip `logs/`, `hooks/`, `branches/`,
+6. `git pack-refs --all`
+7. `git remote add origin <url>` when the checkout's own git reports an
+   origin remote (`GetConfig`, `remote.origin.url`) — so remote-aware
+   tooling reading the reconstruction (gh, `git remote get-url origin`)
+   can still resolve which repository the checkout came from
+8. strip `logs/`, `hooks/`, `branches/`,
    `description`, `FETCH_HEAD`, `COMMIT_EDITMSG` (the same normalization
    the public bundle import applies)
 

@@ -599,7 +599,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -633,7 +633,13 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
+			// The clone URL is the remote itself, so it doubles as the
+			// checkout's origin; registered remotes overlay it.
+			checkoutRemotes := MergeGitRemotes(
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				remotes,
+			)
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)

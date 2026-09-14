@@ -220,7 +220,7 @@ func (s *workspaceSchema) workspaceGitFullCheckout(ctx context.Context, parent d
 	// Bypass the repository's keepGitDir option and the default shallow depth.
 	// Retain the complete immutable snapshot as a dagql result so consumers can
 	// use either the worktree or its metadata without reconstructing history.
-	dir, err := head.Self().Backend.Tree(ctx, srv, false, 0, false)
+	dir, err := head.Self().Backend.Tree(ctx, srv, false, 0, false, head.Self().Repo.Self().Remotes)
 	if err != nil {
 		return inst, err
 	}
