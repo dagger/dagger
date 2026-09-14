@@ -27,7 +27,7 @@ import (
 type workspaceExportTestSnapshot struct{ bkcache.ImmutableRef }
 
 func TestWorkspaceExportBaseCandidate(t *testing.T) {
-	for _, scenario := range []string{"matching origin", "matching no remote", "sha256", "diverged", "rewritten", "routing mismatch", "push mismatch", "live", "mutable ref", "unevaluated", "remote backend", "directory", "overlay"} {
+	for _, scenario := range []string{"matching origin", "matching no remote", "matching implicit origin", "origin mismatch", "extra remote", "sha256", "diverged", "rewritten", "routing mismatch", "push mismatch", "live", "mutable ref", "unevaluated", "remote backend", "directory", "overlay"} {
 		t.Run(scenario, func(t *testing.T) {
 			srv, err := dagql.NewServer(t.Context(), &core.Query{})
 			require.NoError(t, err)
@@ -46,12 +46,23 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 				// SHA-256 captures retain the existing reconstruction path.
 				sha = strings.Repeat("a", 64)
 			}
-			repo := &core.GitRepository{Backend: backend, URL: dagql.NonNull(dagql.String("https://example.com/origin.git")), PushURLs: []string{"ssh://git@example.com/push.git"}}
-			metadata := &gitsession.CaptureGitMetadata{HeadSha: sha, RemoteUrl: string(repo.URL.Value), RemotePushUrls: append([]string(nil), repo.PushURLs...)}
+			repo := &core.GitRepository{
+				Backend: backend,
+				URL:     dagql.NonNull(dagql.String("https://example.com/origin.git")),
+				Remotes: []core.GitRemote{{Name: "origin", URL: "https://example.com/origin.git", PushURLs: []string{"ssh://git@example.com/push.git"}}},
+			}
+			metadata := &gitsession.CaptureGitMetadata{HeadSha: sha, RemoteUrl: string(repo.URL.Value), RemotePushUrls: append([]string(nil), repo.Remotes[0].PushURLs...)}
 			switch scenario {
 			case "matching no remote":
-				repo.URL, repo.PushURLs = dagql.Nullable[dagql.String]{}, nil
+				repo.URL, repo.Remotes = dagql.Nullable[dagql.String]{}, nil
 				metadata.RemoteUrl, metadata.RemotePushUrls = "", nil
+			case "matching implicit origin":
+				repo.Remotes = nil
+				metadata.RemotePushUrls = nil
+			case "origin mismatch":
+				repo.Remotes[0].URL = "https://example.com/other.git"
+			case "extra remote":
+				repo.Remotes = append(repo.Remotes, core.GitRemote{Name: "mirror", URL: "https://example.com/mirror.git"})
 			case "diverged", "rewritten":
 				metadata.HeadSha = strings.Repeat("b", 40)
 			case "routing mismatch":
@@ -80,7 +91,7 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 				ws.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
 			}
 			got, ok := workspaceExportBaseCandidate(ws, metadata)
-			want := scenario == "matching origin" || scenario == "matching no remote" || scenario == "overlay"
+			want := scenario == "matching origin" || scenario == "matching no remote" || scenario == "matching implicit origin" || scenario == "overlay"
 			require.Equal(t, want, ok)
 			if want {
 				require.Same(t, ref.Self(), got.Self())

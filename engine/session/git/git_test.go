@@ -41,6 +41,10 @@ git@github.com:some-user/some-repo.git` + nullChar + `remote.origin.fetch
 						Key:   "url.ssh://git@github.com/.insteadof",
 						Value: "https://github.com/",
 					},
+					{
+						Key:   "remote.origin.url",
+						Value: "git@github.com:some-user/some-repo.git",
+					},
 				},
 			},
 		},

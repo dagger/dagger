@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGitRepositoryPushURLsPersistence(t *testing.T) {
+func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	ctx := t.Context()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
 	require.NoError(t, err)
@@ -17,11 +17,17 @@ func TestGitRepositoryPushURLsPersistence(t *testing.T) {
 	srv := newCoreDagqlServerForTest(t, &Query{})
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
 	dir := volumeTestCachedObjectResult(t, ctx, cache, srv, "push-routing", "git-directory", &Directory{})
-	for _, urls := range [][]string{nil, {"ssh://git@example.test/repo", "https://other.test/repo"}} {
+	for _, remotes := range [][]GitRemote{
+		nil,
+		{
+			{Name: "origin", URL: "https://fetch.test/repo", PushURLs: []string{"ssh://git@example.test/repo", "https://other.test/repo"}},
+			{Name: "upstream", URL: "https://upstream.test/repo"},
+		},
+	} {
 		repo := &GitRepository{
-			URL:      dagql.NonNull(dagql.String("https://fetch.test/repo")),
-			PushURLs: urls,
-			Backend:  &LocalGitRepository{Directory: dir},
+			URL:     dagql.NonNull(dagql.String("https://fetch.test/repo")),
+			Remotes: remotes,
+			Backend: &LocalGitRepository{Directory: dir},
 		}
 		encoded, err := repo.EncodePersistedObject(ctx, cache)
 		require.NoError(t, err)
@@ -29,7 +35,7 @@ func TestGitRepositoryPushURLsPersistence(t *testing.T) {
 		require.NoError(t, err)
 		restored := decoded.(*GitRepository)
 		require.Equal(t, repo.URL, restored.URL)
-		require.Equal(t, repo.PushURLs, restored.PushURLs)
+		require.Equal(t, repo.Remotes, restored.Remotes)
 		require.IsType(t, &LocalGitRepository{}, restored.Backend)
 	}
 }

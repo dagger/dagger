@@ -1,0 +1,13 @@
+kind: Fixed
+body: |
+  Git checkout directories built engine-side now carry the source repository's
+  `origin` remote. `Workspace.git.directory` mounted at `.git` previously had
+  no remotes at all, so remote-aware tooling like `gh` and
+  `git remote get-url origin` could not resolve which repository the checkout
+  came from. Remote-loaded repositories record their clone URL, engine-local
+  repositories propagate their own `origin`, and host-backed workspaces carry
+  the host checkout's `origin` into the canonical reconstruction.
+time: 2026-09-12T18:00:00Z
+custom:
+  Author: vito
+  PR: ""

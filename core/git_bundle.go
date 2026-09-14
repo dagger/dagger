@@ -772,6 +772,17 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 				}
 			}
 
+			// Local repositories carry remote routing in their config. Preserve
+			// that routing across bundle reconstruction, just as Tree does;
+			// other source configuration and refs remain isolated.
+			var remotes []GitRemote
+			if _, local := repo.Backend.(*LocalGitRepository); local {
+				remotes, err = readGitConfigRemotes(ctx, source)
+				if err != nil {
+					return fmt.Errorf("read git bundle source remotes: %w", err)
+				}
+			}
+
 			return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
 				if _, err := runGitEnv(ctx, root, "init", "--bare", "--quiet", "--object-format="+header.ObjectFormat); err != nil {
 					return fmt.Errorf("initialize git bundle repository: %w", err)
@@ -795,6 +806,12 @@ func ImportGitBundle(ctx context.Context, repo *GitRepository, bundle *GitBundle
 				}
 				if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 					return fmt.Errorf("normalize git bundle refs: %w", err)
+				}
+				git := gitutil.NewGitCLI(gitutil.WithDir(root))
+				for _, remote := range remotes {
+					if err := writeGitCheckoutRemote(ctx, git, remote); err != nil {
+						return fmt.Errorf("preserve git bundle source remote: %w", err)
+					}
 				}
 				return normalizeCanonicalGitDir(root)
 			})
