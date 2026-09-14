@@ -1502,7 +1502,7 @@ impl Loadable for Check {
     }
 }
 impl Check {
-    /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+    /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
     pub async fn check_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("checkType");
         query.execute(self.graphql_client.clone()).await
