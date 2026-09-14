@@ -81,7 +81,8 @@ type LLMSession struct {
 	// composed agent group as selected on startup (`dagger agent`). When nil,
 	// .clear resets to a plain workspace-bound LLM.
 	initialLLM *dagger.LLM
-	// Most recent bind/save/reload checkpoint, also used by .clear.
+	// Save/reload boundary in agent history, also used by .clear.
+	// Save advances this without replacing the active LLM or adopting host IDs.
 	workspaceBaseline *dagger.Workspace
 
 	// subscriptionLabelCache caches the OAuth subscription label for the status
@@ -493,49 +494,35 @@ func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
 	return nil
 }
 
-// ExportChanges saves commits and pending edits to the live checkout, then
-// rebinds a fresh checkpoint. A rejected export leaves the agent state intact.
+// ExportChanges contributes commits and pending edits since the last save to
+// the live checkout. Save advances the agent-history checkpoint without
+// replacing the conversation; only an explicit reload adopts host history.
+// Failed exports preserve the checkpoint so the save can be retried.
 func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	source := s.llm.Workspace()
-	integratedID, err := s.dag.CurrentWorkspace().WithCommitsFrom(source).ID(ctx)
+	root, _, ok := s.workspaceHostPaths(ctx)
+	if !ok {
+		return fmt.Errorf("saving requires a local checkout")
+	}
+	// Freeze the exact exported source, including its original commit IDs.
+	sourceID, err := s.llm.Workspace().ID(ctx)
 	if err != nil {
 		return err
 	}
-	integrated := dagger.Ref[*dagger.Workspace](s.dag, integratedID)
-	// Pull transfers commits only. Explicitly merge pending edits against their
-	// original HEAD so local edits cannot be silently overwritten by withChanges.
-	pending := source.Git().Uncommitted()
-	empty, err := pending.IsEmpty(ctx)
-	if err != nil {
+	source := dagger.Ref[*dagger.Workspace](s.dag, sourceID)
+	if err := source.Export(ctx, dagger.WorkspaceExportOpts{
+		Path: root,
+		From: s.workspaceBaseline,
+	}); err != nil {
 		return err
 	}
-	if !empty {
-		merged := integrated.Directory("/").Changes(source.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).WithChangeset(pending)
-		integrated = integrated.WithChanges(merged)
-	}
-	if err := integrated.Export(ctx); err != nil {
-		return err
-	}
-	// Capture once, then bind by ID so future reads do not repeat host capture.
-	baseline, err := snapshotWorkspace(ctx, s.dag)
-	if err != nil {
-		return fmt.Errorf("saved to checkout, but could not refresh checkpoint: %w", err)
-	}
-	rebound, err := s.llm.WithWorkspace(baseline).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("rebind workspace after export: %w", err)
-	}
-	s.workspaceBaseline = baseline
-	if err := s.updateLLM(rebound); err != nil {
-		return err
-	}
+	s.workspaceBaseline = source
 	if s.onStep != nil {
 		s.onStep(s)
 	}
-	return nil
+	return s.updateChangesPreview(s.llm)
 }
 
 // ResetWorkspace discards the agent's unsaved commits and edits, replacing them

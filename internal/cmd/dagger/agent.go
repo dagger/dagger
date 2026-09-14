@@ -163,7 +163,7 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 }
 
 // Materialize the effectful capture once before binding or composing tools.
-// Save and reload use the same approval policy as the initial agent bind.
+// Reload uses the same approval policy as the initial agent bind.
 func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
 	id, err := dag.CurrentWorkspace().Snapshot().ID(ctx)
 	if err != nil {

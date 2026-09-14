@@ -170,13 +170,10 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	sha, err := committed.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NoError(t, os.Rename(parkedGitDir, gitDir))
-	// The agent commit also commits the captured initial dirt. Export correctly
-	// refuses to advance HEAD over a dirty tracked file, so clean that host
-	// file before testing successful export (the checkpoint stays unchanged).
-	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("base\n"), 0o644))
-	git("update-index", "--refresh")
+	// Save consumes matching captured host dirt without reloading the LLM.
 	require.NoError(t, s.ExportChanges(ctx))
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
+	require.Empty(t, git("status", "--porcelain"))
 	require.Empty(t, changes.Body(80), "saving commit-only changes clears the panel")
 	s.reset()
 	clearedSHA, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
@@ -215,11 +212,31 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Contains(t, git("log", "--format=%H"), hostSHA)
 	after, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.NotEqual(t, before, after, "divergent agent commit is cherry-picked")
+	require.Equal(t, before, after, "saving must not replace the agent's history with host cherry-picks")
+	savedHostSHA := git("rev-parse", "HEAD")
+	require.NotEqual(t, after, savedHostSHA, "divergent agent commit is cherry-picked on the host only")
+	require.Empty(t, changes.Body(80), "saving clears the preview without reloading the agent")
+	require.NoError(t, s.ExportChanges(ctx))
+	require.Equal(t, savedHostSHA, git("rev-parse", "HEAD"), "saving twice must not duplicate cherry-picked commits")
+
+	// A second save from the original agent history only contributes new work.
+	s.llm = s.llm.WithWorkspace(s.llm.Workspace().WithNewFile("later.txt", "later\n").WithCommit("later agent", date))
+	unsyncedLLM := s.llm
+	unsyncedID, err := unsyncedLLM.Workspace().ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, s.ExportChanges(ctx))
+	require.Same(t, unsyncedLLM, s.llm, "saving must not replace the LLM")
+	savedID, err := s.workspaceBaseline.ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, unsyncedID, savedID, "checkpoint records the exported source, not the destination")
+	require.Equal(t, "1", git("rev-list", "--count", savedHostSHA+"..HEAD"))
+	require.Contains(t, git("log", "--format=%H"), hostSHA)
+	savedHostSHA = git("rev-parse", "HEAD")
+
 	require.NoError(t, s.ResetWorkspace(ctx))
 	resetSHA, err := s.llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.Equal(t, after, resetSHA)
+	require.Equal(t, savedHostSHA, resetSHA, "only reload adopts host history")
 	require.Empty(t, changes.Body(80))
 
 	// A real content conflict preserves the checkout, agent workspace, and
