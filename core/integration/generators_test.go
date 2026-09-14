@@ -1753,3 +1753,39 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 		require.JSONEq(t, `{"currentWorkspace":{"withNewFile":{"generators":{"run":{"workspace":{"input":{"contents":"B-OVERLAY"},"output":{"contents":"generated from: B-OVERLAY"}}}}}}}`, out)
 	})
 }
+
+func (GeneratorsSuite) TestGenerateFromModuleDirectoryExportPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-workspace-writer")
+	require.NoError(t, err)
+	moduleDir := "/work/.dagger/modules/foo"
+	workspace := goGitBase(t, c).
+		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithNewFile("/work/dagger.toml", `[modules.workspace-writer]
+source = "./sdk"
+
+[sdks.test]
+module = "workspace-writer"
+
+[sdks.test.scopes.".dagger/modules/foo"]
+is-module = true
+name = "foo"
+`).
+		WithNewFile(moduleDir+"/.keep", "").
+		WithWorkdir(moduleDir).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+	generated := workspace.With(daggerNonNestedExec("generate", "-y"))
+	out, err := generated.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	manifest, err := generated.File(moduleDir + "/dagger-module.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, manifest, `name = "foo"`)
+	// The fixture also writes ../../go.mod, above the invocation directory.
+	goMod, err := generated.File("/work/.dagger/go.mod").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, goMod, "module example.com/foo")
+	nested, err := generated.Exists(ctx, moduleDir+"/.dagger")
+	require.NoError(t, err)
+	require.False(t, nested, "export must not prefix the module directory twice")
+}
