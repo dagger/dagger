@@ -109,12 +109,16 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
      */
     public function push(
         ?GitRepository $to = null,
+        ?string $remote = '',
         ?string $branch = '',
         ?string $expectedRemoteSHA = '',
     ): GitPushResult {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('push');
         if (null !== $to) {
         $innerQueryBuilder->setArgument('to', $to);
+        }
+        if (null !== $remote) {
+        $innerQueryBuilder->setArgument('remote', $remote);
         }
         if (null !== $branch) {
         $innerQueryBuilder->setArgument('branch', $branch);
