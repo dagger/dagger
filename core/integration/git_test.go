@@ -455,6 +455,22 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	serviceID, err := gitDaemon.ID(ctx)
 	require.NoError(t, err)
 
+	remoteURLs := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, args ...string) string {
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", checkout).
+			WithExec(append([]string{"git", "remote", "get-url"}, args...)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	// Prime the checkout cache without any registered remotes. A later tree
+	// of the same ref must include its own .git/config, not reuse this one.
+	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().Tree(), "origin"))
+	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().TargetCommit().Tree(), "origin"))
+
 	const upstreamURL = "https://example.com/upstream/repo.git"
 	const upstreamPushURL = "ssh://git@example.com/upstream/repo.git"
 	var result struct {
@@ -481,22 +497,25 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	}, &dagger.Response{Data: &result}))
 	checkout := dagger.Ref[*dagger.Directory](c, result.Git.WithRemote.Head.Tree.ID)
 
-	remoteURLs := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, args ...string) string {
-		out, err := c.Container().From(alpineImage).
-			WithExec([]string{"apk", "add", "git"}).
-			WithWorkdir("/src").
-			WithMountedDirectory(".", checkout).
-			WithExec(append([]string{"git", "remote", "get-url"}, args...)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		return strings.TrimSpace(out)
-	}
-
 	// The registered remote lands in the materialized checkout beside the
 	// clone URL's origin.
 	require.Equal(t, repoURL, remoteURLs(ctx, t, checkout, "origin"))
 	require.Equal(t, upstreamURL, remoteURLs(ctx, t, checkout, "upstream"))
 	require.Equal(t, upstreamPushURL, remoteURLs(ctx, t, checkout, "--push", "upstream"))
+
+	// Both tree APIs must distinguish changes to either URL, even when the
+	// repository, commit, and remote name remain the same.
+	for _, urls := range [][2]string{
+		{upstreamURL, upstreamPushURL},
+		{"https://example.com/other/repo.git", upstreamPushURL},
+		{"https://example.com/other/repo.git", "ssh://git@example.com/other/repo.git"},
+	} {
+		configured := repo.WithRemote("upstream", urls[0], dagger.GitRepositoryWithRemoteOpts{PushURL: urls[1]})
+		for _, tree := range []*dagger.Directory{configured.Head().Tree(), configured.Head().TargetCommit().Tree()} {
+			require.Equal(t, urls[0], remoteURLs(ctx, t, tree, "upstream"))
+			require.Equal(t, urls[1], remoteURLs(ctx, t, tree, "--push", "upstream"))
+		}
+	}
 
 	// Rebuilding the repository engine-side keeps the whole remote
 	// configuration, not just origin.

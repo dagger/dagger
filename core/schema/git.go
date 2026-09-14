@@ -1093,6 +1093,14 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 			// ref.Name affects named-ref vs detached-SHA checkout metadata.
 			gitRef.Ref.Name,
 		)
+		// Remote configuration is written to .git/config. Hash the same
+		// merged configuration as the checkout so differing routing cannot
+		// share a Directory, while equivalent registration orders still can.
+		remotes := core.MergeGitRemotes(
+			[]core.GitRemote{{Name: "origin", URL: remoteRepo.URL.Remote()}},
+			repo.Remotes,
+		)
+		dgstInputs = append(dgstInputs, "remotes", hashutil.HashStrings(gitRemoteDigestInputs(remotes)...).String())
 	}
 
 	return hashutil.HashStrings(dgstInputs...), nil
