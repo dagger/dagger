@@ -375,6 +375,27 @@ func (c *Client) StartFeatureTrial(ctx context.Context, orgID, feature string, d
 	}, nil)
 }
 
+const createPaymentCheckoutSessionOperation = `
+mutation CreatePaymentCheckoutSession($org: ID!) {
+	createPaymentCheckoutSession(org: $org)
+}
+`
+
+// CreatePaymentCheckout returns a Chargebee hosted checkout page URL for the
+// org's existing subscription, where the customer can enter or update their
+// payment method. Requires org admin.
+func (c *Client) CreatePaymentCheckout(ctx context.Context, orgID string) (string, error) {
+	var data struct {
+		CreatePaymentCheckoutSession string `json:"createPaymentCheckoutSession"`
+	}
+	if err := c.doGraphQL(ctx, "CreatePaymentCheckoutSession", createPaymentCheckoutSessionOperation, map[string]any{
+		"org": orgID,
+	}, &data); err != nil {
+		return "", err
+	}
+	return data.CreatePaymentCheckoutSession, nil
+}
+
 func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.u.JoinPath("/plans").String(), nil)
 	if err != nil {
