@@ -1,11 +1,11 @@
 kind: Added
 body: |
-  Integrate frozen workspaces with currentWorkspace.withCommitsFrom(source).export.
-  Commits fast-forward or cherry-pick onto the destination's history, preserving
-  local edits and skipping already integrated work. Pending source edits are an
-  explicit changeset composition. Export validates the prepared worktree and
-  ref state before writing; stale saves retain the integrated commits on
-  refs/dagger/checkpoints/<short-sha> for recovery without rewriting history.
+  Export frozen workspaces with export(path, from). Commits fast-forward or
+  cherry-pick onto the destination's history, preserving local edits and
+  skipping already integrated work. Pending source edits are included; pass
+  from to export only work since a previously saved source value. Export
+  captures the destination and validates its worktree and ref state before
+  writing.
 time: 2026-09-05T20:00:00Z
 custom:
   Author: vito

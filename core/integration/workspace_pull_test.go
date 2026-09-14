@@ -178,7 +178,7 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	require.NotEqual(t, oldSHA, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
 	// The pull remains compatible with export, landing both real commits.
-	require.NoError(t, exportWorkspace(ctx, c, pulled, c.CurrentWorkspace()))
+	require.NoError(t, saveWorkspaceTo(ctx, c, pulled, nil, checkout))
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
 }
 

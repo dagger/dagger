@@ -82,15 +82,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DoNotCache("Captures local receivers before integrating commits").
 			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
 				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.",
-				"A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.",
+				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
 				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
 				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
 		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),
-		dagql.NodeFunc("__exportDirectory", s.exportDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Prepared integration is bound to a client checkout").Doc("(Internal-only) Bundle a prepared integration and its before/after worktrees."),
-		dagql.NodeFunc("__withExportBase", s.withExportBase).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Bind a prepared integration to its captured checkout."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Freezes host-backed receivers before committing").
@@ -462,7 +460,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DoNotCache("Writes workspace commits and changes to the calling client's host").
 			Doc("Write this workspace's commits and pending changes to a checkout on the calling client.",
 				"With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.",
-				"Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.").
+				"Omitting path retains legacy local-overlay export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.").
 			Args(
 				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory."),
 				dagql.Arg("from").Doc("Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path."),
@@ -2407,7 +2405,7 @@ func (s *workspaceSchema) export(
 	ws := parent.Self()
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
-		return core.Void{}, fmt.Errorf("%w; integrate into currentWorkspace with withCommitsFrom first", err)
+		return core.Void{}, fmt.Errorf("%w; export frozen workspaces with an explicit path", err)
 	}
 
 	changes, ok := ws.OverlayChanges()
@@ -2417,10 +2415,6 @@ func (s *workspaceSchema) export(
 			invalidateExportedWorkspace(ctx)
 		}
 	}()
-	if ws.ExportBase.Self() != nil {
-		wrote = true
-		return core.Void{}, s.exportWorkspaceGit(ctx, parent, hostPath)
-	}
 	if !ok || changes.Self() == nil {
 		return core.Void{}, nil
 	}
