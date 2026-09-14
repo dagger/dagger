@@ -299,8 +299,8 @@ type AgentRuntimes struct {
 	// The waits-for graph (hack/designs/agent-messaging.md §4.5): one edge
 	// per blocking wait issued FROM an agent's turn, waiter runtime handle →
 	// target runtime handle. Registered at the blocking primitives (await,
-	// delivery, waitFor, wait) and released when the wait returns; a
-	// wait whose edge would close a cycle is refused with the named path.
+	// delivery, waitFor, wait, graceful stop) and released when the wait
+	// returns; a wait whose edge would close a cycle is refused with the named path.
 	// Non-agent callers (a human client, module code outside any turn)
 	// register nothing: their waits cannot deadlock a turn and can always be
 	// canceled. Guarded by waitsMu, never by mu — wait registration happens
@@ -2156,6 +2156,16 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 // terminal state record: the projection is STOPPED either way, and only the
 // reason lets a client restoring the trace tell a dismissal from a teardown.
 func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason AgentStopReason) error {
+	if !kill && rt.ars != nil {
+		// A graceful stop waits for the target's current tool call to return.
+		// Refuse self-waits and cycles before requesting shutdown, so a
+		// rejected call leaves the target running.
+		release, err := rt.ars.beginAgentWait(ctx, rt, "stopping gracefully")
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	rt.mu.Lock()
 	if rt.done {
 		if rt.stateLocked() == AgentStateFailed {
