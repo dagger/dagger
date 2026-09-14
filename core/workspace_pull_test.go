@@ -186,28 +186,45 @@ func TestWorkspacePullFastForwardAndSelection(t *testing.T) {
 	require.NotEqual(t, b, f.git("rev-parse", "HEAD"))
 	_, err := os.Stat(filepath.Join(f.dir, "a.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	require.Contains(t, f.git("log", "-1", "--format=%B"), "(cherry picked from commit "+b+")")
+	require.Equal(t, f.git("log", "-1", "--format=%B", b), f.git("log", "-1", "--format=%B"))
 }
 
-func TestWorkspacePullCherryPickAndOrigins(t *testing.T) {
-	f := newPullFixture(t)
-	f.commit("local.txt", "local", "local")
-	base := f.git("rev-parse", "HEAD")
-	f.git("switch", "source")
-	sha := f.commit("source.txt", "source", "source")
-	f.git("switch", "main")
-	picks := f.fold(nil)
-	require.Equal(t, WorkspaceCommitPickable, picks[0].Status)
-	first := f.git("rev-parse", "HEAD")
-	require.NotEqual(t, sha, first)
-	require.Equal(t, base, f.git("rev-parse", "HEAD^"))
-	picks = f.fold(nil)
-	require.Equal(t, WorkspaceCommitPicked, picks[0].Status)
-	require.Equal(t, first, f.git("rev-parse", "HEAD"))
-	// Recomputing from the same inputs must not read the wall clock.
-	f.git("reset", "--hard", base)
-	f.fold(nil)
-	require.Equal(t, first, f.git("rev-parse", "HEAD"))
+func TestWorkspacePullCherryPickPreservesMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		message string
+		status  WorkspaceCommitPickStatus
+	}{
+		{"plain", "source\n\nMessage body.\n\nSigned-off-by: Source <source@example.com>\n\n", WorkspaceCommitRedundant},
+		{"existing marker", "source\n\n(cherry picked from commit " + strings.Repeat("a", 40) + ")\n", WorkspaceCommitPicked},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			message := tc.message
+			f := newPullFixture(t)
+			f.commit("local.txt", "local", "local")
+			base := f.git("rev-parse", "HEAD")
+			f.git("switch", "source")
+			f.commit("source.txt", "source", "source")
+			f.git("commit", "--amend", "--cleanup=verbatim", "-m", message)
+			sha := f.git("rev-parse", "HEAD")
+			f.git("switch", "main")
+			picks := f.fold(nil)
+			require.Equal(t, WorkspaceCommitPickable, picks[0].Status)
+			first := f.git("rev-parse", "HEAD")
+			require.NotEqual(t, sha, first)
+			require.Equal(t, base, f.git("rev-parse", "HEAD^"))
+			got, err := runWorkspacePullGit(t.Context(), f.dir, nil, "show", "-s", "--format=%B", "HEAD")
+			require.NoError(t, err)
+			require.Equal(t, message+"\n", got, "preserve the message, including trailing newlines and existing markers")
+			picks = f.fold(nil)
+			require.Equal(t, tc.status, picks[0].Status)
+			require.Equal(t, first, f.git("rev-parse", "HEAD"))
+			// Recomputing from the same inputs must not read the wall clock.
+			f.git("reset", "--hard", base)
+			f.fold(nil)
+			require.Equal(t, first, f.git("rev-parse", "HEAD"))
+		})
+	}
 }
 
 func TestWorkspacePullRedundantAndDirty(t *testing.T) {
@@ -321,8 +338,12 @@ func TestWorkspacePullTransitiveOrigins(t *testing.T) {
 	original := f.commit("shared", "shared", "original")
 	f.git("switch", "main")
 	f.commit("local", "local", "local")
-	f.fold(nil)
+	f.git("cherry-pick", "-x", original)
 	first := f.git("rev-parse", "HEAD")
+	// Explicit -x provenance still identifies a directly repeated pull.
+	picks := f.fold(nil)
+	require.Equal(t, WorkspaceCommitPicked, picks[0].Status)
+	require.Equal(t, first, f.git("rev-parse", "HEAD"))
 	// Another branch carries a distinct cherry-pick of the same origin.
 	f.git("switch", "-c", "relay", base)
 	f.commit("relay", "relay", "relay")
@@ -330,7 +351,7 @@ func TestWorkspacePullTransitiveOrigins(t *testing.T) {
 	relay := f.git("rev-parse", "HEAD")
 	f.git("branch", "-f", "source", relay)
 	f.git("switch", "main")
-	picks := f.fold(nil, relay)
+	picks = f.fold(nil, relay)
 	require.Equal(t, WorkspaceCommitPicked, picks[0].Status)
 	require.Equal(t, first, f.git("rev-parse", "HEAD"))
 }
