@@ -2127,6 +2127,11 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 	case AgentStateRunning:
 		return fmt.Errorf("agent %q is mid-turn; wait for the turn to finish (or interrupt it) before reseeding", rt.name)
 	}
+	if rt.draining {
+		// PAUSED can still have a popped prompt being recorded outside the
+		// mutex. That drain must finish before replacing the history it read.
+		return fmt.Errorf("agent %q is draining its mailbox; wait for the drain to finish before reseeding", rt.name)
+	}
 	if rt.turnOpen && !rt.paused {
 		return fmt.Errorf("agent %q has a suspended turn; pause or interrupt it before reseeding", rt.name)
 	}
