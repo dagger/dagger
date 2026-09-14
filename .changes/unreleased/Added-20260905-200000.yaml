@@ -5,7 +5,8 @@ body: |
   skipping already integrated work. Pending source edits are included; pass
   from to export only work since a previously saved source value. Export
   captures the destination and validates its worktree and ref state before
-  writing.
+  writing. Local workspace exports can omit path and compare against from,
+  applying changes at the workspace root regardless of the working directory.
 time: 2026-09-05T20:00:00Z
 custom:
   Author: vito

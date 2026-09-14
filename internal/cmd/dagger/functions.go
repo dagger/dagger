@@ -989,7 +989,7 @@ func handleWorkspaceResponseWithDisposition(ctx context.Context, dag *dagger.Cli
 	// Preview root-relative paths, including writes above the command directory.
 	// Export keeps the Workspace's client and host-root information.
 	return handleChangesetResponseWithApply(ctx, dag, workspace.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: before}), disposition, previewOut, func(ctx context.Context, _ *dagger.Changeset) error {
-		return workspace.Export(ctx)
+		return workspace.Export(ctx, dagger.WorkspaceExportOpts{From: before})
 	})
 }
 

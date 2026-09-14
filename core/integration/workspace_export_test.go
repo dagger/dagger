@@ -704,3 +704,63 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "deep\n", contents)
 	})
 }
+
+// Export always applies root-relative changes at the stored host root, even
+// when invoked from a module directory and compared with a workspace at the root.
+func (WorkspaceSuite) TestWorkspaceExportLocalWorkdirAndFrom(ctx context.Context, t *testctx.T) {
+	for _, incremental := range []bool{false, true} {
+		name := "cumulative"
+		if incremental {
+			name = "from baseline"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			checkout, git := workspaceExportCheckout(ctx, t)
+			modulePath := filepath.Join(".dagger", "modules", "foo")
+			moduleDir := filepath.Join(checkout, modulePath)
+			require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+			for name, contents := range map[string]string{"prior.txt": "host prior", "modified.txt": "before", "removed.txt": "remove me"} {
+				require.NoError(t, os.WriteFile(filepath.Join(moduleDir, name), []byte(contents), 0o644))
+			}
+			git("add", ".")
+			git("commit", "-m", "module files")
+			head := git("rev-parse", "HEAD")
+			c := connect(ctx, t, dagger.WithWorkdir(moduleDir))
+			baseline := c.CurrentWorkspace().WithNewFile("prior.txt", "earlier overlay")
+			baselineID, err := baseline.ID(ctx)
+			require.NoError(t, err)
+			baseline = dagger.Ref[*dagger.Workspace](c, baselineID)
+			after := baseline.WithNewFile("generated.txt", "generated").
+				WithNewFile("modified.txt", "after").WithoutFile("removed.txt").
+				WithNewFile("/root-generated.txt", "root generated").
+				WithMountedDirectory("mount", c.Directory().WithNewFile("private.txt", "private"))
+			opts := dagger.WorkspaceExportOpts{}
+			if incremental {
+				// The comparator's cwd does not change the coordinate system used
+				// to export this workspace's changes.
+				opts.From = baseline.WithWorkdir(".")
+			}
+			require.NoError(t, after.Export(ctx, opts))
+			wantPrior := "earlier overlay"
+			if incremental {
+				wantPrior = "host prior"
+			}
+			for name, want := range map[string]string{"generated.txt": "generated", "modified.txt": "after", "prior.txt": wantPrior} {
+				contents, err := os.ReadFile(filepath.Join(moduleDir, name))
+				require.NoError(t, err)
+				require.Equal(t, want, string(contents))
+			}
+			contents, err := os.ReadFile(filepath.Join(checkout, "root-generated.txt"))
+			require.NoError(t, err)
+			require.Equal(t, "root generated", string(contents))
+			for _, path := range []string{filepath.Join(moduleDir, modulePath), filepath.Join(moduleDir, "removed.txt"), filepath.Join(moduleDir, "mount"), filepath.Join(checkout, "generated.txt")} {
+				_, err := os.Stat(path)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			require.Equal(t, head, git("rev-parse", "HEAD"))
+			require.Empty(t, git("diff", "--cached"))
+			if incremental {
+				require.NoError(t, after.Export(ctx, dagger.WorkspaceExportOpts{From: after}), "equal source and baseline are a no-op")
+			}
+		})
+	}
+}

@@ -460,10 +460,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DoNotCache("Writes workspace commits and changes to the calling client's host").
 			Doc("Write this workspace's commits and pending changes to a checkout on the calling client.",
 				"With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.",
-				"Omitting path retains legacy local-overlay export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.").
+				"Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.").
 			Args(
-				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory."),
-				dagql.Arg("from").Doc("Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path."),
+				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root."),
+				dagql.Arg("from").Doc("Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace."),
 			),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
@@ -2399,9 +2399,6 @@ func (s *workspaceSchema) export(
 		defer invalidateExportedWorkspace(ctx)
 		return core.Void{}, s.saveWorkspace(ctx, parent, args)
 	}
-	if args.From.Valid {
-		return core.Void{}, fmt.Errorf("workspace export from requires an explicit path")
-	}
 	ws := parent.Self()
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {
@@ -2415,10 +2412,25 @@ func (s *workspaceSchema) export(
 			invalidateExportedWorkspace(ctx)
 		}
 	}()
-	if !ok || changes.Self() == nil {
+	if !args.From.Valid && (!ok || changes.Self() == nil) {
 		return core.Void{}, nil
 	}
-	if ws.ClientLocalBase() {
+	if args.From.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return core.Void{}, err
+		}
+		from, err := args.From.Value.Load(ctx, srv)
+		if err != nil {
+			return core.Void{}, fmt.Errorf("load comparison workspace: %w", err)
+		}
+		// Export applies at the host root. Unlike the public changes field,
+		// this comparison must retain paths outside the workspace's cwd.
+		changes, err = s.workspaceChangesBetween(ctx, from, parent)
+		if err != nil {
+			return core.Void{}, err
+		}
+	} else if ws.ClientLocalBase() {
 		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return core.Void{}, err
