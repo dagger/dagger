@@ -17,8 +17,13 @@ Workflow:
 - `screen` reads the current rendered terminal. Poll it to watch progress;
   startup takes a little while (build + engine connect), and the tools retry
   the connection for you.
+- `wait` blocks until the screen matches a regex — or, without one, until it
+  stops changing — then returns it. Prefer it over polling `screen` in a loop
+  while a command or span finishes.
 - `key`, `typeText`, `resize`, `zoom`, `spans` drive and inspect the TUI,
-  exactly like the endpoints in the `tui-console` skill.
+  exactly like the endpoints in the `tui-console` skill. Key tokens are tuist
+  names — "enter", "esc", single characters, "ctrl+s" style modifier combos
+  (not "C-s") — and unknown tokens are rejected rather than typed literally.
 - `span(spanHex)` inspects one span in depth (status, timing, dagui flags like
   internal/passthrough/roll-up, and the parent chain with each ancestor's
   flags) — use it to answer "why is this span hidden / why didn't its logs roll
@@ -30,7 +35,9 @@ Interactive prompt mode works too: starting with args: ["agent"] brings up the
 live `dagger agent` prompt. Drive it by `typeText`-ing a line into the editline
 and `key enter` to submit; `key esc` toggles nav/input mode. The runner uses
 experimentalPrivilegedNesting so it inherits the outer session's LLM auth (no
-credential setup needed).
+credential setup needed). Once the session is up, `toolset` lists the tools
+the model actually sees (names, descriptions, schemas) without spending an
+LLM turn asking the agent itself.
 
 If engine-lab tools are available, their start tool prints a tcp://<host>:1234
 endpoint — pass it as `start(engine: ...)` to run the TUI against THAT engine

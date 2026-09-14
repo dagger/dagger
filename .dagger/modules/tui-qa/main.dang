@@ -116,16 +116,16 @@ type TuiQa {
     let runner = base
       .withFile("/usr/local/bin/dagger", cli)
       .withDirectory(workdir, srcDir)
+      # The workspace snapshot carries no usable .git of its own — at best a
+      # worktree pointer file whose target only exists on the real host — but
+      # the CLI under test needs a real checkout: without one,
+      # Workspace.snapshot can't freeze (ctrl+s fails with "pulling requires
+      # a frozen source workspace") and `dagger agent` composes with no
+      # tools. Workspace.git.directory is the documented complement: "mount
+      # at .git alongside workspace.directory(\"/\") to form a usable
+      # checkout".
+      .withDirectory(workdir + "/.git", source.git.directory)
       .withWorkdir(workdir)
-      # The workspace snapshot carries no usable .git — at best a worktree
-      # pointer file whose target only exists on the real host — but agent
-      # workspace tools (commit, git.uncommitted, ctrl+s) need an actual
-      # repository. Re-initialize one from the snapshot so `dagger agent`
-      # sessions can stage commits.
-      .withExec([
-        "sh", "-c",
-        "rm -rf .git && git init -q -b main && git add -A && git " + "-c user.email=tui-qa@localhost -c user.name=tui-qa " + "commit -qm 'workspace snapshot'",
-      ])
       .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
       .withEnvVariable("DAGGER_PROGRESS", "tty")
       .withExposedPort(port)
@@ -198,9 +198,46 @@ type TuiQa {
   }
 
   """
+  Block until the TUI reaches a state, then return the screen like `screen`
+  does — instead of polling `screen` in a loop while spans finish. With
+  `match`, returns as soon as the rendered (ANSI-stripped) screen matches
+  that RE2 regex; without it, returns once the screen has stopped changing
+  for `quietSeconds`. Either way it gives up after `timeoutSeconds` (capped
+  server-side at 300) and returns the screen as it stands, without erroring —
+  inspect the result rather than assuming the condition was reached.
+  """
+  wait(
+    """
+    RE2 regex to wait for on the screen, e.g. "DONE|ERROR" or a prompt
+    marker. Empty waits for the screen to go quiet instead.
+    """
+    match: String! = "",
+    """
+    How long the screen must stay unchanged to count as settled (only used
+    when `match` is empty). Note: a screen with running spans keeps
+    re-rendering elapsed times, so it only goes quiet once they finish.
+    """
+    quietSeconds: Int! = 2,
+    """
+    Give up after this many seconds and return the screen anyway.
+    """
+    timeoutSeconds: Int! = 60,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    post(
+      "/wait?quiet=" + toString(quietSeconds) + "s&timeout=" + toString(timeoutSeconds) + "s",
+      match,
+      # let curl outlive the server-side wait instead of cutting it off
+      maxTime: timeoutSeconds + 30,
+    )
+  }
+
+  """
   Apply a key script to the TUI and return the resulting screen. Keys are
-  whitespace/comma separated tuist key names (e.g. "down down right", "enter",
-  "esc", "C-c"); a "key*N" token repeats it. Movement/keymap:
+  whitespace/comma separated tuist key names: named keys ("enter", "esc",
+  "tab", "space", "up", "down", "left", "right", "pgup", "pgdown", ...),
+  single characters, or "+"-joined modifier combos ("ctrl+s", "ctrl+c",
+  "alt+enter", "shift+tab" — NOT "C-s"); a "key*N" token repeats it. Unknown
+  tokens are rejected before any key is applied. Movement/keymap:
   ←↑↓→ / h j k l move · right/l expand · left/h collapse · enter zoom · esc back ·
   r error origin · L logs · +/- verbosity · / search · T tests.
   """
@@ -287,6 +324,17 @@ type TuiQa {
   }
 
   """
+  List the tools the model in an interactive LLM session (`dagger agent`, the
+  shell's prompt mode) currently sees — names, descriptions and schemas,
+  verbatim from the live session — so you can verify what the model would see
+  without spending an LLM turn asking the agent itself. Errors with 404 until
+  such a session is up in the TUI under test.
+  """
+  toolset: String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/toolset")
+  }
+
+  """
   Show the console's own endpoint + keymap help.
   """
   help: String! {
@@ -310,7 +358,7 @@ type TuiQa {
 
   # ---- helpers ------------------------------------------------------------
 
-  let get(path: String!): String! {
+  let get(path: String!, maxTime: Int! = 60): String! {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
@@ -321,13 +369,13 @@ type TuiQa {
       .withExec([
         "curl", "-s",
         "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
-        "--max-time", "60",
+        "--max-time", toString(maxTime),
         url + path,
       ])
       .stdout
   }
 
-  let post(path: String!, body: String!): String! {
+  let post(path: String!, body: String!, maxTime: Int! = 60): String! {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
@@ -336,7 +384,7 @@ type TuiQa {
       .withExec([
         "curl", "-s",
         "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
-        "--max-time", "60",
+        "--max-time", toString(maxTime),
         "--data-binary", body,
         url + path,
       ])
