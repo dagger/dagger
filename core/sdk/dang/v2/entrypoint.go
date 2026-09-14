@@ -12,6 +12,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
 )
 
@@ -134,6 +135,9 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return err
 	}
+
+	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
 
 	var resultJSON []byte
 	_, err = evalDangSource(
