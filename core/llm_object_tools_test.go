@@ -615,10 +615,23 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 					require.NoError(t, mcp.rebindBoundTool("LiftTestRunner", returned))
 				case "dependency attachment":
 					llm := &LLM{mcp: mcp}
-					_, err := llm.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+					deps, err := llm.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
 						return currentType.New(res)
 					})
 					require.NoError(t, err)
+					require.Len(t, deps, 1)
+					dep, ok := deps[0].(dagql.AnyObjectResult)
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("nullable", "")
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("replacement", "")
+					require.False(t, ok)
+					out, err := dep.Select(ctx, current, dagql.Selector{
+						Field: "nullable",
+						Args:  []dagql.NamedInput{{Name: "date", Value: dagql.Opt(dagql.String("returned dependency"))}},
+					})
+					require.NoError(t, err)
+					require.Equal(t, dagql.String("returned dependency"), out.Unwrap())
 				}
 				tools := assertDefiningTools(t, mcp)
 				for _, tool := range tools {
@@ -636,9 +649,11 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	})
 }
 
-// TestBuildObjectMethodSelector covers argument dispatch against a real dagql
-// field: nullable scalars accept explicit null, while model-supplied strings
-// for liftable object args first try ID decoding and then address resolution.
+// TestBuildObjectMethodSelectorAddressLift covers argument dispatch against a
+// real dagql field: nullable scalars accept explicit null, while model-supplied
+// strings for liftable object args first try ID decoding and then address
+// resolution. Args of addressable types outside the liftableTypes allowlist
+// only ever take the ID path.
 func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
