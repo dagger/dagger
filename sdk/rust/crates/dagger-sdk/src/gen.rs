@@ -16585,10 +16585,10 @@ pub struct WorkspaceDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceExportOpts<'a> {
-    /// Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path.
+    /// Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
     #[builder(setter(into, strip_option), default)]
     pub from: Option<Id>,
-    /// Destination checkout path on the calling client. Relative paths start at the client's working directory.
+    /// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
 }
@@ -17147,7 +17147,7 @@ impl Workspace {
     }
     /// Write this workspace's commits and pending changes to a checkout on the calling client.
     /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
-    /// Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
+    /// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
     ///
     /// # Arguments
     ///
@@ -17158,7 +17158,7 @@ impl Workspace {
     }
     /// Write this workspace's commits and pending changes to a checkout on the calling client.
     /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
-    /// Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
+    /// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
     ///
     /// # Arguments
     ///
@@ -17755,7 +17755,7 @@ impl Workspace {
     }
     /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
-    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
     /// # Arguments
@@ -17779,7 +17779,7 @@ impl Workspace {
     }
     /// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
     /// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
-    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+    /// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
     /// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
     ///
     /// # Arguments

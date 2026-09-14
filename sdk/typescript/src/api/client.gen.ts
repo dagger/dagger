@@ -3642,12 +3642,12 @@ export type WorkspaceDirectoryOpts = {
 
 export type WorkspaceExportOpts = {
   /**
-   * Destination checkout path on the calling client. Relative paths start at the client's working directory.
+   * Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
    */
   path?: string
 
   /**
-   * Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path.
+   * Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
    */
   from?: Workspace
 }
@@ -16981,9 +16981,9 @@ export class Workspace extends BaseClient {
    *
    * With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
    *
-   * Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
-   * @param opts.path Destination checkout path on the calling client. Relative paths start at the client's working directory.
-   * @param opts.from Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path.
+   * Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+   * @param opts.path Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+   * @param opts.from Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
    */
   export = async (opts?: WorkspaceExportOpts): Promise<void> => {
     if (this._export) {
@@ -17289,7 +17289,7 @@ export class Workspace extends BaseClient {
    *
    * Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use commitsFrom to preview the integration.
    *
-   * A local receiver is snapshotted automatically; untracked files require interactive approval. The result retains the receiver's checkout destination for export. The checkout is not modified until export.
+   * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
    *
    * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
    * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.

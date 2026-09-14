@@ -16893,18 +16893,21 @@ class Workspace(Type):
         an earlier source value, including previously saved pending edits that
         are now committed.
 
-        Omitting path retains legacy local-overlay and prepared-integration
-        export behavior. Like Directory.export, this writes only to the client
-        making the call, never the source's client.
+        Without path, apply a local workspace's overlay changes at its host
+        root. Pass from to apply only changes since an earlier local workspace
+        state. Export paths are relative to the workspace root regardless of
+        its working directory. Like Directory.export, this writes only to
+        the client making the call, never the source's client.
 
         Parameters
         ----------
         path:
             Destination checkout path on the calling client. Relative paths
-            start at the client's working directory.
+            start at the client's working directory. Omit to apply a local
+            workspace's overlay changes at its host root.
         from_:
-            Previously exported source workspace. Only commits and worktree
-            changes since this value are exported. Requires path.
+            Earlier workspace state to compare against. With path, this must
+            be a previously exported frozen source workspace.
 
         Returns
         -------
@@ -17477,8 +17480,8 @@ class Workspace(Type):
         them explicitly if needed. Use commitsFrom to preview the integration.
 
         A local receiver is snapshotted automatically; untracked files require
-        interactive approval. The result retains the receiver's checkout
-        destination for export. The checkout is not modified until export.
+        interactive approval. The checkout is not modified. Export the result
+        with an explicit path to write it to a checkout.
 
         Cherry-picks preserve the source author and author date, use the
         calling client's Git config for committer identity, and reuse the
