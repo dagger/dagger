@@ -4,6 +4,7 @@ import Translate from '@docusaurus/Translate';
 import type { Props } from '@theme/NotFound/Content';
 import Heading from '@theme/Heading';
 import Head from '@docusaurus/Head';
+import Link from '@docusaurus/Link';
 
 export default function NotFoundContent({ className }: Props): JSX.Element {
   return (
@@ -36,6 +37,13 @@ export default function NotFoundContent({ className }: Props): JSX.Element {
                 original URL and let them know their link is broken.
               </Translate>
             </p>
+            <Link className="button button--primary" to="https://docs.dagger.io">
+              <Translate
+                id="theme.NotFound.returnHome"
+                description="The label of the return home button on the 404 page">
+                Return Home
+              </Translate>
+            </Link>
           </div>
         </div>
       </main>
