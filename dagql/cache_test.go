@@ -6467,6 +6467,29 @@ func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
 	assert.Equal(t, int64(0), target)
 }
 
+func TestCachePruneMinFreeSpaceHonorsReservedSpace(t *testing.T) {
+	t.Parallel()
+
+	// Disk is 100 short of MinFreeSpace, but usage (50) is within the reserve:
+	// nothing may be reclaimed.
+	target, triggered := pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 100,
+		ReservedSpace:    80,
+	}, 50)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(0), target)
+
+	// Usage above the reserve: reclaim only down to the reserve.
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 100,
+		ReservedSpace:    80,
+	}, 120)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(40), target)
+}
+
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	t.Parallel()
 
