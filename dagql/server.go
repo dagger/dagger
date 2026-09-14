@@ -44,7 +44,7 @@ type Server struct {
 	directives     map[string]DirectiveSpec
 
 	schemas       map[call.View]*ast.Schema
-	schemaDigests map[call.View]digest.Digest
+	schemaDigests map[call.View]func() digest.Digest
 	schemaOnces   map[call.View]*sync.Once
 	schemaLock    *sync.Mutex
 
@@ -226,7 +226,7 @@ func newBlankServer() *Server {
 		directives:     map[string]DirectiveSpec{},
 		installLock:    &sync.RWMutex{},
 		schemas:        make(map[call.View]*ast.Schema),
-		schemaDigests:  make(map[call.View]digest.Digest),
+		schemaDigests:  make(map[call.View]func() digest.Digest),
 		schemaOnces:    make(map[call.View]*sync.Once),
 		schemaLock:     &sync.Mutex{},
 	}
@@ -924,6 +924,13 @@ func (s *Server) Schema() *ast.Schema {
 }
 
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	schema, _ := s.schemaForView(view)
+	return schema
+}
+
+// schemaForView returns the schema for view and a function that computes its
+// digest, built together under the schema lock so they can't disagree.
+func (s *Server) schemaForView(view call.View) (*ast.Schema, func() digest.Digest) {
 	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
@@ -991,13 +998,17 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			}
 			schema.Directives[n] = d.DirectiveDefinition(view)
 		})
-		h := xxh3.New()
-		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
-		s.schemaDigests[view] = digest.NewDigest(hashutil.XXH3, h)
+		// Only schema-scoped cache inputs need the digest; query validation
+		// doesn't. Hash on first request instead of on every rebuild.
+		s.schemaDigests[view] = sync.OnceValue(func() digest.Digest {
+			h := xxh3.New()
+			json.NewEncoder(h).Encode(schema)
+			return digest.NewDigest(hashutil.XXH3, h)
+		})
 	})
 
-	return s.schemas[view]
+	return s.schemas[view], s.schemaDigests[view]
 }
 
 type viewFilteredType interface {
@@ -1018,10 +1029,8 @@ func typeVisibleInView(t Type, view call.View) bool {
 
 // SchemaDigest returns the digest of the current schema.
 func (s *Server) SchemaDigest() digest.Digest {
-	s.Schema() // ensure it's built
-	s.schemaLock.Lock()
-	defer s.schemaLock.Unlock()
-	return s.schemaDigests[s.View]
+	_, digestFn := s.schemaForView(s.View)
+	return digestFn()
 }
 
 // Complexity returns the complexity of the given field.
