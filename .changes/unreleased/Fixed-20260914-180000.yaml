@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  `dag.CurrentModule().Source()` and `dag.CurrentModule().GeneratedContextDirectory()`
+  no longer re-resolve the running module's declared dependencies. The module's
+  already-loaded dependency DAG is reused for codegen, so these APIs now work in
+  modules whose dependencies point at private git repositories even when the
+  runtime caller does not hold the author's credentials.
+time: 2026-09-14T18:00:00Z
+custom:
+  Author: marcosnils
+  PR: ""
