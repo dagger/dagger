@@ -1310,8 +1310,15 @@ func (llm *LLM) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach llm bound tool object: unexpected result %T", attached)
 		}
+		// Dependency attachment may rewrap the value in the current server's
+		// same-named class. The tool binding must keep the class captured when
+		// it was composed, including a newer module revision after reload.
+		obj, err = bound.objType.New(obj)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm bound tool type: %w", err)
+		}
 		llm.mcp.boundTools[i].object = obj
-		deps = append(deps, attached)
+		deps = append(deps, obj)
 	}
 	for i, skillDir := range llm.mcp.skillDirs {
 		attached, err := attach(skillDir)

@@ -557,6 +557,9 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	objType, ok := defining.ObjectType("LiftTestRunner")
 	require.True(t, ok)
 
+	// Install a different, valid definition of the same type in the current
+	// schema. Treating definingSchema as a missing-type fallback would silently
+	// replace the active tools with this method.
 	current := newCoreDagqlServerForTest(t, &Query{})
 	current.InstallObject(dagql.NewClass(current, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
 	dagql.Fields[*liftTestRunner]{
@@ -571,6 +574,7 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, toolsets, 1)
 		require.Equal(t, "LiftTestRunner", toolsets[0].typeName)
+
 		names := make([]string, 0, len(toolsets[0].tools))
 		for _, tool := range toolsets[0].tools {
 			names = append(names, tool.Name)
@@ -583,31 +587,73 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	t.Run("lazy", func(t *testing.T) {
 		assertDefiningTools(t, newMCP().WithLazyTools(nil, objType, defining.Schema(), nil))
 	})
-	t.Run("eager", func(t *testing.T) {
-		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "defining-schema-test", SessionID: "defining-schema-test"})
+
+	t.Run("dispatch", func(t *testing.T) {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			ClientID:  "defining-schema-test",
+			SessionID: "defining-schema-test",
+		})
 		cache, err := dagql.NewCache(ctx, "", nil, nil)
 		require.NoError(t, err)
 		ctx = dagql.ContextWithCache(ctx, cache)
+
 		var runner dagql.AnyObjectResult
 		require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
-		tools := assertDefiningTools(t, newMCP().WithTools(runner, defining.Schema(), nil))
-		for _, tool := range tools {
-			if tool.Name == "nullable" {
-				out, err := tool.Call(ctx, map[string]any{"date": "still active"})
-				require.NoError(t, err)
-				require.Equal(t, "still active", out)
-				return
-			}
+		for _, boundary := range []string{"eager", "lazy load", "state return", "dependency attachment"} {
+			t.Run(boundary, func(t *testing.T) {
+				mcp := newMCP().WithTools(runner, defining.Schema(), nil)
+				currentType, ok := current.ObjectType("LiftTestRunner")
+				require.True(t, ok)
+				switch boundary {
+				case "lazy load":
+					id, err := runner.ID()
+					require.NoError(t, err)
+					mcp = newMCP().WithLazyTools(id, objType, defining.Schema(), nil)
+				case "state return":
+					returned, err := currentType.New(runner)
+					require.NoError(t, err)
+					require.NoError(t, mcp.rebindBoundTool("LiftTestRunner", returned))
+				case "dependency attachment":
+					llm := &LLM{mcp: mcp}
+					deps, err := llm.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+						return currentType.New(res)
+					})
+					require.NoError(t, err)
+					require.Len(t, deps, 1)
+					dep, ok := deps[0].(dagql.AnyObjectResult)
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("nullable", "")
+					require.True(t, ok)
+					_, ok = dep.ObjectType().FieldSpec("replacement", "")
+					require.False(t, ok)
+					out, err := dep.Select(ctx, current, dagql.Selector{
+						Field: "nullable",
+						Args:  []dagql.NamedInput{{Name: "date", Value: dagql.Opt(dagql.String("returned dependency"))}},
+					})
+					require.NoError(t, err)
+					require.Equal(t, dagql.String("returned dependency"), out.Unwrap())
+				}
+				tools := assertDefiningTools(t, mcp)
+				for _, tool := range tools {
+					if tool.Name != "nullable" {
+						continue
+					}
+					out, err := tool.Call(ctx, map[string]any{"date": "still active"})
+					require.NoError(t, err)
+					require.Equal(t, "still active", out)
+					return
+				}
+				t.Fatal("nullable tool not found")
+			})
 		}
-		t.Fatal("nullable tool not found")
 	})
 }
 
-// TestBuildObjectMethodSelectorAddressLift covers dispatch: a model-supplied
-// string for a liftable object arg first tries the ID decode (IDs from
-// previous tool results keep working), then falls back to lifting the string
-// through Query.address(value).<addressField>. Args of addressable types
-// outside the liftableTypes allowlist only ever take the ID path.
+// TestBuildObjectMethodSelectorAddressLift covers argument dispatch against a
+// real dagql field: nullable scalars accept explicit null, while model-supplied
+// strings for liftable object args first try ID decoding and then address
+// resolution. Args of addressable types outside the liftableTypes allowlist
+// only ever take the ID path.
 func TestBuildObjectMethodSelectorAddressLift(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).

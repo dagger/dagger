@@ -1250,9 +1250,8 @@ func interfaceFieldsPresent(iface *Interface, objectType ObjectType, view call.V
 }
 
 // ObjectTypeForID resolves the object type named by id without evaluating the
-// object itself. When the current schema does not carry the type, a recipe's
-// module provenance is loaded and used to rebuild the dependency-aware schema
-// that defined it.
+// object itself. A recipe's module provenance is authoritative even when the
+// current schema carries another version of the same named type.
 func (s *Server) ObjectTypeForID(ctx context.Context, id *call.ID) (ObjectType, bool, error) {
 	objType, _, ok, err := s.ObjectTypeAndServerForID(ctx, id)
 	return objType, ok, err
@@ -1267,13 +1266,16 @@ func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (Obj
 		return nil, nil, false, nil
 	}
 	typeName := id.Type().NamedType()
-	if objType, ok := s.ObjectType(typeName); ok {
-		return objType, s, true, nil
-	}
 	if id.IsHandle() || id.Module() == nil || id.Module().ID() == nil || s.resultServerForCall == nil {
+		if objType, ok := s.ObjectType(typeName); ok {
+			return objType, s, true, nil
+		}
 		return nil, nil, false, nil
 	}
 
+	// A same-named type in the caller's schema may belong to an older module
+	// revision. In particular, rebinding a state-returning tool after reload
+	// must not replace its new toolset with that older definition.
 	moduleResult, err := s.LoadType(ctx, id.Module().ID())
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)

@@ -601,6 +601,103 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 	})
 }
 
+// TestReloadedToolsSurviveStateReturns exercises an actual module source change:
+// same-type state returns must retain the reloaded binding's defining schema.
+func (LLMSuite) TestReloadedToolsSurviveStateReturns(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const modulePath = ".dagger/modules/swapper/main.dang"
+	const source = `
+type Swapper {
+  let state: Int! = 0
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  reload(llm: LLM!): LLM! {
+    let ws = llm.workspace.withNewFile("` + modulePath + `", llm.workspace.file("next-source.txt").contents)
+    ws.agents.compose(base: llm.withWorkspace(ws))
+  }
+
+  advance: Swapper! {
+    state += 1
+    self
+  }
+%s
+}
+`
+	initialSource := fmt.Sprintf(source, "")
+	reloadedSource := fmt.Sprintf(source, `
+  added: String! {
+    "new tool state: " + toString(state)
+  }
+`)
+	base := workspaceFixture(t, c, "workspace-tool-return").
+		WithNewFile(modulePath, initialSource).
+		WithNewFile("next-source.txt", reloadedSource)
+
+	toolCall := func(id, name string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name}
+	}
+	timeout := func(id string) dagger.LLMContentBlockInput {
+		block := toolCall(id, "Timeout")
+		block.Arguments = dagger.JSON(`{"duration":"1m","tool":"added","arguments":{}}`)
+		return block
+	}
+	calls := []dagger.LLMContentBlockInput{
+		toolCall("reload", "reload"),
+		toolCall("before_state", "added"),
+		toolCall("advance", "advance"),
+		toolCall("after_state", "added"),
+		timeout("timeout"),
+	}
+	nextCalls := []dagger.LLMContentBlockInput{
+		toolCall("next_advance", "advance"),
+		timeout("next_timeout"),
+		toolCall("next_direct", "added"),
+	}
+	script := c.LLM().WithPrompt("reload and use the new tool")
+	for _, block := range calls {
+		script = script.WithResponse([]dagger.LLMContentBlockInput{block}).WithToolResult(block.CallID, "", false)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "first turn done"}}).
+		WithPrompt("use it again")
+	for _, block := range nextCalls {
+		script = script.WithResponse([]dagger.LLMContentBlockInput{block}).WithToolResult(block.CallID, "", false)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "second turn done"}})
+	model := cannedReplayModel(ctx, t, c, script)
+	// The shell starts with the original module installed in its schema. A
+	// core-only client would not exercise collisions between old and new
+	// definitions of the same Swapper type when state is rebound.
+	query := fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper)`, model)
+	run := func(query string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(query)).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.NotContains(t, run(query+" | tools"), "## added\n")
+	query += ` | with-prompt "reload and use the new tool"`
+	for _, block := range calls {
+		query += " | step"
+		require.Contains(t, run(query+" | tools"), "## added\n", block.CallID)
+	}
+	query += " | loop"
+	transcript := run(query + " | transcript")
+	require.Contains(t, transcript, "Tools added: added")
+	require.Contains(t, transcript, "new tool state: 0")
+	require.Equal(t, 2, strings.Count(transcript, "new tool state: 1"))
+	require.Contains(t, transcript, "first turn done")
+
+	query += ` | with-prompt "use it again" | loop`
+	require.Contains(t, run(query+" | tools"), "## added\n")
+	transcript = run(query + " | transcript")
+	require.Equal(t, 2, strings.Count(transcript, "new tool state: 2"))
+	require.Contains(t, transcript, "second turn done")
+	require.NotContains(t, transcript, "is not available")
+}
+
 // TestAddressableToolArgs covers address lifting of object-typed tool args end
 // to end (hack/designs/sandboxes.md §4): a module function with a required
 // Container! arg still becomes a tool — the arg renders as an address string,

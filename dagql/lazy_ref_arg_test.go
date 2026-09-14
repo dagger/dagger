@@ -19,9 +19,9 @@ func (*moduleToolSet) Type() *ast.Type {
 }
 
 // TestObjectTypeForIDUsesModuleProvenance covers lazy references to user-module
-// objects when the loading server only has the bootstrap schema. The object's
-// recipe deliberately names no real field: resolving its type can only succeed
-// by loading its module provenance and must never evaluate the object recipe.
+// objects when the loading server lacks the type or has an older same-named
+// definition. The recipe deliberately names no real field: resolving its type
+// must use module provenance without evaluating the object recipe.
 func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
 	cache := newCache(t)
 	ctx := dagql.ContextWithCache(testContext(), cache)
@@ -59,6 +59,34 @@ func TestObjectTypeForIDUsesModuleProvenance(t *testing.T) {
 	assert.Equal(t, moduleSchema, definingServer)
 	assert.Equal(t, "ModuleToolSet", objType.TypeName())
 	_, ok = objType.FieldSpec("check", "")
+	assert.Assert(t, ok)
+
+	// Reloading a module can leave an older definition of the same type in
+	// the caller's schema. The recipe's module, not that name match, must
+	// remain authoritative when a state-returning tool is rebound.
+	bootstrap.InstallObject(dagql.NewClass[*moduleToolSet](bootstrap))
+	dagql.Fields[*moduleToolSet]{
+		dagql.Func("oldCheck", func(context.Context, *moduleToolSet, struct{}) (string, error) {
+			return "old", nil
+		}),
+	}.Install(bootstrap)
+	objType, definingServer, ok, err = bootstrap.ObjectTypeAndServerForID(ctx, objectID)
+	assert.NilError(t, err)
+	assert.Assert(t, ok)
+	assert.Equal(t, moduleSchema, definingServer)
+	_, ok = objType.FieldSpec("check", "")
+	assert.Assert(t, ok)
+	_, ok = objType.FieldSpec("oldCheck", "")
+	assert.Assert(t, !ok)
+
+	// Without module provenance, ordinary/core type lookup still uses the
+	// caller's schema rather than inventing a defining module.
+	localID := call.New().Append((&moduleToolSet{}).Type(), "missingConstructor")
+	objType, definingServer, ok, err = bootstrap.ObjectTypeAndServerForID(ctx, localID)
+	assert.NilError(t, err)
+	assert.Assert(t, ok)
+	assert.Equal(t, bootstrap, definingServer)
+	_, ok = objType.FieldSpec("oldCheck", "")
 	assert.Assert(t, ok)
 }
 

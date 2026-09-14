@@ -372,13 +372,13 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 		return nil, err
 	}
 	// Resolve the bound object's type from its ID without evaluating it, so the
-	// toolset can be built lazily. For a user-module type absent from the current
-	// bootstrap schema, ObjectTypeForID rebuilds its defining schema from the
-	// call's module provenance. The object itself is loaded only when a tool is
-	// actually invoked on it (see MCP.boundToolObject). This is what lets a
+	// toolset can be built lazily. ObjectTypeAndServerForID uses the recipe's
+	// module provenance even when the current schema has an older definition of
+	// the same type. The object itself is loaded only when a tool is actually
+	// invoked on it (see MCP.boundToolObject). This is what lets a
 	// persisted session restore a binding whose object has side effects or is no
 	// longer reproducible without re-running its construction.
-	if id.Type() != nil {
+	if id.Type() != nil && !id.IsHandle() {
 		objType, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, id)
 		if err != nil {
 			return nil, err
@@ -400,12 +400,19 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, fmt.Errorf("resolve bound object recipe: %w", err)
 	}
-	_, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, recipeID)
+	objType, definingServer, ok, err := srv.ObjectTypeAndServerForID(ctx, recipeID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, fmt.Errorf("resolve defining schema for bound object type %q", obj.Type().Name())
+	}
+	// Loading a handle rewraps it in the caller's schema, which may still have
+	// an older revision of this module. Bind the recipe's class as well as its
+	// schema so dispatch and advertised tools describe the same revision.
+	obj, err = objType.New(obj)
+	if err != nil {
+		return nil, fmt.Errorf("bind object to its defining type: %w", err)
 	}
 	return llm.WithTools(obj, definingServer.Schema(), args.Except), nil
 }
