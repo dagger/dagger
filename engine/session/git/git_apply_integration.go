@@ -25,7 +25,7 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 	defer os.RemoveAll(tmp)
 	index := filepath.Join(tmp, "index")
 	run := func(input string, args ...string) (string, error) {
-		cmd := exportGitCommand(ctx, checkout, args...)
+		cmd := exportGitCommand(ctx, checkout, append([]string{"-c", "core.filemode=true", "-c", "core.symlinks=true"}, args...)...)
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+index, "GIT_LITERAL_PATHSPECS=1")
 		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
@@ -43,16 +43,40 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 		return err
 	}
 	touched := integrationPaths(committed + changed)
+	// A retry may find some paths already at the desired after-state (notably
+	// pending additions, which capture intentionally leaves untracked). Accept
+	// only exact matches, including file mode and symlink target, and remove
+	// those writes from the patch. Never treat an arbitrary obstruction as a
+	// previously applied change.
+	if _, err := run("", "read-tree", after); err != nil {
+		return err
+	}
+	afterModified, err := run("", "diff", "--no-ext-diff", "--name-only", "-z", "--")
+	if err != nil {
+		return err
+	}
+	afterUntracked, err := run("", "ls-files", "--others", "-z")
+	if err != nil {
+		return err
+	}
+	afterDifferences := integrationPaths(afterModified + afterUntracked)
+	matchesAfter := func(path string) bool {
+		return !integrationOverlaps(path, afterDifferences)
+	}
 	if _, err := run("", "read-tree", before); err != nil {
 		return err
 	}
+	var alreadyApplied []string
 	modified, err := run("", "diff", "--no-ext-diff", "--name-only", "-z", "--")
 	if err != nil {
 		return err
 	}
 	for _, path := range integrationPaths(modified) {
 		if integrationOverlaps(path, touched) {
-			return fmt.Errorf("checkout path %q changed since integration was prepared", path)
+			if !matchesAfter(path) {
+				return fmt.Errorf("checkout path %q changed since integration was prepared", path)
+			}
+			alreadyApplied = append(alreadyApplied, path)
 		}
 	}
 	// Include ignored obstructions too. Paths present in the approved before
@@ -63,10 +87,22 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 	}
 	for _, path := range integrationPaths(untracked) {
 		if integrationOverlaps(path, touched) {
-			return fmt.Errorf("untracked path %q would be overwritten by integration", path)
+			if !matchesAfter(path) {
+				return fmt.Errorf("untracked path %q would be overwritten by integration", path)
+			}
+			alreadyApplied = append(alreadyApplied, path)
 		}
 	}
-	patch, err := runExportGit(ctx, checkout, "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "--no-renames", before, after, "--")
+	for _, path := range alreadyApplied {
+		if _, err := run("", "restore", "--source="+after, "--staged", "--", path); err != nil {
+			return err
+		}
+	}
+	actualBefore, err := run("", "write-tree")
+	if err != nil {
+		return err
+	}
+	patch, err := runExportGit(ctx, checkout, "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "--no-renames", strings.TrimSpace(actualBefore), after, "--")
 	if err != nil {
 		return err
 	}
