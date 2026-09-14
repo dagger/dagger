@@ -3944,43 +3944,60 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 	require.Same(t, otherCaller, caller)
 }
 
-func TestNeverServesAttachables(t *testing.T) {
+func TestClientAttachableWaitRouting(t *testing.T) {
 	t.Parallel()
 
-	newClient := func(proxyID string, registered bool) *daggerClient {
-		attachables := newSessionAttachableManager()
-		if registered {
-			attachables.callers["child"] = &sessionAttachableCaller{
+	for _, tc := range []struct {
+		name       string
+		proxyID    string
+		registered bool
+		clientID   string
+		wantWaitID string
+	}{
+		{"synthetic nested client without attachables", "parent", false, "child", "parent"},
+		{"synthetic nested client that registered attachables", "parent", true, "child", ""},
+		{"client with its own session waits", "", false, "child", "child"},
+		{"another client still waits", "parent", false, "other", "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			attachables := newSessionAttachableManager()
+			registeredCaller := &sessionAttachableCaller{
 				ctx:       context.Background(),
 				supported: map[string]struct{}{},
 			}
-		}
-		return &daggerClient{
-			clientID:                 "child",
-			hostServiceProxyClientID: proxyID,
-			daggerSession:            &daggerSession{attachables: attachables},
-		}
+			if tc.registered {
+				attachables.callers["child"] = registeredCaller
+			}
+			sess := &daggerSession{
+				attachables: attachables,
+				clientRecords: map[string]*clientRecord{
+					"parent": {clientID: "parent"},
+					"child": {
+						clientID:                 "child",
+						hostServiceProxyClientID: tc.proxyID,
+						parentClientIDs:          []string{"parent"},
+					},
+					"other": {clientID: "other"},
+				},
+			}
+			var waitedFor []string
+			waitCaller := &fakeSessionCaller{id: tc.wantWaitID}
+			sess.getClientCaller = func(_ context.Context, id string) (engineutil.SessionCaller, error) {
+				waitedFor = append(waitedFor, id)
+				return waitCaller, nil
+			}
+			caller, err := sess.resolveHostServiceCaller(t.Context(), tc.clientID)
+			require.NoError(t, err)
+			if tc.wantWaitID == "" {
+				require.Empty(t, waitedFor)
+				require.Same(t, registeredCaller, caller)
+			} else {
+				require.Equal(t, []string{tc.wantWaitID}, waitedFor)
+				require.Same(t, waitCaller, caller)
+			}
+		})
 	}
-
-	t.Run("synthetic nested client without attachables", func(t *testing.T) {
-		t.Parallel()
-		require.True(t, newClient("parent", false).neverServesAttachables("child"))
-	})
-
-	t.Run("synthetic nested client that registered attachables", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("parent", true).neverServesAttachables("child"))
-	})
-
-	t.Run("client with its own session waits", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("", false).neverServesAttachables("child"))
-	})
-
-	t.Run("another client still waits", func(t *testing.T) {
-		t.Parallel()
-		require.False(t, newClient("parent", false).neverServesAttachables("other"))
-	})
 }
 
 func TestWorkspaceBindingMode(t *testing.T) {
