@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  `dagger check <module>` and `dagger generate <module>` no longer load the
+  workspace entrypoint module. A scoped command narrowed its first request
+  correctly, but its follow-up queries made the engine load the entrypoint to
+  resolve them, so an entrypoint that could not load broke a command scoped to
+  an unrelated module.
+time: 2026-09-14T16:00:00Z
+custom:
+  Author: eunomie
+  PR: "14140"
