@@ -14,10 +14,10 @@ import (
 
 type pullFixture struct {
 	dir string
-	t   *testing.T
+	t   testing.TB
 }
 
-func newPullFixture(t *testing.T) pullFixture {
+func newPullFixture(t testing.TB) pullFixture {
 	t.Helper()
 	f := pullFixture{dir: t.TempDir(), t: t}
 	f.git("init", "-b", "main")
@@ -46,6 +46,100 @@ func (f pullFixture) fold(dirty []string, commits ...string) []WorkspacePullPick
 	return picks
 }
 
+func TestWorkspaceExportReusesEmptySnapshot(t *testing.T) {
+	f := newPullFixture(t)
+	base := f.git("rev-parse", "HEAD")
+	f.git("switch", "source")
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "executable"), []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.Symlink("executable", filepath.Join(f.dir, "link")))
+	f.git("rm", "base.txt")
+	f.git("add", ".")
+	f.git("commit", "-m", "modes, symlink, and deletion")
+	source := f.git("rev-parse", "HEAD")
+	want, err := workspaceSnapshotCommit(t.Context(), f.dir)
+	require.NoError(t, err)
+	f.git("switch", "main")
+	// Tree reuse must neither reset to source nor stage the current checkout.
+	// Real callers own its state and may still be processing a different input.
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "base.txt"), []byte("staged"), 0o644))
+	f.git("add", "base.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "base.txt"), []byte("unstaged"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "untracked"), []byte("keep"), 0o644))
+	index, err := os.ReadFile(filepath.Join(f.dir, ".git", "index"))
+	require.NoError(t, err)
+	got, err := workspaceExportSnapshot(t.Context(), &gitMergeWorkspace{workDir: f.dir}, source, &changesetContent{paths: &ChangesetPaths{}})
+	require.NoError(t, err)
+	require.Equal(t, want, got, "reuse preserves the exact parentless snapshot object")
+	indexAfter, err := os.ReadFile(filepath.Join(f.dir, ".git", "index"))
+	require.NoError(t, err)
+	require.Equal(t, index, indexAfter, "reuse must not restage or rewrite the index")
+	require.Equal(t, base, f.git("rev-parse", "HEAD"))
+	contents, err := os.ReadFile(filepath.Join(f.dir, "base.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "unstaged", string(contents))
+	require.FileExists(t, filepath.Join(f.dir, "untracked"))
+	require.Contains(t, f.git("ls-tree", got), "100755 blob")
+	require.Contains(t, f.git("ls-tree", got), "120000 blob")
+}
+
+func TestWorkspaceExportEmptySnapshotClassification(t *testing.T) {
+	for name, paths := range map[string]*ChangesetPaths{
+		"empty":                  {},
+		"empty directory":        {Added: []string{"empty/"}},
+		"modified directory":     {Modified: []string{"directory/"}},
+		"mode or symlink change": {Modified: []string{"file"}},
+		"removed":                {Removed: []string{"file"}},
+		"all removed":            {AllRemoved: []string{"file"}},
+		"rename":                 {Renamed: map[string]string{"new": "old"}},
+		"git metadata":           {Added: []string{".git/HEAD"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, name == "empty", workspaceExportContentEmpty(&changesetContent{paths: paths}))
+		})
+	}
+}
+
+func TestWorkspaceExportNonemptySnapshot(t *testing.T) {
+	for _, emptyDir := range []bool{false, true} {
+		t.Run(strconv.FormatBool(emptyDir), func(t *testing.T) {
+			f := newPullFixture(t)
+			base := f.git("rev-parse", "HEAD")
+			ws := &gitMergeWorkspace{root: f.dir, dir: "/", workDir: f.dir}
+			// First use the fast path, then a delta requiring full validation.
+			_, err := workspaceExportSnapshot(t.Context(), ws, base, &changesetContent{paths: &ChangesetPaths{}})
+			require.NoError(t, err)
+			paths := &ChangesetPaths{Removed: []string{"base.txt"}, AllRemoved: []string{"base.txt"}}
+			if emptyDir {
+				paths.Added = []string{"empty/"}
+			}
+			sha, err := workspaceExportSnapshot(t.Context(), ws, base, &changesetContent{paths: paths})
+			if emptyDir {
+				require.ErrorContains(t, err, "cannot export empty directories")
+				return
+			}
+			require.NoError(t, err)
+			require.Empty(t, f.git("ls-tree", sha))
+			require.NoFileExists(t, filepath.Join(f.dir, "base.txt"))
+		})
+	}
+}
+
+func TestWorkspaceExportTreeTransportParents(t *testing.T) {
+	f := newPullFixture(t)
+	base := f.git("rev-parse", "HEAD")
+	before, err := workspaceSnapshotTreeCommit(t.Context(), f.dir, base+"^{tree}", base)
+	require.NoError(t, err)
+	target := f.commit("next.txt", "next", "source change")
+	tree := f.git("rev-parse", target+"^{tree}")
+	f.git("reset", "--hard", base)
+	require.NoError(t, workspaceExportTransport(t.Context(), f.dir, target, before, tree))
+	require.Equal(t, target+" "+before, f.git("show", "-s", "--format=%P", "HEAD"))
+	require.Equal(t, base, f.git("show", "-s", "--format=%P", "HEAD^2"))
+	require.Equal(t, tree, f.git("rev-parse", "HEAD^{tree}"))
+	require.FileExists(t, filepath.Join(f.dir, "next.txt"))
+	require.Empty(t, f.git("status", "--porcelain"))
+}
+
 func TestWorkspaceExportIncrementalPending(t *testing.T) {
 	for _, committed := range []bool{false, true} {
 		t.Run(strconv.FormatBool(committed), func(t *testing.T) {
@@ -63,14 +157,22 @@ func TestWorkspaceExportIncrementalPending(t *testing.T) {
 			} else {
 				require.NoError(t, os.WriteFile(filepath.Join(f.dir, "pending.txt"), []byte("second"), 0o644))
 			}
-			sourceTree, err := workspaceSnapshotCommit(t.Context(), f.dir)
+			var sourceTree string
+			if committed {
+				sourceTree, err = workspaceExportSnapshot(t.Context(), &gitMergeWorkspace{workDir: f.dir}, source, &changesetContent{paths: &ChangesetPaths{}})
+			} else {
+				sourceTree, err = workspaceSnapshotCommit(t.Context(), f.dir)
+			}
 			require.NoError(t, err)
 			f.git("reset", "--hard", sourceTree)
 			f.git("switch", "main")
-			require.NoError(t, workspaceExportRestoreSavedUntracked(t.Context(), f.dir, base, base, fromTree))
-			before, err := workspaceSnapshotCommit(t.Context(), f.dir, base)
+			// A clean captured destination excludes previously saved untracked
+			// files; its reused snapshot must not suppress their restoration.
+			_, err = workspaceExportSnapshot(t.Context(), &gitMergeWorkspace{workDir: f.dir}, base, &changesetContent{paths: &ChangesetPaths{}})
 			require.NoError(t, err)
-			f.git("reset", "--hard", before)
+			require.NoError(t, workspaceExportRestoreSavedUntracked(t.Context(), f.dir, base, base, fromTree))
+			before, err := workspaceSnapshotTreeCommit(t.Context(), f.dir, f.git("write-tree"), base)
+			require.NoError(t, err)
 			f.git("reset", "--hard", base)
 			target, tree, err := workspaceExportIntegrate(t.Context(), f.dir, base, before, source, sourceTree, fromTree, WorkspacePullOpts{MaxCommits: 100, FromSHA: base})
 			require.NoError(t, err)
