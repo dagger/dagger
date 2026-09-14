@@ -1,17 +1,202 @@
 package core
 
 import (
+	"context"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func gitBundleTestRun(t testing.TB, dir string, args ...string) string {
+	t.Helper()
+	out, err := runGitEnv(context.Background(), dir, args...)
+	require.NoError(t, err)
+	return strings.TrimSpace(out)
+}
+
+func gitBundleTestSnapshot(t *testing.T, root string) map[string][sha256.Size]byte {
+	t.Helper()
+	files := map[string][sha256.Size]byte{}
+	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files[strings.TrimPrefix(path, root)] = sha256.Sum256(data)
+		return nil
+	}))
+	return files
+}
+
+func TestCreateLocalGitBundle(t *testing.T) {
+	for _, format := range []string{"sha1", "sha256"} {
+		for _, incremental := range []bool{false, true} {
+			for _, packed := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/incremental=%t/packed=%t", format, incremental, packed), func(t *testing.T) {
+					ctx := context.Background()
+					source := t.TempDir()
+					gitBundleTestRun(t, source, "init", "--quiet", "--initial-branch=master", "--object-format="+format)
+					require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("base\n"), 0o600))
+					gitBundleTestRun(t, source, "add", ".")
+					gitBundleTestRun(t, source, "commit", "--quiet", "-m", "base")
+					base := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+					dest := t.TempDir()
+					gitBundleTestRun(t, dest, "init", "--bare", "--quiet", "--object-format="+format)
+					if incremental {
+						// Populate the destination before the new commit exists, so it
+						// contains exactly the prerequisite closure, not extra objects.
+						gitBundleTestRun(t, dest, "fetch", "--quiet", "--no-tags", "file://"+source, base+":refs/heads/base")
+					}
+					require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("target\n"), 0o600))
+					gitBundleTestRun(t, source, "commit", "--quiet", "-am", "target")
+					head := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+					gitBundleTestRun(t, source, "tag", "-a", "v1", "-m", "annotation")
+					tag := gitBundleTestRun(t, source, "rev-parse", "refs/tags/v1")
+					gitBundleTestRun(t, source, "checkout", "--quiet", "--detach")
+					gitBundleTestRun(t, source, "update-ref", "refs/dagger/bundle/base", head)
+					if packed {
+						gitBundleTestRun(t, source, "gc", "--quiet")
+					}
+					before := gitBundleTestSnapshot(t, source)
+					cli := gitutil.NewGitCLI(gitutil.WithDir(source), gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+						require.NotContains(t, cmd.Args, "fetch", "local bundling must not fetch history")
+						return cmd.Run()
+					}))
+					targets := []*gitBundleTarget{}
+					for _, name := range []string{"HEAD", "refs/heads/master", "refs/tags/v1", "refs/dagger/bundle/base"} {
+						sha := head
+						if name == "refs/tags/v1" {
+							sha = tag
+						}
+						targets = append(targets, &gitBundleTarget{
+							exact: &gitutil.Ref{Name: name, SHA: sha}, checkout: &gitutil.Ref{SHA: head},
+						})
+					}
+					root := t.TempDir()
+					baseSHA := ""
+					if incremental {
+						baseSHA = base
+					}
+					require.NoError(t, createGitBundleFromSource(ctx, cli, &LocalGitRepository{}, root, targets, baseSHA))
+					require.Equal(t, before, gitBundleTestSnapshot(t, source), "source must not change")
+					require.NoError(t, os.RemoveAll(source)) // Simulate release of the source mount.
+					entries, err := os.ReadDir(root)
+					require.NoError(t, err)
+					require.Len(t, entries, 1, "no alternate path or private repository may survive")
+					bundlePath := filepath.Join(root, "repository.bundle")
+					header, err := inspectGitBundleFile(bundlePath)
+					require.NoError(t, err)
+					require.Equal(t, format, header.ObjectFormat)
+					if incremental {
+						require.Equal(t, []string{base}, header.PrerequisiteSHAs)
+						empty := t.TempDir()
+						gitBundleTestRun(t, empty, "init", "--bare", "--quiet", "--object-format="+format)
+						_, err := runGitEnv(ctx, empty, "bundle", "verify", bundlePath)
+						require.ErrorContains(t, err, "Repository lacks these prerequisite commits")
+					} else {
+						require.Empty(t, header.PrerequisiteSHAs)
+					}
+					gitBundleTestRun(t, dest, "bundle", "verify", bundlePath)
+					require.NoError(t, fetchGitBundleRefs(ctx, dest, bundlePath, header.Refs))
+					gitBundleTestRun(t, dest, "fsck", "--full", "--strict")
+					require.Equal(t, "target", gitBundleTestRun(t, dest, "show", head+":file"))
+					require.Equal(t, tag, gitBundleTestRun(t, dest, "rev-parse", "refs/tags/v1"))
+					require.Contains(t, gitBundleTestRun(t, dest, "cat-file", "-p", tag), "annotation")
+					require.Len(t, header.Refs, len(targets))
+				})
+			}
+		}
+	}
+}
+
+func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
+	ctx := context.Background()
+	origin := t.TempDir()
+	gitBundleTestRun(t, origin, "init", "--bare", "--quiet")
+	tree := gitBundleTestRun(t, origin, "mktree")
+	head := gitBundleTestRun(t, origin, "commit-tree", tree, "-m", "head")
+	gitBundleTestRun(t, origin, "update-ref", "refs/heads/main", head)
+	gitBundleTestRun(t, origin, "tag", "-a", "v1", "-m", "annotation", head)
+	tag := gitBundleTestRun(t, origin, "rev-parse", "refs/tags/v1")
+	mirror := t.TempDir()
+	gitBundleTestRun(t, mirror, "init", "--bare", "--quiet")
+	gitBundleTestRun(t, mirror, "fetch", "--quiet", "--no-tags", "file://"+origin, head+":refs/heads/main")
+	_, err := runGitEnv(ctx, mirror, "cat-file", "-e", tag)
+	require.Error(t, err, "canonical mirror must not already have the annotation")
+	url := &gitutil.GitURL{Scheme: "file", Path: origin}
+	root := t.TempDir()
+	targets := []*gitBundleTarget{{
+		exact: &gitutil.Ref{Name: "refs/tags/v1", SHA: tag}, checkout: &gitutil.Ref{SHA: head},
+	}}
+	require.NoError(t, createGitBundleFromSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	require.NoError(t, os.RemoveAll(origin))
+	require.NoError(t, os.RemoveAll(mirror))
+	dest := t.TempDir()
+	gitBundleTestRun(t, dest, "init", "--bare", "--quiet")
+	bundlePath := filepath.Join(root, "repository.bundle")
+	gitBundleTestRun(t, dest, "bundle", "verify", bundlePath)
+	gitBundleTestRun(t, dest, "fetch", "--quiet", bundlePath, "refs/tags/v1:refs/tags/v1")
+	require.Equal(t, tag, gitBundleTestRun(t, dest, "rev-parse", "refs/tags/v1"))
+	require.Contains(t, gitBundleTestRun(t, dest, "cat-file", "-p", tag), "annotation")
+	gitBundleTestRun(t, dest, "fsck", "--full", "--strict")
+}
+
+func TestCreateLocalGitBundleQuotesAlternatePath(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "source\nwith\r\"quotes\\and spaces")
+	require.NoError(t, os.Mkdir(source, 0o700))
+	gitBundleTestRun(t, source, "init", "--bare", "--quiet")
+	tree := gitBundleTestRun(t, source, "mktree")
+	head := gitBundleTestRun(t, source, "commit-tree", tree, "-m", "head")
+	targets := []*gitBundleTarget{{exact: &gitutil.Ref{Name: "refs/heads/main", SHA: head}}}
+	root := t.TempDir()
+	require.NoError(t, createGitBundleFromSource(context.Background(), gitutil.NewGitCLI(gitutil.WithDir(source)), &LocalGitRepository{}, root, targets, ""))
+}
+
+func TestCreateLocalGitBundleRejectsMissingObjects(t *testing.T) {
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--quiet")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("content\n"), 0o600))
+	gitBundleTestRun(t, source, "add", ".")
+	tree := gitBundleTestRun(t, source, "write-tree")
+	head := gitBundleTestRun(t, source, "commit-tree", tree, "-m", "head")
+	// The selected commit exists, but its tree does not. Borrowing its objects
+	// must not let us emit a bundle with an incomplete closure.
+	require.NoError(t, os.Remove(filepath.Join(source, ".git", "objects", tree[:2], tree[2:])))
+	targets := []*gitBundleTarget{{exact: &gitutil.Ref{Name: "refs/heads/main", SHA: head}}}
+	root := t.TempDir()
+	err := createGitBundleFromSource(context.Background(), gitutil.NewGitCLI(gitutil.WithDir(source)), &LocalGitRepository{}, root, targets, "")
+	require.Error(t, err)
+	require.NoDirExists(t, filepath.Join(root, ".git-bundle-source"))
+}
+
+func TestCreateLocalGitBundleRejectsUnreachableBase(t *testing.T) {
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--bare", "--quiet")
+	tree := gitBundleTestRun(t, source, "mktree")
+	head := gitBundleTestRun(t, source, "commit-tree", tree, "-m", "head")
+	base := gitBundleTestRun(t, source, "commit-tree", tree, "-m", "unrelated")
+	targets := []*gitBundleTarget{{exact: &gitutil.Ref{Name: "refs/heads/main", SHA: head}}}
+	root := t.TempDir()
+	err := createGitBundleFromSource(context.Background(), gitutil.NewGitCLI(gitutil.WithDir(source)), &LocalGitRepository{}, root, targets, base)
+	require.ErrorContains(t, err, "is not reachable from the bundled refs")
+	require.NoDirExists(t, filepath.Join(root, ".git-bundle-source"))
+}
 
 func TestResolveGitBundleTargetPreservesAnnotatedTag(t *testing.T) {
 	tagSHA := "1111111111111111111111111111111111111111"
