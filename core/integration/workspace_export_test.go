@@ -182,7 +182,7 @@ func (WorkspaceSuite) TestWorkspaceExportIndependentAgents(ctx context.Context, 
 	sourceSHA, err := b.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, sourceSHA, second)
-	require.Contains(t, git("log", "-1", "--format=%B"), sourceSHA)
+	require.Equal(t, "agent B", git("log", "-1", "--format=%B"), "cherry-picking preserves the original commit message")
 	require.NoError(t, c.CurrentWorkspace().WithCommitsFrom(b).Export(ctx))
 	require.Equal(t, second, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
