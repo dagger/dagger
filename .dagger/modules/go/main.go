@@ -156,7 +156,7 @@ func New(
 	// content-addressed and its result survives an engine restart.
 	if vcsCommit == "" && ws != nil {
 		git := ws.Git()
-		if commit, err := git.Head().Commit(ctx); err == nil {
+		if commit, err := git.Head().CommitSHA(ctx); err == nil {
 			vcsCommit = commit
 			if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
 				vcsDirty = !clean
