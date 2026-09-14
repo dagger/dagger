@@ -264,6 +264,20 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	bundleBytes []byte,
 	workspaceEnv string,
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	return s.checkpointCapturedGitCompositionWithBase(ctx, srv, captured, metadata, bundleBytes, workspaceEnv, dagql.ObjectResult[*core.GitRepository]{})
+}
+
+// Only export supplies an already-owned base. Snapshot and all other capture
+// callers retain their original reconstruction and client-routing behavior.
+func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
+	ctx context.Context,
+	srv *dagql.Server,
+	captured *core.Workspace,
+	metadata *gitsession.CaptureGitMetadata,
+	bundleBytes []byte,
+	workspaceEnv string,
+	repo dagql.ObjectResult[*core.GitRepository],
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
 	if metadata == nil {
 		return inst, fmt.Errorf("workspace snapshot capture metadata is missing")
 	}
@@ -272,19 +286,27 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	// evaluation triggered by each selection. Keep arguments and errors out of
 	// these diagnostic spans: captured paths and contents can be private.
 	compositionCtx := ctx
-	ctx, phase := core.Tracer(ctx).Start(ctx, "checkpoint reconstruct repository", telemetry.Internal())
+	phaseName := "checkpoint reconstruct repository"
+	if repo.Self() != nil {
+		phaseName = "checkpoint reuse owned repository"
+	}
+	ctx, phase := core.Tracer(ctx).Start(ctx, phaseName, telemetry.Internal())
 	nextPhase := func(name string) {
 		phase.End()
 		ctx, phase = core.Tracer(compositionCtx).Start(compositionCtx, name, telemetry.Internal())
 	}
 	defer func() { phase.End() }()
 
-	var repo dagql.ObjectResult[*core.GitRepository]
 	prerequisiteRef := metadata.RemoteRef
 	// A local filesystem remote is available only to the capturing client,
 	// just like a repository with no remote at all.
 	_, remoteErr := gitutil.ParseURL(metadata.RemoteUrl)
-	if metadata.RemoteUrl == "" || remoteErr != nil {
+	if repo.Self() != nil {
+		// The caller proved this immutable local repository owns the captured
+		// HEAD. Import still isolates and validates the exact prerequisites;
+		// source refs (including a remote-ref hint) are not destination refs.
+		prerequisiteRef = ""
+	} else if metadata.RemoteUrl == "" || remoteErr != nil {
 		prerequisiteRef = ""
 		var gitDir dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, srv.Root(), &gitDir,
