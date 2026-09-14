@@ -18,6 +18,10 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "../docs-dev"
 
 [[dependencies]]
+  name = "elixir-client-dev"
+  source = "../elixir-client-dev"
+
+[[dependencies]]
   name = "engine-dev"
   source = "../engine-dev"
 
@@ -40,10 +44,6 @@ include = ["../../../go.mod", "../../../go.sum"]
 [[dependencies]]
   name = "python-client-dev"
   source = "../python-client-dev"
-
-[[dependencies]]
-  name = "elixir-client-dev"
-  source = "../elixir-client-dev"
 
 [[dependencies]]
   name = "rust-client-dev"
