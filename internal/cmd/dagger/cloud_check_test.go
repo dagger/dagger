@@ -83,7 +83,7 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 	}{
 		{name: "GitHub required", noSource: true, wantError: "dagger cloud integration create github", wantQueries: []string{"GetUserRepositories", "GetSources"}},
 		{name: "already enabled", enabled: true, wantQueries: []string{"GetUserRepositories"}},
-		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "GetOrgMappedSources", "ConfigureSource"}},
+		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "User", "GetOrgMappedSources", "ConfigureSource"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var queries []string
@@ -114,6 +114,10 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 					if tc.noSource {
 						data = `{"sources":[]}`
 					}
+				case "User":
+					// Membership check before the org-scoped mapped-sources
+					// lookup (clear ownership error instead of "unauthorized").
+					data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
 				case "GetOrgMappedSources":
 					data = `{"org":{"mappedSources":[{"installationId":"installation","mode":"SELECTED","repositories":["github.com/example/other"]}]}}`
 				case "ConfigureSource":
