@@ -168,6 +168,13 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		if b.object != nil {
 			return b.object, true, nil
 		}
+		// Loading through the caller's server can wrap the value in an older
+		// class with the same name. The binding's composition-time class is
+		// authoritative, just like its definingSchema.
+		obj, err = b.objType.New(obj)
+		if err != nil {
+			return nil, true, fmt.Errorf("load bound object of type %q: %w", typeName, err)
+		}
 		m.boundTools[i].object = obj
 		return obj, true, nil
 	}
@@ -186,10 +193,16 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) err
 	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
+			// A state transition changes the value, not the module revision the
+			// binding was composed from. Select may have wrapped the returned
+			// value using the caller's older same-named class.
+			newObj, err := b.objType.New(newObj)
+			if err != nil {
+				return fmt.Errorf("rebind object of type %q: %w", typeName, err)
+			}
 			id, _ := newObj.ID()
 			m.boundTools[i].object = newObj
 			m.boundTools[i].id = id
-			m.boundTools[i].objType = newObj.ObjectType()
 			m.stateChanged = true
 			return nil
 		}

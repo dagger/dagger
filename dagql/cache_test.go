@@ -3739,6 +3739,40 @@ func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
 	cacheTestReleaseSession(t, cacheIface, ctxA)
 }
 
+func TestClassNewRewrapsObjectResult(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
+	srvA := cacheTestObjectResolverServer(t, 1)
+	srvB := cacheTestObjectResolverServer(t, 2)
+	ctxA := srvToContext(ctx, srvA)
+	ctxB := srvToContext(ctx, srvB)
+
+	original, err := srvA.Root().Select(ctxA, srvA, Selector{Field: "obj"})
+	assert.NilError(t, err)
+	class, ok := srvB.ObjectType(original.Type().Name())
+	assert.Assert(t, ok)
+	rewrapped, err := class.New(original)
+	assert.NilError(t, err)
+	marker, err := rewrapped.Select(ctxB, srvB, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, cacheTestUnwrapInt(t, marker))
+
+	// Rewrapping changes only this object's class, not its attached value or
+	// the original wrapper's dispatch behavior.
+	originalID, err := original.ID()
+	assert.NilError(t, err)
+	rewrappedID, err := rewrapped.ID()
+	assert.NilError(t, err)
+	assert.Equal(t, originalID.EngineResultID(), rewrappedID.EngineResultID())
+	marker, err = original.(AnyObjectResult).Select(ctxA, srvA, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, cacheTestUnwrapInt(t, marker))
+	cacheTestReleaseSession(t, cacheIface, ctxA)
+}
+
 func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
