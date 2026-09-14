@@ -240,6 +240,29 @@ defmodule Dagger.GitRepository do
       client: git_repository.client
     }
   end
+
+  @doc """
+  Register a named remote on this repository, replacing any registered remote of the same name.
+
+  Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+
+  Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+  """
+  @spec with_remote(t(), String.t(), String.t(), [{:push_urls, [String.t()]}]) ::
+          Dagger.GitRepository.t()
+  def with_remote(%__MODULE__{} = git_repository, name, url, optional_args \\ []) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("withRemote")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("url", url)
+      |> QB.maybe_put_arg("pushUrls", optional_args[:push_urls])
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.GitRepository do

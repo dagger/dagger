@@ -9598,8 +9598,10 @@ func (r *GitRef) Name(ctx context.Context) (string, error) {
 
 // GitRefPushOpts contains options for GitRef.Push
 type GitRefPushOpts struct {
-	// Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
+	// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has multiple push URLs or no remote URL.
 	To *GitRepository
+	// Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+	Remote string
 	// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
 	Branch string
 	// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
@@ -9617,6 +9619,10 @@ func (r *GitRef) Push(opts ...GitRefPushOpts) *GitPushResult {
 		// `to` optional argument
 		if !querybuilder.IsZeroValue(opts[i].To) {
 			q = q.Arg("to", opts[i].To)
+		}
+		// `remote` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Remote) {
+			q = q.Arg("remote", opts[i].Remote)
 		}
 		// `branch` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Branch) {
@@ -10034,6 +10040,33 @@ func (r *GitRepository) WithDirectory(directory *Directory) *GitRepository {
 	assertNotNil("directory", directory)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("directory", directory)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// GitRepositoryWithRemoteOpts contains options for GitRepository.WithRemote
+type GitRepositoryWithRemoteOpts struct {
+	// Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.
+	PushUrls []string
+}
+
+// Register a named remote on this repository, replacing any registered remote of the same name.
+//
+// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+//
+// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+func (r *GitRepository) WithRemote(name string, url string, opts ...GitRepositoryWithRemoteOpts) *GitRepository {
+	q := r.query.Select("withRemote")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pushUrls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PushUrls) {
+			q = q.Arg("pushUrls", opts[i].PushUrls)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("url", url)
 
 	return &GitRepository{
 		query: q,
