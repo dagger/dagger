@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -32,8 +33,9 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	if err != nil {
 		return err
 	}
+	var from dagql.ObjectResult[*core.Workspace]
 	if args.From.Valid {
-		from, err := args.From.Value.Load(ctx, srv)
+		from, err = args.From.Value.Load(ctx, srv)
 		if err != nil {
 			return err
 		}
@@ -86,8 +88,12 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	captured := &core.Workspace{Cwd: "."}
 	captured.SetHostPath(args.Path)
 	captured.SetSource(core.NewWorkspaceSourceClientLocal(args.Path))
+	base, err := workspaceExportCapturedBase(ctx, srv, metadata, bundle, source, from)
+	if err != nil {
+		return err
+	}
 	composeCtx, composeSpan := core.Tracer(ctx).Start(ctx, "compose workspace export destination", telemetry.Internal())
-	destination, err := s.checkpointCapturedGitComposition(composeCtx, srv, captured, metadata, bundle, "")
+	destination, err := s.checkpointCapturedGitCompositionWithBase(composeCtx, srv, captured, metadata, bundle, "", base)
 	telemetry.EndWithCause(composeSpan, &err)
 	if err != nil {
 		return err
@@ -136,6 +142,74 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 		return fmt.Errorf("invalid workspace export transport")
 	}
 	return applyWorkspaceBundle(ctx, repo, metadata.HeadSha, commit.ParentSHAs[0], args.Path, metadata.CheckoutStateDigest)
+}
+
+// workspaceExportCapturedBase never resolves workspace.git, an overlay's After,
+// or a lazy directory to qualify reuse. Only the already-owned, pinned LOCAL
+// base of the source/previous save can replace destination reconstruction.
+func workspaceExportCapturedBase(ctx context.Context, srv *dagql.Server, metadata *gitsession.CaptureGitMetadata, bundle []byte, candidates ...dagql.ObjectResult[*core.Workspace]) (dagql.ObjectResult[*core.GitRepository], error) {
+	var none dagql.ObjectResult[*core.GitRepository]
+	if err := ctx.Err(); err != nil {
+		return none, err
+	}
+	// withBundle is the isolation boundary: it owns only exact prerequisites
+	// and captured refs, never unrelated/private source objects or edits.
+	if metadata == nil || len(bundle) == 0 {
+		return none, nil
+	}
+	for _, candidate := range candidates {
+		ref, ok := workspaceExportBaseCandidate(candidate.Self(), metadata)
+		if !ok {
+			continue
+		}
+		id, err := ref.ID()
+		if err != nil {
+			return none, err
+		}
+		object, err := dagql.NewID[*core.GitRef](id).Load(ctx, srv)
+		if err != nil {
+			return none, err
+		}
+		var ready dagql.Boolean
+		// Cache the storage/closure proof by the immutable ref's result (which
+		// owns its repository), not by its SHA or destination's mutable state.
+		if err := srv.Select(ctx, object, &ready, dagql.Selector{Field: "__workspaceExportBaseReady"}); err != nil {
+			return none, err
+		}
+		if ready {
+			return ref.Self().Repo, nil
+		}
+	}
+	return none, ctx.Err()
+}
+
+func workspaceExportBaseCandidate(ws *core.Workspace, metadata *gitsession.CaptureGitMetadata) (dagql.Result[*core.GitRef], bool) {
+	var none dagql.Result[*core.GitRef]
+	if ws == nil || !ws.IsValueWorkspace() || metadata == nil {
+		return none, false
+	}
+	source, ok := ws.BaseSource().(*core.WorkspaceSourceGitRef)
+	if !ok {
+		return none, false
+	}
+	ref := source.Ref.Self()
+	// ExplicitCommit tracks workspace-address intent, not snapshot pinning:
+	// syntheticWorkspaceFromGitRef intentionally leaves it false. Check the
+	// resolved ref selector itself, which capture pins by full SHA.
+	if ref == nil || ref.Ref == nil || ref.Ref.Name != ref.Ref.SHA || ref.Ref.SHA != metadata.HeadSha || !ref.WorkspaceExportBaseAvailable() {
+		return none, false
+	}
+	repo := ref.Repo.Self()
+	// Reuse objects only when captured routing agrees exactly. In particular,
+	// do not adopt a source's push destinations, or resolve a remote to compare.
+	url := ""
+	if repo.URL.Valid {
+		url = string(repo.URL.Value)
+	}
+	if url != metadata.RemoteUrl || !slices.Equal(repo.PushURLs, metadata.RemotePushUrls) {
+		return none, false
+	}
+	return source.Ref, true
 }
 
 func (s *workspaceSchema) saveDirectory(ctx context.Context, source dagql.ObjectResult[*core.Workspace], args workspaceSaveArgs) (dagql.ObjectResult[*core.Directory], error) {
