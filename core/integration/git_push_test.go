@@ -197,7 +197,7 @@ func (GitSuite) TestPushHTTPAuth(ctx context.Context, t *testctx.T) {
 	err = c.Do(ctx, &dagger.Request{
 		Query: `query($repo: ID!, $url: String!) {
 			node(id: $repo) { ... on GitRepository {
-				withRemote(name: "origin", url: $url, pushUrls: [$url]) { branch(name: "main") {
+				withRemote(name: "origin", url: $url, pushUrl: $url) { branch(name: "main") {
 					push(branch: "routing-is-not-auth") { disposition }
 				} }
 			} }
@@ -310,7 +310,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 		}, &dagger.Response{Data: &response})
 		return response.Node.Push, err
 	}
-	mirror := fetchRepo.WithRemote("mirror", fetchURL, dagger.GitRepositoryWithRemoteOpts{PushUrls: []string{pushURL}}).Branch("main")
+	mirror := fetchRepo.WithRemote("mirror", fetchURL, dagger.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Branch("main")
 	named, err := pushByName(mirror, "mirror", "named-remote")
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", named.Disposition)
@@ -321,4 +321,16 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, "no remote named")
 	require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/named-unknown"))
 	require.Empty(t, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/named-unknown"))
+
+	// Omitting pushUrl replaces any previous override and falls back to the
+	// registered URL, including when origin replaces a remote backend's URL.
+	for _, remote := range []string{"origin", "mirror"} {
+		fallback := fetchRepo.WithRemote(remote, fetchURL, dagger.GitRepositoryWithRemoteOpts{PushURL: fetchURL}).
+			WithRemote(remote, pushURL).Branch("main")
+		branch := "fallback-" + remote
+		_, err := pushByName(fallback, remote, branch)
+		require.NoError(t, err)
+		require.Equal(t, fetchSHA, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/"+branch))
+		require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/"+branch))
+	}
 }
