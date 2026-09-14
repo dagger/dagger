@@ -7,6 +7,8 @@ body: |
   came from. Remote-loaded repositories record their clone URL, engine-local
   repositories propagate their own `origin`, and host-backed workspaces carry
   the host checkout's `origin` into the canonical reconstruction.
+  Host origins containing embedded credentials are omitted; SSH usernames
+  remain supported.
 time: 2026-09-12T18:00:00Z
 custom:
   Author: vito
