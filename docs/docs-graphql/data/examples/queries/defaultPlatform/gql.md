@@ -1,5 +1,0 @@
-```gql
-query {
-  defaultPlatform
-}
-```
