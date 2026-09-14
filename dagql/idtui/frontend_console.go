@@ -116,26 +116,14 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 // access is serialized via fe.consoleMu: the frontend is single-goroutine (no
 // event loop), so a handler must hold the lock while it Steps and renders.
 func (fe *frontendPretty) serveConsole(ctx context.Context) error {
-	writeScreen := func(w http.ResponseWriter, r *http.Request, frame string) {
-		if r.URL.Query().Get("raw") == "" {
-			frame = ansi.Strip(frame)
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, frame)
-	}
-	reqBody := func(r *http.Request) string {
-		b, _ := io.ReadAll(r.Body)
-		return strings.TrimSpace(string(b))
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/screen", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
-		keys := parseConsoleKeys(reqBody(r))
+		keys := parseConsoleKeys(consoleRequestBody(r))
 		// Validate the whole script before injecting any of it: an unknown
 		// token must not leave the TUI half-driven, and must not fall through
 		// tuist.ParseKey's extended-key fallback, which would *type the token
@@ -151,7 +139,7 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		for _, k := range keys {
 			fe.tui.Inject(tuist.ParseKey(k))
 		}
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/type", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
@@ -164,10 +152,10 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		for _, ru := range strings.TrimRight(string(raw), "\n") {
 			fe.tui.Inject(tuist.ParseKey(string(ru)))
 		}
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/zoom", func(w http.ResponseWriter, r *http.Request) {
-		hex := reqBody(r)
+		hex := consoleRequestBody(r)
 		sid, err := oteltrace.SpanIDFromHex(hex)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("bad span hex %q: %v", hex, err), http.StatusBadRequest)
@@ -176,12 +164,12 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
 		fe.ZoomToSpan(dagui.SpanID{SpanID: sid})
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/resize", func(w http.ResponseWriter, r *http.Request) {
 		// Body is "<cols>x<rows>" or "<cols> <rows>"; either dimension may be
 		// omitted (or 0) to keep the current value, so "x12" just changes rows.
-		body := reqBody(r)
+		body := consoleRequestBody(r)
 		isSep := func(c rune) bool {
 			return c == 'x' || c == 'X' || c == ' ' || c == ',' || c == '\t'
 		}
@@ -216,80 +204,9 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		// height-dependent renders on ScreenHeight, so the next Step reflows to
 		// the new size on its own -- no manual generation bump needed.
 		fe.consoleTerm.Resize(cols, rows)
-		writeScreen(w, r, fe.consoleSettle())
+		writeConsoleScreen(w, r, fe.consoleSettle())
 	})
-	mux.HandleFunc("/wait", func(w http.ResponseWriter, r *http.Request) {
-		// Block until the screen reaches a state, then respond like /screen —
-		// so QA scripts wait for a span to finish (or a prompt to appear) in
-		// one request instead of polling /screen in a loop. The regex rides in
-		// the body (like /key and /type take theirs) so it needs no URL
-		// encoding; the durations are simple enough for query params.
-		//
-		// With a regex: return as soon as the ANSI-stripped screen matches it.
-		// Without one: return once the screen has been unchanged for the quiet
-		// duration (?quiet=, default 2s). Quiet is not an exit condition while
-		// a regex is pending — an already-idle screen would end the wait
-		// immediately and defeat the match. Either way the wait gives up at
-		// ?timeout= (default 60s, capped) and returns the screen as it stands:
-		// inspect the result, don't assume the condition was reached.
-		var matchRe *regexp.Regexp
-		if pattern := reqBody(r); pattern != "" {
-			var err error
-			matchRe, err = regexp.Compile(pattern)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("bad match regexp %q: %v", pattern, err), http.StatusBadRequest)
-				return
-			}
-		}
-		quiet, err := consoleDuration(r.URL.Query().Get("quiet"), consoleWaitQuietDefault)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("bad quiet param: %v", err), http.StatusBadRequest)
-			return
-		}
-		timeout, err := consoleDuration(r.URL.Query().Get("timeout"), consoleWaitTimeoutDefault)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("bad timeout param: %v", err), http.StatusBadRequest)
-			return
-		}
-		timeout = min(timeout, consoleWaitTimeoutMax)
-
-		// Poll with single Steps, holding consoleMu only per render so the
-		// other endpoints (and the background pump) stay responsive for the
-		// whole — potentially minutes-long — wait.
-		render := func() string {
-			fe.consoleMu.Lock()
-			defer fe.consoleMu.Unlock()
-			return ansi.Strip(strings.Join(fe.consoleViewport(fe.tui.Step()), "\n"))
-		}
-		deadline := time.Now().Add(timeout)
-		frame := render()
-		quietSince := time.Now()
-		for {
-			if matchRe != nil {
-				if matchRe.MatchString(frame) {
-					break
-				}
-			} else if time.Since(quietSince) >= quiet {
-				break
-			}
-			if time.Now().After(deadline) {
-				break
-			}
-			select {
-			case <-r.Context().Done():
-				return
-			case <-time.After(consoleWaitPoll):
-			}
-			next := render()
-			if next != frame {
-				frame = next
-				quietSince = time.Now()
-			}
-		}
-		fe.consoleMu.Lock()
-		defer fe.consoleMu.Unlock()
-		writeScreen(w, r, fe.consoleSettle())
-	})
+	mux.HandleFunc("/wait", fe.consoleWaitHandler)
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
@@ -368,6 +285,92 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		<-shutdownDone
 	}
 	return err
+}
+
+func writeConsoleScreen(w http.ResponseWriter, r *http.Request, frame string) {
+	if r.URL.Query().Get("raw") == "" {
+		frame = ansi.Strip(frame)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	io.WriteString(w, frame)
+}
+
+func consoleRequestBody(r *http.Request) string {
+	b, _ := io.ReadAll(r.Body)
+	return strings.TrimSpace(string(b))
+}
+
+func (fe *frontendPretty) consoleWaitHandler(w http.ResponseWriter, r *http.Request) {
+	// Block until the screen reaches a state, then respond like /screen —
+	// so QA scripts wait for a span to finish (or a prompt to appear) in
+	// one request instead of polling /screen in a loop. The regex rides in
+	// the body (like /key and /type take theirs) so it needs no URL
+	// encoding; the durations are simple enough for query params.
+	//
+	// With a regex: return as soon as the ANSI-stripped screen matches it.
+	// Without one: return once the screen has been unchanged for the quiet
+	// duration (?quiet=, default 2s). Quiet is not an exit condition while
+	// a regex is pending — an already-idle screen would end the wait
+	// immediately and defeat the match. Either way the wait gives up at
+	// ?timeout= (default 60s, capped) and returns the screen as it stands:
+	// inspect the result, don't assume the condition was reached.
+	var matchRe *regexp.Regexp
+	if pattern := consoleRequestBody(r); pattern != "" {
+		var err error
+		matchRe, err = regexp.Compile(pattern)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("bad match regexp %q: %v", pattern, err), http.StatusBadRequest)
+			return
+		}
+	}
+	quiet, err := consoleDuration(r.URL.Query().Get("quiet"), consoleWaitQuietDefault)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("bad quiet param: %v", err), http.StatusBadRequest)
+		return
+	}
+	timeout, err := consoleDuration(r.URL.Query().Get("timeout"), consoleWaitTimeoutDefault)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("bad timeout param: %v", err), http.StatusBadRequest)
+		return
+	}
+	timeout = min(timeout, consoleWaitTimeoutMax)
+
+	// Poll with single Steps, holding consoleMu only per render so the
+	// other endpoints (and the background pump) stay responsive for the
+	// whole — potentially minutes-long — wait.
+	render := func() string {
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		return ansi.Strip(strings.Join(fe.consoleViewport(fe.tui.Step()), "\n"))
+	}
+	deadline := time.Now().Add(timeout)
+	frame := render()
+	quietSince := time.Now()
+	for {
+		if matchRe != nil {
+			if matchRe.MatchString(frame) {
+				break
+			}
+		} else if time.Since(quietSince) >= quiet {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(consoleWaitPoll):
+		}
+		next := render()
+		if next != frame {
+			frame = next
+			quietSince = time.Now()
+		}
+	}
+	fe.consoleMu.Lock()
+	defer fe.consoleMu.Unlock()
+	writeConsoleScreen(w, r, fe.consoleSettle())
 }
 
 // consoleSettle Steps the TUI (draining dispatched telemetry and injected keys,

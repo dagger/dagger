@@ -239,8 +239,7 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 			}
 			worktreeHead = base
 		}
-		before, err := snapshot(ctx, "destination", nil, dirty)
-		if err != nil {
+		if _, err := snapshot(ctx, "destination", nil, dirty); err != nil {
 			return err
 		}
 		if from != nil {
@@ -254,7 +253,7 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 		if err != nil {
 			return err
 		}
-		before, err = workspaceSnapshotTreeCommit(ctx, ws.workDir, beforeTree, base)
+		before, err := workspaceSnapshotTreeCommit(ctx, ws.workDir, beforeTree, base)
 		if err != nil {
 			return err
 		}

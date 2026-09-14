@@ -687,16 +687,21 @@ func scanCommittedObjects(ctx context.Context, checkout, base, head string, limi
 	return total, nil
 }
 
-func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *CaptureGitPolicy, approvals map[string]struct{}, limits captureLimits, initialBytes int64) ([]capturedPath, int, int, int64, error) {
+type capturePathCandidate struct {
+	path    string
+	tracked bool
+}
+
+func selectWorktreePaths(ctx context.Context, checkout, head string, policy *CaptureGitPolicy) ([]capturePathCandidate, []string, error) {
 	trackedOut, err := runHostGitBytes(ctx, checkout, nil, nil, "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", head, "--")
 	if err != nil {
-		return nil, 0, 0, 0, errors.New("enumerate tracked worktree changes failed")
+		return nil, nil, errors.New("enumerate tracked worktree changes failed")
 	}
 	var untrackedOut []byte
 	if !policy.GetDropUntracked() {
 		untrackedOut, err = runHostGitBytes(ctx, checkout, nil, nil, "ls-files", "--others", "--exclude-standard", "-z", "--")
 		if err != nil {
-			return nil, 0, 0, 0, errors.New("enumerate untracked worktree files failed")
+			return nil, nil, errors.New("enumerate untracked worktree files failed")
 		}
 	}
 	// With --others, git reports an untracked nested repository — a scratch
@@ -719,16 +724,10 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 	}
 	sort.Strings(nestedRepos)
 
-	var candidates []struct {
-		path    string
-		tracked bool
-	}
+	var candidates []capturePathCandidate
 	for _, p := range splitNullPaths(trackedOut) {
 		if !matchesAnyCapturePattern(p, policy.GetExclude()) {
-			candidates = append(candidates, struct {
-				path    string
-				tracked bool
-			}{p, true})
+			candidates = append(candidates, capturePathCandidate{p, true})
 		}
 	}
 	for _, p := range splitNullPaths(untrackedOut) {
@@ -741,12 +740,18 @@ func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *C
 		if len(policy.GetInclude()) > 0 && !matchesAnyCapturePattern(p, policy.GetInclude()) {
 			continue
 		}
-		candidates = append(candidates, struct {
-			path    string
-			tracked bool
-		}{p, false})
+		candidates = append(candidates, capturePathCandidate{p, false})
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].path < candidates[j].path })
+
+	return candidates, nestedRepos, nil
+}
+
+func selectAndScanWorktree(ctx context.Context, checkout, head string, policy *CaptureGitPolicy, approvals map[string]struct{}, limits captureLimits, initialBytes int64) ([]capturedPath, int, int, int64, error) {
+	candidates, nestedRepos, err := selectWorktreePaths(ctx, checkout, head, policy)
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
 
 	var selected []capturedPath
 	var worktreeBytes, untrackedBytes int64
