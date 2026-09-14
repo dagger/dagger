@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -215,6 +216,90 @@ func (c *Client) ConfigureSource(ctx context.Context, installationID, mode strin
 		return nil, err
 	}
 	return &data.ConfigureSource, nil
+}
+
+const createQuickstartOrgOperation = `
+mutation CreateQuickstartOrg($name: String!) {
+	createQuickstartOrg(name: $name) {
+		id
+		name
+	}
+}
+`
+
+// CreateQuickstartOrg creates a free "quickstart" org for the authenticated
+// user without any browser interaction, returning the new org's id and name.
+// The requested name may be adjusted server-side (e.g. to resolve collisions),
+// so callers must use the returned name rather than the requested one.
+func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in")
+	}
+	var data struct {
+		CreateQuickstartOrg OrgResponse `json:"createQuickstartOrg"`
+	}
+	if err := c.doGraphQL(ctx, "CreateQuickstartOrg", createQuickstartOrgOperation, map[string]any{
+		"name": name,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.CreateQuickstartOrg, nil
+}
+
+// GitHubConnection is a user's linked GitHub identity in Dagger Cloud.
+type GitHubConnection struct {
+	GitHubLogin string `json:"githubLogin"`
+	ConnectedAt string `json:"connectedAt"`
+}
+
+const getGithubConnectionOperation = `
+query GetGithubConnection {
+	githubConnection {
+		githubLogin
+		connectedAt
+	}
+}
+`
+
+// GitHubConnection returns the authenticated user's GitHub connection, or nil
+// when no GitHub account is connected yet.
+func (c *Client) GitHubConnection(ctx context.Context) (*GitHubConnection, error) {
+	var data struct {
+		GitHubConnection *GitHubConnection `json:"githubConnection"`
+	}
+	if err := c.doGraphQL(ctx, "GetGithubConnection", getGithubConnectionOperation, nil, &data); err != nil {
+		return nil, err
+	}
+	return data.GitHubConnection, nil
+}
+
+const configureOrgSourceOperation = `
+mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
+	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
+		sourceName
+		installationId
+		mode
+	}
+}
+`
+
+// ConfigureOrgSource maps the given GitHub App installation to org (creating the
+// mapping if needed) and applies the repo selection. Unlike ConfigureSource, it
+// does not require the installation to already be mapped, so it is used to
+// onboard a freshly installed app into the user's org. Requires org admin.
+func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
+	var data struct {
+		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
+	}
+	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
+		"org":            orgID,
+		"installationId": installationID,
+		"mode":           mode,
+		"repositories":   repositories,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.ConfigureOrgSource, nil
 }
 
 const getGithubOAuthURLOperation = `
