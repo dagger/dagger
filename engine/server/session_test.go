@@ -4838,11 +4838,13 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 		"blob",
 		"currentNode",
 		"engineVolume",
-		"id",
 		"schema",
 		"sshfsVolume",
 	} {
 		require.True(t, isCoreRootField(field), field)
 	}
 	require.False(t, isCoreRootField("node"))
+	// `id` is core on Query, but a module function named `id` is rejected by
+	// name, and that error needs the module loaded to be produced at all.
+	require.False(t, isCoreRootField("id"))
 }
