@@ -154,6 +154,7 @@ defmodule Dagger.GitRef do
   """
   @spec push(t(), [
           {:to, Dagger.GitRepository.t() | nil},
+          {:remote, String.t() | nil},
           {:branch, String.t() | nil},
           {:expected_remote_sha, String.t() | nil}
         ]) :: Dagger.GitPushResult.t()
@@ -165,6 +166,7 @@ defmodule Dagger.GitRef do
         "to",
         if(optional_args[:to], do: Dagger.ID.id!(optional_args[:to]), else: nil)
       )
+      |> QB.maybe_put_arg("remote", optional_args[:remote])
       |> QB.maybe_put_arg("branch", optional_args[:branch])
       |> QB.maybe_put_arg("expectedRemoteSHA", optional_args[:expected_remote_sha])
 

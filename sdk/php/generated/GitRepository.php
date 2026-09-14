@@ -180,4 +180,22 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Register a named remote on this repository, replacing any registered remote of the same name.
+     *
+     * Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+     *
+     * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+     */
+    public function withRemote(string $name, string $url, ?array $pushUrls = []): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRemote');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('url', $url);
+        if (null !== $pushUrls) {
+        $innerQueryBuilder->setArgument('pushUrls', $pushUrls);
+        }
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

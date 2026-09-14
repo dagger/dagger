@@ -8932,7 +8932,10 @@ pub struct GitRefPushOpts<'a> {
     /// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
     #[builder(setter(into, strip_option), default)]
     pub expected_remote_sha: Option<&'a str>,
-    /// Destination remote repository. Defaults to the source's captured push URL, or its repository URL when none was captured. Required when the source has multiple push URLs or no remote URL.
+    /// Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+    #[builder(setter(into, strip_option), default)]
+    pub remote: Option<&'a str>,
+    /// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has multiple push URLs or no remote URL.
     #[builder(setter(into, strip_option), default)]
     pub to: Option<Id>,
 }
@@ -9150,6 +9153,9 @@ impl GitRef {
         if let Some(to) = opts.to {
             query = query.arg("to", to);
         }
+        if let Some(remote) = opts.remote {
+            query = query.arg("remote", remote);
+        }
         if let Some(branch) = opts.branch {
             query = query.arg("branch", branch);
         }
@@ -9353,6 +9359,12 @@ pub struct GitRepositoryWithBundleOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub prerequisite_ref: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryWithRemoteOpts<'a> {
+    /// Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.
+    #[builder(setter(into, strip_option), default)]
+    pub push_urls: Option<Vec<&'a str>>,
+}
 impl IntoID<Id> for GitRepository {
     fn into_id(
         self,
@@ -9494,6 +9506,8 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+    ///
+    /// May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.
     pub fn commit(&self, id: impl Into<String>) -> GitCommit {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
@@ -9553,6 +9567,8 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    ///
+    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
         query = query.arg("name", name.into());
@@ -9679,6 +9695,52 @@ impl GitRepository {
                 Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Register a named remote on this repository, replacing any registered remote of the same name.
+    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+    /// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The remote's name, e.g. "origin" or "upstream".
+    /// * `url` - The remote's fetch URL.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_remote(&self, name: impl Into<String>, url: impl Into<String>) -> GitRepository {
+        let mut query = self.selection.select("withRemote");
+        query = query.arg("name", name.into());
+        query = query.arg("url", url.into());
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Register a named remote on this repository, replacing any registered remote of the same name.
+    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+    /// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The remote's name, e.g. "origin" or "upstream".
+    /// * `url` - The remote's fetch URL.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_remote_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        url: impl Into<String>,
+        opts: GitRepositoryWithRemoteOpts<'a>,
+    ) -> GitRepository {
+        let mut query = self.selection.select("withRemote");
+        query = query.arg("name", name.into());
+        query = query.arg("url", url.into());
+        if let Some(push_urls) = opts.push_urls {
+            query = query.arg("pushUrls", push_urls);
+        }
         GitRepository {
             proc: self.proc.clone(),
             selection: query,
