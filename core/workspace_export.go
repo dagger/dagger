@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -10,6 +12,100 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// WorkspaceExportBaseAvailable is a non-evaluating eligibility check. A local
+// backend can otherwise wrap a lazy host sync, a shallow tree, or arbitrary Git
+// storage; its type and SHA alone do not prove that it owns usable history.
+func (ref *GitRef) WorkspaceExportBaseAvailable() bool {
+	if ref == nil || ref.Ref == nil || !gitutil.IsCommitSHA(ref.Ref.SHA) || ref.Repo.Self() == nil {
+		return false
+	}
+	repo, ok := ref.Repo.Self().Backend.(*LocalGitRepository)
+	if !ok || repo == nil || repo.Directory.Self() == nil {
+		return false
+	}
+	backend, ok := ref.Backend.(*LocalGitRef)
+	if !ok || backend == nil || backend.repo != repo || backend.Ref == nil || backend.SHA != ref.Ref.SHA {
+		return false
+	}
+	dir := repo.Directory.Self()
+	if dir.Snapshot == nil || dir.Dir == nil || len(dir.Services) != 0 {
+		return false
+	}
+	snapshot, evaluated := dir.Snapshot.Peek()
+	_, pathEvaluated := dir.Dir.Peek()
+	return evaluated && snapshot != nil && pathEvaluated
+}
+
+// WorkspaceExportBaseReady proves readiness read-only. The schema caches this
+// proof by the immutable GitRef result, so it is not a full-history scan on
+// every save. Unsupported/incomplete storage falls back to destination capture;
+// cancellation is not ineligibility. ImportGitBundle remains authoritative for
+// exact-prerequisite isolation and validation of the captured bundle itself.
+func (ref *GitRef) WorkspaceExportBaseReady(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if !ref.WorkspaceExportBaseAvailable() {
+		return false, nil
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "validate workspace export base", telemetry.Internal())
+	defer span.End()
+	repo := ref.Repo.Self().Backend.(*LocalGitRepository)
+	if err := repo.ValidateSelfContained(ctx); err != nil {
+		return false, ctx.Err()
+	}
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		return workspaceExportBaseStorageReady(ctx, git, ref.Ref.SHA)
+	})
+	if err != nil {
+		return false, ctx.Err()
+	}
+	return true, nil
+}
+
+func workspaceExportBaseStorageReady(ctx context.Context, git *gitutil.GitCLI, sha string) error {
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+	// Do not borrow partial/shallow histories, alternates, replacements, or
+	// grafts. These can make the same SHA appear to have a different closure.
+	for _, name := range []string{"commondir", "shallow", "objects/info/alternates", "objects/info/http-alternates", "info/grafts"} {
+		if _, err := os.Lstat(filepath.Join(gitDir, name)); !os.IsNotExist(err) {
+			return fmt.Errorf("unsupported export base storage: %s", name)
+		}
+	}
+	config, err := git.Run(ctx, "config", "--local", "--name-only", "--list")
+	if err != nil {
+		return err
+	}
+	for key := range strings.Lines(strings.ToLower(string(config))) {
+		key = strings.TrimSpace(key)
+		if key == "extensions.partialclone" || strings.HasSuffix(key, ".promisor") || key == "include.path" || strings.HasPrefix(key, "includeif.") {
+			return fmt.Errorf("unsupported export base configuration")
+		}
+	}
+	promisors, err := filepath.Glob(filepath.Join(gitDir, "objects", "pack", "*.promisor"))
+	if err != nil || len(promisors) != 0 {
+		return fmt.Errorf("partial export base storage")
+	}
+	replacements, err := git.Run(ctx, "for-each-ref", "--format=%(objectname)", "refs/replace/")
+	if err != nil || len(replacements) != 0 {
+		return fmt.Errorf("export base has replacement objects")
+	}
+	// --missing=print traverses the entire exact HEAD closure, including blob
+	// existence, without lazily fetching missing promisor objects. No checkout,
+	// pack, fetch, ref mutation, or retained alternate is used to qualify reuse.
+	objects, err := git.Run(ctx, "rev-list", "--objects", "--no-object-names", "--missing=print", sha, "--")
+	if err != nil {
+		return err
+	}
+	if len(objects) == 0 || strings.HasPrefix(string(objects), "?") || strings.Contains(string(objects), "\n?") {
+		return fmt.Errorf("export base has incomplete object closure")
+	}
+	return nil
+}
 
 // workspaceSnapshotCommit records transport-only worktree state. These commits
 // are never installed on the user's branch or counted as agent commits.

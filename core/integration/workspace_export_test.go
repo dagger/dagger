@@ -30,6 +30,210 @@ func saveWorkspaceTo(ctx context.Context, c *dagger.Client, source, from *dagger
 	}, &dagger.Response{})
 }
 
+func (WorkspaceSuite) TestWorkspaceExportReusesOriginBase(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to inspect export call structure")
+	}
+	for _, scenario := range []string{"matching routing", "changed push routing"} {
+		t.Run(scenario, func(ctx context.Context, t *testctx.T) {
+			sink := newAgentTraceSink(t)
+			c := connect(ctx, t, sink.clientOpts()...)
+			origin, originURL := gitService(ctx, t, c, c.Directory().
+				WithNewFile("source.txt", "base source\n").
+				WithNewFile("destination.txt", "base destination\n"))
+			_, err := origin.Start(ctx)
+			require.NoError(t, err)
+			// Both spellings reach the real daemon, but differing captured push
+			// routing must not be silently replaced with the source's spelling.
+			pushURL := strings.Replace(originURL, "/repo.git", ":9418/repo.git", 1)
+			destinationPush := pushURL
+			if scenario == "changed push routing" {
+				destinationPush = originURL
+			}
+			checkout := c.Container().From(golangImage).
+				WithExec([]string{"apk", "add", "git"}).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithServiceBinding("origin", origin).
+				WithExec([]string{"git", "clone", originURL, "/source"}).
+				WithExec([]string{"git", "clone", originURL, "/destination"}).
+				WithExec([]string{"git", "-C", "/source", "config", "remote.origin.pushurl", pushURL}).
+				WithExec([]string{"git", "-C", "/destination", "config", "remote.origin.pushurl", destinationPush}).
+				// Dirty capture imports a bundle and hence owns LOCAL storage,
+				// rather than leaving the clean advertised HEAD remote-backed.
+				WithNewFile("/source/source.txt", "source edit\n").
+				WithNewFile("/destination/destination.txt", "destination dirt\n").
+				WithWorkdir("/source").
+				With(daggerShell(`
+base=$(current-workspace | snapshot)
+$base | with-new-file pending.txt saved | export --path /destination
+`))
+			_, err = checkout.Sync(ctx)
+			require.NoError(t, err)
+			for file, want := range map[string]string{"source.txt": "source edit\n", "destination.txt": "destination dirt\n", "pending.txt": "saved"} {
+				got, err := checkout.File("/destination/" + file).Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, want, got)
+			}
+			fetch, err := checkout.WithExec([]string{"git", "-C", "/destination", "remote", "get-url", "origin"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, originURL, strings.TrimSpace(fetch))
+			push, err := checkout.WithExec([]string{"git", "-C", "/destination", "remote", "get-url", "--push", "origin"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, destinationPush, strings.TrimSpace(push))
+			require.NoError(t, c.Close())
+			counts := workspaceExportOperationCounts(sink)
+			require.Equal(t, 1, counts["compose workspace export destination"])
+			if scenario == "matching routing" {
+				require.Equal(t, 1, counts["checkpoint reuse owned repository"])
+				require.Equal(t, 1, counts["validate workspace export base"])
+				require.Zero(t, counts["checkpoint reconstruct repository"])
+			} else {
+				require.Zero(t, counts["checkpoint reuse owned repository"])
+				require.Zero(t, counts["validate workspace export base"], "routing mismatch must not even qualify source storage")
+				require.Equal(t, 1, counts["checkpoint reconstruct repository"])
+			}
+			require.Zero(t, counts["pack host git checkout"])
+			require.Zero(t, counts["reconstruct host git checkout"])
+		})
+	}
+}
+
+// Count completed operation spans under explicit export requests, excluding
+// fixture setup and snapshot. Live start/final records share trace+span identity.
+func workspaceExportOperationCounts(sink *agentTraceSink) map[string]int {
+	traces, _ := sink.capture()
+	parents, names := map[string]string{}, map[string]string{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano < span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+				}
+			}
+		}
+	}
+	counts := map[string]int{}
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if names[parent] == "Workspace.export" {
+				counts[name]++
+				break
+			}
+		}
+	}
+	return counts
+}
+
+func (WorkspaceSuite) TestWorkspaceExportBaseReadinessCacheIsolation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	checkout := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+			git init -q
+			git config user.name Test
+			git config user.email test@example.com
+			printf base > base.txt
+			git add base.txt
+			git commit -qm base
+			git rev-parse HEAD HEAD:base.txt
+		`})
+	out, err := checkout.Stdout(ctx)
+	require.NoError(t, err)
+	objects := strings.Fields(out)
+	require.Len(t, objects, 2)
+	head, blob := objects[0], objects[1]
+	complete := checkout.Directory("/repo")
+	incomplete := complete.WithoutFile(".git/objects/" + blob[:2] + "/" + blob[2:])
+	for _, tc := range []struct {
+		directory *dagger.Directory
+		ready     bool
+	}{{complete, true}, {incomplete, false}, {complete, true}} {
+		id, err := tc.directory.AsGit().Ref(head).ID(ctx)
+		require.NoError(t, err)
+		var result struct {
+			Node struct {
+				Ready bool `json:"__workspaceExportBaseReady"`
+			}
+		}
+		err = c.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __workspaceExportBaseReady } } }`,
+			Variables: map[string]any{"id": id},
+		}, &dagger.Response{Data: &result})
+		require.NoError(t, err)
+		require.Equal(t, tc.ready, result.Node.Ready, "same SHA in different immutable storage must not share a positive readiness proof")
+	}
+}
+
+func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to inspect export call structure")
+	}
+	checkout, git := workspaceExportCheckout(ctx, t)
+	for _, name := range []string{"mode.txt", "deleted.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte(name), 0o644))
+	}
+	require.NoError(t, os.Symlink("base.txt", filepath.Join(checkout, "link")))
+	git("add", ".")
+	git("commit", "-m", "Git edge fixtures")
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseID, err := base.ID(ctx)
+	require.NoError(t, err)
+	base = dagger.Ref[*dagger.Workspace](c, baseID)
+	// Destination edits are newer than the frozen source. Reuse must borrow
+	// only committed history, never replace captured dirt with the source tree.
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "base.txt"), []byte("destination dirt"), 0o644))
+	require.NoError(t, os.Chmod(filepath.Join(checkout, "mode.txt"), 0o755))
+	require.NoError(t, os.Remove(filepath.Join(checkout, "deleted.txt")))
+	require.NoError(t, os.Remove(filepath.Join(checkout, "link")))
+	require.NoError(t, os.Symlink("mode.txt", filepath.Join(checkout, "link")))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "staged.txt"), []byte("staged destination"), 0o644))
+	git("add", "staged.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "staged.txt"), []byte("unstaged destination"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "private.txt"), []byte("never captured"), 0o600))
+	index, dirt, head := git("diff", "--cached", "--binary"), git("diff", "--binary"), git("rev-parse", "HEAD")
+	first := base.WithNewFile("pending.txt", "first save")
+	firstID, err := first.ID(ctx)
+	require.NoError(t, err)
+	first = dagger.Ref[*dagger.Workspace](c, firstID)
+	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, checkout))
+	second := first.WithNewFile("pending.txt", "second save")
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, checkout))
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, checkout), "retry remains idempotent")
+	require.Equal(t, index, git("diff", "--cached", "--binary"))
+	require.Equal(t, dirt, git("diff", "--binary"))
+	require.Equal(t, head, git("rev-parse", "HEAD"))
+	pending, err := os.ReadFile(filepath.Join(checkout, "pending.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second save", string(pending))
+	// The source now has a different HEAD: only the previous-save value is an
+	// eligible base for the captured destination.
+	committed := second.WithCommit("commit saved pending", workspaceCommitDate)
+	require.NoError(t, saveWorkspaceTo(ctx, c, committed, second, checkout))
+	require.Equal(t, "second save", git("show", "HEAD:pending.txt"))
+	require.Equal(t, index, git("diff", "--cached", "--binary"))
+	require.Equal(t, dirt, git("diff", "--binary"))
+	private, err := os.ReadFile(filepath.Join(checkout, "private.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "never captured", string(private))
+	original, err := base.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "base", original)
+	require.NoError(t, c.Close()) // flush telemetry, not a timing assertion
+	counts := workspaceExportOperationCounts(sink)
+	require.Equal(t, 1, counts["validate workspace export base"], "immutable base readiness is validated once, then cached across saves")
+	require.Equal(t, 4, counts["compose workspace export destination"])
+	require.Equal(t, 4, counts["checkpoint reuse owned repository"], "every matching export must omit repository reconstruction")
+	require.Zero(t, counts["pack host git checkout"])
+	require.Zero(t, counts["reconstruct host git checkout"])
+}
+
 func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))

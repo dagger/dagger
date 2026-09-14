@@ -213,6 +213,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.Func("__workspaceExportBaseReady", func(ctx context.Context, ref *core.GitRef, _ struct{}) (dagql.Boolean, error) {
+			ready, err := ref.WorkspaceExportBaseReady(ctx)
+			return dagql.Boolean(ready), err
+		}).View(AfterVersion("v1.0.0-0")).Doc("(Internal-only) Check immutable local history for workspace export base reuse."),
 		dagql.NodeFunc("push", s.push).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Pushes to an external Git repository on each invocation.").

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,6 +45,59 @@ func (f pullFixture) fold(dirty []string, commits ...string) []WorkspacePullPick
 	picks, err := foldWorkspacePull(f.t.Context(), f.dir, f.git("rev-parse", "source"), dirty, WorkspacePullOpts{MaxCommits: 100, Commits: commits})
 	require.NoError(f.t, err)
 	return picks
+}
+
+func TestWorkspaceExportBaseStorageReady(t *testing.T) {
+	for _, scenario := range []string{"complete", "packed", "missing commit", "missing tree", "missing blob", "shallow", "alternate", "promisor", "partial config", "replacement", "graft"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newPullFixture(t)
+			base := f.git("rev-parse", "HEAD")
+			head := f.commit("next.txt", "next", "next")
+			// Unrelated private objects must not influence readiness or be copied.
+			require.NoError(t, os.WriteFile(filepath.Join(f.dir, "private"), []byte("not captured"), 0o600))
+			f.git("hash-object", "-w", "private")
+			writeGit := func(name, contents string) {
+				require.NoError(t, os.WriteFile(filepath.Join(f.dir, ".git", name), []byte(contents), 0o600))
+			}
+			switch scenario {
+			case "packed":
+				f.git("gc", "--quiet")
+			case "missing commit", "missing tree", "missing blob":
+				sha := base
+				if scenario == "missing tree" {
+					sha = f.git("rev-parse", base+"^{tree}")
+				} else if scenario == "missing blob" {
+					sha = f.git("rev-parse", base+":base.txt")
+				}
+				require.NoError(t, os.Remove(filepath.Join(f.dir, ".git", "objects", sha[:2], sha[2:])))
+			case "shallow":
+				writeGit("shallow", head+"\n")
+			case "alternate":
+				writeGit("objects/info/alternates", "/unavailable\n")
+			case "promisor":
+				writeGit("objects/pack/pack-test.promisor", "")
+			case "partial config":
+				f.git("config", "remote.origin.promisor", "true")
+			case "replacement":
+				f.git("replace", head, base)
+			case "graft":
+				writeGit("info/grafts", head+"\n")
+			}
+			before := gitBundleTestSnapshot(t, f.dir)
+			err := workspaceExportBaseStorageReady(t.Context(), gitutil.NewGitCLI(gitutil.WithDir(f.dir)), head)
+			if scenario == "complete" || scenario == "packed" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			require.Equal(t, before, gitBundleTestSnapshot(t, f.dir), "readiness must not mutate source storage")
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	ready, err := (*GitRef)(nil).WorkspaceExportBaseReady(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, ready)
 }
 
 func TestWorkspaceExportReusesEmptySnapshot(t *testing.T) {
