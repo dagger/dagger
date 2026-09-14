@@ -14,6 +14,9 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type LocalGitRepository struct {
@@ -256,6 +259,11 @@ func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, 
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "materialize local git checkout", telemetry.Internal(), trace.WithAttributes(
+		attribute.Int("dagger.git.checkout.depth", depth),
+		attribute.Bool("dagger.git.checkout.discard_git_dir", discardGitDir),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err

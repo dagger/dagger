@@ -15,7 +15,34 @@ import (
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestRunGitEnvTelemetryPrivacy(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.Background())
+	ctx, root := provider.Tracer("test").Start(context.Background(), "root")
+	defer root.End()
+	dir := t.TempDir()
+	_, err := runGitEnv(ctx, dir, "init", "--quiet")
+	require.NoError(t, err)
+	_, err = runGitEnv(ctx, dir, "-c", "user.name=private-identity", "rev-parse", "--verify", "private-ref")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private-ref", "caller retains the diagnostic")
+	spans := recorder.Ended()
+	require.Len(t, spans, 2)
+	require.Equal(t, "git init", spans[0].Name())
+	require.Equal(t, "git rev-parse", spans[1].Name())
+	require.Equal(t, codes.Error, spans[1].Status().Code)
+	for _, span := range spans {
+		diagnostic := fmt.Sprint(span.Name(), span.Attributes(), span.Events(), span.Status())
+		require.NotContains(t, diagnostic, "private-")
+		require.NotContains(t, diagnostic, dir)
+	}
+}
 
 func gitBundleTestRun(t testing.TB, dir string, args ...string) string {
 	t.Helper()
