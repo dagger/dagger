@@ -7,6 +7,8 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // workspaceSnapshotCommit records transport-only worktree state. These commits
@@ -21,13 +23,56 @@ func workspaceSnapshotCommit(ctx context.Context, dir string, parents ...string)
 	if err != nil {
 		return "", err
 	}
-	args := []string{"commit-tree", strings.TrimSpace(tree), "-m", "Dagger worktree transport"}
+	return workspaceSnapshotTreeCommit(ctx, dir, strings.TrimSpace(tree), parents...)
+}
+
+// workspaceSnapshotTreeCommit preserves the transport topology without reading
+// the index or worktree. tree may also be a commit's explicit ^{tree} selector.
+func workspaceSnapshotTreeCommit(ctx context.Context, dir, tree string, parents ...string) (string, error) {
+	args := []string{"commit-tree", tree, "-m", "Dagger worktree transport"}
 	for _, parent := range parents {
 		args = append(args, "-p", parent)
 	}
 	env := []string{"GIT_AUTHOR_NAME=Dagger", "GIT_AUTHOR_EMAIL=dagger@localhost", "GIT_COMMITTER_NAME=Dagger", "GIT_COMMITTER_EMAIL=dagger@localhost", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z"}
 	sha, err := runWorkspaceCommitGit(ctx, dir, env, args...)
 	return strings.TrimSpace(sha), err
+}
+
+// workspaceExportContentEmpty deliberately retains directory entries, including
+// empty directories that Git cannot represent. Only a genuinely empty delta may
+// bypass application and the empty-directory validation below.
+func workspaceExportContentEmpty(content *changesetContent) bool {
+	p := content.paths
+	return len(p.Added) == 0 && len(p.Modified) == 0 && len(p.Removed) == 0 && len(p.AllRemoved) == 0 && len(p.Renamed) == 0
+}
+
+// workspaceExportSnapshot reuses a known committed tree for an empty overlay,
+// leaving the current checkout and index untouched. Nonempty overlays retain the
+// full worktree path, including ignored additions and empty-directory checks.
+func workspaceExportSnapshot(ctx context.Context, ws *gitMergeWorkspace, head string, content *changesetContent) (string, error) {
+	if workspaceExportContentEmpty(content) {
+		return workspaceSnapshotTreeCommit(ctx, ws.workDir, head+"^{tree}")
+	}
+	if _, err := runWorkspacePullGit(ctx, ws.workDir, nil, "reset", "--hard", head); err != nil {
+		return "", err
+	}
+	if err := ws.applyContent(ctx, content); err != nil {
+		return "", err
+	}
+	sha, err := workspaceSnapshotCommit(ctx, ws.workDir)
+	if err != nil {
+		return "", err
+	}
+	untracked, err := runWorkspacePullGit(ctx, ws.workDir, nil, "ls-files", "--others", "--directory", "-z")
+	if err != nil {
+		return "", err
+	}
+	if untracked != "" {
+		return "", fmt.Errorf("git integration cannot export empty directories: %q", splitPullPaths(untracked))
+	}
+	// Make additions tracked before resetting to another input.
+	_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "reset", "--hard", sha)
+	return sha, err
 }
 
 // WorkspaceSaveDirectory integrates a frozen source into a captured destination
@@ -50,19 +95,21 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 		if err != nil {
 			return err
 		}
-		snapshot := func(ref *GitRef, changes *Changeset) (string, error) {
+		worktreeHead := base
+		snapshot := func(ctx context.Context, name string, ref *GitRef, changes *Changeset) (_ string, rerr error) {
+			ctx, span := Tracer(ctx).Start(ctx, "construct "+name+" snapshot")
+			defer telemetry.EndWithCause(span, &rerr)
+			head := base
 			if ref != nil {
+				head = ref.Ref.SHA
 				if err := ref.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref.Backend}, func(remote *gitutil.GitCLI) error {
 					url, err := remote.URL(ctx)
 					if err != nil {
 						return err
 					}
-					_, err = git("fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, ref.Ref.SHA)
+					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, head)
 					return err
 				}); err != nil {
-					return "", err
-				}
-				if _, err := git("reset", "--hard", ref.Ref.SHA); err != nil {
 					return "", err
 				}
 			}
@@ -70,40 +117,33 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 			if err != nil {
 				return "", err
 			}
-			if err := ws.applyContent(ctx, content); err != nil {
-				return "", err
+			empty := workspaceExportContentEmpty(content)
+			span.SetAttributes(attribute.Bool("dagger.workspace.snapshot.reused_tree", empty))
+			sha, err := workspaceExportSnapshot(ctx, ws, head, content)
+			if err == nil && !empty {
+				worktreeHead = sha
 			}
-			sha, err := workspaceSnapshotCommit(ctx, ws.workDir)
-			if err != nil {
-				return "", err
-			}
-			untracked, err := git("ls-files", "--others", "--directory", "-z")
-			if err != nil {
-				return "", err
-			}
-			if untracked != "" {
-				return "", fmt.Errorf("git integration cannot export empty directories: %q", splitPullPaths(untracked))
-			}
-			// Make additions tracked before resetting to another input.
-			_, err = git("reset", "--hard", sha)
 			return sha, err
 		}
-		sourceTree, err := snapshot(source, sourceDirty)
+		sourceTree, err := snapshot(ctx, "source", source, sourceDirty)
 		if err != nil {
 			return err
 		}
 		var fromTree string
 		if from != nil {
 			opts.FromSHA = from.Ref.SHA
-			fromTree, err = snapshot(from, fromDirty)
+			fromTree, err = snapshot(ctx, "previous save", from, fromDirty)
 			if err != nil {
 				return err
 			}
 		}
-		if _, err := git("reset", "--hard", base); err != nil {
-			return err
+		if worktreeHead != base {
+			if _, err := git("reset", "--hard", base); err != nil {
+				return err
+			}
+			worktreeHead = base
 		}
-		before, err := snapshot(nil, dirty)
+		before, err := snapshot(ctx, "destination", nil, dirty)
 		if err != nil {
 			return err
 		}
@@ -112,32 +152,44 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 				return err
 			}
 		}
-		before, err = workspaceSnapshotCommit(ctx, ws.workDir, base)
+		// Snapshot construction and saved-untracked restoration both leave their
+		// contents staged. Reuse that index without scanning the worktree again.
+		beforeTree, err := git("write-tree")
 		if err != nil {
 			return err
 		}
-		if _, err := git("reset", "--hard", before); err != nil {
+		before, err = workspaceSnapshotTreeCommit(ctx, ws.workDir, beforeTree, base)
+		if err != nil {
 			return err
 		}
-		if _, err := git("reset", "--hard", base); err != nil {
-			return err
+		// Even an empty captured destination may have restored saved untracked
+		// additions. Do not infer a clean index from its empty changeset alone.
+		if worktreeHead != base || from != nil {
+			if _, err := git("reset", "--hard", base); err != nil {
+				return err
+			}
 		}
 		target, after, err := workspaceExportIntegrate(ctx, ws.workDir, base, before, source.Ref.SHA, sourceTree, fromTree, opts)
 		if err != nil {
 			return err
 		}
-		if _, err := git("read-tree", "--reset", "-u", after); err != nil {
-			return err
-		}
-		transport, err := workspaceSnapshotCommit(ctx, ws.workDir, target, before)
-		if err != nil {
-			return err
-		}
-		if _, err := git("reset", "--hard", transport); err != nil {
-			return err
-		}
-		return normalizeGitDirAfterCommit(ctx, ws.workDir)
+		return workspaceExportTransport(ctx, ws.workDir, target, before, after)
 	})
+}
+
+// workspaceExportTransport materializes only the final merged tree; the
+// transport's parents retain both the new history and the checked before state.
+func workspaceExportTransport(ctx context.Context, dir, target, before, tree string) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "construct workspace export transport")
+	defer telemetry.EndWithCause(span, &rerr)
+	transport, err := workspaceSnapshotTreeCommit(ctx, dir, tree, target, before)
+	if err != nil {
+		return err
+	}
+	if _, err := runWorkspacePullGit(ctx, dir, nil, "reset", "--hard", transport); err != nil {
+		return err
+	}
+	return normalizeGitDirAfterCommit(ctx, dir)
 }
 
 // Only comparator additions absent from destination HEAD may be untracked
@@ -172,7 +224,9 @@ func workspaceExportRestoreSavedUntracked(ctx context.Context, dir, target, from
 // Commit integration and worktree integration deliberately have different
 // bases. A save baseline is a source value, not destination HEAD: saved pending
 // edits may become commits, and destination commits may have different hashes.
-func workspaceExportIntegrate(ctx context.Context, dir, base, before, source, sourceTree, fromTree string, opts WorkspacePullOpts) (string, string, error) {
+func workspaceExportIntegrate(ctx context.Context, dir, base, before, source, sourceTree, fromTree string, opts WorkspacePullOpts) (_ string, _ string, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "integrate workspace export commits and pending edits")
+	defer telemetry.EndWithCause(span, &rerr)
 	if _, err := runWorkspacePullGit(ctx, dir, nil, "merge-base", base, source); err != nil {
 		return "", "", fmt.Errorf("export requires related Git histories: %w", err)
 	}
@@ -216,10 +270,7 @@ func workspaceExportIntegrate(ctx context.Context, dir, base, before, source, so
 	if err != nil {
 		return "", "", err
 	}
-	if _, err := runWorkspacePullGit(ctx, dir, nil, "read-tree", "--reset", "-u", tree); err != nil {
-		return "", "", err
-	}
-	integrated, err := workspaceSnapshotCommit(ctx, dir)
+	integrated, err := workspaceSnapshotTreeCommit(ctx, dir, tree)
 	if err != nil {
 		return "", "", err
 	}
