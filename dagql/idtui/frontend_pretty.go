@@ -120,6 +120,7 @@ type frontendPretty struct {
 	statusLine      *StatusLine
 	statusLineData  StatusLineData
 	llmCostFn       LLMCostFunc
+	llmToolsFn      LLMToolsProvider
 	textInput       *tuist.TextInput
 	promptFrame     *PromptFrame
 	completionMenu  *tuist.CompletionMenu

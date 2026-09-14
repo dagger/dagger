@@ -304,6 +304,19 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
 	s.llm = llm
 
+	// Expose the model's live toolset to the TUI console (/toolset), probed
+	// as an optional interface like SetLLMCostFunc in NewLLMSession.
+	// Re-registered on every LLM swap so the provider always reflects the
+	// current composition, and resolved lazily (the engine query runs per
+	// /toolset request) so sessions that never ask pay nothing.
+	if sink, ok := s.frontend.(interface {
+		SetLLMToolsProvider(idtui.LLMToolsProvider)
+	}); ok {
+		sink.SetLLMToolsProvider(func(ctx context.Context) (string, error) {
+			return llm.Tools(ctx)
+		})
+	}
+
 	// figure out what the model resolved to
 	model, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
