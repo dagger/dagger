@@ -64,9 +64,10 @@ func TestWorkspaceExportBaseStorageReady(t *testing.T) {
 				f.git("gc", "--quiet")
 			case "missing commit", "missing tree", "missing blob":
 				sha := base
-				if scenario == "missing tree" {
+				switch scenario {
+				case "missing tree":
 					sha = f.git("rev-parse", base+"^{tree}")
-				} else if scenario == "missing blob" {
+				case "missing blob":
 					sha = f.git("rev-parse", base+":base.txt")
 				}
 				require.NoError(t, os.Remove(filepath.Join(f.dir, ".git", "objects", sha[:2], sha[2:])))

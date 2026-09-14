@@ -43,6 +43,60 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 		return err
 	}
 	touched := integrationPaths(committed + changed)
+	if err := prepareIntegrationWorktreeIndex(run, before, after, touched); err != nil {
+		return err
+	}
+	actualBefore, err := run("", "write-tree")
+	if err != nil {
+		return err
+	}
+	patch, err := runExportGit(ctx, checkout, "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "--no-renames", strings.TrimSpace(actualBefore), after, "--")
+	if err != nil {
+		return err
+	}
+	// Use the real index as the starting point for the resulting staging state.
+	// Only paths changed by committed history are advanced to the new HEAD.
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(index, data, 0o600); err != nil {
+		return err
+	}
+	staged, err := run("", "diff", "--cached", "--name-only", "-z", base, "--")
+	if err != nil {
+		return err
+	}
+	notCaptured, err := run("", "diff", "--cached", "--name-only", "-z", before, "--")
+	if err != nil {
+		return err
+	}
+	for _, path := range integrationPaths(staged) {
+		if integrationOverlaps(path, integrationPaths(committed)) && integrationOverlaps(path, integrationPaths(notCaptured)) {
+			return fmt.Errorf("staged path %q differs from the captured worktree", path)
+		}
+	}
+	// NUL-delimited pathspecs avoid argv limits and pathspec interpretation.
+	if committed != "" {
+		if _, err := run(committed, "reset", "-q", target, "--pathspec-from-file=-", "--pathspec-file-nul"); err != nil {
+			return err
+		}
+	}
+	if _, err := run("", "update-index", "--no-split-index"); err != nil {
+		return err
+	}
+	if patch != "" {
+		if _, err := run(patch, "apply", "--check", "--whitespace=nowarn", "-"); err != nil {
+			return err
+		}
+		if _, err := run(patch, "apply", "--whitespace=nowarn", "-"); err != nil {
+			return err
+		}
+	}
+	return os.Rename(index, indexPath)
+}
+
+func prepareIntegrationWorktreeIndex(run func(string, ...string) (string, error), before, after string, touched []string) error {
 	// A retry may find some paths already at the desired after-state (notably
 	// pending additions, which capture intentionally leaves untracked). Accept
 	// only exact matches, including file mode and symlink target, and remove
@@ -98,54 +152,7 @@ func applyIntegrationWorktree(ctx context.Context, checkout, base, target, after
 			return err
 		}
 	}
-	actualBefore, err := run("", "write-tree")
-	if err != nil {
-		return err
-	}
-	patch, err := runExportGit(ctx, checkout, "diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", "--no-renames", strings.TrimSpace(actualBefore), after, "--")
-	if err != nil {
-		return err
-	}
-	// Use the real index as the starting point for the resulting staging state.
-	// Only paths changed by committed history are advanced to the new HEAD.
-	data, err := os.ReadFile(indexPath)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(index, data, 0o600); err != nil {
-		return err
-	}
-	staged, err := run("", "diff", "--cached", "--name-only", "-z", base, "--")
-	if err != nil {
-		return err
-	}
-	notCaptured, err := run("", "diff", "--cached", "--name-only", "-z", before, "--")
-	if err != nil {
-		return err
-	}
-	for _, path := range integrationPaths(staged) {
-		if integrationOverlaps(path, integrationPaths(committed)) && integrationOverlaps(path, integrationPaths(notCaptured)) {
-			return fmt.Errorf("staged path %q differs from the captured worktree", path)
-		}
-	}
-	// NUL-delimited pathspecs avoid argv limits and pathspec interpretation.
-	if committed != "" {
-		if _, err := run(committed, "reset", "-q", target, "--pathspec-from-file=-", "--pathspec-file-nul"); err != nil {
-			return err
-		}
-	}
-	if _, err := run("", "update-index", "--no-split-index"); err != nil {
-		return err
-	}
-	if patch != "" {
-		if _, err := run(patch, "apply", "--check", "--whitespace=nowarn", "-"); err != nil {
-			return err
-		}
-		if _, err := run(patch, "apply", "--whitespace=nowarn", "-"); err != nil {
-			return err
-		}
-	}
-	return os.Rename(index, indexPath)
+	return nil
 }
 
 func validateIntegrationParents(ctx context.Context, checkout, base, target, after string) (string, error) {

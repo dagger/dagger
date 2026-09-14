@@ -106,19 +106,8 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	if err != nil {
 		return fmt.Errorf("read export destination Git config: %w", err)
 	}
-	name, email := "Dagger", "dagger@localhost"
-	for _, entry := range entries {
-		if entry.GetValue() == "" {
-			continue
-		}
-		switch strings.ToLower(entry.GetKey()) {
-		case "user.name":
-			name = entry.GetValue()
-		case "user.email":
-			email = entry.GetValue()
-		}
-	}
-	if err := validateWorkspaceGitAuthor(name, email); err != nil {
+	name, email, err := workspaceExportCommitter(entries)
+	if err != nil {
 		return err
 	}
 	var repo dagql.ObjectResult[*core.GitRepository]
@@ -142,6 +131,25 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 		return fmt.Errorf("invalid workspace export transport")
 	}
 	return applyWorkspaceBundle(ctx, repo, metadata.HeadSha, commit.ParentSHAs[0], args.Path, metadata.CheckoutStateDigest)
+}
+
+func workspaceExportCommitter(entries []*gitsession.GitConfigEntry) (string, string, error) {
+	name, email := "Dagger", "dagger@localhost"
+	for _, entry := range entries {
+		if entry.GetValue() == "" {
+			continue
+		}
+		switch strings.ToLower(entry.GetKey()) {
+		case "user.name":
+			name = entry.GetValue()
+		case "user.email":
+			email = entry.GetValue()
+		}
+	}
+	if err := validateWorkspaceGitAuthor(name, email); err != nil {
+		return "", "", err
+	}
+	return name, email, nil
 }
 
 // workspaceExportCapturedBase never resolves workspace.git, an overlay's After,
