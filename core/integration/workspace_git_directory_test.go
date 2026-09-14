@@ -176,3 +176,37 @@ func (WorkspaceSuite) TestWorkspaceGitDirectoryWorktree(ctx context.Context, t *
 	require.Equal(t, head, strings.TrimSpace(out))
 	require.NotEqual(t, head, git("-C", linked, "rev-parse", "HEAD"))
 }
+
+func (WorkspaceSuite) TestWorkspaceGitDirectoryOriginCredentials(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name   string
+		origin string
+		keep   bool
+	}{
+		{"https", "https://example.invalid/repo.git", true},
+		{"ssh username", "ssh://git@example.invalid/repo.git", true},
+		{"scp username", "git@example.invalid:repo.git", true},
+		{"https password", "https://user:FAKE_REVIEW_TOKEN@example.invalid/repo.git", false},
+		{"https username token", "https://FAKE_REVIEW_TOKEN@example.invalid/repo.git", false},
+		{"ssh password", "ssh://git:FAKE_REVIEW_TOKEN@example.invalid/repo.git", false},
+		{"malformed URL", "https://user:FAKE_REVIEW_TOKEN@bad%host/repo.git", false},
+		{"query token", "https://example.invalid/repo.git?token=FAKE_REVIEW_TOKEN", false},
+		{"fragment token", "https://example.invalid/repo.git#FAKE_REVIEW_TOKEN", false},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			root, git := workspaceExportCheckout(ctx, t)
+			git("remote", "add", "origin", tc.origin)
+			c := connect(ctx, t, dagger.WithWorkdir(root))
+			config, err := c.CurrentWorkspace().Git().Directory().File("config").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, config, "FAKE_REVIEW_TOKEN")
+			if tc.keep {
+				require.Contains(t, config, "url = "+tc.origin)
+			} else {
+				require.NotContains(t, config, `[remote "origin"]`)
+			}
+			// Omitting reconstruction metadata never changes the host's routing.
+			require.Equal(t, tc.origin, git("config", "--get", "remote.origin.url"))
+		})
+	}
+}

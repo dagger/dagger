@@ -876,6 +876,8 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 // path, read by the client's own git (GetConfig) like the rest of the
 // checkout's state. Best-effort: a checkout without an origin remote -- or a
 // client that predates sharing it -- reconstructs without remotes, as before.
+// Credential-bearing origins are omitted rather than copied into ordinary
+// Directory contents. SSH usernames select an account and are safe to retain.
 // The origin rides the ref-state-keyed reconstruction, so changing it alone
 // is picked up the next time the checkout's refs move.
 func hostCheckoutOriginURL(ctx context.Context, bk *engineutil.Client, path string) string {
@@ -889,6 +891,22 @@ func hostCheckoutOriginURL(ctx context.Context, bk *engineutil.Client, path stri
 			// git config -l lists less specific scopes first; keep the last
 			// value, matching `git config --get`.
 			originURL = entry.GetValue()
+		}
+	}
+	if strings.Contains(originURL, "://") {
+		parsed, err := url.Parse(originURL)
+		if err != nil {
+			return ""
+		}
+		if parsed.User != nil {
+			_, hasPassword := parsed.User.Password()
+			if hasPassword || !strings.EqualFold(parsed.Scheme, "ssh") {
+				return ""
+			}
+		}
+		// Query strings and fragments can also carry credentials.
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return ""
 		}
 	}
 	return originURL
