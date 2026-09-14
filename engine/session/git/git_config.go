@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-var gitConfigAllowedKeys = []string{"user.name", "user.email"}
+// gitConfigAllowedKeys names the config the engine may read from the client:
+// commit identity, URL rewrites, and the origin remote URL (recorded on
+// reconstructed checkout repositories so remote-aware tooling keeps working).
+var gitConfigAllowedKeys = []string{"user.name", "user.email", "remote.origin.url"}
 
 func isGitConfigKeyAllowed(key string) bool {
 	if slices.Contains(gitConfigAllowedKeys, key) {

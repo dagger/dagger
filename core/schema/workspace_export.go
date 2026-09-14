@@ -206,7 +206,14 @@ func workspaceExportBaseCandidate(ws *core.Workspace, metadata *gitsession.Captu
 	if repo.URL.Valid {
 		url = string(repo.URL.Value)
 	}
-	if url != metadata.RemoteUrl || !slices.Equal(repo.PushURLs, metadata.RemotePushUrls) {
+	var pushURLs []string
+	for _, remote := range repo.Remotes {
+		if remote.Name != "origin" || remote.URL != metadata.RemoteUrl {
+			return none, false
+		}
+		pushURLs = remote.PushURLs
+	}
+	if url != metadata.RemoteUrl || !slices.Equal(pushURLs, metadata.RemotePushUrls) {
 		return none, false
 	}
 	return source.Ref, true

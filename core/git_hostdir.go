@@ -159,9 +159,14 @@ func MaterializeHostGitCheckout(
 // Directory is the git directory itself -- HEAD, objects and refs at its
 // root -- ready to be mounted at some tree's .git.
 //
+// originURL, when nonempty, is recorded as the reconstruction's origin remote
+// so remote-aware tooling reading the result (gh, git fetch) can still resolve
+// which repository the checkout came from; the raw host config is otherwise
+// never copied.
+//
 // A pack with no HeadSHA (a repository with no commits yet) reconstructs an
 // empty repository on the same unborn branch.
-func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack) (_ *Directory, rerr error) {
+func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack, originURL string) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -181,7 +186,7 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	}()
 
 	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-		return reconstructGitDir(ctx, root, pack)
+		return reconstructGitDir(ctx, root, pack, originURL)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct git dir: %w", err)
@@ -296,7 +301,7 @@ func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[
 	return inst, nil
 }
 
-func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
+func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack, originURL string) error {
 	initArgs := []string{"init", "-q", "--initial-branch=main"}
 	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
 		initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
@@ -356,6 +361,16 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		}
 		if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
 			return err
+		}
+	}
+
+	// Record where the checkout's repository was loaded from, so consumers
+	// mounting the reconstruction (Workspace.git.directory) keep working with
+	// remote-aware tooling like gh, which resolves the repository from the
+	// origin remote.
+	if originURL != "" {
+		if _, err := runGitEnv(ctx, root, "remote", "add", "origin", originURL); err != nil {
+			return fmt.Errorf("set origin remote: %w", err)
 		}
 	}
 

@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -13,6 +14,7 @@ import (
 
 type gitPushArgs struct {
 	To                dagql.Optional[dagql.ID[*core.GitRepository]]
+	Remote            string `default:""`
 	Branch            string `default:""`
 	ExpectedRemoteSHA string `name:"expectedRemoteSHA" default:""`
 }
@@ -22,6 +24,9 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	opts := core.GitPushOpts{Branch: args.Branch, ExpectedRemoteSHA: args.ExpectedRemoteSHA}
 	if _, err := opts.Ref(parent.Self().Ref); err != nil {
 		return inst, err
+	}
+	if args.To.Valid && args.Remote != "" {
+		return inst, fmt.Errorf("pass either to or remote, not both")
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -34,15 +39,35 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
-	} else if len(repo.Self().PushURLs) > 1 {
-		return inst, fmt.Errorf("source has multiple push URLs; pass an explicit destination repository with to")
-	} else if len(repo.Self().PushURLs) == 1 {
-		destinationURL = repo.Self().PushURLs[0]
+	} else if args.Remote != "" && args.Remote != "origin" {
+		// A named remote must be registered; origin is the implicit default
+		// below, resolvable even when it was never registered explicitly.
+		named := repo.Self().RemoteConfig(args.Remote)
+		switch {
+		case named == nil:
+			return inst, fmt.Errorf("no remote named %q is registered on the source; register it with withRemote or pass an explicit destination with to", args.Remote)
+		case len(named.PushURLs) > 1:
+			return inst, fmt.Errorf("remote %q has multiple push URLs; pass an explicit destination repository with to", args.Remote)
+		case len(named.PushURLs) == 1:
+			destinationURL = named.PushURLs[0]
+		case named.URL != "":
+			destinationURL = named.URL
+		default:
+			return inst, fmt.Errorf("remote %q has no URL; pass an explicit destination repository with to", args.Remote)
+		}
+	} else if origin := repo.Self().RemoteConfig("origin"); origin != nil && len(origin.PushURLs) > 1 {
+		return inst, fmt.Errorf("origin has multiple push URLs; pass an explicit destination repository with to")
+	} else if origin != nil && len(origin.PushURLs) == 1 {
+		destinationURL = origin.PushURLs[0]
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
-		if !repo.Self().URL.Valid || repo.Self().URL.Value.String() == "" {
+		switch {
+		case origin != nil && origin.URL != "":
+			destinationURL = origin.URL
+		case repo.Self().URL.Valid && repo.Self().URL.Value.String() != "":
+			destinationURL = repo.Self().URL.Value.String()
+		default:
 			return inst, fmt.Errorf("push requires an explicit destination repository: source has no remote URL")
 		}
-		destinationURL = repo.Self().URL.Value.String()
 	}
 	remote, ok := repo.Self().Backend.(*core.RemoteGitRepository)
 	if destinationURL != "" {
@@ -73,12 +98,78 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	return inst, err
 }
 
-func (s *gitSchema) withPushURLs(_ context.Context, parent *core.GitRepository, args struct {
-	URLs []string `name:"urls"`
-}) (*core.GitRepository, error) {
+type withRemoteArgs struct {
+	Name     string
+	URL      string   `name:"url"`
+	PushURLs []string `name:"pushUrls" default:"[]"`
+}
+
+func (s *gitSchema) withRemote(_ context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
+	if err := validateGitRemoteName(args.Name); err != nil {
+		return nil, err
+	}
+	if err := validateGitRemoteURL(args.URL); err != nil {
+		return nil, err
+	}
+	for _, pushURL := range args.PushURLs {
+		if err := validateGitRemoteURL(pushURL); err != nil {
+			return nil, err
+		}
+	}
 	repo := parent.CloneWithBackend(parent.Backend)
-	repo.PushURLs = slices.Clone(args.URLs)
+	repo.Remotes = core.WithGitRemote(repo.Remotes, core.GitRemote{
+		Name:     args.Name,
+		URL:      args.URL,
+		PushURLs: args.PushURLs,
+	})
 	return repo, nil
+}
+
+func validateGitRemoteName(name string) error {
+	if name == "" {
+		return fmt.Errorf("remote name must be nonempty")
+	}
+	if strings.HasPrefix(name, "-") || strings.Contains(name, "..") ||
+		strings.ContainsAny(name, "/\\ \t\r\n\x00") {
+		return fmt.Errorf("invalid remote name %q", name)
+	}
+	return nil
+}
+
+// validateGitRemoteURL accepts the spellings git itself does — scheme URLs,
+// SCP-style remotes, and local paths — but never a URL carrying a password:
+// remotes are routing metadata, and a recorded secret would outlive the
+// recipe that embedded it.
+func validateGitRemoteURL(remoteURL string) error {
+	if remoteURL == "" {
+		return fmt.Errorf("remote URL must be nonempty")
+	}
+	if strings.HasPrefix(remoteURL, "-") || strings.ContainsAny(remoteURL, "\r\n\x00") {
+		return fmt.Errorf("invalid remote URL")
+	}
+	if strings.Contains(remoteURL, "://") {
+		parsed, err := url.Parse(remoteURL)
+		if err != nil {
+			return fmt.Errorf("invalid remote URL")
+		}
+		if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				return fmt.Errorf("remote URL must not embed a password; configure credentials on the caller instead")
+			}
+		}
+	}
+	return nil
+}
+
+// gitRemoteDigestInputs flattens registered remotes for content digesting,
+// with explicit counts so entry boundaries never collide.
+func gitRemoteDigestInputs(remotes []core.GitRemote) []string {
+	inputs := make([]string, 0, len(remotes)*4)
+	for _, remote := range remotes {
+		inputs = append(inputs, remote.Name, remote.URL, strconv.Itoa(len(remote.PushURLs)))
+		inputs = append(inputs, remote.PushURLs...)
+	}
+	return inputs
 }
 
 func (s *gitSchema) pushResult(_ context.Context, _ *core.Query, args struct {

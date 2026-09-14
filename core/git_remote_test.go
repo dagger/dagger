@@ -208,7 +208,7 @@ func TestGitMirrorFetchPrivateRefs(t *testing.T) {
 	require.Equal(t, next, gitMirrorTestRun(t, mirror, "rev-parse", fetchedGitRef(next)))
 	checkout := t.TempDir()
 	checkoutGit := gitutil.NewGitCLI(gitutil.WithWorkTree(checkout), gitutil.WithGitDir(filepath.Join(checkout, ".git")))
-	require.NoError(t, doGitCheckout(context.Background(), checkoutGit, "", "file://"+mirror, &gitutil.Ref{SHA: next}, 1, false))
+	require.NoError(t, doGitCheckout(context.Background(), checkoutGit, nil, "file://"+mirror, &gitutil.Ref{SHA: next}, 1, false))
 	require.Empty(t, gitMirrorTestRun(t, checkout, "for-each-ref", "--format=%(refname)"), "private mirror refs and unrequested tags must not leak into checkout")
 	require.Equal(t, "new", gitMirrorTestRun(t, checkout, "show", "HEAD:small"))
 }

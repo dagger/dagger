@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
@@ -858,7 +859,7 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	defer func() { _ = pack.Close() }()
 
 	reconstructCtx, reconstructSpan := core.Tracer(ctx).Start(ctx, "reconstruct host git checkout", telemetry.Internal())
-	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack)
+	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack, hostCheckoutOriginURL(reconstructCtx, bk, args.Path))
 	reconstructSpan.End()
 	if err != nil {
 		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
@@ -869,6 +870,28 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// hostCheckoutOriginURL resolves the origin remote of the client checkout at
+// path, read by the client's own git (GetConfig) like the rest of the
+// checkout's state. Best-effort: a checkout without an origin remote -- or a
+// client that predates sharing it -- reconstructs without remotes, as before.
+// The origin rides the ref-state-keyed reconstruction, so changing it alone
+// is picked up the next time the checkout's refs move.
+func hostCheckoutOriginURL(ctx context.Context, bk *engineutil.Client, path string) string {
+	entries, err := bk.GetGitConfig(ctx, path)
+	if err != nil {
+		return ""
+	}
+	originURL := ""
+	for _, entry := range entries {
+		if strings.EqualFold(entry.GetKey(), "remote.origin.url") {
+			// git config -l lists less specific scopes first; keep the last
+			// value, matching `git config --get`.
+			originURL = entry.GetValue()
+		}
+	}
+	return originURL
 }
 
 type hostServiceArgs struct {
