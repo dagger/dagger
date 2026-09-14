@@ -18,6 +18,7 @@ import (
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -267,6 +268,17 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		return inst, fmt.Errorf("workspace snapshot capture metadata is missing")
 	}
 
+	// Sequential sibling phases partition composition, including lazy dagql
+	// evaluation triggered by each selection. Keep arguments and errors out of
+	// these diagnostic spans: captured paths and contents can be private.
+	compositionCtx := ctx
+	ctx, phase := core.Tracer(ctx).Start(ctx, "checkpoint reconstruct repository", telemetry.Internal())
+	nextPhase := func(name string) {
+		phase.End()
+		ctx, phase = core.Tracer(compositionCtx).Start(compositionCtx, name, telemetry.Internal())
+	}
+	defer func() { phase.End() }()
+
 	var repo dagql.ObjectResult[*core.GitRepository]
 	prerequisiteRef := metadata.RemoteRef
 	// A local filesystem remote is available only to the capturing client,
@@ -297,6 +309,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	}
 
 	if len(bundleBytes) > 0 {
+		nextPhase("checkpoint import captured bundle")
 		var file dagql.ObjectResult[*core.File]
 		if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{
 			Field: "blob",
@@ -329,6 +342,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		repo = imported
 	}
 
+	nextPhase("checkpoint construct HEAD workspace")
 	if len(metadata.RemotePushUrls) > 0 {
 		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
 			Field: "__withPushURLs",
@@ -359,9 +373,11 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 			{Name: "includeTags", Value: dagql.NewBoolean(false)},
 		}
 		var headTree dagql.ObjectResult[*core.Directory]
+		nextPhase("checkpoint reconstruct HEAD tree")
 		if err := srv.Select(ctx, head, &headTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
 			return inst, fmt.Errorf("workspace snapshot HEAD tree: %w", err)
 		}
+		nextPhase("checkpoint reconstruct worktree tree")
 		var worktree dagql.ObjectResult[*core.GitRef]
 		if err := srv.Select(ctx, repo, &worktree, dagql.Selector{
 			Field: "ref",
@@ -373,6 +389,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		if err := srv.Select(ctx, worktree, &worktreeTree, dagql.Selector{Field: "tree", Args: treeArgs}); err != nil {
 			return inst, fmt.Errorf("workspace snapshot worktree tree: %w", err)
 		}
+		nextPhase("checkpoint compose worktree changes")
 		headTreeID, err := headTree.ID()
 		if err != nil {
 			return inst, fmt.Errorf("workspace snapshot HEAD tree identity: %w", err)
@@ -398,6 +415,7 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 		inst = withChanges
 	}
 
+	nextPhase("checkpoint compose metadata")
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
 }
 

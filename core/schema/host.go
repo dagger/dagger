@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -848,13 +849,17 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	if args.ValidateState {
 		expectedStateDigest = args.StateDigest
 	}
-	pack, err := bk.PackGitCheckout(ctx, args.Path, expectedStateDigest)
+	packCtx, packSpan := core.Tracer(ctx).Start(ctx, "pack host git checkout", telemetry.Internal())
+	pack, err := bk.PackGitCheckout(packCtx, args.Path, expectedStateDigest)
+	packSpan.End()
 	if err != nil {
 		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
 	}
 	defer func() { _ = pack.Close() }()
 
-	dir, err := core.MaterializeGitCheckoutPack(ctx, pack)
+	reconstructCtx, reconstructSpan := core.Tracer(ctx).Start(ctx, "reconstruct host git checkout", telemetry.Internal())
+	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack)
+	reconstructSpan.End()
 	if err != nil {
 		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
 	}

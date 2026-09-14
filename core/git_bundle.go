@@ -26,6 +26,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -878,7 +879,25 @@ func normalizeCanonicalGitDir(gitDir string) error {
 // runGitEnv runs git in dir under a hermetic environment, returning its
 // standard output. Errors carry the
 // standard error stream, which is where git reports what went wrong.
-func runGitEnv(ctx context.Context, dir string, args ...string) (string, error) {
+func runGitEnv(ctx context.Context, dir string, args ...string) (_ string, rerr error) {
+	// Do not expose paths, ref names, identities, configuration, or Git output
+	// in subprocess telemetry. The caller still receives the original error.
+	commandArgs := args
+	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+		commandArgs = commandArgs[2:]
+	}
+	operation := "command"
+	if len(commandArgs) > 0 {
+		operation = commandArgs[0]
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	defer func() {
+		var spanErr error
+		if rerr != nil {
+			spanErr = fmt.Errorf("git %s failed", operation)
+		}
+		telemetry.EndWithCause(span, &spanErr)
+	}()
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)
