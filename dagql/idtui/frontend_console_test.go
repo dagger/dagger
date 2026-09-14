@@ -2,12 +2,98 @@ package idtui
 
 import (
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
 )
+
+func TestConsoleTimings(t *testing.T) {
+	db := dagui.NewDB()
+	rootID, midID, leafID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0).UTC()
+	// Deliberately import out of chronological order. The short internal parent
+	// must not hide its longer child when filtered out.
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: leafID, ParentID: midID, Name: "leaf\noperation", StartTime: start.Add(2 * time.Second), EndTime: start.Add(4 * time.Second), Final: true},
+		{ID: midID, ParentID: rootID, Name: "internal parent", Internal: true, StartTime: start.Add(time.Second), EndTime: start.Add(time.Second + time.Millisecond), Final: true},
+		{ID: rootID, Name: "root", StartTime: start, Final: true},
+		{ID: prettyTestSpanID(4), Name: "unrelated", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+		{ID: prettyTestSpanID(5), ParentID: rootID, Name: "running", StartTime: start.Add(3 * time.Second), Final: true},
+		{ID: prettyTestSpanID(6), ParentID: rootID, Name: "unknown timing", Final: true},
+	})
+	fe := NewWithDB(io.Discard, db)
+	detail, ok := fe.consoleTimings(rootID, 0, 0, start.Add(5*time.Second))
+	if !ok {
+		t.Fatal("root not found")
+	}
+	for _, want := range []string{
+		"Loaded spans only (including internal); incomplete",
+		"not CPU self time",
+		rootID.String() + "  0000000000000000  0s  5s (so far)  \"root\"",
+		midID.String() + "  " + rootID.String() + "  1s  1ms  \"internal parent\"",
+		leafID.String() + "  " + midID.String() + "  2s  2s  \"leaf\\noperation\"",
+		"3s  2s (so far)  \"running\"",
+		"unknown  unknown  \"unknown timing\"",
+		"shown: 5; omitted: 0 (0 below minDuration, 0 over limit); loaded subtree: 5",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("missing %q:\n%s", want, detail)
+		}
+	}
+	if strings.Contains(detail, "unrelated") {
+		t.Errorf("included unrelated span:\n%s", detail)
+	}
+	if strings.Index(detail, "\"internal parent\"") > strings.Index(detail, "\"leaf\\noperation\"") {
+		t.Errorf("not chronological:\n%s", detail)
+	}
+	filtered, _ := fe.consoleTimings(rootID, time.Second, 2, start.Add(5*time.Second))
+	if !strings.Contains(filtered, "\"leaf\\noperation\"") || strings.Contains(filtered, "\"internal parent\"") {
+		t.Errorf("filter pruned a descendant or retained short parent:\n%s", filtered)
+	}
+	if !strings.Contains(filtered, "shown: 2; omitted: 3 (1 below minDuration, 2 over limit)") {
+		t.Errorf("incorrect omission counts:\n%s", filtered)
+	}
+	unknown, _ := fe.consoleTimings(rootID, time.Hour, 0, start.Add(5*time.Second))
+	if !strings.Contains(unknown, "unknown  unknown  \"unknown timing\"") {
+		t.Errorf("unknown timing was filtered out:\n%s", unknown)
+	}
+	if _, ok := fe.consoleTimings(prettyTestSpanID(99), 0, 0, start); ok {
+		t.Error("unknown root reported found")
+	}
+}
+
+func TestConsoleTimingsHandler(t *testing.T) {
+	db := dagui.NewDB()
+	id := prettyTestSpanID(1)
+	db.ImportSnapshots([]dagui.SpanSnapshot{{ID: id, Name: "root", StartTime: time.Unix(100, 0), EndTime: time.Unix(101, 0), Final: true}})
+	fe := NewWithDB(io.Discard, db)
+	for _, tc := range []struct {
+		query string
+		code  int
+	}{
+		{"", http.StatusBadRequest},
+		{"?root=bad", http.StatusBadRequest},
+		{"?root=" + prettyTestSpanID(99).String(), http.StatusNotFound},
+		{"?root=" + id.String(), http.StatusOK},
+		{"?root=" + id.String() + "&minDuration=1ms&limit=0", http.StatusOK},
+		{"?root=" + id.String() + "&minDuration=-1s", http.StatusBadRequest},
+		{"?root=" + id.String() + "&minDuration=oops", http.StatusBadRequest},
+		{"?root=" + id.String() + "&limit=-1", http.StatusBadRequest},
+		{"?root=" + id.String() + "&limit=oops", http.StatusBadRequest},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			fe.consoleTimingsHandler(w, httptest.NewRequest(http.MethodGet, "/timings"+tc.query, nil))
+			if w.Code != tc.code {
+				t.Errorf("status = %d, want %d: %s", w.Code, tc.code, w.Body.String())
+			}
+		})
+	}
+}
 
 func TestConsoleSpanDetail(t *testing.T) {
 	db := dagui.NewDB()

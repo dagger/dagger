@@ -261,6 +261,32 @@ type TuiQa {
   }
 
   """
+  List a span's loaded subtree chronologically, including internal spans:
+  span ID, parent ID, start offset from root, wall duration, and name. No logs
+  or additional telemetry are fetched: results may be incomplete. Durations
+  may overlap and are not CPU self time. Running spans show elapsed time so far.
+  Get the required root span hex from `spans`. Reports filtered/capped rows.
+  """
+  timings(
+    root: String!,
+    """
+    Minimum wall duration, e.g. "10ms" or "1s". Unknown timings are kept.
+    """
+    minDuration: String! = "0s",
+    """
+    Maximum chronological rows to return; 0 means unlimited.
+    """
+    limit: Int! = 200,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/timings?root=" + root + "&minDuration=" + minDuration
+      .replace("%", "%25")
+      .replace("+", "%2B")
+      .replace(" ", "%20")
+      .replace("#", "%23")
+      .replace("&", "%26") + "&limit=" + toString(limit))
+  }
+
+  """
   Show the console's own endpoint + keymap help.
   """
   help: String! {
