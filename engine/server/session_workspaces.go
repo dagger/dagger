@@ -1813,7 +1813,10 @@ func isCoreRootField(field string) bool {
 		"git",
 		"host",
 		"http",
-		"id",
+		// NOTE: "id" is intentionally absent — it is the one name a module
+		// function may not take (see Module.validateObjectFunction), and the
+		// error saying so only exists once the module is loaded, so a request
+		// rooted at `id` has to keep demanding it.
 		"json",
 		"llm",
 		"module",
