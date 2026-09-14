@@ -15892,23 +15892,33 @@ class Workspace(Type):
         _ctx = self._select("envList", _args)
         return await _ctx.execute(list[str])
 
-    async def export(self) -> Void:
-        """Write this workspace's changes to a local Git checkout on the calling
-        client.
+    async def export(
+        self,
+        *,
+        path: str | None = "",
+        from_: "Workspace | None" = None,
+    ) -> Void:
+        """Write this workspace's commits and pending changes to a checkout on
+        the calling client.
 
-        Local overlays can be exported directly. To save commits from another
-        workspace, first integrate them with
-        currentWorkspace.withCommitsFrom(source). Merge any pending source
-        edits explicitly before exporting the result.
+        With path, accept a frozen source, integrate divergent commits by
+        cherry-picking, preserve unrelated checkout edits, and refuse
+        conflicts. The source is unchanged. Pass from to save only work since
+        an earlier source value, including previously saved pending edits that
+        are now committed.
 
-        For prepared Git integrations, export checks the live checkout,
-        preserves unrelated local edits, and refuses stale or conflicting
-        writes. History is never rewritten. To publish commits to a remote
-        repository, use git.head.push.
+        Omitting path retains legacy local-overlay and prepared-integration
+        export behavior. Like Directory.export, this writes only to the client
+        making the call, never the source's client.
 
-        Like Directory.export, writes affect the client making the call, never
-        the client that created the workspace. Inside a module, this cannot
-        reach the caller's host.
+        Parameters
+        ----------
+        path:
+            Destination checkout path on the calling client. Relative paths
+            start at the client's working directory.
+        from_:
+            Previously exported source workspace. Only commits and worktree
+            changes since this value are exported. Requires path.
 
         Returns
         -------
@@ -15923,7 +15933,10 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("path", path, ""),
+            Arg("from", from_, None),
+        ]
         _ctx = self._select("export", _args)
         await _ctx.execute()
 

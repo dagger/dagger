@@ -15742,6 +15742,15 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceExportOpts<'a> {
+    /// Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path.
+    #[builder(setter(into, strip_option), default)]
+    pub from: Option<Id>,
+    /// Destination checkout path on the calling client. Relative paths start at the client's working directory.
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindRootsOpts<'a> {
     /// Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
     #[builder(setter(into, strip_option), default)]
@@ -16291,12 +16300,35 @@ impl Workspace {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write this workspace's changes to a local Git checkout on the calling client.
-    /// Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
-    /// For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
-    /// Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+    /// Write this workspace's commits and pending changes to a checkout on the calling client.
+    /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+    /// Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Write this workspace's commits and pending changes to a checkout on the calling client.
+    /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+    /// Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_opts<'a>(
+        &self,
+        opts: WorkspaceExportOpts<'a>,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("export");
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
+        }
+        if let Some(from) = opts.from {
+            query = query.arg("from", from);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a File from the workspace.

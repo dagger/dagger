@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,6 +44,124 @@ func (f pullFixture) fold(dirty []string, commits ...string) []WorkspacePullPick
 	picks, err := foldWorkspacePull(f.t.Context(), f.dir, f.git("rev-parse", "source"), dirty, WorkspacePullOpts{MaxCommits: 100, Commits: commits})
 	require.NoError(f.t, err)
 	return picks
+}
+
+func TestWorkspaceExportIncrementalPending(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		t.Run(strconv.FormatBool(committed), func(t *testing.T) {
+			f := newPullFixture(t)
+			base := f.git("rev-parse", "HEAD")
+			f.git("switch", "source")
+			require.NoError(t, os.WriteFile(filepath.Join(f.dir, "pending.txt"), []byte("first"), 0o644))
+			fromTree, err := workspaceSnapshotCommit(t.Context(), f.dir)
+			require.NoError(t, err)
+			f.git("reset", "--hard", fromTree)
+			f.git("reset", "--hard", base)
+			source := base
+			if committed {
+				source = f.commit("pending.txt", "second", "commit saved pending with another edit")
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(f.dir, "pending.txt"), []byte("second"), 0o644))
+			}
+			sourceTree, err := workspaceSnapshotCommit(t.Context(), f.dir)
+			require.NoError(t, err)
+			f.git("reset", "--hard", sourceTree)
+			f.git("switch", "main")
+			require.NoError(t, workspaceExportRestoreSavedUntracked(t.Context(), f.dir, base, base, fromTree))
+			before, err := workspaceSnapshotCommit(t.Context(), f.dir, base)
+			require.NoError(t, err)
+			f.git("reset", "--hard", before)
+			f.git("reset", "--hard", base)
+			target, tree, err := workspaceExportIntegrate(t.Context(), f.dir, base, before, source, sourceTree, fromTree, WorkspacePullOpts{MaxCommits: 100, FromSHA: base})
+			require.NoError(t, err)
+			require.Equal(t, source, target)
+			require.Equal(t, "second", f.git("show", tree+":pending.txt"))
+			if committed {
+				require.Equal(t, f.git("rev-parse", target+"^{tree}"), tree, "saved pending is consumed into the commit")
+			}
+		})
+	}
+}
+
+func TestWorkspaceExportPreservesCapturedStagedAddition(t *testing.T) {
+	f := newPullFixture(t)
+	base := f.git("rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "pending.txt"), []byte("saved"), 0o644))
+	from, err := workspaceSnapshotCommit(t.Context(), f.dir)
+	require.NoError(t, err)
+	f.git("reset", "--hard", from)
+	f.git("reset", "--hard", base)
+	require.NoError(t, os.WriteFile(filepath.Join(f.dir, "pending.txt"), []byte("staged host edit"), 0o644))
+	f.git("add", "pending.txt")
+	require.NoError(t, workspaceExportRestoreSavedUntracked(t.Context(), f.dir, base, base, from))
+	require.Equal(t, "staged host edit", f.git("show", ":pending.txt"))
+}
+
+func TestWorkspaceExportDoesNotReplayPriorCherryPick(t *testing.T) {
+	f := newPullFixture(t)
+	f.git("switch", "source")
+	from := f.commit("base.txt", "agent first", "first")
+	f.git("switch", "main")
+	f.commit("host.txt", "host", "host divergence")
+	f.fold(nil)
+	require.NotEqual(t, from, f.git("rev-parse", "HEAD"))
+	// The host has deliberately undone a previously saved change. Saving only
+	// subsequent work must neither replay its commit nor overwrite the undo.
+	base := f.commit("base.txt", "base\n", "host undo")
+	f.git("switch", "source")
+	source := f.commit("next.txt", "next", "next")
+	f.git("switch", "main")
+	target, tree, err := workspaceExportIntegrate(t.Context(), f.dir, base, base, source, source, from, WorkspacePullOpts{MaxCommits: 100, FromSHA: from})
+	require.NoError(t, err)
+	require.Equal(t, "1", f.git("rev-list", "--count", base+".."+target))
+	require.Equal(t, "base", f.git("show", tree+":base.txt"))
+	require.Equal(t, "host", f.git("show", tree+":host.txt"))
+	require.Equal(t, "next", f.git("show", tree+":next.txt"))
+	require.Equal(t, "agent first", f.git("show", source+":base.txt"), "source stays unchanged")
+}
+
+func TestWorkspaceExportPendingDeleteAndConflicts(t *testing.T) {
+	for _, change := range []string{"delete", "rename", "conflict", "rewrite"} {
+		t.Run(change, func(t *testing.T) {
+			f := newPullFixture(t)
+			base := f.git("rev-parse", "HEAD")
+			require.NoError(t, os.WriteFile(filepath.Join(f.dir, "base.txt"), []byte("saved pending"), 0o644))
+			from, err := workspaceSnapshotCommit(t.Context(), f.dir)
+			require.NoError(t, err)
+			f.git("reset", "--hard", from)
+			if change == "rename" {
+				f.git("mv", "base.txt", "renamed.txt")
+			} else {
+				f.git("rm", "base.txt")
+			}
+			sourceTree, err := workspaceSnapshotCommit(t.Context(), f.dir)
+			require.NoError(t, err)
+			f.git("reset", "--hard", sourceTree)
+			f.git("reset", "--hard", from)
+			before := from
+			if change == "conflict" {
+				require.NoError(t, os.WriteFile(filepath.Join(f.dir, "base.txt"), []byte("outside"), 0o644))
+				before, err = workspaceSnapshotCommit(t.Context(), f.dir)
+				require.NoError(t, err)
+			}
+			f.git("reset", "--hard", base)
+			fromSHA := base
+			if change == "rewrite" {
+				fromSHA = from
+			}
+			_, tree, err := workspaceExportIntegrate(t.Context(), f.dir, base, before, base, sourceTree, from, WorkspacePullOpts{MaxCommits: 100, FromSHA: fromSHA})
+			if change == "conflict" || change == "rewrite" {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if change == "delete" {
+				require.Empty(t, f.git("ls-tree", "--name-only", tree))
+			} else {
+				require.Equal(t, "saved pending", f.git("show", tree+":renamed.txt"))
+			}
+		})
+	}
 }
 
 func TestWorkspacePullFastForwardAndSelection(t *testing.T) {

@@ -228,18 +228,23 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Write this workspace's changes to a local Git checkout on the calling client.
+  Write this workspace's commits and pending changes to a checkout on the calling client.
 
-  Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.
+  With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
 
-  For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.
-
-  Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host.
+  Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.
   """
-  @spec export(t()) :: :ok | {:error, term()}
-  def export(%__MODULE__{} = workspace) do
+  @spec export(t(), [{:path, String.t() | nil}, {:from, Dagger.Workspace.t() | nil}]) ::
+          :ok | {:error, term()}
+  def export(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("export")
+      workspace.query_builder
+      |> QB.select("export")
+      |> QB.maybe_put_arg("path", optional_args[:path])
+      |> QB.maybe_put_arg(
+        "from",
+        if(optional_args[:from], do: Dagger.ID.id!(optional_args[:from]), else: nil)
+      )
 
     case Client.execute(workspace.client, query_builder) do
       {:ok, _} -> :ok

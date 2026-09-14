@@ -22,6 +22,9 @@ const WorkspacePullTimeout = 2 * time.Minute
 const workspacePullOutputLimit = 16 << 20
 
 type WorkspacePullOpts struct {
+	// FromSHA excludes previously exported source history, independently of
+	// destination hashes (which may have changed through cherry-picking).
+	FromSHA                       string
 	Commits                       []string
 	MaxCommits                    int
 	CommitterName, CommitterEmail string
@@ -184,7 +187,11 @@ func pullGitList(ctx context.Context, dir string, limit int, revisions ...string
 
 func pullSelectedCommits(ctx context.Context, dir, source, target string, opts WorkspacePullOpts) ([]string, error) {
 	if len(opts.Commits) == 0 {
-		return pullGitList(ctx, dir, opts.MaxCommits, source, "^"+target)
+		revisions := []string{source, "^" + target}
+		if opts.FromSHA != "" {
+			revisions = append(revisions, "^"+opts.FromSHA)
+		}
+		return pullGitList(ctx, dir, opts.MaxCommits, revisions...)
 	}
 	// Explicit selection is also bounded: never walk arbitrarily far back to
 	// find a requested hash. A nearer source ref lets callers select older work.
