@@ -407,7 +407,9 @@ func foldWorkspacePullCommit(ctx context.Context, dir string, pick *WorkspacePul
 		email = "dagger@localhost"
 	}
 	env := []string{"GIT_AUTHOR_NAME=" + meta[1], "GIT_AUTHOR_EMAIL=" + meta[2], "GIT_AUTHOR_DATE=" + meta[3], "GIT_COMMITTER_NAME=" + name, "GIT_COMMITTER_EMAIL=" + email, "GIT_COMMITTER_DATE=" + meta[4]}
-	message := strings.TrimRight(meta[5], "\n") + "\n\n(cherry picked from commit " + sha + ")\n"
+	// git show adds a newline after %B; remove only that separator to preserve
+	// the source message verbatim, without adding cherry-pick provenance.
+	message := strings.TrimSuffix(meta[5], "\n")
 	if _, err := runWorkspacePullGit(ctx, dir, env, "commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", message); err != nil {
 		return err
 	}
