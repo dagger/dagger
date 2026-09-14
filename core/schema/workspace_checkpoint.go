@@ -367,9 +367,12 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	}
 
 	if metadata.WorktreeSha != "" {
+		// These are content-only views: history is discarded before comparing
+		// trees. Keep the backing repository (and hence Workspace Git history)
+		// complete, but do not fetch that history into two throwaway checkouts.
 		treeArgs := []dagql.NamedInput{
 			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
-			{Name: "depth", Value: dagql.NewInt(0)},
+			{Name: "depth", Value: dagql.NewInt(1)},
 			{Name: "includeTags", Value: dagql.NewBoolean(false)},
 		}
 		var headTree dagql.ObjectResult[*core.Directory]
