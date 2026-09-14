@@ -14,160 +14,36 @@ namespace Dagger;
 class Client extends Client\AbstractClient implements Client\IdAble, Node
 {
     /**
-     * initialize an address to load directories, containers, secrets or other object types.
+     * A unique identifier for this Query.
      */
-    public function address(string $value): Address
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('address');
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Creates a file from arbitrary binary contents.
+     * Load any object by its ID.
      */
-    public function blob(string $name, Bytes $contents, ?int $permissions = 420): File
+    public function node(Id $id): ?Node
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('contents', $contents);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('node');
+        $objectQueryBuilder->setArgument('id', $id);
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
         }
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return $this->client->loadObjectFromId(\Dagger\NodeClient::class, new \Dagger\Id((string)$id), 'Node');
     }
 
     /**
-     * Constructs a cache volume for a given cache key.
+     * Get the current Dagger Engine version.
      */
-    public function cacheVolume(
-        string $key,
-        ?Directory $source = null,
-        ?CacheSharingMode $sharing = null,
-        ?string $owner = '',
-    ): CacheVolume {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
-        $innerQueryBuilder->setArgument('key', $key);
-        if (null !== $source) {
-        $innerQueryBuilder->setArgument('source', $source);
-        }
-        if (null !== $sharing) {
-        $innerQueryBuilder->setArgument('sharing', $sharing);
-        }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Creates an empty changeset
-     */
-    public function changeset(): Changeset
+    public function version(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Dagger Cloud configuration and state
-     */
-    public function cloud(): Cloud
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cloud');
-        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function codegenBase(ModuleSource $modSource, File $introspectionJson): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Creates a scratch container, with no image or metadata.
-     *
-     * To pull an image, follow up with the "from" function.
-     */
-    public function container(?Platform $platform = null): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('container');
-        if (null !== $platform) {
-        $innerQueryBuilder->setArgument('platform', $platform);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The FunctionCall context that the SDK caller is currently executing in.
-     *
-     * If the caller is not currently executing in a function, this will return an error.
-     */
-    public function currentFunctionCall(): FunctionCall
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentFunctionCall');
-        return new \Dagger\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The module currently being served in the session, if any.
-     */
-    public function currentModule(): CurrentModule
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentModule');
-        return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
-     */
-    public function currentNode(): Node
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentNode');
-        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The TypeDef representations of the objects currently being served in the session.
-     */
-    public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
-        if (null !== $returnAllTypes) {
-        $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
-        }
-        if (null !== $hideCore) {
-        $leafQueryBuilder->setArgument('hideCore', $hideCore);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'currentTypeDefs');
-    }
-
-    /**
-     * Detect and return the current workspace.
-     */
-    public function currentWorkspace(): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentWorkspace');
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The default platform of the engine.
-     */
-    public function defaultPlatform(): Platform
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPlatform');
-        return new \Dagger\Platform((string)$this->queryLeaf($leafQueryBuilder, 'defaultPlatform'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
     }
 
     /**
@@ -180,47 +56,12 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * The Dagger engine container configuration and state
+     * Creates an empty changeset
      */
-    public function engine(): Engine
+    public function changeset(): Changeset
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engine');
-        return new \Dagger\Engine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
-     */
-    public function engineVolume(string $name, ?string $subdir = null): Volume
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engineVolume');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $subdir) {
-        $innerQueryBuilder->setArgument('subdir', $subdir);
-        }
-        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Initialize an environment file
-     */
-    public function envFile(?bool $expand = null): EnvFile
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('envFile');
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Create a new error.
-     */
-    public function error(string $message): Error
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('error');
-        $innerQueryBuilder->setArgument('message', $message);
-        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -238,24 +79,17 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Creates a function.
+     * Creates a file from arbitrary binary contents.
      */
-    public function function(string $name, TypeDef $returnType): Function_
+    public function blob(string $name, Bytes $contents, ?int $permissions = 420): File
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('function');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
         $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('returnType', $returnType);
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Create a code generation result, given a directory containing the generated code.
-     */
-    public function generatedCode(Directory $code): GeneratedCode
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedCode');
-        $innerQueryBuilder->setArgument('code', $code);
-        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -295,6 +129,111 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a scratch container, with no image or metadata.
+     *
+     * To pull an image, follow up with the "from" function.
+     */
+    public function container(?Platform $platform = null): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('container');
+        if (null !== $platform) {
+        $innerQueryBuilder->setArgument('platform', $platform);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Constructs a cache volume for a given cache key.
+     */
+    public function cacheVolume(
+        string $key,
+        ?Directory $source = null,
+        ?CacheSharingMode $sharing = null,
+        ?string $owner = '',
+    ): CacheVolume {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
+        $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $source) {
+        $innerQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $sharing) {
+        $innerQueryBuilder->setArgument('sharing', $sharing);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+     */
+    public function engineVolume(string $name, ?string $subdir = null): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engineVolume');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $subdir) {
+        $innerQueryBuilder->setArgument('subdir', $subdir);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Constructs an SSHFS volume.
+     */
+    public function sshfsVolume(
+        string $endpoint,
+        Secret $privateKey,
+        ?Secret $knownHosts = null,
+        ?string $cacheKey = null,
+        ?bool $insecureSkipHostKeyCheck = false,
+        ?Service $experimentalServiceHost = null,
+    ): Volume {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
+        $innerQueryBuilder->setArgument('endpoint', $endpoint);
+        $innerQueryBuilder->setArgument('privateKey', $privateKey);
+        if (null !== $knownHosts) {
+        $innerQueryBuilder->setArgument('knownHosts', $knownHosts);
+        }
+        if (null !== $cacheKey) {
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        }
+        if (null !== $insecureSkipHostKeyCheck) {
+        $innerQueryBuilder->setArgument('insecureSkipHostKeyCheck', $insecureSkipHostKeyCheck);
+        }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a new secret.
+     */
+    public function secret(string $uri, ?string $cacheKey = null): Secret
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
+        $innerQueryBuilder->setArgument('uri', $uri);
+        if (null !== $cacheKey) {
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        }
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Sets a secret given a user defined name to its plaintext and returns the secret.
+     *
+     * The plaintext value is limited to a size of 128000 bytes.
+     */
+    public function setSecret(string $name, string $plaintext): Secret
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setSecret');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('plaintext', $plaintext);
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -338,53 +277,12 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this Query.
+     * The default platform of the engine.
      */
-    public function id(): Id
+    public function defaultPlatform(): Platform
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Initialize a JSON value
-     */
-    public function json(): JsonValue
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('json');
-        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Initialize a new LLM conversation.
-     */
-    public function llm(?string $model = null, ?string $provider = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
-        if (null !== $model) {
-        $innerQueryBuilder->setArgument('model', $model);
-        }
-        if (null !== $provider) {
-        $innerQueryBuilder->setArgument('provider', $provider);
-        }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Create a new module.
-     */
-    public function module(): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('module');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPlatform');
+        return new \Dagger\Platform((string)$this->queryLeaf($leafQueryBuilder, 'defaultPlatform'));
     }
 
     /**
@@ -419,60 +317,42 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Load any object by its ID.
+     * Create a new module.
      */
-    public function node(Id $id): ?Node
+    public function module(): Module
     {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('node');
-        $objectQueryBuilder->setArgument('id', $id);
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\NodeClient::class, new \Dagger\Id((string)$id), 'Node');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('module');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Load a GraphQL introspection schema for merging.
+     * Create a new TypeDef.
      */
-    public function schema(Json $json): Schema
+    public function typeDef(): TypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schema');
-        $innerQueryBuilder->setArgument('json', $json);
-        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Creates a new secret.
+     * Create a code generation result, given a directory containing the generated code.
      */
-    public function secret(string $uri, ?string $cacheKey = null): Secret
+    public function generatedCode(Directory $code): GeneratedCode
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
-        $innerQueryBuilder->setArgument('uri', $uri);
-        if (null !== $cacheKey) {
-        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
-        }
-        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedCode');
+        $innerQueryBuilder->setArgument('code', $code);
+        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Sets a secret given a user defined name to its plaintext and returns the secret.
-     *
-     * The plaintext value is limited to a size of 128000 bytes.
+     * Creates a function.
      */
-    public function setSecret(string $name, string $plaintext): Secret
+    public function function(string $name, TypeDef $returnType): Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setSecret');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('function');
         $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('plaintext', $plaintext);
-        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function sourceDir(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder->setArgument('returnType', $returnType);
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -488,50 +368,140 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Constructs an SSHFS volume.
+     * The module currently being served in the session, if any.
      */
-    public function sshfsVolume(
-        string $endpoint,
-        Secret $privateKey,
-        ?Secret $knownHosts = null,
-        ?string $cacheKey = null,
-        ?bool $insecureSkipHostKeyCheck = false,
-        ?Service $experimentalServiceHost = null,
-    ): Volume {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
-        $innerQueryBuilder->setArgument('endpoint', $endpoint);
-        $innerQueryBuilder->setArgument('privateKey', $privateKey);
-        if (null !== $knownHosts) {
-        $innerQueryBuilder->setArgument('knownHosts', $knownHosts);
-        }
-        if (null !== $cacheKey) {
-        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
-        }
-        if (null !== $insecureSkipHostKeyCheck) {
-        $innerQueryBuilder->setArgument('insecureSkipHostKeyCheck', $insecureSkipHostKeyCheck);
-        }
-        if (null !== $experimentalServiceHost) {
-        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
-        }
-        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    public function currentModule(): CurrentModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentModule');
+        return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Create a new TypeDef.
+     * The TypeDef representations of the objects currently being served in the session.
      */
-    public function typeDef(): TypeDef
+    public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
+        if (null !== $returnAllTypes) {
+        $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
+        }
+        if (null !== $hideCore) {
+        $leafQueryBuilder->setArgument('hideCore', $hideCore);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'currentTypeDefs');
     }
 
     /**
-     * Get the current Dagger Engine version.
+     * The FunctionCall context that the SDK caller is currently executing in.
+     *
+     * If the caller is not currently executing in a function, this will return an error.
      */
-    public function version(): string
+    public function currentFunctionCall(): FunctionCall
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentFunctionCall');
+        return new \Dagger\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+     */
+    public function currentNode(): Node
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentNode');
+        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new error.
+     */
+    public function error(string $message): Error
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        $innerQueryBuilder->setArgument('message', $message);
+        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The Dagger engine container configuration and state
+     */
+    public function engine(): Engine
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engine');
+        return new \Dagger\Engine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Dagger Cloud configuration and state
+     */
+    public function cloud(): Cloud
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cloud');
+        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize a new LLM conversation.
+     */
+    public function llm(?string $model = null, ?string $provider = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
+        if (null !== $model) {
+        $innerQueryBuilder->setArgument('model', $model);
+        }
+        if (null !== $provider) {
+        $innerQueryBuilder->setArgument('provider', $provider);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize a JSON value
+     */
+    public function json(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('json');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a GraphQL introspection schema for merging.
+     */
+    public function schema(Json $json): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schema');
+        $innerQueryBuilder->setArgument('json', $json);
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize an environment file
+     */
+    public function envFile(?bool $expand = null): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('envFile');
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * initialize an address to load directories, containers, secrets or other object types.
+     */
+    public function address(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Detect and return the current workspace.
+     */
+    public function currentWorkspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentWorkspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -544,5 +514,35 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('sdkSourceDir', $sdkSourceDir);
         }
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function codegenBase(ModuleSource $modSource, File $introspectionJson): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
+        $innerQueryBuilder->setArgument('modSource', $modSource);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function sourceDir(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

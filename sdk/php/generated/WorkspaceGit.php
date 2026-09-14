@@ -14,21 +14,21 @@ namespace Dagger;
 class WorkspaceGit extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The checked-out HEAD of this workspace.
-     */
-    public function head(): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * A unique identifier for this WorkspaceGit.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The checked-out HEAD of this workspace.
+     */
+    public function head(): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

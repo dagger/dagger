@@ -14,119 +14,12 @@ namespace Dagger;
 class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The latest semver release tag reachable from this commit.
-     */
-    public function ancestorReleaseTag(?bool $includePreRelease = false): ?GitRef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('ancestorReleaseTag');
-        if (null !== $includePreRelease) {
-        $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
-        }
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
-    }
-
-    /**
-     * Git author email.
-     */
-    public function authorEmail(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authorEmail');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'authorEmail');
-    }
-
-    /**
-     * Git author name.
-     */
-    public function authorName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authorName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'authorName');
-    }
-
-    /**
-     * Git author date, in RFC3339 format.
-     */
-    public function authoredDate(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authoredDate');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'authoredDate');
-    }
-
-    /**
-     * Git committer date, in RFC3339 format.
-     */
-    public function committedDate(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committedDate');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'committedDate');
-    }
-
-    /**
-     * Git committer email.
-     */
-    public function committerEmail(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committerEmail');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'committerEmail');
-    }
-
-    /**
-     * Git committer name.
-     */
-    public function committerName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committerName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'committerName');
-    }
-
-    /**
      * A unique identifier for this GitCommit.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Full commit message.
-     */
-    public function message(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('message');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'message');
-    }
-
-    /**
-     * Commit message body, excluding the headline.
-     */
-    public function messageBody(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messageBody');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'messageBody');
-    }
-
-    /**
-     * First line of the commit message.
-     */
-    public function messageHeadline(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messageHeadline');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'messageHeadline');
-    }
-
-    /**
-     * Parent commit SHAs.
-     */
-    public function parentShas(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentShas');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'parentShas');
     }
 
     /**
@@ -144,6 +37,41 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
+    }
+
+    /**
+     * The latest semver release tag reachable from this commit.
+     */
+    public function ancestorReleaseTag(?bool $includePreRelease = false): ?GitRef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('ancestorReleaseTag');
+        if (null !== $includePreRelease) {
+        $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
+        }
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
+    }
+
+    /**
+     * The filesystem tree at this commit.
+     */
+    public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
+        if (null !== $discardGitDir) {
+        $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
+        }
+        if (null !== $depth) {
+        $innerQueryBuilder->setArgument('depth', $depth);
+        }
+        if (null !== $includeTags) {
+        $innerQueryBuilder->setArgument('includeTags', $includeTags);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -165,20 +93,92 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The filesystem tree at this commit.
+     * Git author date, in RFC3339 format.
      */
-    public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
+    public function authoredDate(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
-        if (null !== $discardGitDir) {
-        $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
-        }
-        if (null !== $depth) {
-        $innerQueryBuilder->setArgument('depth', $depth);
-        }
-        if (null !== $includeTags) {
-        $innerQueryBuilder->setArgument('includeTags', $includeTags);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authoredDate');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'authoredDate');
+    }
+
+    /**
+     * Git committer date, in RFC3339 format.
+     */
+    public function committedDate(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committedDate');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'committedDate');
+    }
+
+    /**
+     * Git author name.
+     */
+    public function authorName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authorName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'authorName');
+    }
+
+    /**
+     * Git author email.
+     */
+    public function authorEmail(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('authorEmail');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'authorEmail');
+    }
+
+    /**
+     * Git committer name.
+     */
+    public function committerName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committerName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'committerName');
+    }
+
+    /**
+     * Git committer email.
+     */
+    public function committerEmail(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('committerEmail');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'committerEmail');
+    }
+
+    /**
+     * Full commit message.
+     */
+    public function message(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('message');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'message');
+    }
+
+    /**
+     * First line of the commit message.
+     */
+    public function messageHeadline(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messageHeadline');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'messageHeadline');
+    }
+
+    /**
+     * Commit message body, excluding the headline.
+     */
+    public function messageBody(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messageBody');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'messageBody');
+    }
+
+    /**
+     * Parent commit SHAs.
+     */
+    public function parentShas(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentShas');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'parentShas');
     }
 }

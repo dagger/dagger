@@ -14,137 +14,31 @@ namespace Dagger;
 class Directory extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
-     * Converts this directory to a local git repository
+     * A unique identifier for this Directory.
      */
-    public function asGit(): GitRepository
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGit');
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Load the directory as a Dagger module source
+     * Force evaluation in the engine.
      */
-    public function asModule(?string $sourceRootPath = '.'): Module
+    public function sync(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
-        if (null !== $sourceRootPath) {
-        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
-        }
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
-     * Load the directory as a Dagger module source
+     * Returns the name of the directory.
      */
-    public function asModuleSource(?string $sourceRootPath = '.'): ModuleSource
+    public function name(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');
-        if (null !== $sourceRootPath) {
-        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
-        }
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Creates a synthetic workspace from this directory.
-     */
-    public function asWorkspace(?string $cwd = '/'): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
-        if (null !== $cwd) {
-        $innerQueryBuilder->setArgument('cwd', $cwd);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the difference between this directory and another directory, typically an older snapshot.
-     *
-     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
-     */
-    public function changes(Directory $from): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
-        $innerQueryBuilder->setArgument('from', $from);
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Change the owner of the directory contents recursively.
-     */
-    public function chown(string $path, string $owner): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('owner', $owner);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the difference between this directory and an another directory. The difference is encoded as a directory.
-     */
-    public function diff(Directory $other): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('diff');
-        $innerQueryBuilder->setArgument('other', $other);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-     */
-    public function digest(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('digest');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'digest');
-    }
-
-    /**
-     * Retrieves a directory at the given path.
-     */
-    public function directory(string $path): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
-     */
-    public function dockerBuild(
-        ?string $dockerfile = 'Dockerfile',
-        ?Platform $platform = null,
-        ?array $buildArgs = null,
-        ?string $target = '',
-        ?array $secrets = null,
-        ?bool $noInit = false,
-        ?Socket $ssh = null,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
-        if (null !== $dockerfile) {
-        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
-        }
-        if (null !== $platform) {
-        $innerQueryBuilder->setArgument('platform', $platform);
-        }
-        if (null !== $buildArgs) {
-        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
-        }
-        if (null !== $target) {
-        $innerQueryBuilder->setArgument('target', $target);
-        }
-        if (null !== $secrets) {
-        $innerQueryBuilder->setArgument('secrets', $secrets);
-        }
-        if (null !== $noInit) {
-        $innerQueryBuilder->setArgument('noInit', $noInit);
-        }
-        if (null !== $ssh) {
-        $innerQueryBuilder->setArgument('ssh', $ssh);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -160,74 +54,6 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * check if a file or directory exists
-     */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $expectedType) {
-        $leafQueryBuilder->setArgument('expectedType', $expectedType);
-        }
-        if (null !== $doNotFollowSymlinks) {
-        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
-        }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
-    }
-
-    /**
-     * Writes the contents of the directory to a path on the host.
-     */
-    public function export(string $path, ?bool $wipe = false): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $wipe) {
-        $leafQueryBuilder->setArgument('wipe', $wipe);
-        }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
-    }
-
-    /**
-     * Retrieve a file at the given path.
-     */
-    public function file(string $path): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a snapshot with some paths included or excluded
-     */
-    public function filter(?array $exclude = [], ?array $include = [], ?bool $gitignore = false): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
-        if (null !== $exclude) {
-        $innerQueryBuilder->setArgument('exclude', $exclude);
-        }
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $gitignore) {
-        $innerQueryBuilder->setArgument('gitignore', $gitignore);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Search up the directory tree for a file or directory, and return its path. If no match, return null
-     */
-    public function findUp(string $name, string $start): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
-        $leafQueryBuilder->setArgument('name', $name);
-        $leafQueryBuilder->setArgument('start', $start);
-        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
-    }
-
-    /**
      * Returns a list of files and directories that matche the given pattern.
      */
     public function glob(string $pattern): array
@@ -235,24 +61,6 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('glob');
         $leafQueryBuilder->setArgument('pattern', $pattern);
         return (array)$this->queryLeaf($leafQueryBuilder, 'glob');
-    }
-
-    /**
-     * A unique identifier for this Directory.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Returns the name of the directory.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -309,6 +117,106 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+     */
+    public function digest(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('digest');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'digest');
+    }
+
+    /**
+     * Retrieve a file at the given path.
+     */
+    public function file(string $path): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory plus the contents of the given file copied to the given path.
+     */
+    public function withFile(string $path, File $source, ?int $permissions = null, ?string $owner = ''): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory plus the contents of the given files copied to the given path.
+     */
+    public function withFiles(string $path, array $sources, ?int $permissions = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a snapshot with a new file added
+     */
+    public function withNewFile(string $path, string $contents, ?int $permissions = 420): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a snapshot with a file removed
+     */
+    public function withoutFile(string $path): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a snapshot with files removed
+     */
+    public function withoutFiles(array $paths): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * check if a file or directory exists
+     */
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
+    }
+
+    /**
      * Return file status
      */
     public function stat(string $path, ?bool $doNotFollowSymlinks = false): ?Stat
@@ -327,47 +235,12 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Force evaluation in the engine.
+     * Retrieves a directory at the given path.
      */
-    public function sync(): Directory
+    public function directory(string $path): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
-    }
-
-    /**
-     * Opens an interactive terminal in new container with this directory mounted inside.
-     */
-    public function terminal(
-        ?Container $container = null,
-        ?array $cmd = [],
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-    ): Directory {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
-        if (null !== $container) {
-        $innerQueryBuilder->setArgument('container', $container);
-        }
-        if (null !== $cmd) {
-        $innerQueryBuilder->setArgument('cmd', $cmd);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a directory with changes from another directory applied to it.
-     */
-    public function withChanges(Changeset $changes): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
-        $innerQueryBuilder->setArgument('changes', $changes);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -405,42 +278,19 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Raise an error.
+     * Return a snapshot with some paths included or excluded
      */
-    public function withError(string $err): Directory
+    public function filter(?array $exclude = [], ?array $include = [], ?bool $gitignore = false): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
-        $innerQueryBuilder->setArgument('err', $err);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this directory plus the contents of the given file copied to the given path.
-     */
-    public function withFile(string $path, File $source, ?int $permissions = null, ?string $owner = ''): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
         }
-        if (null !== $owner) {
-        $innerQueryBuilder->setArgument('owner', $owner);
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this directory plus the contents of the given files copied to the given path.
-     */
-    public function withFiles(string $path, array $sources, ?int $permissions = null): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
-        $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('sources', $sources);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -459,16 +309,115 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Return a snapshot with a new file added
+     * Return a snapshot with a subdirectory removed
      */
-    public function withNewFile(string $path, string $contents, ?int $permissions = 420): Directory
+    public function withoutDirectory(string $path): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('contents', $contents);
-        if (null !== $permissions) {
-        $innerQueryBuilder->setArgument('permissions', $permissions);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the difference between this directory and an another directory. The difference is encoded as a directory.
+     */
+    public function diff(Directory $other): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('diff');
+        $innerQueryBuilder->setArgument('other', $other);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Search up the directory tree for a file or directory, and return its path. If no match, return null
+     */
+    public function findUp(string $name, string $start): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
+        $leafQueryBuilder->setArgument('name', $name);
+        $leafQueryBuilder->setArgument('start', $start);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
+    }
+
+    /**
+     * Return the difference between this directory and another directory, typically an older snapshot.
+     *
+     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+     */
+    public function changes(Directory $from): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('from', $from);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a directory with changes from another directory applied to it.
+     */
+    public function withChanges(Changeset $changes): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Writes the contents of the directory to a path on the host.
+     */
+    public function export(string $path, ?bool $wipe = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $wipe) {
+        $leafQueryBuilder->setArgument('wipe', $wipe);
         }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
+     * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
+     */
+    public function dockerBuild(
+        ?string $dockerfile = 'Dockerfile',
+        ?Platform $platform = null,
+        ?array $buildArgs = null,
+        ?string $target = '',
+        ?array $secrets = null,
+        ?bool $noInit = false,
+        ?Socket $ssh = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
+        if (null !== $dockerfile) {
+        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
+        }
+        if (null !== $platform) {
+        $innerQueryBuilder->setArgument('platform', $platform);
+        }
+        if (null !== $buildArgs) {
+        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
+        }
+        if (null !== $target) {
+        $innerQueryBuilder->setArgument('target', $target);
+        }
+        if (null !== $secrets) {
+        $innerQueryBuilder->setArgument('secrets', $secrets);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $ssh) {
+        $innerQueryBuilder->setArgument('ssh', $ssh);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory with all file/dir timestamps set to the given time.
+     */
+    public function withTimestamps(int $timestamp): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTimestamps');
+        $innerQueryBuilder->setArgument('timestamp', $timestamp);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -499,6 +448,52 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Converts this directory to a local git repository
+     */
+    public function asGit(): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGit');
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a synthetic workspace from this directory.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Opens an interactive terminal in new container with this directory mounted inside.
+     */
+    public function terminal(
+        ?Container $container = null,
+        ?array $cmd = [],
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+    ): Directory {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $container) {
+        $innerQueryBuilder->setArgument('container', $container);
+        }
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a snapshot with a symlink
      */
     public function withSymlink(string $target, string $linkName): Directory
@@ -510,42 +505,47 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves this directory with all file/dir timestamps set to the given time.
+     * Change the owner of the directory contents recursively.
      */
-    public function withTimestamps(int $timestamp): Directory
+    public function chown(string $path, string $owner): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTimestamps');
-        $innerQueryBuilder->setArgument('timestamp', $timestamp);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return a snapshot with a subdirectory removed
-     */
-    public function withoutDirectory(string $path): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
         $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('owner', $owner);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Return a snapshot with a file removed
+     * Raise an error.
      */
-    public function withoutFile(string $path): Directory
+    public function withError(string $err): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
-        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
+        $innerQueryBuilder->setArgument('err', $err);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Return a snapshot with files removed
+     * Load the directory as a Dagger module source
      */
-    public function withoutFiles(array $paths): Directory
+    public function asModule(?string $sourceRootPath = '.'): Module
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
-        $innerQueryBuilder->setArgument('paths', $paths);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
+        if (null !== $sourceRootPath) {
+        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
+        }
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load the directory as a Dagger module source
+     */
+    public function asModuleSource(?string $sourceRootPath = '.'): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');
+        if (null !== $sourceRootPath) {
+        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

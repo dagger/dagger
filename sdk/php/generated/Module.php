@@ -14,13 +14,22 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * Return the check defined by the module with the given name. Must match to exactly one check.
+     * A unique identifier for this Module.
      */
-    public function check(string $name): Check
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Forces evaluation of the module, including any loading into the engine and associated validation.
+     */
+    public function sync(): Module
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -39,49 +48,13 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
-     * The dependencies of the module.
+     * Return the check defined by the module with the given name. Must match to exactly one check.
      */
-    public function dependencies(): array
+    public function check(string $name): Check
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
-    }
-
-    /**
-     * The doc string of the module, if any
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * Enumerations served by this module.
-     */
-    public function enums(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('enums');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'enums');
-    }
-
-    /**
-     * The generated files and directories made on top of the module source's context directory.
-     */
-    public function generatedContextDirectory(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the generator defined by the module with the given name. Must match to exactly one generator.
-     */
-    public function generator(string $name): Generator
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -97,21 +70,34 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
-     * A unique identifier for this Module.
+     * Return all services defined by the module
      */
-    public function id(): Id
+    public function services(?array $include = null): UpGroup
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Interfaces served by this module.
+     * Return the generator defined by the module with the given name. Must match to exactly one generator.
      */
-    public function interfaces(): array
+    public function generator(string $name): Generator
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interfaces');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'interfaces');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The dependencies of the module.
+     */
+    public function dependencies(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
     /**
@@ -128,102 +114,12 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
-     * The name of the module
+     * The generated files and directories made on top of the module source's context directory.
      */
-    public function name(): string
+    public function generatedContextDirectory(): Directory
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * Objects served by this module.
-     */
-    public function objects(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('objects');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
-    }
-
-    /**
-     * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-     */
-    public function runtime(): ?Container
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Container::class, new \Dagger\Id((string)$id), 'Container');
-    }
-
-    /**
-     * The SDK config used by this module.
-     */
-    public function sdk(): ?SDKConfig
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
-    }
-
-    /**
-     * Serve a module's API in the current session.
-     *
-     * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-     */
-    public function serve(?bool $includeDependencies = null, ?bool $entrypoint = null): void
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serve');
-        if (null !== $includeDependencies) {
-        $leafQueryBuilder->setArgument('includeDependencies', $includeDependencies);
-        }
-        if (null !== $entrypoint) {
-        $leafQueryBuilder->setArgument('entrypoint', $entrypoint);
-        }
-        $this->queryLeaf($leafQueryBuilder, 'serve');
-    }
-
-    /**
-     * Return all services defined by the module
-     */
-    public function services(?array $include = null): UpGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The source for the module.
-     */
-    public function source(): ?ModuleSource
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('source');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
-    }
-
-    /**
-     * Forces evaluation of the module, including any loading into the engine and associated validation.
-     */
-    public function sync(): Module
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -246,12 +142,12 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
-     * This module plus the given Enum type and associated values
+     * This module plus the given Object type and associated functions.
      */
-    public function withEnum(TypeDef $enum): Module
+    public function withObject(TypeDef $object): Module
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
-        $innerQueryBuilder->setArgument('enum', $enum);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
+        $innerQueryBuilder->setArgument('object', $object);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -266,12 +162,116 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
-     * This module plus the given Object type and associated functions.
+     * This module plus the given Enum type and associated values
      */
-    public function withObject(TypeDef $object): Module
+    public function withEnum(TypeDef $enum): Module
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
-        $innerQueryBuilder->setArgument('object', $object);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
+        $innerQueryBuilder->setArgument('enum', $enum);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+     */
+    public function runtime(): ?Container
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Container::class, new \Dagger\Id((string)$id), 'Container');
+    }
+
+    /**
+     * Serve a module's API in the current session.
+     *
+     * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+     */
+    public function serve(?bool $includeDependencies = null, ?bool $entrypoint = null): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serve');
+        if (null !== $includeDependencies) {
+        $leafQueryBuilder->setArgument('includeDependencies', $includeDependencies);
+        }
+        if (null !== $entrypoint) {
+        $leafQueryBuilder->setArgument('entrypoint', $entrypoint);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'serve');
+    }
+
+    /**
+     * The source for the module.
+     */
+    public function source(): ?ModuleSource
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('source');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
+    }
+
+    /**
+     * The name of the module
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The SDK config used by this module.
+     */
+    public function sdk(): ?SDKConfig
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
+    }
+
+    /**
+     * The doc string of the module, if any
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
+     * Objects served by this module.
+     */
+    public function objects(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('objects');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
+    }
+
+    /**
+     * Interfaces served by this module.
+     */
+    public function interfaces(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interfaces');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'interfaces');
+    }
+
+    /**
+     * Enumerations served by this module.
+     */
+    public function enums(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('enums');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'enums');
     }
 }

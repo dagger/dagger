@@ -16,51 +16,6 @@ namespace Dagger;
 class FunctionArg extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
-     */
-    public function defaultAddress(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultAddress');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultAddress');
-    }
-
-    /**
-     * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
-     */
-    public function defaultPath(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultPath');
-    }
-
-    /**
-     * A default value to use for this argument when not explicitly set by the caller, if any.
-     */
-    public function defaultValue(): Json
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
-    }
-
-    /**
-     * The reason this function is deprecated, if any.
-     */
-    public function deprecated(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
-    }
-
-    /**
-     * A doc string for the argument, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this FunctionArg.
      */
     public function id(): Id
@@ -70,21 +25,21 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
-     */
-    public function ignore(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ignore');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'ignore');
-    }
-
-    /**
      * The name of the argument in lowerCamelCase format.
      */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * A doc string for the argument, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -99,6 +54,51 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble, Node
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
+    }
+
+    /**
+     * A default value to use for this argument when not explicitly set by the caller, if any.
+     */
+    public function defaultValue(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
+    }
+
+    /**
+     * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+     */
+    public function defaultPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultPath');
+    }
+
+    /**
+     * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+     */
+    public function defaultAddress(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultAddress');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultAddress');
+    }
+
+    /**
+     * Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+     */
+    public function ignore(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ignore');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'ignore');
+    }
+
+    /**
+     * The reason this function is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
     }
 
     /**

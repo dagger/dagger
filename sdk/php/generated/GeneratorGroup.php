@@ -11,6 +11,42 @@ namespace Dagger;
 class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this GeneratorGroup.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Return a list of individual generators and their details
+     */
+    public function list(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('list');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'list');
+    }
+
+    /**
+     * Execute all selected generators
+     */
+    public function run(): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether the generated changeset from the last run is empty or not
+     */
+    public function isEmpty(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
+    }
+
+    /**
      * The combined changes from the last run of the generators
      *
      * If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
@@ -27,30 +63,15 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * A unique identifier for this GeneratorGroup.
+     * The workspace with the combined output from the last generator run
      */
-    public function id(): Id
+    public function workspace(?ChangesetsMergeConflict $onConflict = null): Workspace
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Whether the generated changeset from the last run is empty or not
-     */
-    public function isEmpty(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
-    }
-
-    /**
-     * Return a list of individual generators and their details
-     */
-    public function list(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('list');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'list');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -62,26 +83,5 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Nod
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('loadFailures');
         return (array)$this->queryLeaf($leafQueryBuilder, 'loadFailures');
-    }
-
-    /**
-     * Execute all selected generators
-     */
-    public function run(): GeneratorGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The workspace with the combined output from the last generator run
-     */
-    public function workspace(?ChangesetsMergeConflict $onConflict = null): Workspace
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
-        if (null !== $onConflict) {
-        $innerQueryBuilder->setArgument('onConflict', $onConflict);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -11,47 +11,6 @@ namespace Dagger;
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
-     */
-    public function checkType(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'checkType');
-    }
-
-    /**
-     * Whether the check completed
-     */
-    public function completed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
-    }
-
-    /**
-     * The description of the check
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * If the check failed, this is the error
-     */
-    public function error(): ?Error
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('error');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Error::class, new \Dagger\Id((string)$id), 'Error');
-    }
-
-    /**
      * A unique identifier for this Check.
      */
     public function id(): Id
@@ -70,21 +29,12 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The original module in which the check has been defined
+     * The description of the check
      */
-    public function originalModule(): Module
+    public function description(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Whether the check passed
-     */
-    public function passed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('passed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'passed');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -94,6 +44,24 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * The original module in which the check has been defined
+     */
+    public function originalModule(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+     */
+    public function checkType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'checkType');
     }
 
     /**
@@ -112,5 +80,37 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
         return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether the check completed
+     */
+    public function completed(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
+    }
+
+    /**
+     * Whether the check passed
+     */
+    public function passed(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('passed');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'passed');
+    }
+
+    /**
+     * If the check failed, this is the error
+     */
+    public function error(): ?Error
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Error::class, new \Dagger\Id((string)$id), 'Error');
     }
 }

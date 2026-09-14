@@ -14,39 +14,12 @@ namespace Dagger;
 class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The constructor argument description.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
      * A unique identifier for this WorkspaceModuleSetting.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Whether the setting accepts a list of values.
-     */
-    public function isList(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isList');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isList');
-    }
-
-    /**
-     * Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
-     */
-    public function isObject(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isObject');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isObject');
     }
 
     /**
@@ -65,5 +38,32 @@ class WorkspaceModuleSetting extends Client\AbstractObject implements Client\IdA
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
         return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+    }
+
+    /**
+     * The constructor argument description.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
+     * Whether the setting accepts a list of values.
+     */
+    public function isList(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isList');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isList');
+    }
+
+    /**
+     * Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+     */
+    public function isObject(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isObject');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isObject');
     }
 }

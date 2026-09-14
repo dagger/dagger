@@ -14,43 +14,22 @@ namespace Dagger;
 class File extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
-     * Parse as an env file
+     * A unique identifier for this File.
      */
-    public function asEnvFile(?bool $expand = null): EnvFile
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Interpret this file as a Git bundle by lazily parsing its header.
+     * Force evaluation in the engine.
      */
-    public function asGitBundle(): GitBundle
+    public function sync(): File
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitBundle');
-        return new \Dagger\GitBundle($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Parse the file contents as JSON.
-     */
-    public function asJSON(): JsonValue
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSON');
-        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Change the owner of the file recursively.
-     */
-    public function chown(string $owner): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
-        $innerQueryBuilder->setArgument('owner', $owner);
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -69,6 +48,38 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Retrieves the size of the file, in bytes.
+     */
+    public function size(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('size');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'size');
+    }
+
+    /**
+     * Retrieves the name of the file.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Return file status
+     */
+    public function stat(): ?Stat
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
+    }
+
+    /**
      * Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
      */
     public function digest(?bool $excludeMetadata = false): string
@@ -81,34 +92,13 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
-     * Writes the file to a file path on the host.
+     * Retrieves this file with its name set to the given name.
      */
-    public function export(string $path, ?bool $allowParentDirPath = false): string
+    public function withName(string $name): File
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
-        $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $allowParentDirPath) {
-        $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
-        }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
-    }
-
-    /**
-     * A unique identifier for this File.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Retrieves the name of the file.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -165,49 +155,6 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
-     * Retrieves the size of the file, in bytes.
-     */
-    public function size(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('size');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'size');
-    }
-
-    /**
-     * Return file status
-     */
-    public function stat(): ?Stat
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Stat::class, new \Dagger\Id((string)$id), 'Stat');
-    }
-
-    /**
-     * Force evaluation in the engine.
-     */
-    public function sync(): File
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
-    }
-
-    /**
-     * Retrieves this file with its name set to the given name.
-     */
-    public function withName(string $name): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves the file with content replaced with the given text.
      *
      * If 'all' is true, all occurrences of the pattern will be replaced.
@@ -237,6 +184,19 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Writes the file to a file path on the host.
+     */
+    public function export(string $path, ?bool $allowParentDirPath = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $allowParentDirPath) {
+        $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
      * Retrieves this file with its created/modified timestamps set to the given time.
      */
     public function withTimestamps(int $timestamp): File
@@ -244,5 +204,45 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTimestamps');
         $innerQueryBuilder->setArgument('timestamp', $timestamp);
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Change the owner of the file recursively.
+     */
+    public function chown(string $owner): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
+        $innerQueryBuilder->setArgument('owner', $owner);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Interpret this file as a Git bundle by lazily parsing its header.
+     */
+    public function asGitBundle(): GitBundle
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitBundle');
+        return new \Dagger\GitBundle($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Parse the file contents as JSON.
+     */
+    public function asJSON(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSON');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Parse as an env file
+     */
+    public function asEnvFile(?bool $expand = null): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

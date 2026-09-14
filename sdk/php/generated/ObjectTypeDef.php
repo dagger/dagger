@@ -14,35 +14,12 @@ namespace Dagger;
 class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The function used to construct new instances of this object, if any.
+     * A unique identifier for this ObjectTypeDef.
      */
-    public function constructor(): ?Function_
+    public function id(): Id
     {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Function_::class, new \Dagger\Id((string)$id), 'Function');
-    }
-
-    /**
-     * The reason this enum member is deprecated, if any.
-     */
-    public function deprecated(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
-    }
-
-    /**
-     * The doc string for the object, if any.
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -64,12 +41,17 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this ObjectTypeDef.
+     * The function used to construct new instances of this object, if any.
      */
-    public function id(): Id
+    public function constructor(): ?Function_
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Function_::class, new \Dagger\Id((string)$id), 'Function');
     }
 
     /**
@@ -79,6 +61,15 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The doc string for the object, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -93,6 +84,15 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\SourceMap::class, new \Dagger\Id((string)$id), 'SourceMap');
+    }
+
+    /**
+     * The reason this enum member is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
     }
 
     /**

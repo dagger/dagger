@@ -14,15 +14,6 @@ namespace Dagger;
 class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The message's content blocks, in the order the model produced them.
-     */
-    public function content(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'content');
-    }
-
-    /**
      * A unique identifier for this LLMMessage.
      */
     public function id(): Id
@@ -38,6 +29,15 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('role');
         return \Dagger\LLMMessageRole::from((string)$this->queryLeaf($leafQueryBuilder, 'role'));
+    }
+
+    /**
+     * The message's content blocks, in the order the model produced them.
+     */
+    public function content(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'content');
     }
 
     /**
