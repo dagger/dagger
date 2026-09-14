@@ -2191,9 +2191,9 @@ export type GitRepositoryWithBundleOpts = {
 
 export type GitRepositoryWithRemoteOpts = {
   /**
-   * Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.
+   * Push destination, when pushes go somewhere other than url. Empty uses url.
    */
-  pushUrls?: string[]
+  pushUrl?: string
 }
 
 export type HostDirectoryOpts = {
@@ -11201,12 +11201,12 @@ export class GitRepository extends BaseClient {
   /**
    * Register a named remote on this repository, replacing any registered remote of the same name.
    *
-   * Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+   * Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
    *
    * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
    * @param name The remote's name, e.g. "origin" or "upstream".
    * @param url The remote's fetch URL.
-   * @param opts.pushUrls Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.
+   * @param opts.pushUrl Push destination, when pushes go somewhere other than url. Empty uses url.
    */
   withRemote = (
     name: string,

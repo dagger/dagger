@@ -9878,9 +9878,9 @@ pub struct GitRepositoryWithBundleOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryWithRemoteOpts<'a> {
-    /// Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.
+    /// Push destination, when pushes go somewhere other than url. Empty uses url.
     #[builder(setter(into, strip_option), default)]
-    pub push_urls: Option<Vec<&'a str>>,
+    pub push_url: Option<&'a str>,
 }
 impl IntoID<Id> for GitRepository {
     fn into_id(
@@ -10219,7 +10219,7 @@ impl GitRepository {
         }
     }
     /// Register a named remote on this repository, replacing any registered remote of the same name.
-    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
     /// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
     ///
     /// # Arguments
@@ -10238,7 +10238,7 @@ impl GitRepository {
         }
     }
     /// Register a named remote on this repository, replacing any registered remote of the same name.
-    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.
+    /// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
     /// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
     ///
     /// # Arguments
@@ -10255,8 +10255,8 @@ impl GitRepository {
         let mut query = self.selection.select("withRemote");
         query = query.arg("name", name.into());
         query = query.arg("url", url.into());
-        if let Some(push_urls) = opts.push_urls {
-            query = query.arg("pushUrls", push_urls);
+        if let Some(push_url) = opts.push_url {
+            query = query.arg("pushUrl", push_url);
         }
         GitRepository {
             proc: self.proc.clone(),

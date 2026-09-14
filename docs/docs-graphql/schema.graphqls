@@ -3894,7 +3894,7 @@ type GitRepository implements Node {
   Registered remotes are recorded in checkouts materialized from this repository
   (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can
   resolve and fetch from them. The origin remote also routes push when no
-  explicit destination is passed: its push URLs, or its URL, become the default
+  explicit destination is passed: its push URL, or its URL, becomes the default
   destination.
 
   Routing metadata only, never a credential grant: pushes still authenticate
@@ -3908,10 +3908,9 @@ type GitRepository implements Node {
     url: String!
 
     """
-    Push destinations, when pushes go somewhere other than url. Registering more
-    than one makes push require an explicit destination.
+    Push destination, when pushes go somewhere other than url. Empty uses url.
     """
-    pushUrls: [String!] = []
+    pushUrl: String = ""
   ): GitRepository!
 }
 
