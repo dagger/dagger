@@ -161,8 +161,12 @@ func TestCredentialTransportDoesNotRestoreInvalidatedSDKToken(t *testing.T) {
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer routing-time-token")
-	_, err = newCredentialTransport(nil, src, applyBearer).RoundTrip(req)
+	resp, err := newCredentialTransport(nil, src, applyBearer).RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.ErrorContains(t, err, "credential source returned an empty token")
+	require.Nil(t, resp)
 	require.Zero(t, calls.Load(), "do not send a request using the baked SDK token")
 }
 

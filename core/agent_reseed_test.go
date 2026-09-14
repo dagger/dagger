@@ -11,7 +11,12 @@ import (
 func TestAgentReseedRejectsPausedDrain(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, rt, _, _, _ := twoAgentRegistry(t)
+	rt := &AgentRuntime{
+		name:         "drainer",
+		messages:     map[string]*agentMessageRecord{},
+		stateChanged: make(chan struct{}),
+		wake:         make(chan struct{}, 1),
+	}
 	srv := newCoreDagqlServerForTest(t, &Query{})
 	srv.InstallObject(dagql.NewClass[*LLM](srv))
 	conversation := func(name string) dagql.ObjectResult[*LLM] {

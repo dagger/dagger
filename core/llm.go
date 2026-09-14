@@ -1078,7 +1078,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 
 func (r *LLMRouter) loadConfig(ctx context.Context, getenv, reloadEnv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
 	if getenv == nil {
-		getenv = func(_ context.Context, key string) (string, error) {
+		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam // The injected getenv callback requires an error return.
 			return os.Getenv(key), nil
 		}
 	}
