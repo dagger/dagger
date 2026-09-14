@@ -59,10 +59,10 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("origin has multiple push URLs; pass an explicit destination repository with to")
 	} else if origin != nil && len(origin.PushURLs) == 1 {
 		destinationURL = origin.PushURLs[0]
+	} else if origin != nil && origin.URL != "" {
+		destinationURL = origin.URL
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
 		switch {
-		case origin != nil && origin.URL != "":
-			destinationURL = origin.URL
 		case repo.Self().URL.Valid && repo.Self().URL.Value.String() != "":
 			destinationURL = repo.Self().URL.Value.String()
 		default:
@@ -99,12 +99,28 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 }
 
 type withRemoteArgs struct {
+	Name    string
+	URL     string `name:"url"`
+	PushURL string `name:"pushUrl" default:""`
+}
+
+func (s *gitSchema) withRemote(ctx context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
+	captured := withCapturedRemoteArgs{Name: args.Name, URL: args.URL}
+	if args.PushURL != "" {
+		captured.PushURLs = []string{args.PushURL}
+	}
+	return s.withCapturedRemote(ctx, parent, captured)
+}
+
+type withCapturedRemoteArgs struct {
 	Name     string
 	URL      string   `name:"url"`
 	PushURLs []string `name:"pushUrls" default:"[]"`
 }
 
-func (s *gitSchema) withRemote(_ context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
+// Capture retains every configured destination so an ambiguous host remote
+// cannot silently become a push to whichever URL happened to come first.
+func (s *gitSchema) withCapturedRemote(_ context.Context, parent *core.GitRepository, args withCapturedRemoteArgs) (*core.GitRepository, error) {
 	if err := validateGitRemoteName(args.Name); err != nil {
 		return nil, err
 	}

@@ -176,13 +176,17 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc("Register a named remote on this repository, replacing any registered remote of the same name.",
-				"Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URLs, or its URL, become the default destination.",
+				"Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.",
 				"Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.").
 			Args(
 				dagql.Arg("name").Doc(`The remote's name, e.g. "origin" or "upstream".`),
 				dagql.Arg("url").Doc(`The remote's fetch URL.`),
-				dagql.Arg("pushUrls").Doc(`Push destinations, when pushes go somewhere other than url. Registering more than one makes push require an explicit destination.`),
+				dagql.Arg("pushUrl").Doc(`Push destination, when pushes go somewhere other than url. Empty uses url.`),
 			),
+		dagql.Func("__withCapturedRemote", s.withCapturedRemote).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Retain captured remote routing, including multiple push URLs that require an explicit push destination."),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
