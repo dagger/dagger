@@ -12,6 +12,121 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func saveWorkspaceTo(ctx context.Context, c *dagger.Client, source, from *dagger.Workspace, path string) error {
+	id, err := source.ID(ctx)
+	if err != nil {
+		return err
+	}
+	var fromID any
+	if from != nil {
+		fromID, err = from.ID(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!, $from: ID, $path: String!) { node(id: $id) { ... on Workspace { export(path: $path, from: $from) } } }`,
+		Variables: map[string]any{"id": id, "from": fromID, "path": path},
+	}, &dagger.Response{})
+}
+
+func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	original := git("rev-parse", "HEAD")
+	destination := filepath.Join(t.TempDir(), "destination")
+	git("clone", checkout, destination)
+	targetGit := func(args ...string) string {
+		return git(append([]string{"-C", destination}, args...)...)
+	}
+	targetGit("config", "user.name", "Destination Committer")
+	targetGit("config", "user.email", "destination@example.com")
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "host.txt"), []byte("independent host commit"), 0o644))
+	targetGit("add", ".")
+	targetGit("commit", "-m", "destination diverges")
+	hostHead := targetGit("rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "private.txt"), []byte("untracked host file"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "staged.txt"), []byte("staged host file"), 0o644))
+	targetGit("add", "staged.txt")
+	pin := func(ws *dagger.Workspace) *dagger.Workspace {
+		id, err := ws.ID(ctx)
+		require.NoError(t, err)
+		return dagger.Ref[*dagger.Workspace](c, id)
+	}
+	first := pin(base.WithNewFile("agent.txt", "agent").WithCommit("agent first", workspaceCommitDate).
+		WithNewFile("pending.txt", "first pending").
+		WithMountedDirectory("mount", c.Directory().WithNewFile("private", "not exported")))
+	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, destination))
+	require.NoError(t, saveWorkspaceTo(ctx, c, first, base, destination), "retry with the old source baseline")
+	require.NoError(t, saveWorkspaceTo(ctx, c, first, first, filepath.Join(t.TempDir(), "absent")), "identical source and comparator need no destination capture")
+	firstHost := targetGit("rev-parse", "HEAD")
+	firstSource, err := first.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, firstSource, firstHost, "divergent history is cherry-picked")
+	require.Equal(t, hostHead, targetGit("rev-parse", "HEAD^"))
+	require.Equal(t, "Destination Committer", targetGit("log", "-1", "--format=%cn"))
+	second := pin(first.WithNewFile("pending.txt", "second pending"))
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, destination))
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, destination))
+	require.Equal(t, firstHost, targetGit("rev-parse", "HEAD"))
+	data, err := os.ReadFile(filepath.Join(destination, "pending.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second pending", string(data))
+	third := pin(second.WithCommit("commit saved pending", workspaceCommitDate))
+	require.NoError(t, saveWorkspaceTo(ctx, c, third, second, destination))
+	require.NoError(t, saveWorkspaceTo(ctx, c, third, second, destination))
+	require.Equal(t, "2", targetGit("rev-list", "--count", hostHead+"..HEAD"))
+	require.Equal(t, "second pending", targetGit("show", "HEAD:pending.txt"))
+	require.Equal(t, "A  staged.txt\n?? private.txt", targetGit("status", "--porcelain"))
+	require.Equal(t, "staged host file", targetGit("show", ":staged.txt"))
+	require.Equal(t, original, git("rev-parse", "HEAD"), "explicit export never modifies the source checkout")
+	require.Empty(t, git("status", "--porcelain"))
+	_, err = os.Stat(filepath.Join(destination, "mount"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	pending, err := second.File("pending.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "second pending", pending, "source values are unchanged")
+}
+
+func (WorkspaceSuite) TestWorkspaceExportToCheckoutPendingSafety(ctx context.Context, t *testctx.T) {
+	for _, operation := range []string{"delete", "rename", "conflict", "missing"} {
+		t.Run(operation, func(ctx context.Context, t *testctx.T) {
+			checkout, git := workspaceExportCheckout(ctx, t)
+			c := connect(ctx, t, dagger.WithWorkdir(checkout))
+			base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+			first := base.WithNewFile("pending.txt", "saved pending")
+			id, err := first.ID(ctx)
+			require.NoError(t, err)
+			first = dagger.Ref[*dagger.Workspace](c, id)
+			require.NoError(t, saveWorkspaceTo(ctx, c, first, nil, checkout))
+			next := first.WithoutFile("pending.txt")
+			if operation == "rename" {
+				next = next.WithNewFile("renamed.txt", "saved pending")
+			}
+			if operation == "conflict" {
+				require.NoError(t, os.WriteFile(filepath.Join(checkout, "pending.txt"), []byte("host edit"), 0o644))
+			}
+			if operation == "missing" {
+				require.NoError(t, os.Remove(filepath.Join(checkout, "pending.txt")))
+				next = first.WithNewFile("pending.txt", "next pending")
+			}
+			head, status := git("rev-parse", "HEAD"), git("status", "--porcelain")
+			err = saveWorkspaceTo(ctx, c, next, first, checkout)
+			if operation == "conflict" || operation == "missing" {
+				require.Error(t, err)
+				require.Equal(t, status, git("status", "--porcelain"))
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, saveWorkspaceTo(ctx, c, next, first, checkout), "retry deletion/rename")
+				_, err := os.Stat(filepath.Join(checkout, "pending.txt"))
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			require.Equal(t, head, git("rev-parse", "HEAD"))
+		})
+	}
+}
+
 func exportWorkspace(ctx context.Context, c *dagger.Client, source, target *dagger.Workspace) error {
 	id, err := target.WithCommitsFrom(source).ID(ctx)
 	if err != nil {

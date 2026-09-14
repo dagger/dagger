@@ -88,6 +88,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("commits").Doc("Full commit hashes to select, in any order. Empty selects all new source commits. Explicit hashes must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),
 		dagql.NodeFunc("__exportDirectory", s.exportDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Prepared integration is bound to a client checkout").Doc("(Internal-only) Bundle a prepared integration and its before/after worktrees."),
 		dagql.NodeFunc("__withExportBase", s.withExportBase).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Bind a prepared integration to its captured checkout."),
 		dagql.NodeFunc("withCommit", s.withCommit).
@@ -459,10 +460,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes workspace commits and changes to the calling client's host").
-			Doc("Write this workspace's changes to a local Git checkout on the calling client.",
-				"Local overlays can be exported directly. To save commits from another workspace, first integrate them with currentWorkspace.withCommitsFrom(source). Merge any pending source edits explicitly before exporting the result.",
-				"For prepared Git integrations, export checks the live checkout, preserves unrelated local edits, and refuses stale or conflicting writes. History is never rewritten. To publish commits to a remote repository, use git.head.push.",
-				"Like Directory.export, writes affect the client making the call, never the client that created the workspace. Inside a module, this cannot reach the caller's host."),
+			Doc("Write this workspace's commits and pending changes to a checkout on the calling client.",
+				"With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.",
+				"Omitting path retains legacy local-overlay and prepared-integration export behavior. Like Directory.export, this writes only to the client making the call, never the source's client.").
+			Args(
+				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory."),
+				dagql.Arg("from").Doc("Previously exported source workspace. Only commits and worktree changes since this value are exported. Requires path."),
+			),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -2388,8 +2392,15 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 func (s *workspaceSchema) export(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	_ struct{},
+	args workspaceExportArgs,
 ) (core.Void, error) {
+	if args.Path != "" {
+		defer invalidateExportedWorkspace(ctx)
+		return core.Void{}, s.saveWorkspace(ctx, parent, args)
+	}
+	if args.From.Valid {
+		return core.Void{}, fmt.Errorf("workspace export from requires an explicit path")
+	}
 	ws := parent.Self()
 	hostPath, err := ws.ExportHostPath()
 	if err != nil {

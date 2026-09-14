@@ -22,6 +22,84 @@ func integrationBundle(t *testing.T, f *applyBundleFixture, beforeTree, afterTre
 	return meta
 }
 
+func TestApplyBundleIntegrationRetry(t *testing.T) {
+	for _, change := range []string{"add", "modify", "delete", "rename", "symlink"} {
+		t.Run(change, func(t *testing.T) {
+			f := newApplyBundleFixture(t)
+			f.target = f.base
+			gitCmd(t, f.home, f.source, "reset", "--hard", f.base)
+			beforeTree := gitCmd(t, f.home, f.source, "rev-parse", "HEAD^{tree}")
+			switch change {
+			case "add":
+				require.NoError(t, os.WriteFile(filepath.Join(f.source, "pending.txt"), []byte("pending"), 0o644))
+			case "modify":
+				require.NoError(t, os.WriteFile(filepath.Join(f.source, "base.txt"), []byte("modified"), 0o644))
+			case "delete":
+				require.NoError(t, os.Remove(filepath.Join(f.source, "base.txt")))
+			case "rename":
+				require.NoError(t, os.Rename(filepath.Join(f.source, "base.txt"), filepath.Join(f.source, "renamed.txt")))
+			case "symlink":
+				require.NoError(t, os.Symlink("base.txt", filepath.Join(f.source, "link")))
+			}
+			gitCmd(t, f.home, f.source, "add", "-A")
+			afterTree := gitCmd(t, f.home, f.source, "write-tree")
+			meta := integrationBundle(t, &f, beforeTree, afterTree)
+			resp := applyBundle(t.Context(), meta, f.bundle, f.size)
+			require.Nil(t, resp.Error, "%+v", resp.Error)
+			status := gitCmd(t, f.home, f.repo, "status", "--porcelain")
+			// A newly prepared retry captures the live state but still carries
+			// the same source baseline and intended patch.
+			meta.ExpectedStateDigest = checkoutDigest(t, f.repo)
+			resp = applyBundle(t.Context(), meta, f.bundle, f.size)
+			require.Nil(t, resp.Error, "%+v", resp.Error)
+			require.Equal(t, status, gitCmd(t, f.home, f.repo, "status", "--porcelain"))
+			require.Equal(t, f.base, gitCmd(t, f.home, f.repo, "rev-parse", "HEAD"))
+		})
+	}
+}
+
+func TestApplyBundleIntegrationRetryChecksMode(t *testing.T) {
+	f := newApplyBundleFixture(t)
+	f.target = f.base
+	gitCmd(t, f.home, f.source, "reset", "--hard", f.base)
+	beforeTree := gitCmd(t, f.home, f.source, "rev-parse", "HEAD^{tree}")
+	require.NoError(t, os.WriteFile(filepath.Join(f.source, "executable"), []byte("same bytes"), 0o755))
+	gitCmd(t, f.home, f.source, "add", "executable")
+	afterTree := gitCmd(t, f.home, f.source, "write-tree")
+	gitCmd(t, f.home, f.repo, "config", "core.filemode", "false")
+	require.NoError(t, os.WriteFile(filepath.Join(f.repo, "executable"), []byte("same bytes"), 0o644))
+	meta := integrationBundle(t, &f, beforeTree, afterTree)
+	resp := applyBundle(t.Context(), meta, f.bundle, f.size)
+	require.NotNil(t, resp.Error, "different executable mode is not an already-applied change")
+	info, err := os.Stat(filepath.Join(f.repo, "executable"))
+	require.NoError(t, err)
+	require.Zero(t, info.Mode().Perm()&0o111)
+	require.NoError(t, os.Chmod(filepath.Join(f.repo, "executable"), 0o755))
+	meta.ExpectedStateDigest = checkoutDigest(t, f.repo)
+	resp = applyBundle(t.Context(), meta, f.bundle, f.size)
+	require.Nil(t, resp.Error, "%+v", resp.Error)
+}
+
+func TestApplyBundleIntegrationRetryChecksSymlink(t *testing.T) {
+	f := newApplyBundleFixture(t)
+	f.target = f.base
+	gitCmd(t, f.home, f.source, "reset", "--hard", f.base)
+	beforeTree := gitCmd(t, f.home, f.source, "rev-parse", "HEAD^{tree}")
+	require.NoError(t, os.Symlink("base.txt", filepath.Join(f.source, "link")))
+	gitCmd(t, f.home, f.source, "add", "link")
+	afterTree := gitCmd(t, f.home, f.source, "write-tree")
+	gitCmd(t, f.home, f.repo, "config", "core.symlinks", "false")
+	require.NoError(t, os.WriteFile(filepath.Join(f.repo, "link"), []byte("base.txt"), 0o644))
+	meta := integrationBundle(t, &f, beforeTree, afterTree)
+	resp := applyBundle(t.Context(), meta, f.bundle, f.size)
+	require.NotNil(t, resp.Error, "a regular file is not an already-applied symlink")
+	require.NoError(t, os.Remove(filepath.Join(f.repo, "link")))
+	require.NoError(t, os.Symlink("base.txt", filepath.Join(f.repo, "link")))
+	meta.ExpectedStateDigest = checkoutDigest(t, f.repo)
+	resp = applyBundle(t.Context(), meta, f.bundle, f.size)
+	require.Nil(t, resp.Error, "%+v", resp.Error)
+}
+
 func TestApplyBundleIntegration(t *testing.T) {
 	for _, scenario := range []string{"clean", "captured-dirt", "staged-dirt", "stale-file", "untracked-obstruction", "unrelated-staging", "pending-conflict", "index-locked", "sha256"} {
 		t.Run(scenario, func(t *testing.T) {

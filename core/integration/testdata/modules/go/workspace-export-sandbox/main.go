@@ -22,7 +22,7 @@ func (m *Test) TryExport(ctx context.Context, workspace *dagger.Workspace) (stri
 // workspace does not grant permission to capture or export its owner's host.
 func (m *Test) TryExportTo(ctx context.Context, workspace *dagger.Workspace) (string, error) {
 	source := workspace.Git().Head().AsWorkspace().WithNewFile("sneaky.txt", "written from inside a module")
-	err := workspace.WithCommitsFrom(source).Export(ctx)
+	err := source.Export(ctx, dagger.WorkspaceExportOpts{Path: "."})
 	if err == nil {
 		return "", fmt.Errorf("expected explicit export to refuse a checkout absent from the module sandbox")
 	}
