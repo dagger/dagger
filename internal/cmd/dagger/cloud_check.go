@@ -59,6 +59,10 @@ var cloudCheckStatusCmd = &cobra.Command{
 
 func init() {
 	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailed, "failed", false, "Only list failed checks")
+	// Enabling a Cloud check needs the org to have the Cloud Checks feature;
+	// missing features are offered as a trial at enforcement time. Other
+	// commands can declare their own requirements the same way.
+	requireCloudFeatures(cloudCheckOnCmd, featureCloudChecks)
 	cloudCheckCmd.AddCommand(cloudCheckOnCmd, cloudCheckOffCmd, cloudCheckListCmd, cloudCheckStatusCmd)
 	cloudCmd.AddCommand(cloudCheckCmd)
 }
@@ -83,13 +87,13 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 				return err
 			}
 		}
-		state, err := setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
+		state, err := setWorkspaceAutocheckState(cmd, remote, enabled)
 		if enabled && errors.Is(err, errCloudSourceNotConfigured) {
 			if setupErr := prepareCloudChecksIntegration(cmd, args); setupErr != nil {
 				return setupErr
 			}
 			// Re-read Cloud state after the user completes the browser step.
-			state, err = setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
+			state, err = setWorkspaceAutocheckState(cmd, remote, enabled)
 			if errors.Is(err, errCloudSourceNotConfigured) {
 				return cloudChecksPrerequisiteError(cmd, args, "GitHub access is not configured for this repository", "dagger cloud integration create github")
 			}

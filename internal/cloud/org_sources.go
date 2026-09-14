@@ -359,6 +359,22 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 	return data.Org, nil
 }
 
+const startFeatureTrialOperation = `
+mutation StartFeatureTrial($org: ID!, $feature: FeatureName!, $durationDays: Int!) {
+	startFeatureTrial(org: $org, feature: $feature, durationDays: $durationDays)
+}
+`
+
+// StartFeatureTrial starts a trial of the given feature (e.g. CLOUD_CHECKS) for
+// the org. Requires org membership.
+func (c *Client) StartFeatureTrial(ctx context.Context, orgID, feature string, durationDays int) error {
+	return c.doGraphQL(ctx, "StartFeatureTrial", startFeatureTrialOperation, map[string]any{
+		"org":          orgID,
+		"feature":      feature,
+		"durationDays": durationDays,
+	}, nil)
+}
+
 func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.u.JoinPath("/plans").String(), nil)
 	if err != nil {
