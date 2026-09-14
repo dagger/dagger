@@ -1289,6 +1289,9 @@ type workspaceAutocheckState struct {
 	// org yet, so it must be onboarded with configureOrgSource rather than the
 	// no-org configureSource (which requires an existing mapping).
 	Mapped bool
+	// OrgName is the Dagger Cloud org that owns (or will own) the installation,
+	// when known. Used to enforce required Cloud features for the command.
+	OrgName string
 }
 
 var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
@@ -1301,7 +1304,8 @@ func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddr
 	return findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
 }
 
-func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
+func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
+	ctx := cmd.Context()
 	client, err := workspaceAutocheckClient(ctx, true)
 	if err != nil {
 		return workspaceAutocheckState{}, err
@@ -1323,6 +1327,11 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 	}
 	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
 	if current.Mapped {
+		// Enforce the command's required Cloud features on the org owning the
+		// installation before changing anything.
+		if err := ensureAutocheckCloudFeatures(cmd, client, &current); err != nil {
+			return workspaceAutocheckState{}, err
+		}
 		// Installation already mapped to an org: configureSource resolves the
 		// target org from the existing mapping.
 		if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
@@ -1331,11 +1340,15 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 	} else {
 		// Installation not mapped yet (app installed but never linked to an org):
 		// map it to the current org and apply the selection in one call.
-		orgID, err := currentCloudOrgID(ctx, client)
+		org, err := currentCloudOrg(ctx, client)
 		if err != nil {
 			return workspaceAutocheckState{}, err
 		}
-		if _, err := client.ConfigureOrgSource(ctx, orgID, current.InstallationID, "SELECTED", selected); err != nil {
+		current.OrgName = org.Name
+		if err := ensureCommandCloudFeatures(cmd, client, org.Name); err != nil {
+			return workspaceAutocheckState{}, err
+		}
+		if _, err := client.ConfigureOrgSource(ctx, org.ID, current.InstallationID, "SELECTED", selected); err != nil {
 			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
 		}
 	}
@@ -1345,21 +1358,50 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 	return current, nil
 }
 
-// currentCloudOrgID resolves the org to onboard an unmapped installation into:
+// currentCloudOrg resolves the org to onboard an unmapped installation into:
 // the --org flag when set, otherwise the currently selected Cloud org.
-func currentCloudOrgID(ctx context.Context, client *cloudapi.Client) (string, error) {
+func currentCloudOrg(ctx context.Context, client *cloudapi.Client) (*cloudauth.Org, error) {
 	if cloudOrgFlag != "" {
 		org, err := client.OrgByName(ctx, cloudOrgFlag)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		return org.ID, nil
+		return &cloudauth.Org{ID: org.ID, Name: org.Name}, nil
 	}
 	org, err := cloudauth.CurrentOrg()
 	if err != nil || org == nil || org.ID == "" {
-		return "", fmt.Errorf("no current Dagger Cloud organization; run 'dagger login' or pass --org")
+		return nil, fmt.Errorf("no current Dagger Cloud organization; run 'dagger login' or pass --org")
 	}
-	return org.ID, nil
+	return org, nil
+}
+
+// ensureAutocheckCloudFeatures enforces cmd's required Cloud features on the
+// org owning state's installation. The repo-tracked lookup path doesn't carry
+// the org, so it is resolved lazily by matching the installation among the
+// user's sources — and only when cmd actually declares required features, to
+// avoid extra API calls for unannotated commands (e.g. checks off). When the
+// owning org cannot be determined the gate is skipped rather than blocking a
+// working operation.
+func ensureAutocheckCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, state *workspaceAutocheckState) error {
+	if len(commandCloudFeatures(cmd)) == 0 {
+		return nil
+	}
+	if state.OrgName == "" {
+		sources, err := client.Sources(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("lookup Cloud sources: %w", err)
+		}
+		for _, source := range sources {
+			if source.ID == state.InstallationID && source.OrgName != nil {
+				state.OrgName = *source.OrgName
+				break
+			}
+		}
+	}
+	if state.OrgName == "" {
+		return nil
+	}
+	return ensureCommandCloudFeatures(cmd, client, state.OrgName)
 }
 
 // workspaceAutocheckStateFromSource locates the installation backing repo by
@@ -1399,14 +1441,18 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 	}
 
 	selected, enabled := workspaceSelectedRepos(selectedRepos, repo)
-	return workspaceAutocheckState{
+	state := workspaceAutocheckState{
 		Repo:           repo,
 		Enabled:        enabled,
 		InstallationID: source.ID,
 		SourceMode:     "SELECTED",
 		SelectedRepos:  selected,
 		Mapped:         source.OrgName != nil,
-	}, nil
+	}
+	if source.OrgName != nil {
+		state.OrgName = *source.OrgName
+	}
+	return state, nil
 }
 
 // gitHubAppInstallURL returns the URL for installing the Dagger Cloud GitHub
