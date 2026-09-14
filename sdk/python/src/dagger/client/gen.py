@@ -9962,7 +9962,7 @@ class GitRepository(Type):
         name: str,
         url: str,
         *,
-        push_urls: list[str] | None = None,
+        push_url: str | None = "",
     ) -> Self:
         """Register a named remote on this repository, replacing any registered
         remote of the same name.
@@ -9970,8 +9970,8 @@ class GitRepository(Type):
         Registered remotes are recorded in checkouts materialized from this
         repository (GitRef.tree, Workspace.git.directory), so remote-aware
         tooling like gh can resolve and fetch from them. The origin remote
-        also routes push when no explicit destination is passed: its push
-        URLs, or its URL, become the default destination.
+        also routes push when no explicit destination is passed: its push URL,
+        or its URL, becomes the default destination.
 
         Routing metadata only, never a credential grant: pushes still
         authenticate with the caller's own credentials and require approval as
@@ -9983,15 +9983,14 @@ class GitRepository(Type):
             The remote's name, e.g. "origin" or "upstream".
         url:
             The remote's fetch URL.
-        push_urls:
-            Push destinations, when pushes go somewhere other than url.
-            Registering more than one makes push require an explicit
-            destination.
+        push_url:
+            Push destination, when pushes go somewhere other than url. Empty
+            uses url.
         """
         _args = [
             Arg("name", name),
             Arg("url", url),
-            Arg("pushUrls", [] if push_urls is None else push_urls, []),
+            Arg("pushUrl", push_url, ""),
         ]
         _ctx = self._select("withRemote", _args)
         return GitRepository(_ctx)
