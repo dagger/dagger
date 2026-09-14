@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	toml "github.com/pelletier/go-toml"
 )
 
 // UpdateConfigBytes applies the differences between the old and new typed
@@ -28,6 +30,7 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	updated = rewriteIncludeBlocks(updated, existing.Include, cfg.Include)
 	if _, err := ParseConfig(updated); err != nil {
 		return nil, fmt.Errorf("validate edited config: %w", err)
 	}
@@ -236,6 +239,42 @@ func configDocumentMap(cfg *Config) map[string]any {
 		values["sdks"] = sdks
 	}
 	return values
+}
+
+// ExplicitConfigKeys returns the dotted paths of every leaf key the config file
+// actually spells out. Merging an included config needs presence, not the Go
+// zero value: `entrypoint = false` and `ignore = []` are overrides of what the
+// include provides, and both parse to the same value as an absent key.
+//
+// Array-of-tables blocks are skipped: the only one a config can carry is
+// [[include]], which is replaced wholesale rather than merged, so its presence
+// decides nothing.
+func ExplicitConfigKeys(data []byte) (map[string]bool, error) {
+	keys := map[string]bool{}
+	if len(data) == 0 {
+		return keys, nil
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse config keys: %w", err)
+	}
+	collectExplicitConfigKeys(tree, nil, keys)
+	return keys, nil
+}
+
+func collectExplicitConfigKeys(tree *toml.Tree, prefix []string, keys map[string]bool) {
+	for _, key := range tree.Keys() {
+		path := append(append([]string(nil), prefix...), key)
+		// GetPath, not Get: Get re-splits a dotted key, so a quoted table name
+		// like [modules."my.mod"] would look up my -> mod and miss.
+		switch value := tree.GetPath([]string{key}).(type) {
+		case *toml.Tree:
+			collectExplicitConfigKeys(value, path, keys)
+		case []*toml.Tree:
+		default:
+			keys[JoinConfigPath(path...)] = true
+		}
+	}
 }
 
 // FormatConfigPathSegment formats one TOML dotted-key path segment.

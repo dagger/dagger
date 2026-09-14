@@ -18,7 +18,7 @@ profile = "alice-dev"
 
 ## Merge order
 
-Dagger merges your user-level overrides on top of the repository's `dagger.toml`. User-level values shadow repository values key by key, without modifying `dagger.toml`.
+Dagger merges your user-level overrides on top of the repository's `dagger.toml`, which in turn sits on top of any config the repository [includes](./includes.mdx). User-level values shadow repository values key by key, without modifying `dagger.toml`.
 
 ## Writing values
 

@@ -1,0 +1,16 @@
+kind: Changed
+body: |
+  A `[modules.<name>]` entry in `dagger.toml` may now omit `source`, so it can
+  override the settings of a module an `[[include]]` installs. Because the file
+  format alone can no longer require a source, an effective config is validated
+  after the include is merged instead — and that check runs on every config,
+  include or not.
+
+  A `dagger.toml` with a source-less module entry and no `[[include]]` at all
+  therefore now fails every config read, naming the module, where it previously
+  loaded as a module with an empty reference and failed later or silently. Give
+  the entry a `source`, or add an `[[include]]` that provides one.
+time: 2026-08-25T12:00:00.000000000+00:00
+custom:
+    Author: eunomie
+    PR: "13882"
