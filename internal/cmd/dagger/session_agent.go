@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -145,6 +143,7 @@ type sessionAgent struct {
 
 	// llm is the conversation as an immutable value: the last committed
 	// snapshot while a runtime drives it, and the seed before one exists.
+	llmL  sync.RWMutex
 	llm   *dagger.LLM
 	model string
 
@@ -211,11 +210,11 @@ type sessionAgent struct {
 	// without resurrecting a stale checkpoint.
 	initialLLM *dagger.LLM
 
-	// lastSyncedWorkspace is the immutable workspace checkpoint this
-	// conversation last explicitly synchronized with the host. Explicit
-	// export/reset advances it, and reset/clear/session persistence reuse it.
-	// UI refreshes run asynchronously, so every access is guarded by
-	// lastSyncedWorkspaceL.
+	// lastSyncedWorkspace is the immutable save/reload boundary in this
+	// conversation's own history, not a mirror of the live checkout. Export
+	// advances it without rebinding the LLM; reload captures the host instead.
+	// Reset/clear/session persistence reuse it. UI refreshes run asynchronously,
+	// so every access is guarded by lastSyncedWorkspaceL.
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
 
@@ -353,18 +352,18 @@ func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
 
 // setInitialLLM installs the composition selected when prompt mode starts and
 // records its workspace as the conversation's first synchronization baseline.
-// NewLLMSession first creates a temporary currentWorkspace-bound LLM; keeping
-// this explicit prevents that temporary value from becoming an agent
-// conversation's baseline.
+// Install it before any status reads, without capturing a temporary workspace.
 func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
 	a.initialLLM = llm
 	workspace := llm.Workspace()
-	if _, err := workspace.ID(a.session.plumbingCtx); err != nil {
+	if id, err := workspace.ID(a.session.plumbingCtx); err != nil {
 		// Trace restore deliberately starts from an unbound base. It is still the
 		// reset composition, but it cannot serve as a comparison baseline; the
 		// restored snapshot (or a later explicit sync) supplies one instead.
 		slog.Debug("starting LLM has no workspace synchronization baseline", "error", err)
 		workspace = nil
+	} else {
+		workspace = dagger.Ref[*dagger.Workspace](a.session.dag, id)
 	}
 	return a.updateSyncedLLM(llm, workspace)
 }
@@ -908,7 +907,9 @@ func (a *sessionAgent) reseedAgent(llm *dagger.LLM) error {
 }
 
 func (a *sessionAgent) setLLM(llm *dagger.LLM) error {
+	a.llmL.Lock()
 	a.llm = llm
+	a.llmL.Unlock()
 
 	// figure out what the model resolved to
 	model, err := a.llm.Model(a.session.plumbingCtx)
@@ -1042,11 +1043,11 @@ func (a *sessionAgent) updateStatusLine(llm *dagger.LLM) error {
 }
 
 // updateChangesPreview refreshes the "Changes" notification bubble with a
-// summary of the workspace's pending overlay edits (Workspace.changes),
-// measured against the last-synced baseline so edits that were already present
-// when the session started are not reported as its own. Pressing ctrl+s exports
-// them to the local Git workspace (see ExportChanges). When there are no
-// pending edits the bubble is cleared (an empty body renders nothing).
+// summary of uncommitted edits above the workspace's HEAD and commits since
+// the last-synced checkpoint. With unchanged history, edits are measured against
+// the checkpoint so pre-existing or already-saved dirt is not reported as new
+// work. Pressing ctrl+s exports edits and commits to the local Git workspace
+// (see ExportChanges). When neither remains, the bubble is cleared.
 func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	if !a.uiActive() || llm == nil {
 		return nil
@@ -1060,24 +1061,20 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
-	entries, err := idtui.PreviewPatch(a.session.plumbingCtx, a.session.dag, workspace.Changes(dagger.WorkspaceChangesOpts{From: baseline}))
+	preview, err := previewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace, baseline)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	if preview.empty() {
 		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
 	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title: "Changes",
-		ContentFunc: func(width int) string {
-			var buf strings.Builder
-			patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
-			return buf.String()
-		},
+		Title:       "Changes",
+		ContentFunc: preview.render,
 		KeyMap: []key.Binding{
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reset")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reload")),
 		},
 	})
 	return nil
@@ -1161,91 +1158,90 @@ func (a *sessionAgent) refreshUIFromRuntime() {
 	}
 }
 
-// busy reports whether this conversation has a turn in flight. Operations
-// that replace the LLM wholesale (export, reset) refuse while busy: replacing
-// the value drops -- and stops -- the runtime mid-turn, which kills the very
-// work the user is watching.
+// busy reports whether this conversation has a turn in flight. Reload waits
+// rather than replacing a workspace the agent is still editing. Save also waits
+// for a turn boundary so a.llm describes the latest committed conversation state.
 func (a *sessionAgent) busy() bool {
 	a.turnL.Lock()
 	defer a.turnL.Unlock()
 	return a.turnCancel != nil
 }
 
-// ExportChanges writes the frozen workspace's pending overlay edits to the
-// current client-local Git workspace by passing it as Workspace.export's
-// explicit target, then refreshes the changes preview. It is the ctrl+s action;
-// export fails clearly when the current workspace cannot persist (a remote ref,
-// a synthetic workspace, or a local dir with no Git root).
+// ExportChanges contributes commits and pending edits since the last save to
+// the live checkout. Saving advances the checkpoint, not the agent's workspace:
+// host-side cherry-picks and unrelated work stay on the host until an explicit
+// reload. Failed exports retain the checkpoint so the save can be retried.
 func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
-	}
-	if a.busy() {
-		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before saving")
 	}
 	if !a.syncOpL.TryLock() {
 		return fmt.Errorf("another save/reload is already in progress")
 	}
 	defer a.syncOpL.Unlock()
-	// Exporting and rebinding the workspace can take time; keep activity
-	// visible and attribute failures to the operation.
 	ctx, span := Tracer().Start(ctx, "saving changes to local checkout", telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
-	if err := a.llm.Workspace().Export(ctx); err != nil {
-		return err
+
+	if a.busy() {
+		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before synchronizing")
 	}
-	// The exported edits now live on disk, so rebind the live workspace: the
-	// overlay the agent accumulated is now redundant with the files
-	// themselves, and carrying it forward would re-diff already-saved content
-	// as pending changes. Rebinding also drops it from the next save —
-	// portableID emits only the current binding. Export bumps the client's
-	// workspace read epoch, so reads after this point see the saved content
-	// rather than a snapshot cached earlier in the session. Sync eagerly so a
-	// failure surfaces here rather than corrupting later saves.
-	frozen := a.session.dag.CurrentWorkspace()
-	rebound, err := a.llm.WithWorkspace(frozen).Sync(ctx)
+	root, _, ok := a.session.workspaceHostPaths(ctx)
+	if !ok {
+		return fmt.Errorf("saving requires a local checkout")
+	}
+	// Pin exactly what is exported. The save boundary remains in the agent's
+	// history even when export cherry-picks its commits onto different host IDs.
+	sourceID, err := a.llm.Workspace().ID(ctx)
 	if err != nil {
-		return fmt.Errorf("rebind workspace after export: %w", err)
-	}
-	if err := a.updateSyncedLLM(rebound, frozen); err != nil {
 		return err
 	}
+	source := dagger.Ref[*dagger.Workspace](a.session.dag, sourceID)
+	if err := source.Export(ctx, dagger.WorkspaceExportOpts{
+		Path: root,
+		From: a.lastSynced(),
+	}); err != nil {
+		return err
+	}
+	a.setLastSynced(source)
+	a.scheduleUIRefresh()
 	a.session.stepped(a)
-	return a.updateChangesPreview(a.llm)
+	return nil
 }
 
 // ResetWorkspace discards the workspace's pending overlay edits, re-binding the
 // LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. The binding goes through
-// Workspace.reloaded so cached host reads from earlier in the session are
-// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
-// eagerly so a failure surfaces here rather than corrupting later saves.
+// accumulated changes rather than writing them out. Workspace.snapshot captures a
+// fresh baseline from the current checkout. Bind it eagerly so a failure
+// surfaces here rather than corrupting later saves.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if a.llm == nil {
 		return fmt.Errorf("no LLM session active")
-	}
-	if a.busy() {
-		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before resetting")
 	}
 	if !a.syncOpL.TryLock() {
 		return fmt.Errorf("another save/reload is already in progress")
 	}
 	defer a.syncOpL.Unlock()
-	// Like ExportChanges, reloading needs visible activity while the user waits.
 	ctx, span := Tracer().Start(ctx, "reloading workspace from local checkout", telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
-	frozen := a.session.dag.CurrentWorkspace().Reloaded()
-	reset, err := a.llm.WithWorkspace(frozen).Sync(ctx)
+
+	if a.busy() {
+		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before synchronizing")
+	}
+	baseline, err := snapshotWorkspace(ctx, a.session.dag)
+	if err != nil {
+		return err
+	}
+	reset, err := a.llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
-	if err := a.updateSyncedLLM(reset, frozen); err != nil {
+	if err := a.updateSyncedLLM(reset, baseline); err != nil {
 		return err
 	}
 	a.session.stepped(a)
-	return a.updateChangesPreview(a.llm)
+	return nil
 }
 
 const autoCompactReserveTokens = 16_384
