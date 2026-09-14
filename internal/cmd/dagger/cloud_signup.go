@@ -64,5 +64,5 @@ func (cli *CloudCLI) Signup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return finishCloudLogin(cmd, orgName, client, false)
+	return finishCloudLogin(cmd, orgName, client)
 }
