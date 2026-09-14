@@ -201,31 +201,38 @@ func (s *workspaceSchema) workspaceGitDirectory(ctx context.Context, parent dagq
 	if err != nil {
 		return inst, err
 	}
+	err = srv.Select(ctx, parent, &inst,
+		dagql.Selector{Field: "__checkout"},
+		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}}},
+	)
+	return inst, err
+}
+
+func (s *workspaceSchema) workspaceGitFullCheckout(ctx context.Context, parent dagql.ObjectResult[*core.WorkspaceGit], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
 	var head dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "head"}); err != nil {
 		return inst, fmt.Errorf("workspace Git checkout requires a HEAD commit: %w", err)
 	}
 	// Bypass the repository's keepGitDir option and the default shallow depth.
-	// Tree returns a newly owned, materialized snapshot rooted at /; expose its
-	// metadata directly without an intermediate private GraphQL field.
+	// Retain the complete immutable snapshot as a dagql result so consumers can
+	// use either the worktree or its metadata without reconstructing history.
 	dir, err := head.Self().Backend.Tree(ctx, srv, false, 0, false)
 	if err != nil {
 		return inst, err
 	}
-	dir.Dir.SetValue("/.git")
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-// workspaceGitCheckout composes a clean full-history checkout from the public
-// Git metadata API. The repository is local to the engine, so checking it out
-// does not fetch history from the original remote again.
+// workspaceGitCheckout materializes HEAD once, with full history and Git
+// metadata regardless of the public repository's shallow/discard-Git defaults.
 func workspaceGitCheckout(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*core.Workspace]) (inst dagql.ObjectResult[*core.Directory], err error) {
 	err = srv.Select(ctx, ws, &inst,
 		dagql.Selector{Field: "git"},
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "asGit"},
-		dagql.Selector{Field: "head"},
-		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.NewInt(0)}}},
+		dagql.Selector{Field: "__checkout"},
 	)
 	return inst, err
 }

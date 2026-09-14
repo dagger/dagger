@@ -8,6 +8,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	gitsession "github.com/dagger/dagger/engine/session/git"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type workspaceExportArgs struct {
@@ -66,12 +68,15 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	// route through the source's client. Unrelated untracked files stay private
 	// on the host; the writer checks them for obstructions before changing files.
 	var bundle []byte
-	metadata, err := bk.CaptureGit(ctx, args.Path, &gitsession.CaptureGitPolicy{DropUntracked: true, MaxTotalBytes: 256 << 20}, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
+	captureCtx, captureSpan := core.Tracer(ctx).Start(ctx, "capture workspace export destination", telemetry.Internal())
+	metadata, err := bk.CaptureGit(captureCtx, args.Path, &gitsession.CaptureGitPolicy{DropUntracked: true, MaxTotalBytes: 256 << 20}, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
 		if kind == gitsession.CAPTURE_CHUNK_BUNDLE {
 			bundle = append(bundle, data...)
 		}
 		return nil
 	})
+	captureSpan.SetAttributes(attribute.Int("dagger.workspace.capture.bundle_bytes", len(bundle)))
+	telemetry.EndWithCause(captureSpan, &err)
 	if err != nil {
 		return fmt.Errorf("capture export destination: %w", err)
 	}
@@ -81,7 +86,9 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	captured := &core.Workspace{Cwd: "."}
 	captured.SetHostPath(args.Path)
 	captured.SetSource(core.NewWorkspaceSourceClientLocal(args.Path))
-	destination, err := s.checkpointCapturedGitComposition(ctx, srv, captured, metadata, bundle, "")
+	composeCtx, composeSpan := core.Tracer(ctx).Start(ctx, "compose workspace export destination", telemetry.Internal())
+	destination, err := s.checkpointCapturedGitComposition(composeCtx, srv, captured, metadata, bundle, "")
+	telemetry.EndWithCause(composeSpan, &err)
 	if err != nil {
 		return err
 	}

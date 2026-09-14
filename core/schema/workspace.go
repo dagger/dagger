@@ -576,6 +576,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) The git repository backing this workspace git state."),
 		dagql.NodeFunc("head", s.workspaceGitHead).
 			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("__checkout", s.workspaceGitFullCheckout).
+			IsPersistable().
+			Doc("(Internal-only) Materialize a clean full-history checkout with Git metadata retained."),
 		dagql.NodeFunc("directory", s.workspaceGitDirectory).
 			IsPersistable().
 			Doc("Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.",

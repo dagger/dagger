@@ -36,6 +36,8 @@ func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t 
 	require.NotContains(t, entries, ".git/")
 	require.NotContains(t, entries, ".git")
 
+	assertWorkspaceFullCheckout(ctx, t, c, repo.Head().AsWorkspace(), []string{baseSHA})
+
 	t.Run("workspace metadata remains available", func(ctx context.Context, t *testctx.T) {
 		metadata := repo.Head().AsWorkspace().Git().Directory()
 		entries, err := metadata.Entries(ctx)
