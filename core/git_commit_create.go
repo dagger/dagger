@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // ErrNothingToCommit is returned when the changeset handed to
@@ -190,7 +191,25 @@ func batchPathSpecs(specs []string) [][]string {
 }
 
 // runWorkspaceCommitGit layers explicit commit inputs over the hermetic Git environment.
-func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (_ string, rerr error) {
+	// Callers may supply -c key=value before the verb. Never include those
+	// values, pathspecs, commit messages, or identity inputs in the span name.
+	commandArgs := args
+	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+		commandArgs = commandArgs[2:]
+	}
+	operation := "command"
+	if len(commandArgs) > 0 {
+		operation = commandArgs[0]
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	defer func() {
+		var spanErr error
+		if rerr != nil {
+			spanErr = fmt.Errorf("git %s failed", operation)
+		}
+		telemetry.EndWithCause(span, &spanErr)
+	}()
 	cmd := gitCmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	var stdout, stderr bytes.Buffer

@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const MaxWorkspacePullCommits = 1000
@@ -484,8 +485,18 @@ func pullDirtyPaths(paths *ChangesetPaths) []string {
 	return dirty
 }
 
-func runWorkspacePullGit(ctx context.Context, dir string, env []string, args ...string) (string, error) {
+func runWorkspacePullGit(ctx context.Context, dir string, env []string, args ...string) (_ string, rerr error) {
 	operation := args[0]
+	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	defer func() {
+		// Command output and arguments can contain file contents or credentials.
+		// Keep subprocess telemetry limited to the verb and success/failure.
+		var spanErr error
+		if rerr != nil {
+			spanErr = fmt.Errorf("git %s failed", operation)
+		}
+		telemetry.EndWithCause(span, &spanErr)
+	}()
 	args = append([]string{"--no-replace-objects", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "rerere.enabled=false", "-c", "submodule.recurse=false"}, args...)
 	cmd := gitCmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, env...)
