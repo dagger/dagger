@@ -42,6 +42,7 @@ type DBs struct {
 
 	perStoreLock *locker.Locker
 	tailBudget   int64
+	openStore    func(context.Context, string, string, int64) (*DB, error)
 }
 
 func NewDBs(root string) *DBs {
@@ -53,6 +54,7 @@ func NewDBs(root string) *DBs {
 		idleLimit:    idleStoreLimit,
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
+		openStore:    openStore,
 	}
 	r.openingCond = sync.NewCond(&r.mu)
 	return r
@@ -79,7 +81,7 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 	r.opening++
 	r.mu.Unlock()
 
-	store, err := openStore(ctx, r.Root, clientID, r.tailBudget)
+	store, err := r.openStore(ctx, r.Root, clientID, r.tailBudget)
 
 	r.mu.Lock()
 	r.opening--
