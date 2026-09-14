@@ -5,11 +5,11 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -39,7 +39,7 @@ type agentTraceSink struct {
 	logs   []*collogspb.ExportLogsServiceRequest
 }
 
-func newAgentTraceSink(t *testctx.T) *agentTraceSink {
+func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	t.Helper()
 	db := dagui.NewDB()
 	sink := &agentTraceSink{db: db, logExp: db.LogExporter()}
