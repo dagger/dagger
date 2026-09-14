@@ -63,6 +63,60 @@ func workspaceRecipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, 
 	return fields
 }
 
+func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	write := func(name, contents string) {
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte(contents), 0o644))
+	}
+	write("executable", "#!/bin/sh\necho original\n")
+	write("deleted", "remove me\n")
+	require.NoError(t, os.Symlink("base.txt", filepath.Join(checkout, "link")))
+	git("add", ".")
+	git("commit", "-m", "tracked modes and symlink")
+	git("commit", "--allow-empty", "-m", "third ancestor")
+	history := strings.Fields(git("log", "--format=%H"))
+	destination := filepath.Join(t.TempDir(), "destination")
+	git("clone", checkout, destination)
+	write("base.txt", "captured edit")
+	write("staged.txt", "staged addition")
+	require.NoError(t, os.Chmod(filepath.Join(checkout, "executable"), 0o755))
+	require.NoError(t, os.Remove(filepath.Join(checkout, "deleted")))
+	require.NoError(t, os.Remove(filepath.Join(checkout, "link")))
+	require.NoError(t, os.Symlink("executable", filepath.Join(checkout, "link")))
+	// Compute the expected worktree object, then restore the mixed staged /
+	// unstaged input. Git tree identity covers contents, modes and link targets.
+	git("add", "-A")
+	wantTree := git("write-tree")
+	git("reset", "--mixed", "HEAD")
+	git("add", "staged.txt")
+	inputStatus := git("status", "--porcelain")
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	frozen := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	assertWorkspaceFullCheckout(ctx, t, c, frozen, history)
+	out, err := workspaceGitDirectoryContainer(c, frozen).
+		WithExec([]string{"sh", "-ec", "git add -A; git write-tree"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wantTree, strings.TrimSpace(out))
+	require.Equal(t, inputStatus, git("status", "--porcelain"), "snapshot leaves the host index and worktree alone")
+	// A shallow content view must not truncate the repository used to make
+	// commits, integrate ancestry, or repeat an incremental pending save.
+	first := snapshotWorkspace(ctx, t, c, frozen.WithCommit("captured changes", workspaceCommitDate).WithNewFile("pending.txt", "first"))
+	require.NoError(t, saveWorkspaceTo(ctx, c, first, nil, destination))
+	second := snapshotWorkspace(ctx, t, c, first.WithNewFile("pending.txt", "second"))
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, destination))
+	require.NoError(t, saveWorkspaceTo(ctx, c, second, first, destination), "retry the identical incremental request")
+	targetGit := func(args ...string) string { return git(append([]string{"-C", destination}, args...)...) }
+	require.Equal(t, wantTree, targetGit("rev-parse", "HEAD^{tree}"))
+	require.Equal(t, history, strings.Fields(targetGit("log", "--format=%H", "HEAD^")))
+	require.Equal(t, "?? pending.txt", targetGit("status", "--porcelain"))
+	pending, err := os.ReadFile(filepath.Join(destination, "pending.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second", string(pending))
+	contents, err := first.File("pending.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "first", contents, "prior dagql result remains immutable")
+}
+
 func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	git := func(args ...string) {
