@@ -270,7 +270,7 @@ func TestGitCheckoutContentOnlyDepthWithSubmodule(t *testing.T) {
 				gitutil.WithGitDir(filepath.Join(root, ".git")),
 				// Only this private test fixture allows local submodule URLs.
 				gitutil.WithArgs("-c", "protocol.file.allow=always"))
-			require.NoError(t, doGitCheckout(ctx, git, "", "file://"+source, &gitutil.Ref{SHA: head}, depth, true))
+			require.NoError(t, doGitCheckout(ctx, git, nil, "file://"+source, &gitutil.Ref{SHA: head}, depth, true))
 			data, err := os.ReadFile(filepath.Join(root, "module", "value"))
 			require.NoError(t, err)
 			require.Equal(t, "pinned", string(data), "parent depth does not change the gitlink checkout")
