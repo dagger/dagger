@@ -432,10 +432,10 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 	if objResult, ok := val.(ObjectResult[T]); ok {
 		// T alone does not identify the schema: two revisions of a module
-		// share the same Go value type. Honor the explicitly requested class
-		// even when the value is already wrapped as an object.
+		// share the same Go value type. Honor the explicitly requested class on
+		// this wrapper even when the value is already wrapped as an object; the
+		// shared result keeps the class it was first observed with.
 		objResult.class = class
-		objResult.shared.setObjClass(class)
 		return objResult, nil
 	}
 	if inst, ok := val.(Result[T]); ok {

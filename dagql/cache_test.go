@@ -3752,10 +3752,23 @@ func TestClassNewRewrapsObjectResult(t *testing.T) {
 
 	original, err := srvA.Root().Select(ctxA, srvA, Selector{Field: "obj"})
 	assert.NilError(t, err)
+	shared := original.cacheSharedResult()
+	originalFrame := shared.loadResultCall()
+	originalRecipe := cacheTestMustRecipeID(t, ctxA, original).Digest()
+	originalClass := shared.objClass.(Class[*cacheTestObject])
+	originalField, ok := originalClass.Field("marker", "")
+	assert.Assert(t, ok)
 	class, ok := srvB.ObjectType(original.Type().Name())
 	assert.Assert(t, ok)
 	rewrapped, err := class.New(original)
 	assert.NilError(t, err)
+	assert.Assert(t, rewrapped.cacheSharedResult() == shared)
+	assert.Assert(t, shared.loadResultCall() == originalFrame)
+	assert.Equal(t, originalRecipe, cacheTestMustRecipeID(t, ctxB, rewrapped).Digest())
+	assert.Equal(t, original.HitCache(), rewrapped.HitCache())
+	sharedField, ok := shared.objClass.(Class[*cacheTestObject]).Field("marker", "")
+	assert.Assert(t, ok)
+	assert.Assert(t, sharedField.Spec == originalField.Spec)
 	marker, err := rewrapped.Select(ctxB, srvB, Selector{Field: "marker"})
 	assert.NilError(t, err)
 	assert.Equal(t, 2, cacheTestUnwrapInt(t, marker))
@@ -3770,7 +3783,108 @@ func TestClassNewRewrapsObjectResult(t *testing.T) {
 	marker, err = original.(AnyObjectResult).Select(ctxA, srvA, Selector{Field: "marker"})
 	assert.NilError(t, err)
 	assert.Equal(t, 1, cacheTestUnwrapInt(t, marker))
+
+	// A subsequent cache read still chooses its own server's class. With no
+	// matching class in the reader, reconstruction uses the original class.
+	for _, tc := range []struct {
+		srv  *Server
+		want int
+	}{{srvA, 1}, {srvB, 2}, {newDagqlServerForTest(t, cacheTestQuery{}), 1}} {
+		loaded, err := tc.srv.Load(ctx, originalID)
+		assert.NilError(t, err)
+		assert.Assert(t, loaded.cacheSharedResult() == shared)
+		marker, err := loaded.Select(ctx, tc.srv, Selector{Field: "marker"})
+		assert.NilError(t, err)
+		assert.Equal(t, tc.want, cacheTestUnwrapInt(t, marker))
+	}
 	cacheTestReleaseSession(t, cacheIface, ctxA)
+}
+
+// TestClassNewRewrapPreservesModuleCacheIsolation checks that rebinding keeps
+// receiver identity and ownership intact. The selected field's module provenance
+// must distinguish implementations while repeated calls still hit the cache.
+func TestClassNewRewrapPreservesModuleCacheIsolation(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cache)
+	srvA := cacheTestObjectResolverServer(t, 1)
+	srvB := cacheTestObjectResolverServer(t, 2)
+	ctx = srvToContext(ctx, srvA)
+	var releases atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFunc("trackedObj", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{onRelease: func(context.Context) error {
+				releases.Add(1)
+				return nil
+			}})
+		}),
+	}.Install(srvA)
+	var calls [2]int
+	for i, srv := range []*Server{srvA, srvB} {
+		moduleCall := cacheTestIntCall(fmt.Sprintf("module-%d", i))
+		module, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: moduleCall}, func(ctx context.Context) (AnyResult, error) {
+			return NewResultForCurrentCall(ctx, NewInt(i))
+		})
+		assert.NilError(t, err)
+		moduleRef, err := resultCallRefFromResult(ctx, module)
+		assert.NilError(t, err)
+		field := Func("cachedMarker", func(context.Context, *cacheTestObject, struct{}) (Int, error) {
+			calls[i]++
+			return NewInt(i + 1), nil
+		})
+		// Keep display metadata identical: the implementation result itself is
+		// the discriminating input, just as for reloaded user modules.
+		field.Spec.Module = &ResultCallModule{ResultRef: moduleRef, Name: "tools"}
+		Fields[*cacheTestObject]{field}.Install(srv)
+	}
+	original, err := srvA.Root().Select(ctx, srvA, Selector{Field: "trackedObj"})
+	assert.NilError(t, err)
+	class, ok := srvB.ObjectType(original.Type().Name())
+	assert.Assert(t, ok)
+	rewrapped, err := class.New(original)
+	assert.NilError(t, err)
+	assert.Assert(t, original.cacheSharedResult() == rewrapped.cacheSharedResult())
+	var resultIDs [2]uint64
+	for round := range 2 {
+		for i, obj := range []AnyObjectResult{original.(AnyObjectResult), rewrapped} {
+			// Deliberately dispatch both through A: the wrapper's selected
+			// field must supply B's provenance even in an older caller schema.
+			res, err := obj.Select(ctx, srvA, Selector{Field: "cachedMarker"})
+			assert.NilError(t, err)
+			assert.Equal(t, i+1, cacheTestUnwrapInt(t, res))
+			assert.Equal(t, round > 0, res.HitCache())
+			id, err := res.ID()
+			assert.NilError(t, err)
+			if round == 0 {
+				resultIDs[i] = id.EngineResultID()
+			} else {
+				assert.Equal(t, resultIDs[i], id.EngineResultID())
+			}
+		}
+	}
+	assert.Assert(t, resultIDs[0] != resultIDs[1])
+	assert.Equal(t, 1, calls[0])
+	assert.Equal(t, 1, calls[1])
+
+	// Attaching the rebound wrapper to another session must claim the same
+	// resource, keep it alive after the first session exits, and release once.
+	attached, err := cache.AttachResult(ctx, "rewrap-session", srvB, rewrapped)
+	assert.NilError(t, err)
+	assert.Assert(t, attached.cacheSharedResult() == original.cacheSharedResult())
+	cacheTestReleaseSession(t, cache, ctx)
+	assert.Equal(t, int32(0), releases.Load())
+	otherCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "rewrap-client", SessionID: "rewrap-session",
+	})
+	id, err := attached.ID()
+	assert.NilError(t, err)
+	loaded, err := srvB.Load(otherCtx, id)
+	assert.NilError(t, err)
+	assert.Assert(t, loaded.cacheSharedResult() == original.cacheSharedResult())
+	cacheTestReleaseSession(t, cache, otherCtx)
+	assert.Equal(t, int32(1), releases.Load())
 }
 
 func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
