@@ -1,7 +1,16 @@
 """
-"CI in CI": check that Dagger can still run its own CI
+Bootstrap check: can Dagger still run its own CI?
 """
-type CI {
+type Bootstrap {
+
+  """
+  Run a single lint check (go linting) against a dev build of the engine
+  """
+  goLint(ws: Workspace!): Void @check {
+    runChecks(ws, ["golang:lint-all"], include: ["**/*.go", "**/go.mod", "**/go.sum", "dagger.toml", ".dagger/module"])
+  }
+
+
   """
   Build dagger from source, and check that it can bootstrap its own CI
 
@@ -10,20 +19,24 @@ type CI {
   The actual checks being performed is an implementation detail, and should NOT be relied on.
   In other words, don't skip running <foo> just because it happens to be run here!
   """
-  pub bootstrap(
+  pub runChecks(
     """
     The Dagger repository to run CI against
     """
-    source: Workspace!,
+    ws: Workspace!,
+
     """
     Which checks to run
     """
-    checks: [String!]! = ["**:*lint*"],
-  ): Void @check {
-    engineDev(ws: source)
+    checks: [String!],
+
+    include: [String!],
+    exclude: [String!]
+  ): Void {
+    engineDev(ws: ws)
       .playground
-      .withMountedDirectory("./dagger", source.directory("/", gitignore: true))
-      .withWorkdir("./dagger")
+      .withMountedDirectory("/ws", ws.directory("/", gitignore: true, include: include, exclude: exclude))
+      .withWorkdir("/ws")
       # TODO: change back to `.withExec(["dagger check"] + checks)`
       # The mounted Workspace is a plain snapshot with no .git, so the
       # nested check would make .dagger/modules/ci its context root and reject
@@ -33,9 +46,8 @@ type CI {
         "sh", "-c",
         "git init --quiet && exec dagger check \"$@\"",
         "dagger",
-      ] + checks)
+      ] + (checks ?? []))
       .sync
-
     null
   }
 }
