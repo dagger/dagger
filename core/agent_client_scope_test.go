@@ -13,13 +13,15 @@ import (
 func TestAgentClientScopeLifetime(t *testing.T) {
 	var mu sync.Mutex
 	var leases []*engine.ClientLifecycleLease
-	var newLease func(engine.ClientLeaseKind, string) (*engine.ClientLifecycleLease, error)
-	newLease = func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
-		lease := engine.NewClientLifecycleLease(kind, owner, nil, newLease)
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+		lease := engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return newLease(kind, owner), nil
+		})
 		mu.Lock()
 		leases = append(leases, lease)
 		mu.Unlock()
-		return lease, nil
+		return lease
 	}
 	held := func(kind engine.ClientLeaseKind) int {
 		mu.Lock()
@@ -32,8 +34,7 @@ func TestAgentClientScopeLifetime(t *testing.T) {
 		}
 		return count
 	}
-	request, err := newLease(engine.ClientLeaseRequest, "request")
-	require.NoError(t, err)
+	request := newLease(engine.ClientLeaseRequest, "request")
 	scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "client", SessionID: "session"}, request)
 	require.NoError(t, err)
 	ctx, err := engine.ContextWithClientScope(t.Context(), scope)

@@ -158,14 +158,15 @@ func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	require.NoError(t, err)
 	var held atomic.Int64
-	var newLease func(engine.ClientLeaseKind, string) (*engine.ClientLifecycleLease, error)
-	newLease = func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
 		held.Add(1)
-		return engine.NewClientLifecycleLease(kind, owner, func() { held.Add(-1) }, newLease), nil
+		return engine.NewClientLifecycleLease(kind, owner, func() { held.Add(-1) }, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return newLease(kind, owner), nil
+		})
 	}
 	withScope := func(owner string) (context.Context, *engine.ClientLifecycleLease) {
-		lease, err := newLease(engine.ClientLeaseRequest, owner)
-		require.NoError(t, err)
+		lease := newLease(engine.ClientLeaseRequest, owner)
 		t.Cleanup(lease.Release)
 		scope, err := engine.NewClientScope(md, lease)
 		require.NoError(t, err)
