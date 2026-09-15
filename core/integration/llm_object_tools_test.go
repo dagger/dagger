@@ -487,6 +487,121 @@ func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t
 	require.Contains(t, out, "NOTE.txt")
 }
 
+// TestWorkspaceToolSummaryBounds exercises the model-visible result and the
+// telemetry emitted while summarizing a workspace swap, not just the preview
+// formatter. In particular, a one-line file can exceed File.contents' limit.
+func (LLMSuite) TestWorkspaceToolSummaryBounds(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name    string
+		setup   string
+		remove  string
+		patch   bool
+		omitted bool
+	}{
+		{name: "small text", setup: "true", patch: true},
+		{name: "binary", setup: "dd if=/dev/urandom of=large.dat bs=1M count=2", remove: `.withoutFile("/large.dat")`},
+		{name: "giant single line", setup: "head -c 135266304 /dev/zero | tr '\\0' x > large.dat", remove: `.withoutFile("/large.dat")`},
+		{name: "many paths", setup: "mkdir z-many; echo keep > z-many/keep.txt; for i in $(seq 1 1200); do echo old > z-many/file-$i; done", remove: `.withoutDirectory("/z-many").withNewFile("/z-many/keep.txt", "keep\n")`, omitted: true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			sink := newAgentTraceSink(t)
+			c := connect(ctx, t, sink.clientOpts()...)
+			base := workspaceFixture(t, c, "workspace-tool-return").
+				WithNewFile("nested/keep.txt", "unchanged").
+				WithNewFile(".dagger/modules/swapper/main.dang", fmt.Sprintf(`
+type Swapper {
+  swap(ws: Workspace!): Workspace! {
+    ws.withoutDirectory("/.git")%s
+      .withNewFile("/ROOT.txt", "root edit\n")
+      .withNewFile("created/EDIT.txt", "nested edit\n")
+  }
+}
+`, tc.remove)).
+				WithExec([]string{"sh", "-ec", tc.setup})
+			model := cannedReplayModel(ctx, t, c, c.LLM().
+				WithPrompt("swap the workspace").
+				WithResponse([]dagger.LLMContentBlockInput{{
+					Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap",
+				}}).
+				WithToolResult("call_1", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+
+			// Bind a directory-backed workspace containing Git metadata, with a
+			// nested cwd. Root-relative edits must not disappear from the summary,
+			// nor may dropping .git generate a binary metadata patch.
+			out, err := base.With(daggerShell(fmt.Sprintf(`
+ws=$(current-workspace | directory / | as-workspace --cwd nested)
+result=$(llm --model="%s" | with-workspace --workspace $ws | with-tools $(swapper) | with-prompt "swap the workspace" | loop)
+$result | transcript
+$result | workspace | file /ROOT.txt | contents
+$result | workspace | file created/EDIT.txt | contents
+`, model))).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "done")
+			require.Contains(t, out, "ROOT.txt")
+			require.Contains(t, out, "nested/created/EDIT.txt")
+			require.Contains(t, out, "root edit")
+			require.Contains(t, out, "nested edit")
+			require.NotContains(t, out, ".git/")
+			require.NotContains(t, out, "GIT binary patch")
+			require.NotContains(t, out, "failed to fetch patch summary")
+			require.NotContains(t, out, "exceeds")
+			require.Less(t, len(out), 20*1024)
+			if tc.patch {
+				require.Contains(t, out, "diff --git a/ROOT.txt b/ROOT.txt")
+				require.Contains(t, out, "diff --git a/nested/created/EDIT.txt b/nested/created/EDIT.txt")
+				require.Contains(t, out, "+root edit")
+				require.Contains(t, out, "+nested edit")
+			} else {
+				require.NotContains(t, out, "diff --git")
+			}
+			if tc.remove == `.withoutFile("/large.dat")` {
+				require.Contains(t, out, "large.dat")
+			}
+			if tc.omitted {
+				require.Contains(t, out, "summary lines omitted")
+				require.Contains(t, out, "-1200 lines")
+			}
+
+			// Closing flushes the CLI's trace/log forwarding. Inspect actual
+			// emitted records: summary-only stats must not publish an object per
+			// path, and patch generation must never stream file blobs to the TUI.
+			require.NoError(t, c.Close())
+			traces, logs := sink.capture()
+			require.NotEmpty(t, traces)
+			require.NotEmpty(t, logs)
+			seenTool, seenPatch := false, false
+			for _, request := range traces {
+				for _, resource := range request.ResourceSpans {
+					for _, scope := range resource.ScopeSpans {
+						for _, span := range scope.Spans {
+							seenTool = seenTool || span.Name == "Swapper.swap"
+							seenPatch = seenPatch || span.Name == "Changeset.asPatch"
+							require.NotContains(t, span.GetStatus().GetMessage(), "exceeds")
+							require.NotEqual(t, "Changeset.diffStats", span.Name)
+							require.False(t, strings.HasPrefix(span.Name, "DiffStat."), "%s", span.Name)
+						}
+					}
+				}
+			}
+			require.True(t, seenTool, "capture must include the actual workspace-returning tool")
+			require.Equal(t, tc.patch || tc.name == "giant single line", seenPatch, "binary and many-path summaries must skip patch generation")
+			for _, request := range logs {
+				for _, resource := range request.ResourceLogs {
+					for _, scope := range resource.ScopeLogs {
+						for _, record := range scope.LogRecords {
+							body := record.GetBody().GetStringValue()
+							require.NotContains(t, body, "GIT binary patch")
+							require.NotContains(t, body, strings.Repeat("x", 1024))
+							require.NotContains(t, body, "exceeds limit 134217728")
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
