@@ -67,13 +67,13 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 	return client.workspace, nil
 }
 
-// currentWorkspaceReadEpoch returns the calling client's workspace read epoch
+// currentWorkspaceReadEpoch returns the workspace owner's read epoch
 // as a stable string token, folded by the workspace read resolvers into their
 // host reads' per-client cache namespace (see bumpClientWorkspaceReadEpoch).
 // Epoch 0 (never bumped) maps to "" so untouched sessions keep the client's
 // default namespace and share cache entries as before.
 func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error) {
-	client, err := srv.executableClientFromContext(ctx)
+	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error
 	return strconv.FormatUint(epoch, 10), nil
 }
 
-// bumpClientWorkspaceReadEpoch advances the calling client's workspace read
+// bumpClientWorkspaceReadEpoch advances the workspace owner's read
 // epoch, so cached host reads (Workspace.file / Workspace.directory) taken
 // before the bump are no longer served for the rest of the session. Triggered
 // from Workspace.export, after the agent's changes are written to disk, and
@@ -92,7 +92,7 @@ func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error
 // read re-reads the live host instead of a stale per-client host.directory
 // snapshot cached earlier in the session.
 func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
-	client, err := srv.executableClientFromContext(ctx)
+	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return err
 	}
