@@ -6897,7 +6897,7 @@ func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span
 		if cause.ID == span.ID {
 			continue
 		}
-		if !cause.Received {
+		if !cause.Received || !hasSpanErrorMessage(cause) {
 			continue
 		}
 		if fe.claims.hasError(cause.ID) {
@@ -7418,12 +7418,21 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
-
-	fe.claims.claimError(rootCause)
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
 	return fe.claims.hasRootError(fe.err)
+}
+
+// A nested session's error may arrive before its origin's final span. Until
+// that span carries a message, keep the error on the propagating span visible.
+func hasSpanErrorMessage(span *dagui.Span) bool {
+	for _, failed := range span.Errors().Order {
+		if strings.TrimSpace(failed.Status.Description) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // errorShownElsewhere reports whether a failed span's error message is carried
@@ -7447,6 +7456,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 		if fe.claims.hasError(origin.ID) {
 			return true
 		}
+		if !hasSpanErrorMessage(origin) {
+			continue
+		}
 		if fe.rows != nil && fe.rows.BySpan[origin.ID] != nil {
 			return true
 		}
@@ -7468,6 +7480,9 @@ func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if !hasSpanErrorMessage(row.Span) {
+		return
+	}
 	if fe.errorShownElsewhere(row.Span) {
 		// span's error originated elsewhere and that origin is visible this
 		// pass; don't repeat the message, the ERROR status links to its origin
