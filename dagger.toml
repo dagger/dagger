@@ -162,6 +162,7 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/dotnet-client-dev"]
+clients = ["./.dagger/modules/engine-dev"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/elixir-client-dev"]
