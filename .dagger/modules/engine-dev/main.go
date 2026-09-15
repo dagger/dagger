@@ -134,44 +134,6 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
-// Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (dev *EngineDev) Playground(
-	ctx context.Context,
-	// Build from a custom base image
-	// +optional
-	base *dagger.Container,
-	// Enable experimental GPU support
-	// +optional
-	gpuSupport bool,
-	// Share cache globally
-	// +optional
-	sharedCache bool,
-	// +optional
-	metrics bool,
-	//+optional
-	version string,
-) (*dagger.Container, error) {
-	ctr := base
-	if ctr == nil {
-		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
-			Packages: []string{"apk-tools", "git"},
-		}).WithEnvVariable("HOME", "/root")
-	}
-	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
-	svc, err := dev.Service(
-		ctx,
-		"", // name
-		gpuSupport,
-		sharedCache,
-		metrics,
-		version,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return dev.InstallClient(ctx, ctr, svc, version)
-}
-
 // Build the engine container
 func (dev *EngineDev) Container(
 	ctx context.Context,
@@ -296,6 +258,7 @@ func (dev *EngineDev) Service(
 func (dev *EngineDev) InstallClient(
 	ctx context.Context,
 	// The client container to configure
+	// +optional
 	client *dagger.Container,
 	// The engine service to bind
 	// +optional
@@ -303,6 +266,10 @@ func (dev *EngineDev) InstallClient(
 	// +optional
 	version string,
 ) (*dagger.Container, error) {
+	if client == nil {
+		// By default, start from a simple base container
+		client = dag.Wolfi().Container()
+	}
 	if service == nil {
 		var err error
 		service, err = dev.Service(
@@ -342,11 +309,11 @@ func (dev *EngineDev) InstallClient(
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
-	introspectionJSON := playground.
+	introspectionJSON := ctr.
 		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
@@ -359,12 +326,12 @@ func (dev *EngineDev) GraphqlSchema(
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	ctr, err := dev.InstallClient(ctx, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
 	schemaPath := "schema.graphqls"
-	schema := playground.
+	schema := ctr.
 		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
 		WithExec(
 			[]string{"introspect", "--version=" + version, "schema"},

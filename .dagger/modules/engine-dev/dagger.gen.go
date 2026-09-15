@@ -416,48 +416,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*EngineDev).NetworkCidr(&parent), nil
-		case "Playground":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var base *dagger.Container
-			if inputArgs["base"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
-				}
-			}
-			var gpuSupport bool
-			if inputArgs["gpuSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["gpuSupport"]), &gpuSupport)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
-				}
-			}
-			var sharedCache bool
-			if inputArgs["sharedCache"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
-				}
-			}
-			var metrics bool
-			if inputArgs["metrics"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
-				}
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*EngineDev).Playground(&parent, ctx, base, gpuSupport, sharedCache, metrics, version)
 		case "Publish":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -874,28 +832,28 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("ConfigSchema",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Generate the json schema for a dagger config file\nCurrently supported: \"dagger.json\", \"dagger-module.toml\", \"dagger.toml\", \"engine.json\"").
-							WithSourceMap(dag.SourceMap("main.go", 386, 1)).
-							WithArg("filename", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 386, 36)})).
+							WithSourceMap(dag.SourceMap("main.go", 353, 1)).
+							WithArg("filename", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 353, 36)})).
 					WithFunction(
 						dag.Function("Container",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Build the engine container").
-							WithSourceMap(dag.SourceMap("main.go", 176, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 180, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 182, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 184, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 138, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 2)}).
+							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 144, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 146, 2)})).
 					WithFunction(
 						dag.Function("Generate",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Generate any engine-related files\nNote: this is codegen of the 'go generate' variety, not 'dagger develop'").
-							WithSourceMap(dag.SourceMap("main.go", 401, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 368, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("GraphqlSchema",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Introspect the engine API schema, and return it as a graphql schema").
-							WithSourceMap(dag.SourceMap("main.go", 357, 1)).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 360, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 324, 1)).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 327, 2)})).
 					WithFunction(
 						dag.Function("IncrementSubnet",
 							dag.TypeDef().WithObject("EngineDev")).
@@ -904,20 +862,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("InstallClient",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Configure the given client container so that it can connect to the given engine service").
-							WithSourceMap(dag.SourceMap("main.go", 296, 1)).
-							WithArg("client", dag.TypeDef().WithObject("Container"), dagger.FunctionWithArgOpts{Description: "The client container to configure", SourceMap: dag.SourceMap("main.go", 299, 2)}).
-							WithArg("service", dag.TypeDef().WithObject("Service").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The engine service to bind", SourceMap: dag.SourceMap("main.go", 302, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 304, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 258, 1)).
+							WithArg("client", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The client container to configure", SourceMap: dag.SourceMap("main.go", 262, 2)}).
+							WithArg("service", dag.TypeDef().WithObject("Service").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The engine service to bind", SourceMap: dag.SourceMap("main.go", 265, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 267, 2)})).
 					WithFunction(
 						dag.Function("IntrospectionJSON",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Introspect the engine API schema, and return it as a json-encoded file.\nThis file is used by SDKs to generate clients.").
-							WithSourceMap(dag.SourceMap("main.go", 344, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 311, 1))).
 					WithFunction(
 						dag.Function("IntrospectionTool",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Build the `introspect` tool which introspects the engine API").
-							WithSourceMap(dag.SourceMap("main.go", 378, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 345, 1))).
 					WithFunction(
 						dag.Function("LoadToDocker",
 							dag.TypeDef().WithObject("LoadedEngine")).
@@ -933,41 +891,31 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithSourceMap(dag.SourceMap("main.go", 108, 1))).
 					WithFunction(
-						dag.Function("Playground",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use").
-							WithSourceMap(dag.SourceMap("main.go", 138, 1)).
-							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Build from a custom base image", SourceMap: dag.SourceMap("main.go", 142, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("main.go", 145, 2)}).
-							WithArg("sharedCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Share cache globally", SourceMap: dag.SourceMap("main.go", 148, 2)}).
-							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 150, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 152, 2)})).
-					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish all engine images to a registry").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 481, 1)).
-							WithArg("image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Image target to push to", SourceMap: dag.SourceMap("main.go", 486, 2), DefaultValue: dagger.JSON("\"ghcr.io/dagger/engine\"")}).
-							WithArg("tag", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "List of tags to use", SourceMap: dag.SourceMap("main.go", 488, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 491, 2)}).
-							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 494, 2)}).
-							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 496, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 448, 1)).
+							WithArg("image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Image target to push to", SourceMap: dag.SourceMap("main.go", 453, 2), DefaultValue: dagger.JSON("\"ghcr.io/dagger/engine\"")}).
+							WithArg("tag", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "List of tags to use", SourceMap: dag.SourceMap("main.go", 455, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 458, 2)}).
+							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 461, 2)}).
+							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 463, 2)})).
 					WithFunction(
 						dag.Function("ReleaseDryRun",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithSourceMap(dag.SourceMap("main.go", 467, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 434, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Service",
 							dag.TypeDef().WithObject("Service")).
 							WithDescription("Create a test engine service").
-							WithSourceMap(dag.SourceMap("main.go", 239, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 241, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 243, 2)}).
-							WithArg("sharedCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 245, 2)}).
-							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 247, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 249, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 201, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 203, 2)}).
+							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 205, 2)}).
+							WithArg("sharedCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 207, 2)}).
+							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 209, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 211, 2)})).
 					WithFunction(
 						dag.Function("Test",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
