@@ -2617,13 +2617,23 @@ func ignoresGeneratedPath(ignore string, generated []string) bool {
 	return false
 }
 
+// runSDKCodegen runs the SDK's code generator for srcInst. When preloadedDeps
+// is non-nil (e.g. the already-loaded dependency DAG of a running module), it
+// is used directly instead of re-resolving the module's declared dependencies;
+// re-resolution requires network access and, for private git dependencies,
+// credentials that module runtime code does not necessarily hold.
 func (s *moduleSourceSchema) runSDKCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
+	preloadedDeps *core.SchemaBuilder,
 ) (*core.GeneratedCode, error) {
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	deps := preloadedDeps
+	if deps == nil {
+		var err error
+		deps, err = s.loadDependencyModules(ctx, srcInst, srcInst)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+		}
 	}
 
 	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
@@ -2641,6 +2651,7 @@ func (s *moduleSourceSchema) runSDKCodegen(
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
+	preloadedDeps *core.SchemaBuilder,
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2648,7 +2659,7 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 
 	// run codegen to get the generated context directory
-	generatedCode, err := s.runSDKCodegen(ctx, srcInst)
+	generatedCode, err := s.runSDKCodegen(ctx, srcInst, preloadedDeps)
 	if err != nil {
 		return res, err
 	}
@@ -2907,6 +2918,7 @@ func (s *moduleSourceSchema) generatedModuleSource(
 func (s *moduleSourceSchema) runGeneratedContext(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
+	preloadedDeps *core.SchemaBuilder,
 ) (originalCtxDir dagql.ObjectResult[*core.Directory], genDirInst dagql.ObjectResult[*core.Directory], _ error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2923,7 +2935,7 @@ func (s *moduleSourceSchema) runGeneratedContext(
 	// run codegen too if we have a name and SDK
 	genDirInst = originalCtxDir
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		updatedGenDirInst, err := s.runCodegen(ctx, srcInst)
+		updatedGenDirInst, err := s.runCodegen(ctx, srcInst, preloadedDeps)
 		var missingImplErr ErrSDKCodegenNotImplemented
 		if err != nil && !errors.As(err, &missingImplErr) {
 			return originalCtxDir, genDirInst, fmt.Errorf("failed to run codegen: %w", err)
@@ -2993,12 +3005,24 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
+	return s.generatedContextDiff(ctx, srcInst, nil)
+}
+
+// generatedContextDiff runs the generated context for srcInst and returns the
+// diff of the generated files relative to the original context directory. When
+// preloadedDeps is non-nil it is used instead of re-resolving the module's
+// declared dependencies (see runSDKCodegen).
+func (s *moduleSourceSchema) generatedContextDiff(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	preloadedDeps *core.SchemaBuilder,
+) (res dagql.ObjectResult[*core.Directory], _ error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst)
+	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst, preloadedDeps)
 	if err != nil {
 		return res, err
 	}
@@ -3085,7 +3109,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 		return res, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst)
+	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst, nil)
 	if err != nil {
 		return res, err
 	}

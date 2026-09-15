@@ -2869,17 +2869,28 @@ func (s *moduleSchema) currentModuleGeneratedContextDirectory(
 	mod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
+	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, mod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
+		return inst, err
 	}
+	return generatedDiff.Result, nil
+}
 
-	err = dag.Select(ctx, mod.Self().Module.Self().Source.Value, &inst,
-		dagql.Selector{
-			Field: "generatedContextDirectory",
-		},
-	)
-	return inst, err
+// currentModuleGeneratedDiff computes the running module's generated context
+// diff, reusing the module's already-loaded dependency DAG. The module is
+// already initialized and executing, so its dependencies must not be
+// re-resolved from config: that requires network access and, for private git
+// dependencies, credentials that the runtime caller does not necessarily hold.
+func (s *moduleSchema) currentModuleGeneratedDiff(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.CurrentModule],
+) (res dagql.ObjectResult[*core.Directory], err error) {
+	curMod := mod.Self().Module.Self()
+	curSrc := curMod.Source.Value
+	if curSrc.Self() == nil {
+		return res, errors.New("invalid unset current module source")
+	}
+	return (&moduleSourceSchema{}).generatedContextDiff(ctx, curSrc, curMod.Deps)
 }
 
 func (s *moduleSchema) currentModuleDependencies(
@@ -2923,10 +2934,7 @@ func (s *moduleSchema) currentModuleSource(
 		srcSubpath = curSrc.Self().SourceRootSubpath
 	}
 
-	var generatedDiff dagql.Result[*core.Directory]
-	err = dag.Select(ctx, curSrc, &generatedDiff,
-		dagql.Selector{Field: "generatedContextDirectory"},
-	)
+	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, curMod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
