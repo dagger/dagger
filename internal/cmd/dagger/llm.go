@@ -193,6 +193,18 @@ func (s *LLMSession) Target() *sessionAgent {
 	return s.target
 }
 
+// NewConversation adds a conversation to the session without targeting it.
+// It is how a headless driver (`dagger agent --app-server`) holds several
+// conversations at once: each is a full sessionAgent, but none of them is
+// "the one the prompt addresses", because there is no prompt.
+func (s *LLMSession) NewConversation(name string) *sessionAgent {
+	a := s.newAgent(name)
+	s.mu.Lock()
+	s.agents = append(s.agents, a)
+	s.mu.Unlock()
+	return a
+}
+
 // SetTarget points the prompt at a conversation the session already holds.
 // Focus moves only by keypress, so nothing calls this from an event path.
 func (s *LLMSession) SetTarget(a *sessionAgent) {
@@ -666,7 +678,9 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 	if err != nil {
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}
-	a.session.shell.assignAgent(llmID)
+	if a.session.shell != nil {
+		a.session.shell.assignAgent(llmID)
+	}
 
 	// Workspace IDs are engine-local handles, so persist the baseline through a
 	// minimal portable LLM recipe that binds it. Best-effort for attached or
@@ -725,27 +739,9 @@ func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existin
 // conversation's top level rather than nested under the command span that
 // triggered the load. Pass ctx for replayCtx to replay in place.
 func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
-	sessionDir, err := getSessionDir()
+	metadata, err := readSessionMetadata(sessionID)
 	if err != nil {
 		return err
-	}
-
-	sessionFile := filepath.Join(sessionDir, sessionID+".json")
-	data, err := os.ReadFile(sessionFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("session %q not found", sessionID)
-		}
-		return fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	var metadata sessionMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return fmt.Errorf("failed to unmarshal session data: %w", err)
-	}
-
-	if metadata.LLMID == "" {
-		return fmt.Errorf("invalid session data: missing LLM ID")
 	}
 
 	loadedLLM := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.LLMID))
@@ -790,6 +786,33 @@ func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID str
 	// Restore the baseline together with the conversation so any asynchronous
 	// status refresh sees a consistent pair.
 	return a.updateSyncedLLM(loadedLLM, baseline)
+}
+
+// readSessionMetadata reads a saved session's metadata by UUID.
+func readSessionMetadata(sessionID string) (sessionMetadata, error) {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return sessionMetadata{}, err
+	}
+
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return sessionMetadata{}, fmt.Errorf("session %q not found", sessionID)
+		}
+		return sessionMetadata{}, fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	var metadata sessionMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return sessionMetadata{}, fmt.Errorf("failed to unmarshal session data: %w", err)
+	}
+
+	if metadata.LLMID == "" {
+		return sessionMetadata{}, fmt.Errorf("invalid session data: missing LLM ID")
+	}
+	return metadata, nil
 }
 
 // conflictMarkerCue reports whether restoring the session left conflict
