@@ -6484,15 +6484,17 @@ type Workspace implements Node {
   source is unchanged. Pass from to save only work since an earlier source
   value, including previously saved pending edits that are now committed.
 
-  Without path, apply a local workspace's overlay changes at its host root.
-  Pass from to apply only changes since an earlier local workspace state.
-  Export paths are relative to the workspace root regardless of its working
-  directory. Like Directory.export, this writes only to the client making
-  the call, never the source's client.
+  Without path, apply a local workspace's overlay changes at its host root. Pass
+  from to apply only changes since an earlier local workspace state. Export
+  paths are relative to the workspace root regardless of its working directory.
+  Like Directory.export, this writes only to the client making the call, never
+  the source's client.
   """
   export(
     """
-    Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+    Destination checkout path on the calling client. Relative paths start at the
+    client's working directory. Omit to apply a local workspace's overlay
+    changes at its host root.
     """
     path: String = ""
 
@@ -6807,8 +6809,8 @@ type Workspace implements Node {
   commitsFrom to preview the integration.
 
   A local receiver is snapshotted automatically; untracked files require
-  interactive approval. The checkout is not modified. Export the result
-  with an explicit path to write it to a checkout.
+  interactive approval. The checkout is not modified. Export the result with an
+  explicit path to write it to a checkout.
 
   Cherry-picks preserve the source author and author date, use the calling
   client's Git config for committer identity, and reuse the source committer
