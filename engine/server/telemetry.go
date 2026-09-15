@@ -42,6 +42,15 @@ func (t Topic) String() string {
 }
 
 func telemetryOriginClientID(ctx context.Context, sessionID string) string {
+	// Host routing may rebind metadata to an ancestor while the operation
+	// still belongs to the scoped client. Identity also survives lease release
+	// so final telemetry can be emitted without acquiring execution authority.
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		if scope.SessionID() != sessionID {
+			return ""
+		}
+		return scope.ClientID()
+	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil || md.SessionID != sessionID {
 		return ""

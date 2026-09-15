@@ -1657,6 +1657,13 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		ctx := engine.ContextWithClientMetadata(context.Background(), client.clientMetadata)
 		ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 		if detached {
+			lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", nil, nil)
+			scope, err := engine.NewClientScope(client.clientMetadata, lease)
+			require.NoError(t, err)
+			ctx, err = engine.ContextWithClientScope(ctx, scope)
+			require.NoError(t, err)
+			ctx = engine.ContextWithClientMetadata(ctx, parent.clientMetadata)
+			lease.Release() // Origin identity remains valid for final telemetry.
 			ctx = context.WithoutCancel(ctx)
 			client.closeShutdownOnce.Do(func() { close(client.shutdownCh) })
 		}
