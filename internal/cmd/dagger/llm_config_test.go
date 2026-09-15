@@ -19,6 +19,55 @@ import (
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
+// Startup must export the persisted OAuth credential without contacting the
+// provider. Refreshing it is the engine's business, at the point where the
+// credential is actually resolved.
+func TestLLMConfigStartupDoesNotRefreshOAuth(t *testing.T) {
+	origRoot, origFile, origTransport := llmconfig.ConfigRoot, llmconfig.ConfigFile, http.DefaultTransport
+	t.Cleanup(func() {
+		llmconfig.ConfigRoot, llmconfig.ConfigFile, http.DefaultTransport = origRoot, origFile, origTransport
+	})
+	llmconfig.ConfigRoot = t.TempDir()
+	llmconfig.ConfigFile = filepath.Join(llmconfig.ConfigRoot, llmconfig.ConfigFileName)
+	cfg := &llmconfig.Config{LLM: llmconfig.LLMConfig{
+		Providers: map[string]llmconfig.Provider{"openai-codex": {
+			AuthType: "oauth", AuthToken: "persisted-token", RefreshToken: "refresh",
+			TokenExpiresAt: time.Now().Add(-time.Hour).UnixMilli(), Enabled: true,
+		}},
+	}}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	// t.Setenv registers the restore; unset so the config's credential is the
+	// one under test. An explicitly set variable always wins over the config.
+	t.Setenv("OPENAI_CODEX_AUTH_TOKEN", "")
+	t.Setenv("OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT", "")
+	os.Unsetenv("OPENAI_CODEX_AUTH_TOKEN")
+	os.Unsetenv("OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT")
+
+	var requests atomic.Int32
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return nil, errors.New("oauth endpoint unavailable")
+	})
+
+	applyLLMConfigEnv()
+
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("startup made %d OAuth requests, want 0", got)
+	}
+	// The expired token is still exported: the engine refreshes it when it
+	// resolves the credential, so a command that never uses an LLM pays
+	// nothing and one that does still authenticates.
+	if got := os.Getenv("OPENAI_CODEX_AUTH_TOKEN"); got != "persisted-token" {
+		t.Fatalf("exported auth token %q, want the persisted one", got)
+	}
+}
+
 // TestRemoveKeyClearsDefaultModel verifies that removing the default provider
 // also clears the default model. Otherwise the stale model stays bound to
 // whatever provider becomes default next, so applyLLMConfigEnv would export

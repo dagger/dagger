@@ -284,7 +284,7 @@ func init() {
 	cobra.OnInitialize(applyLLMConfigEnv)
 
 	// Keep subscription OAuth bearer tokens fresh for the life of the session.
-	// applyLLMConfigEnv only refreshes and exports the token once, at startup;
+	// applyLLMConfigEnv exports the persisted token without any network I/O;
 	// the access token typically expires within the hour, so a long-running
 	// session (dagger agent/shell, or a slow module) would keep sending an
 	// expired token and get 401s. The engine re-resolves the token via
@@ -306,17 +306,12 @@ func init() {
 // (explicit env vars always win). The engine's LLM router resolves these via
 // env:// against the client.
 //
-// OAuth subscription tokens are refreshed first (client-side, and only when
-// expired). Both Anthropic (Claude Code) and OpenAI Codex (ChatGPT) OAuth are
-// wired end-to-end, so both tokens are exported.
+// OAuth subscription tokens are exported as persisted, even if expired: the
+// env refresher registered in init refreshes them when the engine actually
+// asks for the credential, so commands that never touch an LLM don't pay for
+// a provider round-trip at startup. Only `dagger agent` renews them up front,
+// before starting the engine.
 func applyLLMConfigEnv() {
-	// Refresh any expired OAuth tokens before exporting them. A failure here is
-	// non-fatal (we fall back to whatever token is persisted), but warn so an
-	// otherwise-silent 401 later on has a breadcrumb. cobra initializers get no
-	// context; the refresh bounds itself with its own timeout.
-	if err := llmconfig.RefreshOAuthTokensIfNeeded(context.Background()); err != nil {
-		slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
-	}
 	cfg, err := llmconfig.Load()
 	if err != nil || cfg == nil {
 		return
