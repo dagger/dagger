@@ -2337,6 +2337,8 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	}
 	client.daggerSession = sess
 	installTestClientRecords(sess)
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	require.Equal(t, 1, srv.clientDBs.OpenStats().Refs)
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	srv.initializeSessionTelemetry(sess)
@@ -2356,6 +2358,8 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	gauge.Record(cleanupCtx, 1)
 
 	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	require.Nil(t, client.telemetryDB)
+	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
 	select {
 	case <-exported:
 	default:

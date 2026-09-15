@@ -301,6 +301,11 @@ type clientRuntime struct {
 	spanExporter sdktrace.SpanExporter
 	logExporter  sdklog.Exporter
 
+	// Retain the recovered telemetry store while this runtime can produce data.
+	// Readers hold independent references and can outlive runtime reclamation.
+	telemetryDBMu sync.Mutex
+	telemetryDB   *clientdb.DB
+
 	// Metrics are owned by the live runtime. The typed lease invariant proves
 	// that no producer remains when the runtime becomes quiescent, so its one
 	// provider and periodic reader can be flushed and shut down at reclamation.
@@ -404,6 +409,10 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.spanExporter = nil
 	client.logExporter = nil
 	client.stateMu.Unlock()
+
+	if err := client.closeTelemetryDB(); err != nil {
+		slog.Error("error closing quiescent client telemetry store", "clientID", client.clientID, "error", err)
+	}
 
 	client.workspaceMu.Lock()
 	client.pendingWorkspaceLoad = false
@@ -554,6 +563,29 @@ func (sess *daggerSession) telemetryDeliveryClientIDs(record *clientRecord) ([]s
 	return append(slices.Clone(route[1:]), route[0]), nil
 }
 
+// retainTelemetryDB is called during initialization with a request lease held.
+func (client *clientRuntime) retainTelemetryDB(ctx context.Context) error {
+	client.telemetryDBMu.Lock()
+	defer client.telemetryDBMu.Unlock()
+	if client.telemetryDB != nil {
+		return nil
+	}
+	db, err := client.TelemetryDB(ctx)
+	if err != nil {
+		return err
+	}
+	client.telemetryDB = db
+	return nil
+}
+
+func (client *clientRuntime) closeTelemetryDB() error {
+	client.telemetryDBMu.Lock()
+	db := client.telemetryDB
+	client.telemetryDB = nil
+	client.telemetryDBMu.Unlock()
+	return db.Close()
+}
+
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
 func (record *clientRecord) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
 	return record.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, record.clientID)
@@ -635,7 +667,8 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	var errs error
 	var traceDur, logDur, metricDur time.Duration
 	metricStart := time.Now()
-	errs = errors.Join(errs, runClientMetricOp(ctx, sess.clientMetricRuntimes(), "shutdown metrics", (*clientRuntime).shutdownMetrics))
+	clients := sess.clientMetricRuntimes()
+	errs = errors.Join(errs, runClientMetricOp(ctx, clients, "shutdown metrics", (*clientRuntime).shutdownMetrics))
 	metricDur = time.Since(metricStart)
 	if sess.tracerProvider != nil {
 		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
@@ -648,6 +681,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	}
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
+	}
+	for _, client := range clients {
+		errs = errors.Join(errs, client.closeTelemetryDB())
 	}
 	logClientTelemetryOp(slog.With("sessionID", sess.sessionID), "session telemetry shutdown", start, traceDur, logDur, metricDur, errs)
 	return errs
@@ -1231,7 +1267,16 @@ func (srv *Server) initializeClientRuntime(
 	ctx context.Context,
 	client *clientRuntime,
 	opts *ClientInitOpts,
-) error {
+) (rerr error) {
+	if err := client.retainTelemetryDB(ctx); err != nil {
+		return fmt.Errorf("retain client telemetry store: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, client.closeTelemetryDB())
+		}
+	}()
+
 	slog := slog.With(
 		"isMainClient", client.clientID == client.daggerSession.mainClientCallerID,
 		"sessionID", client.daggerSession.sessionID,
@@ -1823,6 +1868,7 @@ func (srv *Server) getOrInitClient(
 			sess.clientMu.Unlock()
 			unlockScope()
 			_ = client.shutdownMetrics(ctx)
+			_ = client.closeTelemetryDB()
 			return nil, nil, fmt.Errorf("client %q was concurrently registered as a nested client", clientID)
 		}
 		sess.clientRecords[clientID] = record

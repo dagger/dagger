@@ -9,7 +9,6 @@ import (
 
 func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 0
 	registry.tailBudget = 512
 
 	store, err := registry.Open(t.Context(), "client")
