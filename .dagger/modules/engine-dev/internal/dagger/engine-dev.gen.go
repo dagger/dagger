@@ -174,6 +174,8 @@ func (r *EngineDev) IncrementSubnet() *EngineDev {
 
 // EngineDevInstallClientOpts contains options for EngineDev.InstallClient
 type EngineDevInstallClientOpts struct {
+	// The client container to configure
+	Client *Container
 	// The engine service to bind
 	Service *Service
 
@@ -181,10 +183,13 @@ type EngineDevInstallClientOpts struct {
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container {
-	assertNotNil("client", client)
+func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container {
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `client` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Client) {
+			q = q.Arg("client", opts[i].Client)
+		}
 		// `service` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
@@ -194,7 +199,6 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 			q = q.Arg("version", opts[i].Version)
 		}
 	}
-	q = q.Arg("client", client)
 
 	return &Container{
 		query: q,
@@ -266,51 +270,6 @@ func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// EngineDevPlaygroundOpts contains options for EngineDev.Playground
-type EngineDevPlaygroundOpts struct {
-	// Build from a custom base image
-	Base *Container
-	// Enable experimental GPU support
-	GpuSupport bool
-	// Share cache globally
-	SharedCache bool
-
-	Metrics bool
-
-	Version string
-}
-
-// Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container {
-	q := r.query.Select("playground")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `base` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Base) {
-			q = q.Arg("base", opts[i].Base)
-		}
-		// `gpuSupport` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
-			q = q.Arg("gpuSupport", opts[i].GpuSupport)
-		}
-		// `sharedCache` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
-			q = q.Arg("sharedCache", opts[i].SharedCache)
-		}
-		// `metrics` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Metrics) {
-			q = q.Arg("metrics", opts[i].Metrics)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
 }
 
 // EngineDevPublishOpts contains options for EngineDev.Publish

@@ -4,7 +4,29 @@ Single use for the dagger open-source repo.
 """
 type DaggerDev {
 
+  base: Container! = wolfi.
+    container(packages: ["apk-tools", "git"]).
+    withEnvVariable("HOME", "/root").
+    withWorkdir("$HOME", expand: true)
+
+  """
+  Enable experimental GPU support
+  """
+  gpuSupport: Boolean! = false
+
+  """
+  Build and run a dev build of the dagger engine, exposing it as a tcp service
+  """
+  engine(ws: Workspace!): Service! @up {
+    engineDev(ws: ws).service(""
+      gpuSupport: gpuSupport
+    )
+  }
+
+  """
+  Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
+  """
   playground(ws: Workspace!): Container! {
-    engineDev(ws).playground()
+    engineDev(ws: ws).installClient(base, service: engine(ws))
   }
 }

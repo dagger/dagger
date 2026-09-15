@@ -7,3 +7,7 @@ engineVersion = "v1.0.0-beta.12"
 [[dependencies]]
   name = "engine-dev"
   source = "../engine-dev"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../../modules/wolfi"

@@ -57,7 +57,7 @@ func New(
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(workspace, dagger.DaggerEngineOpts{
 				ClientDockerConfig: clientDockerConfig,
-			}).InstallClient(c)
+			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
 		})
 
 	return &RustClientDev{
