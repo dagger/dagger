@@ -114,7 +114,7 @@ func offerWorkspaceNextSteps(ctx context.Context, cmd *cobra.Command, connect fu
 	return offerInitNextSteps(
 		func(title, command string) (bool, error) {
 			command = prefix + " " + command
-			selected := false
+			selected := true
 			form := huh.NewForm(huh.NewGroup(setupCommandChoice(title, command, &selected)))
 			if err := Frontend.HandleForm(ctx, form); err != nil {
 				return false, err

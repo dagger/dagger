@@ -360,17 +360,18 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 }
 
 const startFeatureTrialOperation = `
-mutation StartFeatureTrial($org: ID!, $feature: FeatureName!, $durationDays: Int!) {
-	startFeatureTrial(org: $org, feature: $feature, durationDays: $durationDays)
+mutation StartFeatureTrial($org: ID!, $features: [FeatureName!]!, $durationDays: Int!) {
+	startFeatureTrial(org: $org, features: $features, durationDays: $durationDays)
 }
 `
 
-// StartFeatureTrial starts a trial of the given feature (e.g. CLOUD_CHECKS) for
-// the org. Requires org membership.
-func (c *Client) StartFeatureTrial(ctx context.Context, orgID, feature string, durationDays int) error {
+// StartFeatureTrial starts a single trial covering the given features (e.g.
+// CLOUD_CHECKS and CLOUD_MODULES together) for the org. Requires org
+// membership.
+func (c *Client) StartFeatureTrial(ctx context.Context, orgID string, features []string, durationDays int) error {
 	return c.doGraphQL(ctx, "StartFeatureTrial", startFeatureTrialOperation, map[string]any{
 		"org":          orgID,
-		"feature":      feature,
+		"features":     features,
 		"durationDays": durationDays,
 	}, nil)
 }
