@@ -315,7 +315,6 @@ func (c *Client) LocalFileExport(
 		fileSizeLeft -= n
 		sent += n
 		download.Update(sent)
-		network.Record(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
@@ -324,6 +323,8 @@ func (c *Client) LocalFileExport(
 			}
 		} else if err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
+		} else {
+			network.Record(sent)
 		}
 	}
 	if err := diffCopyClient.CloseSend(); err != nil {
@@ -390,7 +391,6 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		}
 		sent += n
 		download.Update(sent)
-		network.Record(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
@@ -399,6 +399,8 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 			}
 		} else if err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
+		} else {
+			network.Record(sent)
 		}
 	}
 	if err := diffCopyClient.CloseSend(); err != nil {
