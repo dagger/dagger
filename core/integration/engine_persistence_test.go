@@ -239,6 +239,10 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		_, err = engineSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 		require.NoError(t, err)
 		engineSvcA = nil
+		// The engine is gone, so this close cannot succeed. It still has to
+		// run: the client's session process has its stderr bound to this
+		// test, and leaving it alive lets it log after the test completes.
+		_ = engineClientA.Close()
 		engineClientA = nil
 
 		_, err = c.

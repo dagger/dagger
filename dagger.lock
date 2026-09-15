@@ -32,6 +32,7 @@
 ["","oci-sha",["cgr.dev/chainguard/wolfi-base:latest"],"sha256:65e1acb87a2bf356b92c5f70f3980f03b4bb51dfd483c834e01557525f15c1d9"]
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
 ["","oci-sha",["docker.io/library/docker:cli"],"sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66"]
+["","oci-sha",["docker.io/library/eclipse-temurin:21-jre"],"sha256:7a65df4b22d2de92d4e04056e884f3b9122d70b21e2847fd66084278bd0ce037"]
 ["","oci-sha",["docker.io/library/golang:1.26-alpine"],"sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628"]
 ["","oci-sha",["docker.io/library/node:22.22.0-alpine"],"sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34"]
 ["","oci-sha",["docker.io/library/node:lts-alpine"],"sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81"]

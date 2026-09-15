@@ -106,7 +106,8 @@ type Client struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	RegisterNestedClientTransportForExec(context.Context, *engine.ClientMetadata, string, string) (*engine.NestedClientTransport, error)
+	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 }
 
 func NewOpts(opts Opts) (*Opts, error) {
@@ -290,13 +291,28 @@ func (c *Client) ListenHostToContainer(
 	sendL := &sync.Mutex{}
 
 	wg := new(sync.WaitGroup)
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		<-ctx.Done()
+		// Cancellation must close sockets before waiting for readers or
+		// writers: either can be blocked on a peer that stopped making progress.
+		connsL.Lock()
+		for _, conn := range conns {
+			conn.Close()
+		}
+		clear(conns)
+		connsL.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		defer cancel(errors.New("tunnel receive loop stopped"))
 		for {
 			res, err := listener.Recv()
 			if err != nil {
-				slog.WarnContext(ctx, "listener recv err", "err", err)
+				if ctx.Err() == nil && !errors.Is(err, io.EOF) {
+					slog.WarnContext(ctx, "listener recv err", "err", err)
+				}
 				return
 			}
 
@@ -309,8 +325,21 @@ func (c *Client) ListenHostToContainer(
 			conn, found := conns[connID]
 			connsL.Unlock()
 
+			if res.GetClose() {
+				if found {
+					conn.Close()
+				}
+				continue
+			}
+
 			if !found {
-				conn, err = c.Dialer.Dial(proto, upstream)
+				// Only the initial, empty announcement opens a connection.
+				// Data can still arrive after its upstream has closed; it must
+				// not resurrect the retired socket.
+				if len(res.Data) != 0 {
+					continue
+				}
+				conn, err = c.Dialer.DialContext(ctx, proto, upstream)
 				if err != nil {
 					slog.WarnContext(ctx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
 					sendL.Lock()
@@ -326,64 +355,69 @@ func (c *Client) ListenHostToContainer(
 				}
 
 				connsL.Lock()
+				if ctx.Err() != nil {
+					connsL.Unlock()
+					conn.Close()
+					return
+				}
 				conns[connID] = conn
 				connsL.Unlock()
 
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					defer func() {
+						conn.Close()
+						connsL.Lock()
+						if conns[connID] != conn {
+							connsL.Unlock()
+							return
+						}
+						delete(conns, connID)
+						connsL.Unlock()
+
+						sendL.Lock()
+						err := listener.Send(&h2c.ListenRequest{ConnId: connID, Close: true})
+						sendL.Unlock()
+						if err != nil {
+							cancel(fmt.Errorf("send tunnel close: %w", err))
+						}
+					}()
 
 					data := make([]byte, 32*1024)
 					for {
-						n, err := conn.Read(data)
-						if err != nil {
-							break
+						n, readErr := conn.Read(data)
+						if n > 0 {
+							sendL.Lock()
+							err := listener.Send(&h2c.ListenRequest{ConnId: connID, Data: data[:n]})
+							sendL.Unlock()
+							if err != nil {
+								cancel(fmt.Errorf("send tunnel data: %w", err))
+								return
+							}
 						}
-
-						sendL.Lock()
-						err = listener.Send(&h2c.ListenRequest{
-							ConnId: connID,
-							Data:   data[:n],
-						})
-						sendL.Unlock()
-						if err != nil {
-							break
+						if readErr != nil {
+							return
 						}
 					}
-
-					sendL.Lock()
-					_ = listener.Send(&h2c.ListenRequest{
-						ConnId: connID,
-						Close:  true,
-					})
-					sendL.Unlock()
 				}()
 			}
 
 			if res.Data != nil {
 				_, err = conn.Write(res.Data)
 				if err != nil {
-					return
+					// The reader retires this socket and notifies the listener.
+					// One failed connection must not stop the whole tunnel.
+					conn.Close()
 				}
 			}
 		}
 	}()
 
 	return listenRes, func() error {
-		defer cancel(errors.New("listen host to container done"))
-		sendL.Lock()
-		err := listener.CloseSend()
-		sendL.Unlock()
-		connsL.Lock()
-		for _, conn := range conns {
-			conn.Close()
-		}
-		clear(conns)
-		connsL.Unlock()
-		if err == nil {
-			wg.Wait()
-		}
-		return err
+		cancel(errors.New("listen host to container done"))
+		wg.Wait()
+		return nil
 	}, nil
 }
 

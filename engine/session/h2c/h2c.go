@@ -6,6 +6,7 @@ import (
 	fmt "fmt"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -35,8 +36,6 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 const InstrumentationLibrary = "dagger.io/engine.session"
 
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
-	slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary)
-
 	req, err := srv.Recv()
 	if err != nil {
 		return err
@@ -46,9 +45,13 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 	if err != nil {
 		return err
 	}
-	defer l.Close()
+	return s.serveListener(srv, l)
+}
 
-	err = srv.Send(&ListenResponse{
+func (s TunnelListenerAttachable) serveListener(srv TunnelListener_ListenServer, l net.Listener) error {
+	slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary)
+	defer l.Close()
+	err := srv.Send(&ListenResponse{
 		Addr: l.Addr().String(),
 	})
 	if err != nil {
@@ -58,9 +61,12 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 	conns := map[string]net.Conn{}
 	connsL := &sync.Mutex{}
 	sendL := &sync.Mutex{}
+	closed := false
 
 	defer func() {
+		l.Close()
 		connsL.Lock()
+		closed = true
 		for _, conn := range conns {
 			conn.Close()
 		}
@@ -68,6 +74,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 	}()
 
 	go func() {
+		var nextConnID uint64
 		for {
 			conn, err := l.Accept()
 			if err != nil {
@@ -77,9 +84,18 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 				return
 			}
 
-			connID := conn.RemoteAddr().String()
+			// TCP source addresses can be reused while messages for the previous
+			// connection are still in flight. IDs identify one accepted socket
+			// for the entire lifetime of this listener.
+			nextConnID++
+			connID := strconv.FormatUint(nextConnID, 10)
 
 			connsL.Lock()
+			if closed {
+				connsL.Unlock()
+				conn.Close()
+				return
+			}
 			conns[connID] = conn
 			connsL.Unlock()
 
@@ -161,22 +177,26 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 
 		switch {
 		case req.GetClose():
-			if err := conn.Close(); err != nil {
-				slog.Warn("conn close error", "error", err)
-				continue
-			}
 			connsL.Lock()
 			delete(conns, connID)
 			connsL.Unlock()
+			if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				slog.Warn("conn close error", "error", err)
+			}
 		case req.Data != nil:
 			_, err = conn.Write(req.GetData())
 			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					// conn closed
-					return nil
-				}
-
 				slog.Warn("conn write error", "error", err)
+				conn.Close()
+				connsL.Lock()
+				delete(conns, connID)
+				connsL.Unlock()
+				sendL.Lock()
+				err = srv.Send(&ListenResponse{ConnId: connID, Close: true})
+				sendL.Unlock()
+				if err != nil {
+					return err
+				}
 				continue
 			}
 		}

@@ -14,7 +14,6 @@ import (
 
 func TestStoreRegistryRefCount(t *testing.T) {
 	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 0
 
 	d1a, err := registry.Open(t.Context(), "client1")
 	require.NoError(t, err)
@@ -26,6 +25,7 @@ func TestStoreRegistryRefCount(t *testing.T) {
 	require.Same(t, d1a, d1b)
 	require.Len(t, registry.open, 1)
 	require.Equal(t, 2, d1a.refCount)
+	require.Equal(t, OpenStats{Stores: 1, Streams: 3, Refs: 2}, registry.OpenStats())
 
 	_, err = d1a.Read().SelectSpansSince(t.Context(), SelectSpansSinceParams{ID: 1, Limit: 1})
 	require.NoError(t, err)
@@ -59,86 +59,27 @@ func TestStoreRegistryRefCount(t *testing.T) {
 	require.Equal(t, 0, d2.refCount)
 }
 
-func TestStoreRegistryIdleReuse(t *testing.T) {
+func TestStoreRegistryReopensPersistedStore(t *testing.T) {
 	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 2
-
 	store, err := registry.Open(t.Context(), "client")
 	require.NoError(t, err)
 	_, err = store.AppendMetrics([]Metric{{Data: []byte("retained")}})
 	require.NoError(t, err)
 	require.NoError(t, store.Close())
-	require.False(t, streamClosed(store.metrics))
-	require.Len(t, registry.open, 1)
-	require.Zero(t, store.refCount)
+	requireStoreStreamsClosed(t, store)
+	require.Empty(t, registry.open)
 
-	reused, err := registry.Open(t.Context(), "client")
+	reopened, err := registry.Open(t.Context(), "client")
 	require.NoError(t, err)
-	require.Same(t, store, reused)
-	rows, err := reused.SelectMetricsSince(t.Context(), SelectMetricsSinceParams{ID: 0, Limit: 1})
+	require.NotSame(t, store, reopened)
+	rows, err := reopened.SelectMetricsSince(t.Context(), SelectMetricsSinceParams{ID: 0, Limit: 1})
 	require.NoError(t, err)
 	require.Equal(t, []Metric{{ID: 1, Data: []byte("retained")}}, rows)
-	require.NoError(t, reused.Close())
+	require.NoError(t, reopened.Close())
 	require.NoError(t, registry.Close())
 }
 
-func TestStoreRegistryIdleLRUEviction(t *testing.T) {
-	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 2
-
-	first, err := registry.Open(t.Context(), "first")
-	require.NoError(t, err)
-	require.NoError(t, first.Close())
-	second, err := registry.Open(t.Context(), "second")
-	require.NoError(t, err)
-	require.NoError(t, second.Close())
-
-	// Reusing first makes second the least-recently-used idle store.
-	refreshed, err := registry.Open(t.Context(), "first")
-	require.NoError(t, err)
-	require.Same(t, first, refreshed)
-	require.NoError(t, refreshed.Close())
-
-	third, err := registry.Open(t.Context(), "third")
-	require.NoError(t, err)
-	require.NoError(t, third.Close())
-
-	require.False(t, streamClosed(first.spans))
-	require.True(t, streamClosed(second.spans))
-	require.False(t, streamClosed(third.spans))
-	require.Len(t, registry.open, 2)
-	require.Same(t, first, registry.open["first"])
-	require.Same(t, third, registry.open["third"])
-	require.NoError(t, registry.Close())
-}
-
-func TestStoreRegistryIdleEvictionLeavesActiveStoresOpen(t *testing.T) {
-	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 1
-
-	active, err := registry.Open(t.Context(), "active")
-	require.NoError(t, err)
-	oldIdle, err := registry.Open(t.Context(), "old-idle")
-	require.NoError(t, err)
-	require.NoError(t, oldIdle.Close())
-	newIdle, err := registry.Open(t.Context(), "new-idle")
-	require.NoError(t, err)
-	require.NoError(t, newIdle.Close())
-
-	require.True(t, streamClosed(oldIdle.spans))
-	require.False(t, streamClosed(newIdle.spans))
-	require.False(t, streamClosed(active.spans))
-	require.Equal(t, 1, active.refCount)
-	require.Len(t, registry.open, 2)
-	require.Zero(t, newIdle.refCount)
-
-	require.NoError(t, active.Close())
-	require.False(t, streamClosed(active.spans))
-	require.True(t, streamClosed(newIdle.spans))
-	require.NoError(t, registry.Close())
-}
-
-func TestStoreRegistryCloseCleansIdleStores(t *testing.T) {
+func TestStoreRegistryClosePreventsOpen(t *testing.T) {
 	registry := NewDBs(t.TempDir())
 	store, err := registry.Open(t.Context(), "client")
 	require.NoError(t, err)
@@ -186,8 +127,6 @@ func TestStoreRegistryActiveHandlesReleasedAfterClose(t *testing.T) {
 	require.NoError(t, second.Close())
 	requireStoreStreamsClosed(t, second)
 	require.Empty(t, registry.open)
-	require.Empty(t, registry.idleByID)
-	require.Zero(t, registry.idle.Len())
 }
 
 func TestStoreRegistryCloseWaitsForInflightOpen(t *testing.T) {
@@ -255,15 +194,12 @@ func TestStoreRegistryCloseWaitsForInflightOpen(t *testing.T) {
 		require.Nil(t, result.store)
 		require.ErrorIs(t, result.err, errDBsClosed)
 		require.Empty(t, registry.open)
-		require.Empty(t, registry.idleByID)
-		require.Zero(t, registry.idle.Len())
 		require.Zero(t, registry.opening)
 	})
 }
 
 func TestStoreRegistryConcurrentOpenClose(t *testing.T) {
 	registry := NewDBs(t.TempDir())
-	registry.idleLimit = 2
 
 	const workers = 12
 	start := make(chan struct{})
@@ -295,7 +231,7 @@ func TestStoreRegistryConcurrentOpenClose(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	require.LessOrEqual(t, registry.idle.Len(), registry.idleLimit)
+	require.Empty(t, registry.open)
 	require.NoError(t, registry.Close())
 }
 
@@ -315,7 +251,7 @@ func TestStoreRegistryOpenWithNonDirectoryRoot(t *testing.T) {
 	require.Empty(t, registry.open)
 }
 
-func TestStoreRegistryGCClosesIdleCachedStore(t *testing.T) {
+func TestStoreRegistryGCKeepsProtectedHistory(t *testing.T) {
 	root := t.TempDir()
 	registry := NewDBs(root)
 	store, err := registry.Open(t.Context(), "idle")
@@ -325,8 +261,8 @@ func TestStoreRegistryGCClosesIdleCachedStore(t *testing.T) {
 
 	require.NoError(t, registry.GC(map[string]bool{"idle": true}))
 	requireStoreFilesExist(t, root, "idle")
-	require.Same(t, store, registry.open["idle"])
-	require.False(t, streamClosed(store.spans))
+	require.Empty(t, registry.open)
+	requireStoreStreamsClosed(t, store)
 
 	require.NoError(t, registry.GC(nil))
 	requireStoreFilesMissing(t, root, "idle")
@@ -340,7 +276,6 @@ func TestStoreRegistryGCClosesIdleCachedStore(t *testing.T) {
 func TestStoreRegistryGC(t *testing.T) {
 	root := t.TempDir()
 	registry := NewDBs(root)
-	registry.idleLimit = 0
 	old := time.Now().Add(-CollectGarbageAfter - time.Minute)
 
 	openStore, err := registry.Open(t.Context(), "open")

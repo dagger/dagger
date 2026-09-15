@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
@@ -286,7 +287,12 @@ func mainSession() error {
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 
-	sessionSrv, err := client.ConnectSessionAttachables(ctx, conn, http.Header{}, attachables...)
+	nestedClientID := os.Getenv(engine.NestedClientIDEnv)
+	if nestedClientID == "" {
+		return fmt.Errorf("%s not set", engine.NestedClientIDEnv)
+	}
+	headers := engine.ClientMetadata{ClientID: nestedClientID}.AppendToHTTPHeaders(http.Header{})
+	sessionSrv, err := client.ConnectSessionAttachables(ctx, conn, headers, attachables...)
 	if err != nil {
 		return err
 	}

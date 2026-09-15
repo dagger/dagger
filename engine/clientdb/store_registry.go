@@ -1,7 +1,6 @@
 package clientdb
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -18,23 +17,14 @@ import (
 // CollectGarbageAfter is the time after which a store is considered garbage.
 const CollectGarbageAfter = time.Hour
 
-// idleStoreLimit keeps at most 96 idle stream files open (three per store),
-// enough to cover a typical fan-out batch without retaining too many sizable
-// recovered span and log indexes.
-const idleStoreLimit = 32
-
 var errDBsClosed = errors.New("telemetry store registry is closed")
 
-// DBs owns the refcounted set of open per-client telemetry stores. Stores stay
-// open in a bounded LRU after their final Close so a later Open can reuse their
-// recovered indexes without replaying the spill files.
+// DBs owns the refcounted set of open per-client telemetry stores. Live client
+// runtimes and readers retain references; the final Close releases the streams.
 type DBs struct {
 	Root string
 
 	open        map[string]*DB
-	idle        *list.List
-	idleByID    map[string]*list.Element
-	idleLimit   int
 	opening     int
 	closed      bool
 	mu          sync.RWMutex
@@ -45,13 +35,28 @@ type DBs struct {
 	openStore    func(context.Context, string, string, int64) (*DB, error)
 }
 
+// OpenStats is a measured snapshot of currently open telemetry stores.
+// Each referenced store owns exactly three stream handles.
+type OpenStats struct {
+	Stores  int
+	Streams int
+	Refs    int
+}
+
+func (r *DBs) OpenStats() OpenStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stats := OpenStats{Stores: len(r.open), Streams: len(r.open) * 3}
+	for _, store := range r.open {
+		stats.Refs += store.refCount
+	}
+	return stats
+}
+
 func NewDBs(root string) *DBs {
 	r := &DBs{
 		Root:         root,
 		open:         make(map[string]*DB),
-		idle:         list.New(),
-		idleByID:     make(map[string]*list.Element),
-		idleLimit:    idleStoreLimit,
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
 		openStore:    openStore,
@@ -70,10 +75,6 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 		return nil, errDBsClosed
 	}
 	if store := r.open[clientID]; store != nil {
-		if idle := r.idleByID[clientID]; idle != nil {
-			r.idle.Remove(idle)
-			delete(r.idleByID, clientID)
-		}
 		store.refCount++
 		r.mu.Unlock()
 		return store, nil
@@ -104,50 +105,28 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 	return store, nil
 }
 
-// close assumes no registry mutex is held. The per-client lock serializes the
-// refcount. Idle eviction closes streams while holding the registry mutex, so
-// a concurrent Open cannot observe an evicted store as absent until its old
-// writer handles have closed.
+// close assumes no registry mutex is held. The per-client lock serializes
+// reference changes and keeps a new writer from opening until the old one closes.
 func (r *DBs) close(store *DB) error {
 	r.perStoreLock.Lock(store.clientID)
 	defer r.perStoreLock.Unlock(store.clientID)
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if store.refCount <= 0 {
+		r.mu.Unlock()
 		return errStoreClosed
 	}
 	store.refCount--
 	if store.refCount > 0 {
+		r.mu.Unlock()
 		return nil
 	}
-
-	idle := r.idle.PushBack(store)
-	r.idleByID[store.clientID] = idle
-	limit := r.idleLimit
-	if r.closed {
-		limit = 0
-	}
-	return r.evictIdleLocked(limit)
+	delete(r.open, store.clientID)
+	r.mu.Unlock()
+	return store.closeStreams()
 }
 
-// evictIdleLocked closes the oldest idle stores until limit is met. Keeping
-// mu held across closeStreams prevents Open from creating a new writer for an
-// evicted client before the previous writer has closed.
-func (r *DBs) evictIdleLocked(limit int) error {
-	var result error
-	for r.idle.Len() > limit {
-		idle := r.idle.Front()
-		store := idle.Value.(*DB)
-		r.idle.Remove(idle)
-		delete(r.idleByID, store.clientID)
-		delete(r.open, store.clientID)
-		result = errors.Join(result, store.closeStreams())
-	}
-	return result
-}
-
-// Close closes all idle cached stores and prevents new stores from opening.
+// Close prevents new stores from opening and waits for in-flight opens.
 // Actively referenced stores remain usable and close their streams when their
 // final handle is released.
 func (r *DBs) Close() error {
@@ -157,7 +136,7 @@ func (r *DBs) Close() error {
 	for r.opening > 0 {
 		r.openingCond.Wait()
 	}
-	return r.evictIdleLocked(0)
+	return nil
 }
 
 type storeGCGroup struct {
@@ -209,24 +188,11 @@ func (r *DBs) GC(keep map[string]bool) error {
 		r.perStoreLock.Lock(group.clientID)
 		r.mu.Lock()
 		store := r.open[group.clientID]
-		if store != nil && store.refCount > 0 {
+		if store != nil {
 			slog.Warn("skipping garbage collection of referenced client telemetry store", "clientID", group.clientID)
 			r.mu.Unlock()
 			r.perStoreLock.Unlock(group.clientID)
 			continue
-		}
-		if store != nil {
-			if idle := r.idleByID[group.clientID]; idle != nil {
-				r.idle.Remove(idle)
-				delete(r.idleByID, group.clientID)
-			}
-			delete(r.open, group.clientID)
-			if err := store.closeStreams(); err != nil {
-				result = errors.Join(result, fmt.Errorf("close telemetry store %s: %w", group.clientID, err))
-				r.mu.Unlock()
-				r.perStoreLock.Unlock(group.clientID)
-				continue
-			}
 		}
 		r.mu.Unlock()
 		for _, name := range group.names {

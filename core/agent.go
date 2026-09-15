@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -561,6 +562,12 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: a restore must happen before anything else addresses the instance", name)
 	}
 	rt := newAgentRuntime(ars, key, agent)
+	_, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, key)
+	if err != nil {
+		ars.mu.Unlock()
+		return nil, fmt.Errorf("retain restored agent client scope: %w", err)
+	}
+	rt.clientScopeLease = lease
 	ars.entries[key] = rt
 	ars.mu.Unlock()
 
@@ -664,7 +671,9 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// than the reverse) guarantees the loop's very first mailbox check
 	// sees the message; in the running case the enqueue's wake poke covers
 	// delivery.
-	rt.start(ctx)
+	if err := rt.start(ctx); err != nil {
+		return nil, err
+	}
 	return &AgentMessage{
 		AgentHandle: rt.key,
 		AgentName:   rt.name,
@@ -1000,6 +1009,7 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 		if err := rt.Stop(ctx, true, cause, AgentStopSession); err != nil {
 			errs = errors.Join(errs, err)
 		}
+		rt.clientScopeLease.Release()
 	}
 	return errs
 }
@@ -1012,6 +1022,10 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 // reporting STOPPED/FAILED and Snapshot the last committed conversation for
 // the rest of the session, like ExitedService (core/services.go).
 type AgentRuntime struct {
+	// The registry retains executable dependencies even for dormant snapshots.
+	// Session teardown stops loops before releasing these tombstone leases.
+	clientScopeLease *engine.ClientLifecycleLease
+
 	key  string
 	name string
 
@@ -1688,23 +1702,32 @@ func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr st
 // start launches an evaluation loop for a live entry, once. Subsequent calls
 // are no-ops, as are calls on tombstones; Resume is the explicit relaunch path
 // for failed and stopped entries.
-func (rt *AgentRuntime) start(ctx context.Context) {
+func (rt *AgentRuntime) start(ctx context.Context) error {
 	rt.mu.Lock()
 	if rt.started || rt.done {
 		rt.mu.Unlock()
-		return
+		return nil
 	}
 	// The loop must outlive this request: detach from the resolver's
 	// cancellation but keep its values (query, dagql server, client
 	// metadata), mirroring the detached service start (services.go).
-	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	base, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+	if err != nil {
+		rt.mu.Unlock()
+		return fmt.Errorf("acquire agent client scope: %w", err)
+	}
+	loopCtx, cancel := context.WithCancelCause(base)
 	rt.cancel = cancel
 	rt.transitionLocked(func() {
 		rt.started = true
 	})
 	rt.mu.Unlock()
 
-	go rt.loop(loopCtx)
+	go func() {
+		defer lease.Release()
+		rt.loop(loopCtx)
+	}()
+	return nil
 }
 
 // errAgentInterrupted is the cancellation cause Interrupt uses on the
@@ -2053,7 +2076,12 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 		// Relaunch from the last committed snapshot. FAILED retries its
 		// pending step; STOPPED may have no pending input and simply idle until
 		// the resume-first caller follows with send.
-		loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+		base, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgent, rt.key)
+		if err != nil {
+			rt.mu.Unlock()
+			return fmt.Errorf("acquire resumed agent client scope: %w", err)
+		}
+		loopCtx, cancel := context.WithCancelCause(base)
 		rt.transitionLocked(func() {
 			rt.resetForRelaunchLocked()
 			// A FAILED (or killed) tombstone can hold a suspended turn:
@@ -2071,7 +2099,10 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 			rt.started = true
 		})
 		rt.mu.Unlock()
-		go rt.loop(loopCtx)
+		go func() {
+			defer lease.Release()
+			rt.loop(loopCtx)
+		}()
 		return nil
 	}
 	if rt.paused {
@@ -2085,8 +2116,7 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 	if !started {
 		// Never started: there is no parked loop to wake. Launch it; it
 		// steps whatever input the seed holds, then idles.
-		rt.start(ctx)
-		return nil
+		return rt.start(ctx)
 	}
 
 	// Wake the parked loop; it re-checks the facts (suspended turn, queued

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/openai/openai-go"
 )
@@ -257,20 +258,36 @@ func parseCredentialExpiry(value string) time.Time {
 	return expiresAt.UTC()
 }
 
-// detach bounds credential resolution by the routing session and a timeout,
-// independently of the request that needs the credential. The endpoint can
-// outlive its routing call, so base carries session identity and cancellation.
-// Preserve the current request's rejection hint so the client can refresh an
-// OAuth token before its recorded expiry.
+// detach bounds resolution by the session's lifetime and a timeout, while
+// retaining execution authority from the request that needs the credential.
+//
+// The endpoint can outlive the call that routed it by hours. Its session-scoped
+// base outlives that call's cancellation, but still carries the call's released
+// client lease. Use base only for session identity and cancellation. Each
+// resolution borrows a fresh scope from the active request or agent turn;
+// LoadClientConfig separately pins the client supplying the credential.
 func (resolve credentialResolver) detach(base context.Context) credentialResolver {
 	if resolve == nil {
 		return nil
 	}
 	return func(requestCtx context.Context) (Credential, error) {
-		ctx, cancel := context.WithTimeout(base, credentialResolveTimeout)
+		if sessionScope, ok := engine.ClientScopeFromContext(base); ok {
+			requestScope, ok := engine.ClientScopeFromContext(requestCtx)
+			if !ok || requestScope.SessionID() != sessionScope.SessionID() {
+				return Credential{}, errors.New("LLM credential lookup requires a client scope from the routing session")
+			}
+		}
+		ctx, lease, err := engine.DetachClientScope(requestCtx, engine.ClientLeaseSharedWork, "llm-credential")
+		if err != nil {
+			return Credential{}, fmt.Errorf("acquire LLM credential client scope: %w", err)
+		}
+		defer lease.Release()
+		ctx, cancel := context.WithTimeout(ctx, credentialResolveTimeout)
 		defer cancel()
-		if rejected := secretprovider.RejectedEnvValue(requestCtx); rejected != "" {
-			ctx = secretprovider.ContextWithRejectedEnvValue(ctx, rejected)
+		stop := context.AfterFunc(base, cancel)
+		defer stop()
+		if err := base.Err(); err != nil {
+			return Credential{}, err
 		}
 		return resolve(ctx)
 	}
