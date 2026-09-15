@@ -1,10 +1,42 @@
 package core
 
 import (
+	"context"
+	"github.com/dagger/dagger/util/gitutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+type singleGitRefMountBackend struct {
+	GitRefBackend
+	mountFn func(context.Context, int, bool, func(*gitutil.GitCLI) error) error
+}
+
+func (b singleGitRefMountBackend) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	return b.mountFn(ctx, depth, includeTags, fn)
+}
+
+func TestMountSingleGitRefDoesNotExpandRecipe(t *testing.T) {
+	git := gitutil.NewGitCLI()
+	mounted := false
+	backend := singleGitRefMountBackend{mountFn: func(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+		mounted = true
+		require.Zero(t, depth, "history must remain complete")
+		require.False(t, includeTags)
+		return fn(git)
+	}}
+	// Deliberately omit Repo: mounting a single ref only needs its backend,
+	// not a repository recipe or a dagql server to expand that recipe with.
+	ref := &GitRef{Backend: backend, Ref: &gitutil.Ref{SHA: "abc"}}
+	err := mountRefs(t.Context(), []*GitRef{ref}, func(got *gitutil.GitCLI, shas []string) error {
+		require.Same(t, git, got)
+		require.Equal(t, []string{"abc"}, shas)
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, mounted)
+}
 
 func TestParseGitCommitMetadata(t *testing.T) {
 	raw := `tree 5209ad308282b6d6c7d6e4888cd807e29079248b

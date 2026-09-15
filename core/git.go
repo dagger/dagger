@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type GitRepository struct {
@@ -1079,6 +1080,15 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
 	}
+	if len(refs) == 1 {
+		// No repository comparison is needed for a single ref (the common
+		// log case). Its recipe may describe an arbitrarily large workspace
+		// computation; expanding it just to compare it to nothing is wasted
+		// work, even when all Git objects are already present.
+		return refs[0].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			return fn(git, []string{refs[0].Ref.SHA})
+		})
+	}
 
 	shas := make([]string, len(refs))
 	backends := make([]GitRefBackend, len(refs))
@@ -1088,7 +1098,9 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		shas[i] = ref.Ref.SHA
 		backends[i] = ref.Backend
 
-		dgst, err := ref.Repo.RecipeDigest(ctx)
+		recipeCtx, recipeSpan := Tracer(ctx).Start(ctx, "git repository recipe digest", telemetry.Internal())
+		dgst, err := ref.Repo.RecipeDigest(recipeCtx)
+		telemetry.EndWithCause(recipeSpan, &err)
 		if err != nil {
 			return fmt.Errorf("mount refs: ref %d repo ID: %w", i+1, err)
 		}
