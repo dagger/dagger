@@ -117,6 +117,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("snapshot", s.snapshot).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Captures the client's current Git state after approval").
+			Experimental("Best-effort capture for resumable sessions; capture and fallback behavior may change.").
 			Doc("Return a snapshot of this workspace as a stable value.",
 				"Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.",
 				"Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.",
