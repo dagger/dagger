@@ -288,35 +288,6 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 	return inputs, nil
 }
 
-// RootFields returns the field names of every call in the recipe that is
-// selected directly on the Query root, including calls reached through id
-// arguments. It is how a caller holding only an encoded id can tell which
-// root fields the id replays without a schema to resolve it against.
-func (id *ID) RootFields() []string {
-	id.mustBeRecipe("RootFields")
-	if id == nil || id.pb == nil {
-		return nil
-	}
-
-	callsByDigest := map[string]*callpbv1.Call{}
-	id.gatherCalls(callsByDigest)
-
-	var fields []string
-	seen := map[string]struct{}{}
-	for _, pbCall := range callsByDigest {
-		if pbCall.ReceiverDigest != "" {
-			continue
-		}
-		if _, ok := seen[pbCall.Field]; ok {
-			continue
-		}
-		seen[pbCall.Field] = struct{}{}
-		fields = append(fields, pbCall.Field)
-	}
-	slices.Sort(fields)
-	return fields
-}
-
 func (id *ID) Modules() []*Module {
 	id.mustBeRecipe("Modules")
 	if id == nil {

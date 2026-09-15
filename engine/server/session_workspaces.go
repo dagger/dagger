@@ -25,7 +25,6 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -1542,48 +1541,6 @@ func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served
 		}
 	}
 	return filtered
-}
-
-// requestRootFieldDemand flattens a request peek into the root fields that
-// drive workspace module loading. `node` is a core field whose demand is
-// knowable from its id, so it is resolved rather than left to the
-// entrypoint-guess fallback in filterPendingWorkspaceModulesForRootFields: a
-// handle-form id is an engine-local reference the engine only ever minted for a
-// client that already had its type served, and the node resolver rebuilds that
-// result's own dependency server (see SetNodeLoader in core/schema_build.go),
-// so it demands nothing here. A recipe-form id is portable, so it demands the
-// root fields it replays.
-//
-// An id that cannot be read or decoded puts `node` back in the demand, keeping
-// the conservative fallback for it, while the ids that did resolve still
-// contribute theirs.
-func requestRootFieldDemand(peek dagql.RootFieldPeek) []string {
-	if !slices.Contains(peek.Fields, "node") {
-		return peek.Fields
-	}
-
-	demand := make([]string, 0, len(peek.Fields)+len(peek.NodeIDs))
-	for _, field := range peek.Fields {
-		if field != "node" {
-			demand = append(demand, field)
-		}
-	}
-	unaccounted := peek.UnresolvedNodeIDs
-	for _, encoded := range peek.NodeIDs {
-		var id call.ID
-		if err := id.Decode(encoded); err != nil {
-			unaccounted = true
-			continue
-		}
-		if id.IsHandle() {
-			continue
-		}
-		demand = append(demand, id.RootFields()...)
-	}
-	if unaccounted {
-		demand = append(demand, "node")
-	}
-	return demand
 }
 
 // filterPendingWorkspaceModulesForRootFields selects the pending modules a

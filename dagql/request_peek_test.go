@@ -19,10 +19,10 @@ func TestPeekRootFieldsPOSTJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	ok, peek, err := dagql.PeekRootFields(req)
+	ok, fields, err := dagql.PeekRootFields(req)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, []string{"container", "version"}, peek.Fields)
+	require.Equal(t, []string{"container", "version"}, fields)
 
 	restored, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
@@ -33,10 +33,10 @@ func TestPeekRootFieldsGET(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/query?query=%7B+__schema+%7B+queryType+%7B+name+%7D+%7D+%7D", nil)
-	ok, peek, err := dagql.PeekRootFields(req)
+	ok, fields, err := dagql.PeekRootFields(req)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, []string{"__schema"}, peek.Fields)
+	require.Equal(t, []string{"__schema"}, fields)
 }
 
 func TestPeekRootFieldsAmbiguousOperation(t *testing.T) {
@@ -45,10 +45,10 @@ func TestPeekRootFieldsAmbiguousOperation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"query":"query A { version } query B { container { id } }"}`))
 	req.Header.Set("Content-Type", "application/json")
 
-	ok, peek, err := dagql.PeekRootFields(req)
+	ok, fields, err := dagql.PeekRootFields(req)
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.Zero(t, peek)
+	require.Nil(t, fields)
 }
 
 func TestPeekRootFieldsRejectsBatch(t *testing.T) {
@@ -57,10 +57,10 @@ func TestPeekRootFieldsRejectsBatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`[{"query":"{ version }"}]`))
 	req.Header.Set("Content-Type", "application/json")
 
-	ok, peek, err := dagql.PeekRootFields(req)
+	ok, fields, err := dagql.PeekRootFields(req)
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.Zero(t, peek)
+	require.Nil(t, fields)
 }
 
 func TestPeekRootFieldsRecoversSingleOperation(t *testing.T) {
@@ -71,40 +71,8 @@ func TestPeekRootFieldsRecoversSingleOperation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	ok, peek, err := dagql.PeekRootFields(req)
+	ok, fields, err := dagql.PeekRootFields(req)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, []string{"currentTypeDefs"}, peek.Fields)
-}
-
-func TestPeekRootFieldsNodeIDs(t *testing.T) {
-	t.Parallel()
-
-	body := `{"query":"query Q($a: ID!) { group: node(id: $a) { __typename } other: node(id: \"inline\") { __typename } }","variables":{"a":"from-variable"}}`
-	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	ok, peek, err := dagql.PeekRootFields(req)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, []string{"node"}, peek.Fields)
-	require.Equal(t, []string{"from-variable", "inline"}, peek.NodeIDs)
-	require.False(t, peek.UnresolvedNodeIDs)
-}
-
-func TestPeekRootFieldsUnresolvedNodeID(t *testing.T) {
-	t.Parallel()
-
-	// The variable the id references is not in the envelope, so the peek
-	// cannot account for what this node selection demands.
-	body := `{"query":"query Q($a: ID!) { node(id: $a) { __typename } }"}`
-	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	ok, peek, err := dagql.PeekRootFields(req)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, []string{"node"}, peek.Fields)
-	require.Empty(t, peek.NodeIDs)
-	require.True(t, peek.UnresolvedNodeIDs)
+	require.Equal(t, []string{"currentTypeDefs"}, fields)
 }

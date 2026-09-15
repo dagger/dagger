@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -30,7 +29,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -2874,80 +2872,6 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	})
 }
 
-func TestRequestRootFieldDemand(t *testing.T) {
-	t.Parallel()
-
-	strType := &ast.Type{NamedType: "String", NonNull: true}
-
-	encode := func(t *testing.T, id *call.ID) string {
-		t.Helper()
-		encoded, err := id.Encode()
-		require.NoError(t, err)
-		return encoded
-	}
-
-	t.Run("passes through a request without node", func(t *testing.T) {
-		t.Parallel()
-
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{Fields: []string{"currentWorkspace"}})
-		require.Equal(t, []string{"currentWorkspace"}, demand)
-	})
-
-	t.Run("handle-form node id demands nothing", func(t *testing.T) {
-		t.Parallel()
-
-		handle := call.NewEngineResultID(42, call.NewType(&ast.Type{NamedType: "CheckGroup"}))
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{
-			Fields:  []string{"node"},
-			NodeIDs: []string{encode(t, handle)},
-		})
-		require.Empty(t, demand)
-	})
-
-	t.Run("recipe-form node id demands its root fields", func(t *testing.T) {
-		t.Parallel()
-
-		recipe := call.New().Append(strType, "myMod").Append(strType, "doThing")
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{
-			Fields:  []string{"node"},
-			NodeIDs: []string{encode(t, recipe)},
-		})
-		require.Equal(t, []string{"myMod"}, demand)
-	})
-
-	t.Run("unresolved node id keeps the node field", func(t *testing.T) {
-		t.Parallel()
-
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{
-			Fields:            []string{"node"},
-			UnresolvedNodeIDs: true,
-		})
-		require.Equal(t, []string{"node"}, demand)
-	})
-
-	t.Run("undecodable node id keeps the node field", func(t *testing.T) {
-		t.Parallel()
-
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{
-			Fields:  []string{"container", "node"},
-			NodeIDs: []string{"not-an-id"},
-		})
-		require.Equal(t, []string{"container", "node"}, demand)
-	})
-
-	t.Run("an unaccounted node id does not discard a sibling's demand", func(t *testing.T) {
-		t.Parallel()
-
-		recipe := call.New().Append(strType, "myMod")
-		demand := requestRootFieldDemand(dagql.RootFieldPeek{
-			Fields:            []string{"node"},
-			NodeIDs:           []string{encode(t, recipe), "not-an-id"},
-			UnresolvedNodeIDs: true,
-		})
-		require.Equal(t, []string{"myMod", "node"}, demand)
-	})
-}
-
 func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Parallel()
 
@@ -4832,8 +4756,9 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 	// A core Query field that neither list claims looks like an unknown field
 	// to filterPendingWorkspaceModulesForRootFields, which then guesses it
 	// might be an entrypoint function and loads the entrypoint for it.
-	// requestRootFieldDemand resolves `node` from its id instead, so it is the
-	// one core field deliberately left out.
+	// `node` is the one core field deliberately left out: what it demands is
+	// knowable only from its id, which this layer does not read, so it keeps
+	// the conservative guess.
 	for _, field := range []string{
 		"blob",
 		"currentNode",

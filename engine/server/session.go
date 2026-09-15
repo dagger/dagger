@@ -2552,8 +2552,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
 	if client.hasPendingWorkspaceModules() {
-		if ok, peek, err := dagql.PeekRootFields(r); err == nil && ok {
-			rootFields := requestRootFieldDemand(peek)
+		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
 			filter = func(mods []pendingModule) []pendingModule {
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
