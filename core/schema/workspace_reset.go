@@ -72,10 +72,20 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		// Like git reset --mixed, only HEAD moves: the complete approved
 		// working tree is preserved, and diffing it against the target
 		// commit's checkout leaves everything since that commit uncommitted.
-		var changes dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, frozen, &changes,
-			dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"},
-		); err != nil {
+		// Read the complete frozen source, not git.uncommitted.After: a clean
+		// Git-ref workspace represents no changes as scratch -> scratch.
+		// Source reads also exclude read-only mounts, which are restored as
+		// metadata below rather than becoming uncommitted files.
+		root, err := workspaceRootfs(frozen.Self())
+		if err != nil {
+			return inst, err
+		}
+		// Directory-backed workspaces can carry .git, unlike Git-ref sources.
+		// Keep the target's repository separate from the preserved worktree.
+		var workingTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, root, &workingTree, dagql.Selector{
+			Field: "withoutDirectory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}},
+		}); err != nil {
 			return inst, err
 		}
 		var newBase dagql.ObjectResult[*core.Directory]
@@ -89,7 +99,7 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 		var remaining dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, changes.Self().After, &remaining, dagql.Selector{
+		if err := srv.Select(ctx, workingTree, &remaining, dagql.Selector{
 			Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](baseID)}},
 		}); err != nil {
 			return inst, err

@@ -324,6 +324,65 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 	require.ErrorContains(t, err, "is not in this workspace's repository")
 }
 
+func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().
+		WithNewFile("keep.txt", "unchanged").
+		WithNewFile("src/change.txt", "before").
+		WithNewFile("removed.txt", "removed in draft"))
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	baseSHA, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	draft := base.WithNewFile("src/change.txt", "after").
+		WithNewFile("added.txt", "added in draft").WithoutFile("removed.txt").
+		WithCommit("draft", workspaceCommitDate).Git().Head()
+
+	for _, tc := range []struct {
+		name string
+		ws   *dagger.Workspace
+	}{
+		{"clean Git ref", draft.AsWorkspace()},
+		{"directory with Git metadata", draft.AsWorkspace().Directory("/").WithDirectory(".git", draft.AsWorkspace().Git().Directory()).AsWorkspace()},
+		{"pending overlay", draft.AsWorkspace().WithNewFile("pending.txt", "pending")},
+		{"mounted directory", draft.AsWorkspace().WithMountedDirectory("/mounted", c.Directory().WithNewFile("data.txt", "read-only"))},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			// Use a nested cwd so preservation must address the boundary root.
+			ws := tc.ws.WithWorkdir("src")
+			id, err := ws.WithReset(baseSHA).ID(ctx)
+			require.NoError(t, err)
+			reset := dagger.Ref[*dagger.Workspace](c, id)
+			sha, err := reset.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, baseSHA, sha)
+			cwd, err := reset.Cwd(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "/src", cwd)
+			before := ws.Directory("/").WithoutDirectory(".git")
+			after := reset.Directory("/")
+			changed, err := after.Changes(before).DiffStats(ctx)
+			require.NoError(t, err)
+			require.Empty(t, changed, "mixed reset must preserve the complete working tree without copying old Git metadata")
+			contents, err := reset.File("change.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "after", contents)
+			removed, err := reset.Git().Uncommitted().RemovedPaths(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"removed.txt"}, removed)
+			added, err := reset.Git().Uncommitted().AddedPaths(ctx)
+			require.NoError(t, err)
+			expectedAdded := []string{"added.txt"}
+			if tc.name == "pending overlay" {
+				expectedAdded = append(expectedAdded, "pending.txt")
+			}
+			require.ElementsMatch(t, expectedAdded, added)
+			modified, err := reset.Git().Uncommitted().ModifiedPaths(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"src/change.txt"}, modified)
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("old.txt", strings.Repeat("rename me\n", 20)))
