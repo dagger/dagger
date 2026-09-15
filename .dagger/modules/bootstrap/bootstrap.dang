@@ -38,7 +38,7 @@ type Bootstrap {
     exclude: [String!]
   ): Void {
     engineDev(ws: ws)
-      .playground
+      .installClient()
       .withMountedDirectory("/ws", ws.directory("/", gitignore: true, include: include, exclude: exclude))
       .withWorkdir("/ws")
       # TODO: change back to `.withExec(["dagger check"] + checks)`
