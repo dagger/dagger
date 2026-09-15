@@ -4,8 +4,18 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+func TestCloudEngineTelemetryResource(t *testing.T) {
+	resource, err := cloudEngineTelemetryResource()
+	require.NoError(t, err)
+	value, ok := resource.Set().Value(attribute.Key(telemetryattrs.CloudEngineAttr))
+	require.True(t, ok)
+	require.True(t, value.AsBool())
+}
 
 func TestTelemetryOriginScopeSessionIsolation(t *testing.T) {
 	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", nil, nil)

@@ -14,6 +14,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -70,6 +71,13 @@ func (p telemetryOriginSpanProcessor) OnStart(ctx context.Context, span sdktrace
 func (telemetryOriginSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
 func (telemetryOriginSpanProcessor) Shutdown(context.Context) error   { return nil }
 func (telemetryOriginSpanProcessor) ForceFlush(context.Context) error { return nil }
+
+func cloudEngineTelemetryResource() (*sdkresource.Resource, error) {
+	return sdkresource.Merge(
+		sdkresource.Default(),
+		sdkresource.NewSchemaless(attribute.Bool(telemetryattrs.CloudEngineAttr, true)),
+	)
+}
 
 type telemetryOriginLogProcessor struct {
 	sessionID string

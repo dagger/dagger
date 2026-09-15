@@ -48,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -905,6 +906,10 @@ func Resource(ctx context.Context) *resource.Resource {
 	attrs := []attribute.KeyValue{
 		semconv.ServiceName("dagger-cli"),
 		semconv.ServiceVersion(engine.Version),
+		attribute.Bool(
+			telemetryattrs.CloudEngineAttr,
+			strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix),
+		),
 	}
 	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version).AsMap() {
 		attrs = append(attrs, attribute.String(k, v))

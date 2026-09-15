@@ -1475,6 +1475,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		UpstreamCacheExportConfig:      c.upstreamCacheExportOptions,
 		Labels:                         c.labels.AsMap(),
 		CloudOrg:                       cloudOrg,
+		CloudEngine:                    strings.HasPrefix(c.RunnerHost, engine.CloudRunnerHostPrefix),
 		DoNotTrack:                     analytics.DoNotTrack(),
 		Interactive:                    c.Interactive,
 		InteractiveCommand:             c.InteractiveCommand,

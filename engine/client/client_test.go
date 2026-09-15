@@ -96,6 +96,25 @@ func TestOTLPConsumerStopsOnContextCancellation(t *testing.T) {
 	}
 }
 
+func TestClientMetadataReportsCloudEngine(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		runnerHost string
+		want       bool
+	}{
+		{name: "cloud", runnerHost: engine.DefaultCloudRunnerHost, want: true},
+		{name: "local", runnerHost: "unix:///var/run/dagger.sock", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{Params: Params{RunnerHost: test.runnerHost}}
+			require.Equal(t, test.want, client.clientMetadata().CloudEngine)
+		})
+	}
+}
+
 func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T) {
 	t.Parallel()
 
