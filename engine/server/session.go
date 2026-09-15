@@ -3515,7 +3515,7 @@ func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 
 // The agent runtimes for the current client's session
 func (srv *Server) Agents(ctx context.Context) (*core.AgentRuntimes, error) {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
