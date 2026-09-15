@@ -750,5 +750,5 @@ func (s *workspaceSchema) withUpdatedModules(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleClientSelections(ctx, updated, staged, selections)
+	return s.regenerateSDKModuleClients(ctx, updated, staged, selections)
 }
