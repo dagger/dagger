@@ -100,8 +100,14 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, err
 		}
 		reqBody = fullBody
-		enginetelemetry.RecordNetworkTX(req.Context(), int64(len(fullBody)))
-		req.Body = io.NopCloser(bytes.NewReader(fullBody))
+		body := io.NopCloser(bytes.NewReader(fullBody))
+		req.Body = &teeReadCloser{
+			reader: body,
+			closer: body,
+			onRead: func(n int) {
+				enginetelemetry.RecordNetworkTX(req.Context(), int64(n))
+			},
+		}
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
 	}
