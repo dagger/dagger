@@ -645,6 +645,10 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkTX)
+	if err != nil {
+		return fmt.Errorf("create registry push network recorder: %w", err)
+	}
 
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
 	rootDesc := img.RootDesc
@@ -671,7 +675,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider, nil)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, network)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -710,7 +714,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider, nil)
+	pushLeaf := pushHandler(pusher, img.Provider, network)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
