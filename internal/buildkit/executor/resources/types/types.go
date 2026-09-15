@@ -34,14 +34,21 @@ func (s *Sample) Timestamp() time.Time {
 }
 
 type NetworkSample struct {
-	RxBytes   int64 `json:"rxBytes,omitempty"`
-	RxPackets int64 `json:"rxPackets,omitempty"`
-	RxErrors  int64 `json:"rxErrors,omitempty"`
-	RxDropped int64 `json:"rxDropped,omitempty"`
-	TxBytes   int64 `json:"txBytes,omitempty"`
-	TxPackets int64 `json:"txPackets,omitempty"`
-	TxErrors  int64 `json:"txErrors,omitempty"`
-	TxDropped int64 `json:"txDropped,omitempty"`
+	RxBytes         int64 `json:"rxBytes,omitempty"`
+	RxPackets       int64 `json:"rxPackets,omitempty"`
+	RxErrors        int64 `json:"rxErrors,omitempty"`
+	RxDropped       int64 `json:"rxDropped,omitempty"`
+	TxBytes         int64 `json:"txBytes,omitempty"`
+	TxPackets       int64 `json:"txPackets,omitempty"`
+	TxErrors        int64 `json:"txErrors,omitempty"`
+	TxDropped       int64 `json:"txDropped,omitempty"`
+	InternalRxBytes int64 `json:"internalRxBytes,omitempty"`
+	InternalTxBytes int64 `json:"internalTxBytes,omitempty"`
+	ExternalRxBytes int64 `json:"externalRxBytes,omitempty"`
+	ExternalTxBytes int64 `json:"externalTxBytes,omitempty"`
+	UnknownRxBytes  int64 `json:"unknownRxBytes,omitempty"`
+	UnknownTxBytes  int64 `json:"unknownTxBytes,omitempty"`
+	ScopeSupported  bool  `json:"scopeSupported,omitempty"`
 }
 
 // CPUStat represents the sampling state of the cgroupv2 CPU controller

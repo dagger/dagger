@@ -20,6 +20,20 @@ const (
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
 
+	// Network byte metrics are operation-oriented counterparts to the legacy
+	// container-only netstat metrics. "Internal" means the packet's remote
+	// address belongs to a Dagger-managed CNI bridge; "external" means it does
+	// not. Packets that cannot be classified as IP traffic are reported
+	// separately.
+	NetworkRxBytes         = "dagger.io/metrics.network.rx.bytes"
+	NetworkTxBytes         = "dagger.io/metrics.network.tx.bytes"
+	NetworkInternalRxBytes = "dagger.io/metrics.network.internal.rx.bytes"
+	NetworkInternalTxBytes = "dagger.io/metrics.network.internal.tx.bytes"
+	NetworkExternalRxBytes = "dagger.io/metrics.network.external.rx.bytes"
+	NetworkExternalTxBytes = "dagger.io/metrics.network.external.tx.bytes"
+	NetworkUnknownRxBytes  = "dagger.io/metrics.network.unknown.rx.bytes"
+	NetworkUnknownTxBytes  = "dagger.io/metrics.network.unknown.tx.bytes"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
