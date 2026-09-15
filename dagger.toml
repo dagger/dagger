@@ -1,11 +1,8 @@
-[modules.changelog]
-source = ".dagger/modules/changelog"
-legacy-default-path = true
+[modules.changie]
+source = ".dagger/modules/changie"
 
-# settings.source = "./path"
-
-[modules.ci]
-source = ".dagger/modules/ci"
+[modules.bootstrap]
+source = ".dagger/modules/bootstrap"
 legacy-default-path = true
 
 [modules.cli]
@@ -37,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "github.com/dagger/go@5683fb4f7e2e909a453eba727fb982077d5d11b5"
+source = "dagger.io/go"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -47,7 +44,7 @@ lint = ".,engine/distconsts,modules/daggerverse,sdk/go,.dagger/modules/cli-dev,.
 test = "e2e/**"
 
 [modules.helm]
-source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
+source = "dagger.io/kubernetes/helm"
 legacy-default-path = true
 
 [modules.helm.settings]
@@ -70,7 +67,7 @@ source = ".dagger/modules/php-client-dev"
 legacy-default-path = true
 
 [modules.ps-analyzer]
-source = "github.com/dagger/PsScriptAnalyzer@d87a12883dccd495bee98da9d2c20eb44b6f608d"
+source = "dagger.io/dotnet/PsScriptAnalyzer"
 legacy-default-path = true
 
 [modules.python-client]
@@ -102,7 +99,7 @@ ignore = [
 ]
 
 [modules.shellcheck]
-source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
+source = "dagger.io/shellcheck"
 legacy-default-path = true
 
 [modules.test-split]
@@ -137,7 +134,7 @@ source = "github.com/vito/editor"
 [sdks.dang]
 module = "dang-sdk"
 
-[sdks.dang.scopes.".dagger/modules/changelog"]
+[sdks.dang.scopes.".dagger/modules/changie"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/ci"]
@@ -145,6 +142,7 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/dotnet-client-dev"]
+clients = ["./.dagger/modules/engine-dev"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/elixir-client-dev"]
@@ -213,7 +211,7 @@ is-module = true
 
 [sdks.go.scopes.".dagger/modules/release"]
 is-module = true
-clients = ["./.dagger/modules/changelog", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/release/gh", "./.dagger/modules/go-client-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
+clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
 
 [sdks.go.scopes.".dagger/modules/release/apko"]
 is-module = true
@@ -251,3 +249,7 @@ is-module = true
 [sdks.go.scopes.".dagger/modules/go"]
 clients = ["./modules/wolfi"]
 is-module = true
+
+[modules.dagger-dev]
+source = ".dagger/modules/dagger-dev"
+entrypoint = true

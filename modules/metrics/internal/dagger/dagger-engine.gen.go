@@ -196,8 +196,6 @@ type DaggerEngineInstallClientOpts struct {
 	// The engine service to bind
 	//
 	Service *Service // dagger-engine (../../../../toolchains/engine-dev/main.go:311:2)
-
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:313:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
@@ -208,10 +206,6 @@ func (r *DaggerEngine) InstallClient(client *Container, opts ...DaggerEngineInst
 		// `service` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("client", client)
@@ -402,8 +396,6 @@ type DaggerEngineServiceOpts struct {
 	SharedCache bool // dagger-engine (../../../../toolchains/engine-dev/main.go:254:2)
 
 	Metrics bool // dagger-engine (../../../../toolchains/engine-dev/main.go:256:2)
-
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:258:2)
 }
 
 // Create a test engine service
@@ -421,10 +413,6 @@ func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Se
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("name", name)

@@ -155,10 +155,10 @@ type AddressID string
 type CacheVolumeID string
 
 // A unique identifier for an object.
-type ChangelogID string
+type ChangesetID string
 
 // A unique identifier for an object.
-type ChangesetID string
+type ChangieID string
 
 // A unique identifier for an object.
 type CheckGroupID string
@@ -11274,22 +11274,22 @@ func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	}
 }
 
-// Load a Changelog from its ID.
-func (r *Query) LoadChangelogFromID(id ChangelogID) *Changelog {
-	q := r.query.Select("loadChangelogFromID")
-	q = q.Arg("id", id)
-
-	return &Changelog{
-		query: q,
-	}
-}
-
 // Load a Changeset from its ID.
 func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q := r.query.Select("loadChangesetFromID")
 	q = q.Arg("id", id)
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// Load a Changie from its ID.
+func (r *Query) LoadChangieFromID(id ChangieID) *Changie {
+	q := r.query.Select("loadChangieFromID")
+	q = q.Arg("id", id)
+
+	return &Changie{
 		query: q,
 	}
 }
