@@ -97,9 +97,8 @@ final readonly class Argument
     private static function getDefault(ReflectionParameter $parameter): ?Json
     {
         if ($parameter->isDefaultValueAvailable()) {
-            $default = $parameter->getDefaultValue();
             return new Json(json_encode(
-                $default instanceof IdAble ? (string) $default->id() : $default
+                self::toSerialisableDefault($parameter->getDefaultValue()),
             ));
         }
 
@@ -108,5 +107,23 @@ final readonly class Argument
         }
 
         return null;
+    }
+
+    /**
+     * Dagger identifies an enum member by its case name, so enums must be
+     * unwrapped wherever they occur - a list default holds them one level
+     * down, and a pure enum has no JSON representation at all.
+     */
+    private static function toSerialisableDefault(mixed $default): mixed
+    {
+        return match (true) {
+            $default instanceof IdAble => (string) $default->id(),
+            $default instanceof \UnitEnum => $default->name,
+            is_array($default) => array_map(
+                self::toSerialisableDefault(...),
+                $default,
+            ),
+            default => $default,
+        };
     }
 }
