@@ -227,7 +227,7 @@ func (d DocsDev) Server() *dagger.Service {
 		AsService()
 }
 
-// Regenerate the API schema and CLI reference docs
+// Regenerate the GraphQL schema and API reference pages
 // +generate
 func (d DocsDev) References(
 	// Dagger version to generate API docs for
@@ -268,16 +268,9 @@ func (d DocsDev) References(
 	// separately by the go toolchain (see docs/current_docs/reference/cli/generate.go)
 	// and committed, so it is already part of src here.
 
-	// 3. Generate config file schemas?
-	withConfigSchemas := src.
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev(ws).ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev(ws).ConfigSchema("dagger-module.toml")).
-		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev(ws).ConfigSchema("dagger.toml"))
-
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
 		WithChanges(withAPIReference.Changes(src)).
-		WithChanges(withConfigSchemas.Changes(src)).
 		Changes(src)
 	return changes, nil
 }

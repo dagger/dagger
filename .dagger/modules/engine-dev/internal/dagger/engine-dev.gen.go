@@ -42,17 +42,6 @@ func (r *EngineDev) ClientDockerConfig() *Secret {
 	}
 }
 
-// Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File {
-	q := r.query.Select("configSchema")
-	q = q.Arg("filename", filename)
-
-	return &File{
-		query: q,
-	}
-}
-
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
 	Platform Platform
