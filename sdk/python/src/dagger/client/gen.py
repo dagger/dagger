@@ -16896,8 +16896,8 @@ class Workspace(Type):
         Without path, apply a local workspace's overlay changes at its host
         root. Pass from to apply only changes since an earlier local workspace
         state. Export paths are relative to the workspace root regardless of
-        its working directory. Like Directory.export, this writes only to
-        the client making the call, never the source's client.
+        its working directory. Like Directory.export, this writes only to the
+        client making the call, never the source's client.
 
         Parameters
         ----------
