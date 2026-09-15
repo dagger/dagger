@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/gitutil"
 )
@@ -1283,6 +1284,14 @@ type workspaceAutocheckState struct {
 	InstallationID string
 	SourceMode     string
 	SelectedRepos  []string
+	// Mapped reports whether the installation is already mapped to a Dagger org.
+	// When false the installation exists (app installed) but isn't linked to any
+	// org yet, so it must be onboarded with configureOrgSource rather than the
+	// no-org configureSource (which requires an existing mapping).
+	Mapped bool
+	// OrgName is the Dagger Cloud org that owns (or will own) the installation,
+	// when known. Used to enforce required Cloud features for the command.
+	OrgName string
 }
 
 var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
@@ -1295,7 +1304,8 @@ func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddr
 	return findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
 }
 
-func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
+func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
+	ctx := cmd.Context()
 	client, err := workspaceAutocheckClient(ctx, true)
 	if err != nil {
 		return workspaceAutocheckState{}, err
@@ -1316,12 +1326,82 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 		return current, nil
 	}
 	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
-	if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
-		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
+	if current.Mapped {
+		// Enforce the command's required Cloud features on the org owning the
+		// installation before changing anything.
+		if err := ensureAutocheckCloudFeatures(cmd, client, &current); err != nil {
+			return workspaceAutocheckState{}, err
+		}
+		// Installation already mapped to an org: configureSource resolves the
+		// target org from the existing mapping.
+		if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
+			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
+		}
+	} else {
+		// Installation not mapped yet (app installed but never linked to an org):
+		// map it to the current org and apply the selection in one call.
+		org, err := currentCloudOrg(ctx, client)
+		if err != nil {
+			return workspaceAutocheckState{}, err
+		}
+		current.OrgName = org.Name
+		if err := ensureCommandCloudFeatures(cmd, client, org.Name); err != nil {
+			return workspaceAutocheckState{}, err
+		}
+		if _, err := client.ConfigureOrgSource(ctx, org.ID, current.InstallationID, "SELECTED", selected); err != nil {
+			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
+		}
 	}
 	current.Enabled = enabled
 	current.SelectedRepos = selected
+	current.Mapped = true
 	return current, nil
+}
+
+// currentCloudOrg resolves the org to onboard an unmapped installation into:
+// the --org flag when set, otherwise the currently selected Cloud org.
+func currentCloudOrg(ctx context.Context, client *cloudapi.Client) (*cloudauth.Org, error) {
+	if cloudOrgFlag != "" {
+		org, err := client.OrgByName(ctx, cloudOrgFlag)
+		if err != nil {
+			return nil, err
+		}
+		return &cloudauth.Org{ID: org.ID, Name: org.Name}, nil
+	}
+	org, err := cloudauth.CurrentOrg()
+	if err != nil || org == nil || org.ID == "" {
+		return nil, fmt.Errorf("no current Dagger Cloud organization; run 'dagger login' or pass --org")
+	}
+	return org, nil
+}
+
+// ensureAutocheckCloudFeatures enforces cmd's required Cloud features on the
+// org owning state's installation. The repo-tracked lookup path doesn't carry
+// the org, so it is resolved lazily by matching the installation among the
+// user's sources — and only when cmd actually declares required features, to
+// avoid extra API calls for unannotated commands (e.g. checks off). When the
+// owning org cannot be determined the gate is skipped rather than blocking a
+// working operation.
+func ensureAutocheckCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, state *workspaceAutocheckState) error {
+	if len(commandCloudFeatures(cmd)) == 0 {
+		return nil
+	}
+	if state.OrgName == "" {
+		sources, err := client.Sources(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("lookup Cloud sources: %w", err)
+		}
+		for _, source := range sources {
+			if source.ID == state.InstallationID && source.OrgName != nil {
+				state.OrgName = *source.OrgName
+				break
+			}
+		}
+	}
+	if state.OrgName == "" {
+		return nil
+	}
+	return ensureCommandCloudFeatures(cmd, client, state.OrgName)
 }
 
 // workspaceAutocheckStateFromSource locates the installation backing repo by
@@ -1333,25 +1413,93 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud sources: %w", err)
 	}
 	source, ok := workspaceSourceForRepo(sources, repo)
-	if !ok || source.OrgName == nil {
-		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
-	}
-	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
-	if err != nil {
-		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
-	}
-	mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID)
 	if !ok {
-		return workspaceAutocheckState{}, fmt.Errorf("%w for %s", errCloudSourceNotConfigured, repo)
+		// No source for the repo's owner means the Dagger Cloud GitHub App is
+		// not installed on that user/org yet. Point the user at the install page
+		// rather than failing with an opaque "no mapping" error.
+		return workspaceAutocheckState{}, gitHubAppNotInstalledError(repo)
 	}
-	selected, enabled := workspaceSelectedRepos(mapped.Repositories, repo)
-	return workspaceAutocheckState{
+
+	// The app is installed for this owner (the source exists). Read the repos it
+	// currently has selected so we can add this one without dropping the others;
+	// setWorkspaceAutocheckState then enables it via configureSource. When the
+	// source is mapped to a Dagger org, verify the user belongs to it first —
+	// otherwise the org-scoped lookup below is denied with an opaque
+	// "unauthorized" — and read that org's current selection.
+	var selectedRepos []string
+	if source.OrgName != nil {
+		if err := ensureUserInOrg(ctx, client, *source.OrgName, repo); err != nil {
+			return workspaceAutocheckState{}, err
+		}
+		mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
+		if err != nil {
+			return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
+		}
+		if mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID); ok {
+			selectedRepos = mapped.Repositories
+		}
+	}
+
+	selected, enabled := workspaceSelectedRepos(selectedRepos, repo)
+	state := workspaceAutocheckState{
 		Repo:           repo,
 		Enabled:        enabled,
 		InstallationID: source.ID,
 		SourceMode:     "SELECTED",
 		SelectedRepos:  selected,
-	}, nil
+		Mapped:         source.OrgName != nil,
+	}
+	if source.OrgName != nil {
+		state.OrgName = *source.OrgName
+	}
+	return state, nil
+}
+
+// gitHubAppInstallURL returns the URL for installing the Dagger Cloud GitHub
+// App on a user/org. It targets the dev app when talking to a non-production
+// Cloud (DAGGER_CLOUD_URL points somewhere other than api.dagger.cloud), and
+// the production app otherwise.
+func gitHubAppInstallURL() string {
+	app := "dagger-cloud"
+	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
+		app = "dagger-cloud-dev"
+	}
+	return "https://github.com/apps/" + app + "/installations/select_target"
+}
+
+// gitHubAppNotInstalledError tells the user to install the Dagger Cloud GitHub
+// App on the repo's owner before checks can be enabled.
+func gitHubAppNotInstalledError(repo string) error {
+	owner, _, _ := strings.Cut(normalizeGitHubRepo(repo), "/")
+	return fmt.Errorf("%w: the Dagger Cloud GitHub App is not installed on the %q GitHub account; install it here: %s",
+		errCloudSourceNotConfigured, owner, gitHubAppInstallURL())
+}
+
+// ensureUserInOrg verifies the authenticated user is a member of orgName, the
+// Dagger Cloud org that owns the source backing repo. When they are not a
+// member it returns a clear ownership error rather than letting an org-scoped
+// query fail later with an opaque "unauthorized".
+func ensureUserInOrg(ctx context.Context, client *cloudapi.Client, orgName, repo string) error {
+	user, err := client.User(ctx)
+	if err != nil {
+		return fmt.Errorf("lookup Cloud user: %w", err)
+	}
+	return userOrgMembershipError(user, orgName, repo)
+}
+
+// userOrgMembershipError returns nil when the user is a member of orgName, and
+// otherwise a clear error explaining that repo is owned by a different Dagger
+// Cloud organization (listing the user's own orgs for context).
+func userOrgMembershipError(user *cloudapi.UserResponse, orgName, repo string) error {
+	names := make([]string, 0, len(user.Orgs))
+	for _, org := range user.Orgs {
+		if strings.EqualFold(org.Name, orgName) {
+			return nil
+		}
+		names = append(names, org.Name)
+	}
+	msg := fmt.Sprintf("%s is owned by another Dagger Cloud organization which you are not a member of. Contact the organization administrator to get access", repo)
+	return errors.New(msg)
 }
 
 func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {
@@ -1402,6 +1550,7 @@ func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, r
 		state.InstallationID = mapped.InstallationID
 		state.SourceMode = mapped.Mode
 		state.SelectedRepos, state.Enabled = workspaceSelectedRepos(mapped.Repositories, repo)
+		state.Mapped = true
 	}
 	return state, true, nil
 }

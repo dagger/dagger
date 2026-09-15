@@ -197,7 +197,6 @@ func init() {
 		versionRoot,
 		queryCmd,
 		apiCmd,
-		traceCmd,
 		checksCmd,
 		upCmd,
 		shellCmd,

@@ -39,7 +39,25 @@ func newBillingCmd(hidden bool) *cobra.Command {
 			RunE:  cloudCLI.BillingPlans,
 		},
 		newBillingManageCmd(),
+		newBillingPaymentCmd(),
 	)
+	return cmd
+}
+
+var billingPaymentOpen bool
+
+func newBillingPaymentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "payment [org]",
+		Short: "Enter or update the payment method for a Dagger Cloud org",
+		Long: `Enter or update the payment method for a Dagger Cloud org.
+
+Creates a secure hosted checkout page for the org's existing subscription
+where you can add or change the card on file, and prints its URL.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: cloudCLI.BillingPayment,
+	}
+	cmd.Flags().BoolVar(&billingPaymentOpen, "open", false, "Open the payment page in a browser")
 	return cmd
 }
 
@@ -68,6 +86,37 @@ func (cli *CloudCLI) BillingPlans(cmd *cobra.Command, args []string) error {
 		return writeCloudJSON(cmd, plans)
 	}
 	printBillingPlans(cmd, plans.Plans)
+	return nil
+}
+
+func (cli *CloudCLI) BillingPayment(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	client, cloudAuth, err := cli.cloudClient(ctx)
+	if err != nil {
+		return err
+	}
+	var org *cloudapi.OrgResponse
+	if len(args) > 0 {
+		org, err = client.OrgByName(ctx, args[0])
+	} else {
+		org, err = cli.resolveCloudOrg(ctx, client, cloudAuth)
+	}
+	if err != nil {
+		return err
+	}
+	checkoutURL, err := client.CreatePaymentCheckout(ctx, org.ID)
+	if err != nil {
+		return err
+	}
+	if billingPaymentOpen {
+		if err := browser.OpenURL(checkoutURL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
+		}
+	}
+	if cloudJSON {
+		return writeCloudJSON(cmd, map[string]any{"org": org, "url": checkoutURL})
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), checkoutURL)
 	return nil
 }
 
