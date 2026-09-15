@@ -103,16 +103,6 @@ func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container {
 	}
 }
 
-// Generate any engine-related files
-// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../toolchains/engine-dev/main.go:410:1)
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // DaggerEngineGraphqlSchemaOpts contains options for DaggerEngine.GraphqlSchema
 type DaggerEngineGraphqlSchemaOpts struct {
 	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:369:2)

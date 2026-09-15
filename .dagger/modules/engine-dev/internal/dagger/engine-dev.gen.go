@@ -85,16 +85,6 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 	}
 }
 
-// Generate any engine-related files
-// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset {
-	q := r.query.Select("generate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
 	Version string
