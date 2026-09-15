@@ -82,7 +82,9 @@ func runWorkspaceUpdate(cmd *cobra.Command, _ []string, noGenerate bool) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), noGenerate)
+		return withWorkspaceUpdateProgress(ctx, cmd, "update workspace", func(ctx context.Context) error {
+			return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), noGenerate)
+		})
 	})
 }
 
