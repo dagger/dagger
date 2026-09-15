@@ -1,0 +1,15 @@
+kind: Added
+body: |
+  `dagger agent --app-server` serves the composed agents over the Codex
+  app-server protocol (newline-delimited JSON-RPC on stdio) instead of opening
+  the interactive prompt, so IDE integrations and apps that speak Codex's
+  protocol can drive a Dagger agent. Threads are Dagger agent sessions
+  (`thread/list` and `thread/resume` see the same sessions `dagger agent -r`
+  does); `turn/start`, `turn/steer` and `turn/interrupt` map onto the agent
+  runtime; and the agent's replies, reasoning and tool calls stream to the
+  client as items as they happen. Workspace edits are exported to the checkout
+  at the end of every turn and reported to the client as a unified diff.
+time: 2026-09-15T12:00:00Z
+custom:
+  Author: vito
+  PR: ""
