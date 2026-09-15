@@ -50,7 +50,7 @@ Examples:
 	Args: cobra.ArbitraryArgs,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if agentAppServer {
-			return prepareAppServerFrontend()
+			return prepareAppServerFrontend(cmd)
 		}
 		return nil
 	},

@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/spf13/cobra"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
@@ -31,17 +33,33 @@ import (
 
 var agentAppServer bool
 
-// prepareAppServerFrontend keeps stdout clear for the protocol. Progress goes
-// to stderr as a plain stream, like `dagger mcp`; the pretty TUI is refused
-// outright since it would fight the client for the terminal.
-func prepareAppServerFrontend() error {
-	switch progress {
-	case "tty":
-		return fmt.Errorf("--app-server uses stdout for the protocol; use --progress=plain")
-	case "auto":
-		progress = "plain"
-		Frontend = idtui.NewPlain(stderr)
+// prepareAppServerFrontend keeps stdout clear for the protocol. By the time a
+// command runs, Main has already resolved an "auto" progress mode to a
+// concrete one (the pretty TUI on a terminal, the report frontend off one),
+// so the choice to override is made on whether the user asked for a mode
+// explicitly, not on what the variable holds.
+func prepareAppServerFrontend(cmd *cobra.Command) error {
+	explicit := os.Getenv("DAGGER_PROGRESS") != ""
+	if flag := cmd.Flags().Lookup("progress"); flag != nil && flag.Changed {
+		explicit = true
 	}
+	return applyAppServerProgress(explicit)
+}
+
+// applyAppServerProgress installs the frontend app-server mode runs with. An
+// explicit mode is honoured, except the pretty TUI, which would fight the
+// client for the terminal; an auto-resolved one is replaced with a plain
+// stream on stderr, like `dagger mcp`, since the report frontend would say
+// nothing until the client hangs up.
+func applyAppServerProgress(explicit bool) error {
+	if explicit {
+		if progress == "tty" {
+			return fmt.Errorf("--app-server uses stdout for the protocol; use --progress=plain")
+		}
+		return nil
+	}
+	progress = "plain"
+	Frontend = idtui.NewPlain(stderr)
 	return nil
 }
 
