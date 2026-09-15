@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"errors"
 	"testing"
 
 	cloudapi "github.com/dagger/dagger/internal/cloud"
@@ -69,4 +70,37 @@ func TestGitHubAppNotInstalledError(t *testing.T) {
 	require.Contains(t, err.Error(), `"dagger"`) // owner
 	require.Contains(t, err.Error(), "not installed")
 	require.Contains(t, err.Error(), "https://github.com/apps/dagger-cloud/installations/select_target")
+}
+
+func TestIsCloudUnauthorized(t *testing.T) {
+	require.True(t, isCloudUnauthorized(errors.New("GetOrgMappedSources: unauthorized; unauthorized")))
+	require.False(t, isCloudUnauthorized(errors.New("connection refused")))
+	require.False(t, isCloudUnauthorized(nil))
+}
+
+func TestRepoAccessError(t *testing.T) {
+	err := &repoAccessError{settingsURL: "https://github.com/settings/installations/12345"}
+	require.EqualError(t, err,
+		"Cloud checks need GitHub access to this repository. Visit https://github.com/settings/installations/12345 to enable it and then run the command again")
+}
+
+func TestInstallationSettingsURL(t *testing.T) {
+	t.Run("prefers the source's config URL", func(t *testing.T) {
+		url := installationSettingsURL(workspaceAutocheckState{
+			InstallationID: "12345",
+			ConfigURL:      "https://github.com/organizations/acme/settings/installations/12345",
+		})
+		require.Equal(t, "https://github.com/organizations/acme/settings/installations/12345", url)
+	})
+	t.Run("falls back to the canonical URL", func(t *testing.T) {
+		url := installationSettingsURL(workspaceAutocheckState{InstallationID: "67890"})
+		require.Equal(t, "https://github.com/settings/installations/67890", url)
+	})
+}
+
+func TestIsRepoNotInInstallation(t *testing.T) {
+	require.True(t, isRepoNotInInstallation(errors.New(
+		"ConfigureSource: repository github.com/marcosnils/bin does not belong to installation 161781848. Verify that the GitHub app has been granted access to the repository.")))
+	require.False(t, isRepoNotInInstallation(errors.New("unauthorized")))
+	require.False(t, isRepoNotInInstallation(nil))
 }

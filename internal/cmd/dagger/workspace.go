@@ -1298,6 +1298,9 @@ type workspaceAutocheckState struct {
 	// OrgName is the Dagger Cloud org that owns (or will own) the installation,
 	// when known. Used to enforce required Cloud features for the command.
 	OrgName string
+	// ConfigURL is the GitHub installation's settings page, when known (from
+	// the source). Used to point the user at repo-access management.
+	ConfigURL string
 }
 
 var errCloudSourceNotConfigured = errors.New("no Cloud source mapping found")
@@ -1321,10 +1324,19 @@ func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddres
 		return workspaceAutocheckState{}, err
 	}
 	if !ok || current.InstallationID == "" {
-		// the repo isn't tracked yet, fall back to locating its installation by owner
-		// among the user's sources
-		current, err = workspaceAutocheckStateFromSource(ctx, client, remote.CloneRef)
+		// the repo isn't tracked yet, fall back to locating its installation by
+		// owner among the user's sources (which enforces required features
+		// before any org-scoped lookup)
+		current, err = workspaceAutocheckStateFromSource(cmd, client, remote.CloneRef)
 		if err != nil {
+			return workspaceAutocheckState{}, err
+		}
+	} else {
+		// Tracked repo: enforce the command's required Cloud features before
+		// reporting or changing anything — enabling checks on a repo that is
+		// already selected must still ensure the org has the features
+		// (offering the trial), otherwise checks silently never run.
+		if err := ensureAutocheckCloudFeatures(cmd, client, &current); err != nil {
 			return workspaceAutocheckState{}, err
 		}
 	}
@@ -1333,14 +1345,12 @@ func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddres
 	}
 	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
 	if current.Mapped {
-		// Enforce the command's required Cloud features on the org owning the
-		// installation before changing anything.
-		if err := ensureAutocheckCloudFeatures(cmd, client, &current); err != nil {
-			return workspaceAutocheckState{}, err
-		}
 		// Installation already mapped to an org: configureSource resolves the
 		// target org from the existing mapping.
 		if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
+			if isRepoNotInInstallation(err) {
+				return workspaceAutocheckState{}, &repoAccessError{settingsURL: installationSettingsURL(current)}
+			}
 			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
 		}
 	} else {
@@ -1355,6 +1365,9 @@ func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddres
 			return workspaceAutocheckState{}, err
 		}
 		if _, err := client.ConfigureOrgSource(ctx, org.ID, current.InstallationID, "SELECTED", selected); err != nil {
+			if isRepoNotInInstallation(err) {
+				return workspaceAutocheckState{}, &repoAccessError{settingsURL: installationSettingsURL(current)}
+			}
 			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
 		}
 	}
@@ -1412,7 +1425,8 @@ func ensureAutocheckCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, s
 
 // workspaceAutocheckStateFromSource locates the installation backing repo by
 // matching its owner against the user's Cloud sources.
-func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, error) {
+func workspaceAutocheckStateFromSource(cmd *cobra.Command, client *cloudapi.Client, repo string) (workspaceAutocheckState, error) {
+	ctx := cmd.Context()
 	repo = "github.com/" + normalizeGitHubRepo(repo)
 	sources, err := client.Sources(ctx)
 	if err != nil {
@@ -1437,8 +1451,25 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 		if err := ensureUserInOrg(ctx, client, *source.OrgName, repo); err != nil {
 			return workspaceAutocheckState{}, err
 		}
+		// Enforce the command's required Cloud features BEFORE the org-scoped
+		// lookup: mappedSources is feature-gated server-side (CLOUD_MODULES),
+		// so an org without the features would fail state resolution with an
+		// opaque "unauthorized" before the trial could ever be offered.
+		if err := ensureCommandCloudFeatures(cmd, client, *source.OrgName); err != nil {
+			return workspaceAutocheckState{}, err
+		}
 		mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
 		if err != nil {
+			if isCloudUnauthorized(err) {
+				// The source exists, the user belongs to the org, and required
+				// features were just ensured; a refusal here typically means
+				// the installation does not grant access to this repository.
+				url := source.ConfigURL
+				if url == "" {
+					url = "https://github.com/settings/installations/" + source.ID
+				}
+				return workspaceAutocheckState{}, &repoAccessError{settingsURL: url}
+			}
 			return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
 		}
 		if mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID); ok {
@@ -1454,6 +1485,7 @@ func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Cli
 		SourceMode:     "SELECTED",
 		SelectedRepos:  selected,
 		Mapped:         source.OrgName != nil,
+		ConfigURL:      source.ConfigURL,
 	}
 	if source.OrgName != nil {
 		state.OrgName = *source.OrgName
@@ -1506,6 +1538,38 @@ func userOrgMembershipError(user *cloudapi.UserResponse, orgName, repo string) e
 	}
 	msg := fmt.Sprintf("%s is owned by another Dagger Cloud organization which you are not a member of. Contact the organization administrator to get access", repo)
 	return errors.New(msg)
+}
+
+// isCloudUnauthorized reports whether a Cloud API error is an authorization
+// refusal. The API surfaces these as plain "unauthorized" messages without a
+// structured code.
+func isCloudUnauthorized(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unauthorized")
+}
+
+// repoAccessError tells the user to grant the Dagger Cloud GitHub App access
+// to the repository on the installation's settings page. It is typed so
+// `checks on` can offer to open that page and retry.
+type repoAccessError struct{ settingsURL string }
+
+func (e *repoAccessError) Error() string {
+	return fmt.Sprintf("Cloud checks need GitHub access to this repository. Visit %s to enable it and then run the command again", e.settingsURL)
+}
+
+// installationSettingsURL returns the settings page for the state's GitHub
+// installation, falling back to the canonical URL format when the source's
+// ConfigURL is unknown (e.g. the repo-tracked path).
+func installationSettingsURL(state workspaceAutocheckState) string {
+	if state.ConfigURL != "" {
+		return state.ConfigURL
+	}
+	return "https://github.com/settings/installations/" + state.InstallationID
+}
+
+// isRepoNotInInstallation matches the Cloud API's rejection when configuring a
+// repository the GitHub App installation has no access to.
+func isRepoNotInInstallation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "does not belong to installation")
 }
 
 func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {

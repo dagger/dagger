@@ -20,12 +20,14 @@ var loginSwitchAccount bool
 
 var cloudCmd = &cobra.Command{
 	Use:   "cloud",
-	Short: "Manage Dagger Cloud",
+	Short: "Manage Dagger Cloud (checks, engines, traces, billing, etc.)",
 }
 
-var cloudLoginCmd = newLoginCmd(false)
-var cloudSignupCmd = newSignupCmd()
-var loginCmd = newLoginCmd(true)
+var (
+	cloudLoginCmd  = newLoginCmd(false)
+	cloudSignupCmd = newSignupCmd()
+	loginCmd       = newLoginCmd(true)
+)
 
 var (
 	cloudLogoutCmd = newLogoutCmd(false)
