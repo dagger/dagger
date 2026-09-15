@@ -589,6 +589,14 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 
 // summarizeWorkspaceChange renders the patch from one workspace's root to
 // another's, so the model sees what a workspace swap changed.
+//
+// Mounted content (Workspace.withMountedDirectory/withMountedFile) is
+// deliberately kept out of the pending changeset, so it is kept out of this
+// summary too: a freshly mounted repository would otherwise be itemized as
+// thousands of added files, flooding the model's context. Paths at or under a
+// mount point of either workspace are stripped from both roots before diffing,
+// and mount topology changes are reported as one compact line per mount point
+// instead.
 func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, prev, ws dagql.ObjectResult[*Workspace]) (string, error) {
 	before, err := workspaceRoot(ctx, srv, prev)
 	if err != nil {
@@ -596,6 +604,13 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 	}
 	after, err := workspaceRoot(ctx, srv, ws)
 	if err != nil {
+		return "", err
+	}
+	mountPoints := unionMountPoints(prev.Self(), ws.Self())
+	if before, err = withoutMountPoints(ctx, srv, before, mountPoints); err != nil {
+		return "", err
+	}
+	if after, err = withoutMountPoints(ctx, srv, after, mountPoints); err != nil {
 		return "", err
 	}
 	beforeID, err := before.ID()
@@ -612,7 +627,63 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 	}); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	summary := m.summarizePatch(ctx, srv, changes)
+	if mountSummary := summarizeMountChanges(prev.Self(), ws.Self()); mountSummary != "" {
+		if summary == "" {
+			return mountSummary, nil
+		}
+		return mountSummary + "\n\n" + summary, nil
+	}
+	return summary, nil
+}
+
+// unionMountPoints returns the sorted union of two workspaces' mount points:
+// every path whose content must be excluded when diffing the workspaces
+// against each other.
+func unionMountPoints(a, b *Workspace) []string {
+	pts := append(slices.Clone(a.MountPoints()), b.MountPoints()...)
+	slices.Sort(pts)
+	return slices.Compact(pts)
+}
+
+// withoutMountPoints strips the given workspace-root-relative mount points from
+// a workspace root directory, so mounted content (a read-only attachment, not a
+// pending change) never shows up in a workspace diff. withoutDirectory removes
+// whatever node is at the path — directory or file — and ignores a missing one,
+// so it covers file mounts too.
+func withoutMountPoints(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory], mountPoints []string) (dagql.ObjectResult[*Directory], error) {
+	for _, mp := range mountPoints {
+		if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+			View:  srv.View,
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(mp)},
+			},
+		}); err != nil {
+			return dir, fmt.Errorf("exclude mount %q: %w", mp, err)
+		}
+	}
+	return dir, nil
+}
+
+// summarizeMountChanges renders one line per mount point that appeared or
+// disappeared between the previous and new workspace. Mounted content is
+// deliberately not itemized (see summarizeWorkspaceChange); this compact
+// notice is what the model sees of a mount topology change.
+func summarizeMountChanges(prev, next *Workspace) string {
+	var lines []string
+	for _, mp := range next.MountPoints() {
+		if slices.Contains(prev.MountPoints(), mp) {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("Mounted (read-only): %s", mp))
+	}
+	for _, mp := range prev.MountPoints() {
+		if !slices.Contains(next.MountPoints(), mp) {
+			lines = append(lines, fmt.Sprintf("Unmounted: %s", mp))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
