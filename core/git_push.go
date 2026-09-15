@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -240,6 +241,11 @@ func runGitPush(ctx context.Context, git *gitutil.GitCLI, url, name, sha, expect
 	args = append(args, "--", url, sha+":"+name)
 	out, err := git.Run(ctx, args...)
 	if err != nil {
+		if errors.Is(err, gitutil.ErrGitAuthFailed) {
+			// Approval authorizes the operation; it does not supply valid Git
+			// credentials. Do not copy remote/helper output into this diagnostic.
+			return nil, fmt.Errorf("push %s was authorized, but the remote rejected Git authentication: %w; refresh the owning client's Git credentials and check its configured push transport", name, err)
+		}
 		// Porcelain includes the rejected ref and its reason; stderr stays in
 		// Git's trace, without copying credential-bearing configuration here.
 		return nil, fmt.Errorf("push %s failed: %w: %s", name, err, strings.TrimSpace(string(out)))

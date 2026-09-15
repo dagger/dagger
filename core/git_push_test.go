@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,6 +127,26 @@ func TestGitPushHooksTagsAndCancellation(t *testing.T) {
 	cancel()
 	_, err = runGitPush(ctx, git, remote, "refs/heads/cancelled", tip, "")
 	require.Error(t, err)
+}
+
+func TestGitPushAuthenticationDiagnostic(t *testing.T) {
+	for _, stderr := range []string{
+		"remote: Invalid username or token.\nfatal: Authentication failed for https://example.com/repo/",
+		"git@example.com: Permission denied (publickey).",
+	} {
+		git := gitutil.NewGitCLI(gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+			fmt.Fprintln(cmd.Stdout, "sensitive-remote-output")
+			fmt.Fprintln(cmd.Stderr, stderr+" sensitive-helper-output")
+			return errors.New("exit status 128")
+		}))
+		_, err := runGitPush(t.Context(), git, "https://example.com/repo", "refs/heads/main", strings.Repeat("a", 40), "")
+		require.ErrorIs(t, err, gitutil.ErrGitAuthFailed)
+		require.ErrorContains(t, err, "was authorized")
+		require.ErrorContains(t, err, "remote rejected Git authentication")
+		require.ErrorContains(t, err, "owning client's Git credentials")
+		require.ErrorContains(t, err, "push transport")
+		require.NotContains(t, err.Error(), "sensitive")
+	}
 }
 
 func TestGitPushValidation(t *testing.T) {
