@@ -405,6 +405,17 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	}
 
 	autoExpand := row.Depth() < 1 && row.IsRunningOrChildRunning
+	// Generator progress can be a tree of scopes and downstream clients.
+	// Follow its explicitly revealed branches to the active scope, while
+	// leaving the leaf's low-level work collapsed. Manual toggles still win.
+	if row.IsRunningOrChildRunning && row.Span.Reveal && row.ShouldShowRevealedSpans(opts) {
+		for parent := row.Parent; parent != nil; parent = parent.Parent {
+			if parent.Span.GeneratorName != "" {
+				autoExpand = true
+				break
+			}
+		}
+	}
 
 	alwaysExpand := row.Span.IsCanceled() ||
 		(row.Span.LLMRole != "" && len(row.Span.RevealedSpans.Order) > 0) ||
