@@ -389,9 +389,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Deploys a current build of the docs.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 287, 1)).
-							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 289, 2)}).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 290, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 280, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 282, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 283, 2)})).
 					WithFunction(
 						dag.Function("GenerateVersion",
 							dag.TypeDef().WithObject("Changeset")).
@@ -406,14 +406,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish a previous deployment to production - defaults to the latest deployment on the main branch.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 316, 1)).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 318, 2)}).
-							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 320, 2)}).
-							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 322, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 309, 1)).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 311, 2)}).
+							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 313, 2)}).
+							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 315, 2)})).
 					WithFunction(
 						dag.Function("References",
 							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Regenerate the API schema and CLI reference docs").
+							WithDescription("Regenerate the GraphQL schema and API reference pages").
 							WithSourceMap(dag.SourceMap("main.go", 232, 1)).
 							WithGenerator().
 							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 235, 2)}).

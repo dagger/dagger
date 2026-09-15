@@ -42,17 +42,6 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../..
 	}
 }
 
-// Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:344:1)
-	q := r.query.Select("configSchema")
-	q = q.Arg("filename", filename)
-
-	return &File{
-		query: q,
-	}
-}
-
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
 	Platform Platform // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:142:2)
@@ -269,17 +258,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:400:2)
+	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:386:2)
 
-	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:405:2)
+	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:391:2)
 
-	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:408:2)
+	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:394:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:410:2)
+	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:396:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:395:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:381:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -307,7 +296,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:381:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:367:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}

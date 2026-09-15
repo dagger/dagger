@@ -339,20 +339,6 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 		Binary("./cmd/introspect")
 }
 
-// Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
-	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
-	// This tool has runtime dependencies on the engine source code itself
-	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
-		Env().
-		WithExec(
-			[]string{"go", "run", "./cmd/json-schema", filename},
-			dagger.ContainerWithExecOpts{RedirectStdout: schemaFilename},
-		).
-		File(schemaFilename)
-}
-
 var targets = []struct {
 	Name       string
 	Tag        string

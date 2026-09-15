@@ -180,7 +180,7 @@ type DocsDevReferencesOpts struct {
 	Ws *Workspace
 }
 
-// Regenerate the API schema and CLI reference docs
+// Regenerate the GraphQL schema and API reference pages
 func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset {
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
