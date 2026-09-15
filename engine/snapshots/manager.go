@@ -95,8 +95,12 @@ type snapshotManager struct {
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
-	importLayerLocker      *locker.Locker
-	ownerLeaseLocker       *locker.Locker
+	// ownerLeaseSnapshots is the reverse index of snapshotOwnerLeases:
+	// leaseID -> snapshots that lease is attached to. RemoveLease walks only
+	// these snapshots instead of scanning the whole cache under mu.
+	ownerLeaseSnapshots map[string]map[string]struct{}
+	importLayerLocker   *locker.Locker
+	ownerLeaseLocker    *locker.Locker
 
 	mountPool sharableMountPool
 }
@@ -114,6 +118,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByBlob:    make(map[ImportedLayerBlobKey]string),
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
+		ownerLeaseSnapshots:    make(map[string]map[string]struct{}),
 		importLayerLocker:      locker.New(),
 		ownerLeaseLocker:       locker.New(),
 	}

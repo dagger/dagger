@@ -307,7 +307,7 @@ func (sn *applySnapshotDiffTestSnapshotter) Merge(ctx context.Context, key strin
 	return nil
 }
 
-func newApplySnapshotDiffTestManager(t *testing.T) *snapshotManager {
+func newApplySnapshotDiffTestManager(t testing.TB) *snapshotManager {
 	t.Helper()
 
 	sn := newApplySnapshotDiffTestSnapshotter()
@@ -321,6 +321,7 @@ func newApplySnapshotDiffTestManager(t *testing.T) *snapshotManager {
 		importedLayerByBlob:    map[ImportedLayerBlobKey]string{},
 		importedLayerByDiff:    map[ImportedLayerDiffKey]string{},
 		snapshotOwnerLeases:    map[string]map[string]struct{}{},
+		ownerLeaseSnapshots:    map[string]map[string]struct{}{},
 		importLayerLocker:      locker.New(),
 		ownerLeaseLocker:       locker.New(),
 	}
@@ -457,6 +458,106 @@ func TestSnapshotManagerRemoveLeaseDoesNotDeleteDuringAttachLease(t *testing.T) 
 
 	require.NoError(t, <-removeErrCh)
 	require.NoError(t, <-attachErrCh)
+}
+
+func TestSnapshotManagerRemoveLeaseReverseIndexConsistency(t *testing.T) {
+	cm := newApplySnapshotDiffTestManager(t)
+	sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+	sn.snapshots["snapshot-old"] = ctdsnapshots.Info{Name: "snapshot-old"}
+	sn.snapshots["snapshot-new"] = ctdsnapshots.Info{Name: "snapshot-new", Parent: "snapshot-old"}
+
+	require.NoError(t, cm.AttachLease(context.Background(), "lease-1", "snapshot-new"))
+
+	// Attaching walks the whole chain, so both snapshots show up in the
+	// forward map and the reverse index.
+	require.Equal(t, map[string]map[string]struct{}{
+		"snapshot-old": {"lease-1": {}},
+		"snapshot-new": {"lease-1": {}},
+	}, cm.snapshotOwnerLeases)
+	require.Equal(t, map[string]map[string]struct{}{
+		"lease-1": {"snapshot-old": {}, "snapshot-new": {}},
+	}, cm.ownerLeaseSnapshots)
+
+	require.NoError(t, cm.RemoveLease(context.Background(), "lease-1"))
+	require.Empty(t, cm.snapshotOwnerLeases)
+	require.Empty(t, cm.ownerLeaseSnapshots)
+
+	// Re-attach after a remove must rebuild both maps without residue.
+	require.NoError(t, cm.AttachLease(context.Background(), "lease-1", "snapshot-new"))
+	require.NoError(t, cm.AttachLease(context.Background(), "lease-2", "snapshot-old"))
+	require.NoError(t, cm.RemoveLease(context.Background(), "lease-1"))
+
+	require.Equal(t, map[string]map[string]struct{}{
+		"snapshot-old": {"lease-2": {}},
+	}, cm.snapshotOwnerLeases)
+	require.Equal(t, map[string]map[string]struct{}{
+		"lease-2": {"snapshot-old": {}},
+	}, cm.ownerLeaseSnapshots)
+
+	// Removing a lease that has no snapshot mappings is a no-op.
+	require.NoError(t, cm.RemoveLease(context.Background(), "lease-unknown"))
+	require.Len(t, cm.snapshotOwnerLeases, 1)
+	require.Len(t, cm.ownerLeaseSnapshots, 1)
+}
+
+func TestSnapshotManagerRemoveLeaseLeavesUnrelatedLeasesIntact(t *testing.T) {
+	cm := newApplySnapshotDiffTestManager(t)
+	sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+
+	const numSnapshots = 2000
+	for i := 0; i < numSnapshots; i++ {
+		snapshotID := fmt.Sprintf("snapshot-%d", i)
+		sn.snapshots[snapshotID] = ctdsnapshots.Info{Name: snapshotID}
+		require.NoError(t, cm.AttachLease(context.Background(), fmt.Sprintf("lease-%d", i), snapshotID))
+	}
+	require.Len(t, cm.snapshotOwnerLeases, numSnapshots)
+	require.Len(t, cm.ownerLeaseSnapshots, numSnapshots)
+
+	require.NoError(t, cm.RemoveLease(context.Background(), "lease-1234"))
+
+	require.NotContains(t, cm.snapshotOwnerLeases, "snapshot-1234")
+	require.NotContains(t, cm.ownerLeaseSnapshots, "lease-1234")
+	require.Len(t, cm.snapshotOwnerLeases, numSnapshots-1)
+	require.Len(t, cm.ownerLeaseSnapshots, numSnapshots-1)
+	for i := 0; i < numSnapshots; i++ {
+		if i == 1234 {
+			continue
+		}
+		snapshotID := fmt.Sprintf("snapshot-%d", i)
+		leaseID := fmt.Sprintf("lease-%d", i)
+		require.Contains(t, cm.snapshotOwnerLeases[snapshotID], leaseID)
+		require.Contains(t, cm.ownerLeaseSnapshots[leaseID], snapshotID)
+	}
+}
+
+func BenchmarkSnapshotManagerRemoveLease(b *testing.B) {
+	cm := newApplySnapshotDiffTestManager(b)
+	sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+
+	const numSnapshots = 5000
+	for i := 0; i < numSnapshots; i++ {
+		snapshotID := fmt.Sprintf("snapshot-%d", i)
+		sn.snapshots[snapshotID] = ctdsnapshots.Info{Name: snapshotID}
+		if err := cm.AttachLease(context.Background(), fmt.Sprintf("lease-%d", i), snapshotID); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	const (
+		leaseID    = "bench-lease"
+		snapshotID = "bench-snapshot"
+	)
+	sn.snapshots[snapshotID] = ctdsnapshots.Info{Name: snapshotID}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := cm.AttachLease(context.Background(), leaseID, snapshotID); err != nil {
+			b.Fatal(err)
+		}
+		if err := cm.RemoveLease(context.Background(), leaseID); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestApplySnapshotDiffNilContract(t *testing.T) {
