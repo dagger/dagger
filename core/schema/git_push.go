@@ -42,6 +42,9 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	} else if args.Remote != "" && args.Remote != "origin" {
 		// A named remote must be registered; origin is the implicit default
 		// below, resolvable even when it was never registered explicitly.
+		// Registered routing is explicit; captured URLs already include host
+		// rewrites and must not be rewritten a second time.
+		opts.SkipDestinationRewrite = true
 		named := repo.Self().RemoteConfig(args.Remote)
 		switch {
 		case named == nil:
@@ -58,8 +61,10 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	} else if origin := repo.Self().RemoteConfig("origin"); origin != nil && len(origin.PushURLs) > 1 {
 		return inst, fmt.Errorf("origin has multiple push URLs; pass an explicit destination repository with to")
 	} else if origin != nil && len(origin.PushURLs) == 1 {
+		opts.SkipDestinationRewrite = true
 		destinationURL = origin.PushURLs[0]
 	} else if origin != nil && origin.URL != "" {
+		opts.SkipDestinationRewrite = true
 		destinationURL = origin.URL
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
 		switch {

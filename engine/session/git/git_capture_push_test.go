@@ -6,6 +6,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestResolvePushURL(t *testing.T) {
+	skipIfNoGit(t)
+	const remote = "https://github.com/dagger/dagger"
+	require.Equal(t, remote, ResolvePushURL(remote, []*GitConfigEntry{
+		nil,
+		{Key: "url.insteadof", Value: remote},
+		{Key: "url.pushinsteadof", Value: remote},
+		{Key: "url..insteadof", Value: remote},
+		{Key: "url..pushinsteadof", Value: remote},
+	}))
+	for _, tc := range []struct {
+		name    string
+		entries []*GitConfigEntry
+		want    string
+	}{
+		{name: "unchanged", want: remote},
+		{name: "push instead of fetch", entries: []*GitConfigEntry{
+			{Key: "url.ssh://git@push.test/.pushinsteadof", Value: "https://github.com/"},
+			{Key: "url.ssh://git@fetch.test/.insteadof", Value: "https://github.com/"},
+		}, want: "ssh://git@push.test/dagger/dagger"},
+		{name: "longest and first tie", entries: []*GitConfigEntry{
+			{Key: "url.ssh://git@fallback.test/.pushinsteadof", Value: "https://github.com/"},
+			{Key: "url.git@push.test:.pushinsteadof", Value: "https://github.com/dagger/"},
+			{Key: "url.git@other.test:.pushinsteadof", Value: "https://github.com/dagger/"},
+		}, want: "git@push.test:dagger"},
+		{name: "no recursive rewriting", entries: []*GitConfigEntry{
+			{Key: "url.alias:.pushinsteadof", Value: "https://github.com/"},
+			{Key: "url.ssh://git@push.test/Case/.insteadof", Value: "alias:"},
+		}, want: "alias:dagger/dagger"},
+		{name: "insteadOf only", entries: []*GitConfigEntry{
+			{Key: "url.git@push.test:.insteadof", Value: "https://github.com/"},
+		}, want: "git@push.test:dagger/dagger"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, home := initRepo(t, "main")
+			gitCmd(t, home, repo, "remote", "add", "origin", remote)
+			var raw string
+			for _, entry := range tc.entries {
+				gitCmd(t, home, repo, "config", "--add", entry.Key, entry.Value)
+				raw += entry.Key + "\n" + entry.Value + "\x00"
+			}
+			filtered, err := parseGitConfigOutput([]byte(raw))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tc.entries, filtered.Entries)
+			require.Equal(t, tc.want, ResolvePushURL(remote, filtered.Entries))
+			require.Equal(t, gitCmd(t, home, repo, "remote", "get-url", "--push", "origin"), ResolvePushURL(remote, filtered.Entries))
+		})
+	}
+}
+
 func TestCaptureGitPushURLs(t *testing.T) {
 	skipIfNoGit(t)
 	const configuredURL = "https://github.com/vito/agents"

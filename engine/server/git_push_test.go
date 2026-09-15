@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -27,11 +28,27 @@ func (p *pushPromptServer) PromptBool(_ context.Context, req *prompt.BoolRequest
 	return &prompt.BoolResponse{Response: !strings.Contains(req.Prompt, "force pushing")}, nil
 }
 
+type pushRoutingServer struct {
+	git.UnimplementedGitServer // Credential/SSH RPCs must not run during authorization.
+	entries                    []*git.GitConfigEntry
+	requests                   int
+}
+
+func (s *pushRoutingServer) GetConfig(_ context.Context, req *git.GitConfigRequest) (*git.GitConfigResponse, error) {
+	if req.CheckoutPath != "" {
+		return nil, errors.New("must not read a module checkout's config")
+	}
+	s.requests++
+	return &git.GitConfigResponse{Result: &git.GitConfigResponse_Config{Config: &git.GitConfig{Entries: s.entries}}}, nil
+}
+
 func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
 	questions := &pushPromptServer{}
 	prompt.RegisterPromptServer(grpcServer, questions)
+	routing := &pushRoutingServer{}
+	git.RegisterGitServer(grpcServer, routing)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
 	conn, err := grpc.NewClient("passthrough:///prompt", grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -67,24 +84,25 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	const remote = "git@example.com:repo"
 	const ref = "refs/heads/main"
 	// Direct owner use is implicit authorization, including explicit leases.
-	_, err = srv.AuthorizeGitPush(ownerCtx, remote, ref, true)
+	_, err = srv.AuthorizeGitPush(ownerCtx, remote, ref, true, false)
 	require.NoError(t, err)
 	require.Empty(t, questions.requests)
 	for range 2 {
-		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false)
+		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false, false)
 		require.NoError(t, err)
-		require.Equal(t, owner.clientMetadata, md)
+		require.Equal(t, owner.clientMetadata, md.Owner)
+		require.Equal(t, remote, md.Remote)
 	}
 	require.Len(t, questions.requests, 1)
 	require.Equal(t, "Allow pushing to git@example.com:repo @ refs/heads/main?", questions.requests[0].Prompt)
 	require.Empty(t, questions.requests[0].PersistentKey)
 	for range 2 {
-		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true)
+		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true, false)
 		require.ErrorContains(t, err, "permission denied")
 		require.Nil(t, md)
 	}
 	require.Len(t, questions.requests, 2)
-	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false)
+	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false, false)
 	require.NoError(t, err)
 	require.Len(t, questions.requests, 3)
 	// A module-created container's nested API client is still delegated.
@@ -92,12 +110,38 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	sess.clientRuntimes["nested"] = nested
 	installTestClientRecords(sess)
 	nestedCtx := clientContext(nested)
-	md, err := srv.AuthorizeGitPush(nestedCtx, remote, ref, false)
+	md, err := srv.AuthorizeGitPush(nestedCtx, remote, ref, false, false)
 	require.NoError(t, err)
-	require.Equal(t, owner.clientMetadata, md)
-	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true)
+	require.Equal(t, owner.clientMetadata, md.Owner)
+	require.Equal(t, remote, md.Remote)
+	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true, false)
 	require.ErrorContains(t, err, "permission denied")
 	require.Len(t, questions.requests, 3)
+	require.Zero(t, routing.requests, "explicit destinations must not consult owner rewrites")
+
+	// Only the trusted owner has attachables. A nested module caller must use
+	// that owner's routing and approve the actual endpoint, not the fetch URL.
+	const fetchURL = "https://example.com/repo"
+	for _, target := range []string{"git@push.example.com:", "git@other.example.com:"} {
+		routing.entries = []*git.GitConfigEntry{{Key: "url." + target + ".pushinsteadof", Value: "https://example.com/"}}
+		before := len(questions.requests)
+		for range 2 {
+			authorized, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, true)
+			require.NoError(t, err)
+			require.Equal(t, owner.clientMetadata, authorized.Owner)
+			require.Equal(t, target+"repo", authorized.Remote)
+		}
+		require.Len(t, questions.requests, before+1, "approval is scoped to the resolved destination")
+		require.Equal(t, "Allow pushing to "+target+"repo @ "+ref+"?", questions.requests[before].Prompt)
+	}
+	for _, target := range []string{"https://sensitive-token@push.example.com/", "ssh://git:sensitive-password@push.example.com/", "https://push.example.com/?sensitive-token=", "file:///tmp/", "ext::sensitive-command "} {
+		routing.entries = []*git.GitConfigEntry{{Key: "url." + target + ".pushinsteadof", Value: "https://example.com/"}}
+		before := len(questions.requests)
+		_, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, true)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "sensitive")
+		require.Len(t, questions.requests, before)
+	}
 }
 
 func TestGitPushApprovals(t *testing.T) {

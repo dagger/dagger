@@ -3,12 +3,17 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/util/gitutil"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type gitPushApprovalKey struct {
@@ -57,7 +62,7 @@ func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, as
 	return decision.allowed, decision.err
 }
 
-func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force bool) (*engine.ClientMetadata, error) {
+func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force, resolveURL bool) (*core.GitPushAuthorization, error) {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -66,10 +71,58 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	if err != nil {
 		return nil, err
 	}
+	if resolveURL {
+		// Only read routing configuration here. Neither credential helpers nor
+		// SSH agents may be consulted until this exact resolved URL is approved.
+		conn, available, err := srv.SpecificClientAttachableConn(ctx, owner.clientID, core.SpecificClientAttachableConnOpts{IfAvailable: true})
+		if err != nil {
+			return nil, err
+		}
+		if available {
+			response, err := git.NewGitClient(conn).GetConfig(ctx, &git.GitConfigRequest{})
+			if err != nil && status.Code(err) != codes.Unimplemented {
+				return nil, fmt.Errorf("read push owner routing configuration failed")
+			}
+			if response != nil && response.GetError() != nil && response.GetError().Type != git.NOT_FOUND {
+				// A broken config must not silently push to the unrewritten URL.
+				return nil, fmt.Errorf("read push owner routing configuration failed")
+			}
+			if response != nil && response.GetConfig() != nil {
+				remote = git.ResolvePushURL(remote, response.GetConfig().Entries)
+			}
+		}
+	}
+	// Config can itself contain credentials or malformed URLs. Reject without
+	// echoing it in a prompt, error, or receipt, and never downgrade to a local
+	// path or a Git remote helper supplied by host configuration.
+	parsed, err := gitutil.ParseURL(remote)
+	if err != nil || parsed.Host == "" {
+		return nil, fmt.Errorf("invalid push destination URL")
+	}
+	if parsed.User != nil {
+		_, password := parsed.User.Password()
+		if password || parsed.Scheme == gitutil.HTTPProtocol || parsed.Scheme == gitutil.HTTPSProtocol {
+			return nil, fmt.Errorf("push destination must not contain embedded credentials")
+		}
+	}
+	if strings.ContainsAny(remote, "\r\n\x00") || strings.Contains(remote, "?") || strings.Contains(remote, "#") {
+		return nil, fmt.Errorf("invalid push destination URL")
+	}
+	if parsed.Scheme == gitutil.SSHProtocol && parsed.User == nil {
+		parsed.User = url.User("git")
+	}
+	remote = parsed.Remote()
+	authorized := func() (*core.GitPushAuthorization, error) {
+		md, err := owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
+		if err != nil {
+			return nil, err
+		}
+		return &core.GitPushAuthorization{Owner: md, Remote: remote}, nil
+	}
 	// Calling push directly is implicit authorization for this exact operation.
 	// Tool execution in the owner's context is not a direct user API call.
 	if !delegated && !core.IsAgentToolCall(ctx) {
-		return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
+		return authorized()
 	}
 	key := gitPushApprovalKey{owner: owner.clientID, remote: remote, ref: ref, force: force}
 	allowed, err := client.daggerSession.gitPushApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
@@ -108,7 +161,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		}
 		return nil, fmt.Errorf("git %s permission denied by the owning client for %s for this session", action, ref)
 	}
-	return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
+	return authorized()
 }
 
 // A module cannot regain implicit authorization by spawning a non-module

@@ -31,7 +31,7 @@ type currentTypeDefsTestServer struct {
 	workspaceLockErr error
 }
 
-func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool) (*engine.ClientMetadata, error) {
+func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }
 

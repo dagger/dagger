@@ -19,6 +19,15 @@ const GitPushTimeout = 2 * time.Minute
 type GitPushOpts struct {
 	Branch            string
 	ExpectedRemoteSHA string
+	// Registered remote routing is already explicit (and captured URLs have
+	// already had host rewrites applied).
+	SkipDestinationRewrite bool
+}
+
+// GitPushAuthorization is operation-local, never a portable credential or recipe.
+type GitPushAuthorization struct {
+	Owner  *engine.ClientMetadata
+	Remote string
 }
 
 func (opts GitPushOpts) Ref(source *gitutil.Ref) (string, error) {
@@ -75,9 +84,25 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 			return nil, fmt.Errorf("push destination must not contain embedded credentials; use a secret instead")
 		}
 	}
-	owner, err := query.AuthorizeGitPush(ctx, destination.URL.Remote(), name, opts.ExpectedRemoteSHA != "")
+	// Explicit capabilities are bound to their destination. Do not route them
+	// through the owner's rewrites, which might select a different host.
+	resolveURL := !opts.SkipDestinationRewrite && destination.AuthToken.Self() == nil &&
+		destination.AuthHeader.Self() == nil && destination.SSHAuthSocket.Self() == nil && len(destination.Services) == 0
+	authorized, err := query.AuthorizeGitPush(ctx, destination.URL.Remote(), name, opts.ExpectedRemoteSHA != "", resolveURL)
 	if err != nil {
 		return nil, err
+	}
+	owner := authorized.Owner
+	// Keep the resolved URL confined to this operation; never mutate a cached
+	// GitRepository or put the owner's configuration into a portable recipe.
+	if authorized.Remote != destination.URL.Remote() {
+		resolved, err := gitutil.ParseURL(authorized.Remote)
+		if err != nil {
+			return nil, fmt.Errorf("invalid authorized push destination")
+		}
+		copy := *destination
+		copy.URL = resolved
+		destination = &copy
 	}
 	// Prepare history before asking the owner to unlock a key. Local fetch also
 	// spawns upload-pack; cancel its entire process group on timeout.

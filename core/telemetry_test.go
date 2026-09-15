@@ -51,7 +51,7 @@ type mockServer struct {
 	lockWritable   bool
 }
 
-func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool) (*engine.ClientMetadata, error) {
+func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }
 

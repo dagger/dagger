@@ -22,11 +22,42 @@ func isGitConfigKeyAllowed(key string) bool {
 		return true
 	}
 
-	if matchesURLInsteadOf(key) {
+	if matchesURLInsteadOf(key) || (strings.HasPrefix(key, "url.") && strings.HasSuffix(key, ".pushinsteadof")) {
 		return true
 	}
 
 	return false
+}
+
+// ResolvePushURL applies the owner's URL-only routing configuration. Like Git,
+// pushInsteadOf matches the original URL, falling back to insteadOf only when
+// no push rewrite matches. Each pass uses the longest prefix, with the first
+// entry winning ties. Callers must validate the result before displaying it or
+// acquiring credentials.
+// Already-resolved captured remotes and explicit push URLs must not use this.
+func ResolvePushURL(remote string, entries []*GitConfigEntry) string {
+	for _, suffix := range []string{".pushinsteadof", ".insteadof"} {
+		longest := -1
+		rewritten := remote
+		for _, entry := range entries {
+			if entry == nil || len(entry.Key) <= len("url.")+len(suffix) {
+				continue
+			}
+			key := strings.ToLower(entry.Key)
+			if !strings.HasPrefix(key, "url.") || !strings.HasSuffix(key, suffix) {
+				continue
+			}
+			if len(entry.Value) > longest && strings.HasPrefix(remote, entry.Value) {
+				longest = len(entry.Value)
+				// The subsection (replacement URL) is case-sensitive.
+				rewritten = entry.Key[len("url."):len(entry.Key)-len(suffix)] + strings.TrimPrefix(remote, entry.Value)
+			}
+		}
+		if longest >= 0 {
+			return rewritten
+		}
+	}
+	return remote
 }
 
 func matchesURLInsteadOf(input string) bool {
