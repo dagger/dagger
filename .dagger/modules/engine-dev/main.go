@@ -353,50 +353,6 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 		File(schemaFilename)
 }
 
-// Generate any engine-related files
-// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-// +generate
-func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
-	base := dev.Source
-	withGoGenerate := dag.Go(dagger.GoOpts{
-		Ws:        dev.Ws,
-		Source:    dev.Source,
-		VcsCommit: dev.VCSCommit,
-		VcsDirty:  dev.VCSDirty,
-		ExtraPackages: []string{
-			"clang",
-			"lld",
-			"libbpf-dev",
-		},
-	}).Env().
-		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
-		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogofaster@v1.3.2"}).
-		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
-		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
-		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
-		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithExec([]string{"go", "test", "./dagql", "-update"}).
-		Directory(".")
-	changes := changes(base, withGoGenerate, []string{"github.com"})
-	return changes, nil
-}
-
-// Return the changes between two directory, excluding the specified path patterns from the comparison
-// FIXME: had to copy-paste across modules
-func changes(before, after *dagger.Directory, exclude []string) *dagger.Changeset {
-	if exclude == nil {
-		return after.Changes(before)
-	}
-	return after.
-		// 1. Remove matching files from after
-		Filter(dagger.DirectoryFilterOpts{Exclude: exclude}).
-		// 2. Copy matching files from before
-		WithDirectory("", before.Filter(dagger.DirectoryFilterOpts{Include: exclude})).
-		Changes(before)
-}
-
 var targets = []struct {
 	Name       string
 	Tag        string
