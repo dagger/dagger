@@ -47,6 +47,99 @@ func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestEnumKind(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	module := phpModule(t, c, "enum-kind")
+
+	t.Run("built-in (string-backed)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "opposite-network-protocol", "--arg=TCP")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "UDP", out)
+	})
+
+	// Task's backing values ("pending"/"complete") deliberately differ from its
+	// case names, so these assertions only hold if the API identifier is derived
+	// from the case name rather than from the backing value.
+	t.Run("custom (string-backed)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "toggle-todo", "--task=TODO")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "DONE", out)
+	})
+
+	t.Run("custom (string-backed): rejects the backing value", func(ctx context.Context, t *testctx.T) {
+		_, err := module.
+			With(daggerCallAt(".", "toggle-todo", "--task=pending")).
+			Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "value should be one of DONE,TODO")
+	})
+
+	t.Run("custom (string-backed): backing value stays usable in PHP", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "backing-value", "--task=TODO")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "pending", out)
+	})
+
+	t.Run("custom (string-backed): identifiers match case-insensitively", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "toggle-todo", "--task=todo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "DONE", out)
+	})
+
+	t.Run("custom (string-backed): default value", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "defaulted-task")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "DONE", out)
+
+		out, err = module.
+			With(daggerCallAt(".", "defaulted-task", "--task=TODO")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "TODO", out)
+	})
+
+	// Identity is the case name, so the backing type is irrelevant on the wire.
+	t.Run("custom (pure, no backing type)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "raise-level", "--level=LOW")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "HIGH", out)
+	})
+
+	t.Run("custom (int-backed): backing value stays usable in PHP", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "double-weight", "--weight=LIGHT")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2", out)
+	})
+
+	t.Run("custom (string-backed): optional when nullable", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCallAt(".", "optional-task")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "none", out)
+
+		out, err = module.
+			With(daggerCallAt(".", "optional-task", "--task=TODO")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Todo", out)
+	})
+}
+
 func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := phpModule(t, c, "scalar-kind")
