@@ -150,6 +150,98 @@ func validateSDKModuleGenerationGraph(cfg *workspace.Config, configDir string) e
 type sdkModuleGeneratorPlan struct {
 	invocationCWD string
 	ordered       []*sdkModuleGraphScope
+	// owner assigns dependencies from other SDKs to the generator that needs them.
+	owner  map[string]string
+	parent map[string]*sdkModuleGraphScope
+	last   map[string]int
+}
+
+func sdkModuleScopeLabel(node *sdkModuleGraphScope) string {
+	if node.path == "." {
+		return "./"
+	}
+	return "./" + node.path
+}
+
+// planProgress projects the dependency graph onto a display tree. A client is
+// nested beneath its last generated dependency; other dependencies get a
+// reference. This does not change execution order or run shared clients twice.
+func (plan *sdkModuleGeneratorPlan) planProgress() {
+	plan.parent = map[string]*sdkModuleGraphScope{}
+	plan.last = map[string]int{}
+	position := map[string]int{}
+	for i, node := range plan.ordered {
+		position[node.key] = i
+		plan.last[node.key] = i
+	}
+	for i, node := range plan.ordered {
+		for _, dep := range node.dependencies {
+			parent := plan.parent[node.key]
+			if parent == nil || position[dep.key] > position[parent.key] {
+				plan.parent[node.key] = dep
+			}
+			// Keep the other branches open until their reference is emitted.
+			plan.last[dep.key] = max(plan.last[dep.key], i)
+		}
+	}
+	for i := len(plan.ordered) - 1; i >= 0; i-- {
+		node := plan.ordered[i]
+		if parent := plan.parent[node.key]; parent != nil {
+			plan.last[parent.key] = max(plan.last[parent.key], plan.last[node.key])
+		}
+	}
+}
+
+type sdkModuleScopeProgress struct {
+	ctx            context.Context
+	span           trace.Span
+	downstreamCtx  context.Context
+	downstreamSpan trace.Span
+}
+
+func (p *sdkModuleScopeProgress) downstream() context.Context {
+	if p.downstreamSpan == nil {
+		p.downstreamCtx, p.downstreamSpan = core.Tracer(p.ctx).Start(p.ctx, "downstream clients", telemetry.Reveal())
+	}
+	return p.downstreamCtx
+}
+
+type sdkModuleGeneratorProgress struct {
+	plan   *sdkModuleGeneratorPlan
+	scopes map[string]*sdkModuleScopeProgress
+}
+
+func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleGraphScope) context.Context {
+	parent := p.plan.parent[node.key]
+	if parent != nil {
+		ctx = p.scopes[parent.key].downstream()
+	}
+	for _, dep := range node.dependencies {
+		if dep != parent {
+			refCtx := p.scopes[dep.key].downstream()
+			_, ref := core.Tracer(refCtx).Start(refCtx, "see: "+sdkModuleScopeLabel(node), telemetry.Reveal())
+			ref.End()
+		}
+	}
+	ctx, span := core.Tracer(ctx).Start(ctx, "re-generate: "+sdkModuleScopeLabel(node), telemetry.Reveal())
+	p.scopes[node.key] = &sdkModuleScopeProgress{ctx: ctx, span: span}
+	return ctx
+}
+
+func (p *sdkModuleGeneratorProgress) finish(index int, err error) {
+	// Close children before parents. On error, close every open branch.
+	for i := index; i >= 0; i-- {
+		node := p.plan.ordered[i]
+		scope := p.scopes[node.key]
+		if scope == nil || (err == nil && p.plan.last[node.key] != index) {
+			continue
+		}
+		if scope.downstreamSpan != nil {
+			telemetry.EndWithCause(scope.downstreamSpan, &err)
+		}
+		telemetry.EndWithCause(scope.span, &err)
+		delete(p.scopes, node.key)
+	}
 }
 
 func selectSDKModuleGeneratorProviders(specs []*core.SyntheticGeneratorSpec) (map[string]bool, error) {
@@ -339,16 +431,18 @@ func planSDKModuleScopes(
 
 	plan := &sdkModuleGeneratorPlan{
 		invocationCWD: cleanWorkspaceRelPath(invocationCWD),
+		owner:         map[string]string{},
 	}
 	required := map[string]bool{}
-	var requireScope func(*sdkModuleGraphScope)
-	requireScope = func(node *sdkModuleGraphScope) {
+	var requireScope func(*sdkModuleGraphScope, string)
+	requireScope = func(node *sdkModuleGraphScope, owner string) {
 		if required[node.key] {
 			return
 		}
 		required[node.key] = true
+		plan.owner[node.key] = owner
 		for _, dependency := range node.dependencies {
-			requireScope(dependency)
+			requireScope(dependency, owner)
 		}
 	}
 	for _, node := range scopes {
@@ -358,13 +452,14 @@ func planSDKModuleScopes(
 		if !node.scope.IsModule && len(node.scope.Clients) == 0 {
 			continue
 		}
-		requireScope(node)
+		requireScope(node, node.sdkName)
 	}
 	for _, node := range ordered {
 		if required[node.key] {
 			plan.ordered = append(plan.ordered, node)
 		}
 	}
+	plan.planProgress()
 	return plan, nil
 }
 
@@ -388,8 +483,8 @@ func runSDKModuleGeneratorGraph(
 	// Each selected SDK is a distinct generator in the CLI, even though their
 	// scopes are evaluated together as one dependency-ordered graph. Keep the
 	// spans open for the whole graph so their duration and result describe the
-	// aggregate operation, while parenting each provider's scope work to the
-	// matching span so its rolled-up detail remains useful.
+	// aggregate operation. Dependency-free scopes start below their provider;
+	// downstream clients nest below their last generated dependency.
 	providerCtx := make(map[string]context.Context, len(specs))
 	var spans []trace.Span
 	if generatorSpans {
@@ -398,15 +493,15 @@ func runSDKModuleGeneratorGraph(
 				continue
 			}
 			generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
+				telemetry.Reveal(),
 				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 					attribute.String(telemetry.GeneratorNameAttr, spec.Name),
 				),
 			)
 			providerCtx[spec.Provider] = generatorCtx
 			spans = append(spans, span)
 		}
+
 	}
 	defer func() {
 		for _, span := range spans {
@@ -414,8 +509,10 @@ func runSDKModuleGeneratorGraph(
 		}
 	}()
 
+	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
+	defer func() { progress.finish(len(plan.ordered)-1, rerr) }()
 	current := base
-	for _, node := range plan.ordered {
+	for i, node := range plan.ordered {
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -423,8 +520,12 @@ func runSDKModuleGeneratorGraph(
 		generatorCtx := ctx
 		if selectedCtx, ok := providerCtx[node.sdkName]; ok {
 			generatorCtx = selectedCtx
+		} else if ownerCtx, ok := providerCtx[plan.owner[node.key]]; ok {
+			generatorCtx = ownerCtx
 		}
-		current, err = s.generateSDKModuleScope(generatorCtx, current, staged, selected, node.configScope, node.path, node.scope)
+		scopeCtx := progress.start(generatorCtx, node)
+		current, err = s.generateSDKModuleScope(scopeCtx, current, staged, selected, node.configScope, node.path, node.scope)
+		progress.finish(i, err)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}
