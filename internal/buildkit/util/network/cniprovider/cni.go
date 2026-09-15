@@ -401,8 +401,6 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 		s.InternalTxBytes -= ns.offsetSample.InternalTxBytes
 		s.ExternalRxBytes -= ns.offsetSample.ExternalRxBytes
 		s.ExternalTxBytes -= ns.offsetSample.ExternalTxBytes
-		s.UnknownRxBytes -= ns.offsetSample.UnknownRxBytes
-		s.UnknownTxBytes -= ns.offsetSample.UnknownTxBytes
 	}
 	return s, nil
 }

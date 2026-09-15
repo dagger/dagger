@@ -46,8 +46,6 @@ type NetworkSample struct {
 	InternalTxBytes int64 `json:"internalTxBytes,omitempty"`
 	ExternalRxBytes int64 `json:"externalRxBytes,omitempty"`
 	ExternalTxBytes int64 `json:"externalTxBytes,omitempty"`
-	UnknownRxBytes  int64 `json:"unknownRxBytes,omitempty"`
-	UnknownTxBytes  int64 `json:"unknownTxBytes,omitempty"`
 	ScopeSupported  bool  `json:"scopeSupported,omitempty"`
 }
 

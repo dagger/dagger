@@ -54,15 +54,16 @@ func (ns *cniNS) sample() (*resourcestypes.NetworkSample, error) {
 	if ns.netAccounting != nil {
 		scoped, err := ns.netAccounting.Sample()
 		if err != nil {
-			return nil, errors.Wrap(err, "sampling scoped network accounting")
+			// The resource sampler conservatively attributes the host-veth total
+			// to external traffic when scoped accounting is unavailable.
+			bklog.L.Debugf("scoped network accounting sample unavailable for %s: %s", ns.vethName, err)
+		} else {
+			stat.InternalRxBytes = int64(scoped.InternalRX)
+			stat.InternalTxBytes = int64(scoped.InternalTX)
+			stat.ExternalRxBytes = int64(scoped.ExternalRX)
+			stat.ExternalTxBytes = int64(scoped.ExternalTX)
+			stat.ScopeSupported = true
 		}
-		stat.InternalRxBytes = int64(scoped.InternalRX)
-		stat.InternalTxBytes = int64(scoped.InternalTX)
-		stat.ExternalRxBytes = int64(scoped.ExternalRX)
-		stat.ExternalTxBytes = int64(scoped.ExternalTX)
-		stat.UnknownRxBytes = int64(scoped.UnknownRX)
-		stat.UnknownTxBytes = int64(scoped.UnknownTX)
-		stat.ScopeSupported = true
 	}
 	ns.prevSample = stat
 	return stat, nil

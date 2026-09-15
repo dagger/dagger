@@ -960,8 +960,6 @@ var metricsVerbosity = map[string]int{
 	telemetryattrs.NetworkInternalTxBytes: 3,
 	telemetryattrs.NetworkExternalRxBytes: 3,
 	telemetryattrs.NetworkExternalTxBytes: 3,
-	telemetryattrs.NetworkUnknownRxBytes:  3,
-	telemetryattrs.NetworkUnknownTxBytes:  3,
 	telemetry.LLMInputTokens:              1,
 	telemetry.LLMOutputTokens:             1,
 	telemetry.FilesyncWrittenBytes:        3,
@@ -993,8 +991,6 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalTxBytes, "External Tx", humanizeBytes)
 			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalRxBytes, "Internal Rx", humanizeBytes)
 			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalTxBytes, "Internal Tx", humanizeBytes)
-			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkUnknownRxBytes, "Unclassified Rx", humanizeBytes)
-			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkUnknownTxBytes, "Unclassified Tx", humanizeBytes)
 		}
 	}
 

@@ -29,7 +29,6 @@ const (
 const (
 	scopeInternal uint8 = iota
 	scopeExternal
-	scopeUnknown
 )
 
 type counterKey struct {
@@ -55,8 +54,6 @@ type Sample struct {
 	InternalTX uint64
 	ExternalRX uint64
 	ExternalTX uint64
-	UnknownRX  uint64
-	UnknownTX  uint64
 }
 
 // Tracer owns the programs and maps shared by all CNI veths.
@@ -81,7 +78,20 @@ func New() (*Tracer, error) {
 		objs.Close()
 		return nil, fmt.Errorf("querying possible CPUs: %w", err)
 	}
-	return &Tracer{objs: objs, cpus: cpus}, nil
+	t := &Tracer{objs: objs, cpus: cpus}
+	// IPv6 neighbor discovery and other link-local control traffic never leaves
+	// the CNI link. Keeping these prefixes in the same trie avoids extra parsing
+	// in the packet hot path.
+	for _, prefix := range []netip.Prefix{
+		netip.MustParsePrefix("fe80::/10"),
+		netip.MustParsePrefix("ff02::/16"),
+	} {
+		if err := t.AddInternalPrefix(prefix); err != nil {
+			objs.Close()
+			return nil, fmt.Errorf("registering link-local prefix %s: %w", prefix, err)
+		}
+	}
+	return t, nil
 }
 
 func (t *Tracer) Close() error { return t.objs.Close() }
@@ -185,7 +195,7 @@ func (a *Attachment) Sample() (Sample, error) {
 	defer a.tracer.mu.Unlock()
 	var sample Sample
 	for direction := uint8(directionRX); direction <= directionTX; direction++ {
-		for scope := uint8(scopeInternal); scope <= scopeUnknown; scope++ {
+		for scope := uint8(scopeInternal); scope <= scopeExternal; scope++ {
 			key := counterKey{Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope}
 			values := make([]uint64, a.tracer.cpus)
 			if err := a.tracer.objs.ByteCounters.Lookup(key, &values); err != nil {
@@ -207,10 +217,6 @@ func (a *Attachment) Sample() (Sample, error) {
 				sample.ExternalRX = total
 			case direction == directionTX && scope == scopeExternal:
 				sample.ExternalTX = total
-			case direction == directionRX && scope == scopeUnknown:
-				sample.UnknownRX = total
-			case direction == directionTX && scope == scopeUnknown:
-				sample.UnknownTX = total
 			}
 		}
 	}
@@ -226,7 +232,7 @@ func (a *Attachment) Close() error {
 		errs = append(errs, a.egress.Close())
 	}
 	for direction := uint8(directionRX); direction <= directionTX; direction++ {
-		for scope := uint8(scopeInternal); scope <= scopeUnknown; scope++ {
+		for scope := uint8(scopeInternal); scope <= scopeExternal; scope++ {
 			key := counterKey{Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope}
 			if err := a.tracer.objs.ByteCounters.Delete(key); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
 				errs = append(errs, err)

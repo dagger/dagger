@@ -7,6 +7,7 @@ char LICENSE[] SEC("license") = "GPL";
 
 #define ETH_P_8021Q 0x8100
 #define ETH_P_8021AD 0x88A8
+#define ETH_P_ARP 0x0806
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
 #define TC_ACT_OK 0
@@ -33,7 +34,6 @@ struct __sk_buff {
 #define DIR_TX 1
 #define SCOPE_INTERNAL 0
 #define SCOPE_EXTERNAL 1
-#define SCOPE_UNKNOWN 2
 
 struct counter_key {
     __u32 ifindex;
@@ -97,20 +97,24 @@ static __always_inline int classify(struct __sk_buff *skb, __u8 direction)
     __u16 proto;
     __u32 offset = 12;
     if (bpf_skb_load_bytes(skb, offset, &proto, sizeof(proto)) < 0)
-        return SCOPE_UNKNOWN;
+        return SCOPE_EXTERNAL;
     offset = 14;
 
     if (proto == bpf_htons(ETH_P_8021Q) || proto == bpf_htons(ETH_P_8021AD)) {
         if (bpf_skb_load_bytes(skb, offset + 2, &proto, sizeof(proto)) < 0)
-            return SCOPE_UNKNOWN;
+            return SCOPE_EXTERNAL;
         offset += 4;
     }
+
+    /* ARP is link-local CNI control traffic and cannot leave the bridge. */
+    if (proto == bpf_htons(ETH_P_ARP))
+        return SCOPE_INTERNAL;
 
     if (proto == bpf_htons(ETH_P_IP)) {
         struct ipv4_lpm_key key = {.prefixlen = 32};
         __u32 addr_offset = offset + (direction == DIR_TX ? 16 : 12);
         if (bpf_skb_load_bytes(skb, addr_offset, &key.addr, sizeof(key.addr)) < 0)
-            return SCOPE_UNKNOWN;
+            return SCOPE_EXTERNAL;
         return bpf_map_lookup_elem(&internal_v4, &key) ? SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
 
@@ -118,11 +122,12 @@ static __always_inline int classify(struct __sk_buff *skb, __u8 direction)
         struct ipv6_lpm_key key = {.prefixlen = 128};
         __u32 addr_offset = offset + (direction == DIR_TX ? 24 : 8);
         if (bpf_skb_load_bytes(skb, addr_offset, key.addr, sizeof(key.addr)) < 0)
-            return SCOPE_UNKNOWN;
+            return SCOPE_EXTERNAL;
         return bpf_map_lookup_elem(&internal_v6, &key) ? SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
 
-    return SCOPE_UNKNOWN;
+    /* Anything not positively identified as Dagger-local is billable. */
+    return SCOPE_EXTERNAL;
 }
 
 SEC("tc")

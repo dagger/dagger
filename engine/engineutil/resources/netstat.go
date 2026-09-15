@@ -32,8 +32,6 @@ type netNSSampler struct {
 	internalTxBytes metric.Int64Gauge
 	externalRxBytes metric.Int64Gauge
 	externalTxBytes metric.Int64Gauge
-	unknownRxBytes  metric.Int64Gauge
-	unknownTxBytes  metric.Int64Gauge
 }
 
 type netNSSample struct {
@@ -49,8 +47,6 @@ type netNSSample struct {
 	internalTxBytes int64GaugeSample
 	externalRxBytes int64GaugeSample
 	externalTxBytes int64GaugeSample
-	unknownRxBytes  int64GaugeSample
-	unknownTxBytes  int64GaugeSample
 }
 
 func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs attribute.Set) (*netNSSampler, error) {
@@ -126,8 +122,6 @@ func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs att
 		{telemetryattrs.NetworkInternalTxBytes, "Bytes transmitted to Dagger-managed networks", &s.internalTxBytes},
 		{telemetryattrs.NetworkExternalRxBytes, "Bytes received from outside Dagger-managed networks", &s.externalRxBytes},
 		{telemetryattrs.NetworkExternalTxBytes, "Bytes transmitted outside Dagger-managed networks", &s.externalTxBytes},
-		{telemetryattrs.NetworkUnknownRxBytes, "Received bytes whose network scope could not be classified", &s.unknownRxBytes},
-		{telemetryattrs.NetworkUnknownTxBytes, "Transmitted bytes whose network scope could not be classified", &s.unknownTxBytes},
 	} {
 		*scoped.dst, err = meter.Int64Gauge(scoped.name, metric.WithDescription(scoped.description), metric.WithUnit("bytes"))
 		if err != nil {
@@ -158,8 +152,6 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 		internalTxBytes: newInt64GaugeSample(s.internalTxBytes, s.commonAttrs),
 		externalRxBytes: newInt64GaugeSample(s.externalRxBytes, s.commonAttrs),
 		externalTxBytes: newInt64GaugeSample(s.externalTxBytes, s.commonAttrs),
-		unknownRxBytes:  newInt64GaugeSample(s.unknownRxBytes, s.commonAttrs),
-		unknownTxBytes:  newInt64GaugeSample(s.unknownTxBytes, s.commonAttrs),
 	}
 
 	bkSample, err := s.netNS.Sample()
@@ -168,15 +160,17 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	}
 	bkSample = normalizeNetworkSample(bkSample)
 
-	sample.rxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
+	hostRXBytes := bkSample.RxBytes - s.baselineSample.RxBytes
+	hostTXBytes := bkSample.TxBytes - s.baselineSample.TxBytes
+	sample.rxBytes.add(hostRXBytes)
 	// The sampled interface is the host side of the container veth, so its
 	// direction is opposite to the operation's point of view used by the
 	// canonical network metrics.
-	sample.networkRxBytes.add(bkSample.TxBytes - s.baselineSample.TxBytes)
+	sample.networkRxBytes.add(hostTXBytes)
 	sample.rxPackets.add(bkSample.RxPackets - s.baselineSample.RxPackets)
 	sample.rxDropped.add(bkSample.RxDropped - s.baselineSample.RxDropped)
-	sample.txBytes.add(bkSample.TxBytes - s.baselineSample.TxBytes)
-	sample.networkTxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
+	sample.txBytes.add(hostTXBytes)
+	sample.networkTxBytes.add(hostRXBytes)
 	sample.txPackets.add(bkSample.TxPackets - s.baselineSample.TxPackets)
 	sample.txDropped.add(bkSample.TxDropped - s.baselineSample.TxDropped)
 	if bkSample.ScopeSupported {
@@ -184,8 +178,12 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 		sample.internalTxBytes.add(bkSample.InternalTxBytes - s.baselineSample.InternalTxBytes)
 		sample.externalRxBytes.add(bkSample.ExternalRxBytes - s.baselineSample.ExternalRxBytes)
 		sample.externalTxBytes.add(bkSample.ExternalTxBytes - s.baselineSample.ExternalTxBytes)
-		sample.unknownRxBytes.add(bkSample.UnknownRxBytes - s.baselineSample.UnknownRxBytes)
-		sample.unknownTxBytes.add(bkSample.UnknownTxBytes - s.baselineSample.UnknownTxBytes)
+	} else {
+		// Anything not positively identified as Dagger-internal is external.
+		// This also makes TCX load/attach failures fail closed for accounting
+		// without reintroducing a classic-TC attachment fallback.
+		sample.externalRxBytes.add(hostTXBytes)
+		sample.externalTxBytes.add(hostRXBytes)
 	}
 
 	sample.rxBytes.record(ctx)
@@ -200,8 +198,6 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	sample.internalTxBytes.record(ctx)
 	sample.externalRxBytes.record(ctx)
 	sample.externalTxBytes.record(ctx)
-	sample.unknownRxBytes.record(ctx)
-	sample.unknownTxBytes.record(ctx)
 
 	return nil
 }
