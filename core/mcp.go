@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"regexp"
 	"slices"
@@ -433,28 +434,36 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 }
 
 func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
-	// Try to return the raw patch so the LLM can see the actual diff.
-	// Fall back to a structured summary for large changesets.
-	var rawPatch string
-	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
-		View:  srv.View,
-		Field: "asPatch",
-	}, dagql.Selector{
-		View:  srv.View,
-		Field: "contents",
-	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
-		return rawPatch
+	ctx, span := Tracer(ctx).Start(ctx, "summarize changeset")
+	defer span.End()
+
+	// Inspect stats BEFORE rendering a patch. A workspace swap can change an
+	// entire repository, and binary patches can be much larger than the files.
+	// These entries are only used locally: selecting diffStats through dagql
+	// would publish one object per path just to format a transient preview.
+	stats, err := changes.Self().DiffStats(ctx)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
+	}
+	if len(stats) == 0 {
+		return ""
+	}
+	if smallTextChangeset(stats) {
+		var patch dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, changes, &patch, dagql.Selector{
+			View: srv.View, Field: "asPatch",
+		}); err == nil {
+			if r, err := patch.Self().Open(ctx, patch); err == nil {
+				preview, ok := readPatchPreview(r)
+				r.Close()
+				if ok {
+					return preview
+				}
+			}
+		}
 	}
 
 	const summaryWidth = 80
-
-	var stats []*DiffStat
-	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
-		View:  srv.View,
-		Field: "diffStats",
-	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
-	}
 
 	entries := make([]patchpreview.Entry, len(stats))
 	for i, s := range stats {
@@ -463,7 +472,61 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 			entries[i].OldPath = *s.OldPath
 		}
 	}
-	return patchpreview.SummarizeString(entries, summaryWidth)
+	return boundPatchSummary(patchpreview.SummarizeString(entries, summaryWidth))
+}
+
+func boundPatchSummary(summary string) string {
+	lines := strings.Split(summary, "\n")
+	if len(lines) <= patchPreviewMaxLines+2 {
+		return summary
+	}
+	// Keep the totals for ALL paths, not just those that fit in the preview.
+	return strings.Join(lines[:patchPreviewMaxLines], "\n") + fmt.Sprintf(
+		"\n... %d summary lines omitted\n\n%s", len(lines)-patchPreviewMaxLines-2, lines[len(lines)-1])
+}
+
+const patchPreviewMaxBytes = 16 * 1024
+const patchPreviewMaxLines = 100
+
+// The stats gate avoids generating obviously large or binary patches at all.
+// Renames are excluded because asPatch encodes them as delete+add, which can
+// include an entire file even when numstat reports zero changed lines.
+func smallTextChangeset(stats []*DiffStat) bool {
+	if len(stats) > 10 {
+		return false
+	}
+	lines := 0
+	for _, stat := range stats {
+		if strings.HasSuffix(stat.Path, "/") {
+			// Directory entries accompany ordinary new files but have no
+			// payload in a Git patch.
+			continue
+		}
+		// Binary files and path-only fallback stats both report zero lines.
+		// Prefer a summary rather than risk encoding their entire contents.
+		if stat.Kind == DiffStatKindRenamed || (stat.AddedLines == 0 && stat.RemovedLines == 0) {
+			return false
+		}
+		lines += stat.AddedLines + stat.RemovedLines
+		if lines > patchPreviewMaxLines {
+			return false
+		}
+	}
+	return true
+}
+
+// Bound bytes as well as lines: one minified line can exceed File.contents'
+// limit. Read one extra byte to distinguish a complete preview from truncation.
+func readPatchPreview(r io.Reader) (string, bool) {
+	buf, err := io.ReadAll(io.LimitReader(r, patchPreviewMaxBytes+1))
+	if err != nil || len(buf) == 0 || len(buf) > patchPreviewMaxBytes {
+		return "", false
+	}
+	patch := string(buf)
+	if strings.Count(patch, "\n") > patchPreviewMaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
+		return "", false
+	}
+	return patch, true
 }
 
 const gitDiffContentType = "text/x-diff"
@@ -606,11 +669,13 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 	if err != nil {
 		return "", err
 	}
-	mountPoints := unionMountPoints(prev.Self(), ws.Self())
-	if before, err = withoutMountPoints(ctx, srv, before, mountPoints); err != nil {
+	// Git metadata can disappear when a directory-backed checkout becomes a
+	// GitRef-backed workspace (e.g. reset). It is not a working-tree edit.
+	excludedPaths := append(unionMountPoints(prev.Self(), ws.Self()), ".git")
+	if before, err = withoutMountPoints(ctx, srv, before, excludedPaths); err != nil {
 		return "", err
 	}
-	if after, err = withoutMountPoints(ctx, srv, after, mountPoints); err != nil {
+	if after, err = withoutMountPoints(ctx, srv, after, excludedPaths); err != nil {
 		return "", err
 	}
 	beforeID, err := before.ID()
@@ -1090,7 +1155,7 @@ func workspaceRoot(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult
 		View:  srv.View,
 		Field: "directory",
 		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(".")},
+			{Name: "path", Value: dagql.NewString("/")},
 		},
 	})
 	return dir, err
