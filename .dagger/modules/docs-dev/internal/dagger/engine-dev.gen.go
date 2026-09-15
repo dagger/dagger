@@ -44,7 +44,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../..
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:353:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:344:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -87,7 +87,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:368:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:359:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -97,11 +97,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../../.dagge
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:327:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:318:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:324:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:315:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -177,17 +177,15 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:262:2)
+	Client *Container // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:256:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:265:2)
-
-	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:267:2)
+	Service *Service // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:259:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:258:1)
+func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:252:1)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `client` optional argument
@@ -198,10 +196,6 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
 		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
 	}
 
 	return &Container{
@@ -211,7 +205,7 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:311:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:302:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -220,7 +214,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.d
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:345:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:336:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -285,17 +279,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:453:2)
+	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:444:2)
 
-	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:458:2)
+	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:449:2)
 
-	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:461:2)
+	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:452:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:463:2)
+	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:454:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:448:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:439:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -323,7 +317,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:434:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:425:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -339,8 +333,6 @@ type EngineDevServiceOpts struct {
 	SharedCache bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:207:2)
 
 	Metrics bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:209:2)
-
-	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:211:2)
 }
 
 // Create a test engine service
@@ -358,10 +350,6 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("name", name)

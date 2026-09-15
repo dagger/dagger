@@ -178,8 +178,6 @@ type EngineDevInstallClientOpts struct {
 	Client *Container
 	// The engine service to bind
 	Service *Service
-
-	Version string
 }
 
 // Configure the given client container so that it can connect to the given engine service
@@ -193,10 +191,6 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 		// `service` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 
@@ -331,8 +325,6 @@ type EngineDevServiceOpts struct {
 	SharedCache bool
 
 	Metrics bool
-
-	Version string
 }
 
 // Create a test engine service
@@ -350,10 +342,6 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("name", name)
