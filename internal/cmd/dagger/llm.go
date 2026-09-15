@@ -13,18 +13,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
-	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
+
+const agentVar = "agent"
 
 type interpreterMode int
 
@@ -58,48 +60,53 @@ func (m interpreterMode) ContentType() string {
 	}
 }
 
+// LLMSession owns an interactive session's conversations
+// (hack/designs/async-agents.md §5.1). It holds the session-wide plumbing --
+// the dagger client, the shell handler, the frontend, the plumbing span --
+// plus the conversations themselves and which one the prompt addresses.
+//
+// Routing resolves in exactly one place: Target. Nothing else may infer a
+// destination from what happens to be running, because with a roster the
+// busy agent and the focused agent are routinely different agents.
 type LLMSession struct {
 	frontend idtui.Frontend
+	dag      *dagger.Client
+	shell    *shellCallHandler
 
-	// undo       *LLMSession
-	dag   *dagger.Client
-	llm   *dagger.LLM
-	model string
-	shell *shellCallHandler
+	// agents are the session's conversations, in the order they joined, and
+	// target is the one prompts go to. Guarded by mu: a focus keypress and a
+	// running turn touch them from different goroutines.
+	agents []*sessionAgent
+	target *sessionAgent
+	mu     sync.Mutex
 
-	// onStep, if set, is invoked after every step of a prompt turn. It is used
-	// to auto-save the session so it is preserved even if the process is
-	// interrupted mid-turn.
-	onStep func(*LLMSession)
+	// onStep, if set, is invoked after every prompt turn (including an
+	// interrupted one). It is used to auto-save the session so it is
+	// preserved across interruptions.
+	onStep func(*sessionAgent)
+	// onStepL serializes onStep runs: stepped fires them on background
+	// goroutines (a save serializes the whole conversation, which for a long
+	// session takes far too long to spend inside the turn), and two saves
+	// interleaving on one file would corrupt it.
+	onStepL sync.Mutex
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 
-	autoCompact  bool
-	autoCompactL *sync.Mutex
-
-	// initialLLM is the base LLM to reset to on .clear, e.g. the workspace's
-	// composed agent group as selected on startup (`dagger agent`). When nil,
-	// .clear resets to a plain workspace-bound LLM.
-	initialLLM *dagger.LLM
+	// primaryCtx carries the interactive command's root span. The generated
+	// title is emitted and applied there, while the model call that derives it
+	// stays beneath plumbingCtx. Title generation is attempted once per save
+	// identity; resetTitle starts a fresh identity after branch/resume.
+	primaryCtx      context.Context
+	title           string
+	titleAttempted  bool
+	titleGeneration uint64
+	titleL          sync.Mutex
+	titleGenerator  func(context.Context, *sessionAgent, string) (string, error)
 
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
 	subscriptionLabelCache string
-
-	// prevContextTokens is the cumulative prompt-token total (input + cache
-	// reads + cache writes) observed after the previous step, and prevStepContext
-	// is that step's own prompt size. Together they drive the per-step context
-	// growth shown in --debug mode (see reportContextUsage).
-	prevContextTokens int
-	prevStepContext   int
-
-	// references tracks the host paths the user has attached with @ this
-	// session (see attachReferences). They are mounted read-only in the LLM's
-	// workspace, shown in the "References" sidebar, and dropped on .clear.
-	// Paths already inside the workspace are not tracked here: they are
-	// rewritten to workspace-relative paths instead of being mounted.
-	references []referenceInfo
 
 	// workspaceHostRoot/workspaceHostCwd are the host filesystem paths of the
 	// workspace root and cwd, resolved lazily on the first @-path and cached
@@ -109,6 +116,12 @@ type LLMSession struct {
 	workspaceHostResolved bool
 	workspaceHostRoot     string
 	workspaceHostCwd      string
+
+	// contextVizURL is the context visualizer's URL once its local web
+	// server has started (see context_viz.go); contextVizL guards the
+	// start-once dance.
+	contextVizURL string
+	contextVizL   sync.Mutex
 }
 
 func NewLLMSession(
@@ -119,12 +132,10 @@ func NewLLMSession(
 	frontend idtui.Frontend,
 ) (*LLMSession, error) {
 	s := &LLMSession{
-		dag:          dag,
-		model:        llmModel,
-		shell:        shellHandler,
-		frontend:     frontend,
-		autoCompact:  true,
-		autoCompactL: new(sync.Mutex),
+		dag:        dag,
+		shell:      shellHandler,
+		frontend:   frontend,
+		primaryCtx: ctx,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -146,158 +157,348 @@ func NewLLMSession(
 		sink.SetLLMCostFunc(modelcatalog.Cost)
 	}
 
-	s.reset()
+	// The session always has one conversation: its own, spawned as an agent
+	// on the first prompt submit and targeted from the start.
+	own := s.newAgent(defaultAgentName)
+	own.model = llmModel
+	s.agents = []*sessionAgent{own}
+	s.target = own
+	own.reset()
+	// This plain prompt-mode LLM is the real starting value when no composed
+	// agent replaces it. startInteractivePromptMode explicitly replaces this
+	// baseline together with the composed LLM before entering the prompt.
+	own.setLastSynced(own.llm.Workspace())
 
 	// Grab the model to check for a valid config
-	model, err := s.llm.Model(ctx)
+	model, err := own.llm.Model(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.model = model
+	own.model = model
 
 	return s, nil
 }
 
-func (s *LLMSession) ShouldAutocompact() bool {
-	s.autoCompactL.Lock()
-	defer s.autoCompactL.Unlock()
-	return s.autoCompact
+// defaultAgentName is the display label the session's own conversation spawns
+// under. It is a label only: instance uniqueness is minted by spawn, so
+// nothing here needs to be unique.
+const defaultAgentName = "agent"
+
+// Target is the conversation the prompt addresses -- the single place message
+// routing resolves. It is never nil: the session's own conversation exists
+// from construction.
+func (s *LLMSession) Target() *sessionAgent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.target
 }
 
-func (s *LLMSession) ToggleAutocompact() {
-	s.autoCompactL.Lock()
-	s.autoCompact = !s.autoCompact
-	s.autoCompactL.Unlock()
-	// Refresh the status line so its "(auto)" tag reflects the new state.
-	// Done after releasing autoCompactL, since updateStatusLine reads it back
-	// via ShouldAutocompact.
-	if s.llm != nil {
-		if err := s.updateStatusLine(s.llm); err != nil {
-			slog.Error("failed to update status line after toggling auto-compact", "error", err)
+// SetTarget points the prompt at a conversation the session already holds.
+// Focus moves only by keypress, so nothing calls this from an event path.
+func (s *LLMSession) SetTarget(a *sessionAgent) {
+	s.mu.Lock()
+	if a != nil {
+		s.target = a
+	}
+	s.mu.Unlock()
+}
+
+// TargetAgentID is the runtime handle of the runtime the prompt currently
+// addresses, or "" when the target has not spawned (or attached to) one yet.
+// The roster marks its entry with it.
+func (s *LLMSession) TargetAgentID() string {
+	target := s.Target()
+	if target == nil {
+		return ""
+	}
+	target.agentL.Lock()
+	defer target.agentL.Unlock()
+	return target.agentHandle
+}
+
+// agentByHandle finds the conversation driving the given runtime, or nil.
+func (s *LLMSession) agentByHandle(agentHandle string) *sessionAgent {
+	if agentHandle == "" {
+		return nil
+	}
+	s.mu.Lock()
+	agents := slices.Clone(s.agents)
+	s.mu.Unlock()
+	for _, a := range agents {
+		a.agentL.Lock()
+		match := a.agentHandle == agentHandle
+		a.agentL.Unlock()
+		if match {
+			return a
 		}
 	}
+	return nil
 }
 
-func (s *LLMSession) reset() {
-	// Reset to the initially selected agent group (e.g. `dagger agent`), if any,
-	// so .clear returns to those agents rather than a blank LLM. Preserve the
-	// currently selected model.
-	var llm *dagger.LLM
-	if s.initialLLM != nil {
-		llm = s.initialLLM
-		if s.model != "" {
-			llm = llm.WithModel(s.model)
-		}
-	} else {
-		llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-			WithWorkspace(s.dag.CurrentWorkspace())
-	}
-	s.updateLLM(llm)
-}
-
-func (s *LLMSession) Fork() *LLMSession {
-	// FIXME: this was a half-baked feature, currently does more harm than good
-	// because we lose partial progress on interrupt
-	//
-	// see https://github.com/dagger/dagger/pull/10765
-	return s
-	// cp := *s
-	// cp.undo = s
-	// return &cp
-}
-
-func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
-	s = s.Fork()
-
-	// Resolve any @-path references in the prompt: paths already inside the
-	// workspace are rewritten to workspace-relative paths, and the rest are
-	// mounted read-only in the workspace with the prompt annotated with their
-	// workspace locations.
-	input = s.attachReferences(s.plumbingCtx, input)
-
-	resolvedModel, err := s.llm.Model(s.plumbingCtx)
-	if err != nil {
-		return nil, err
-	}
-	s.model = resolvedModel
-
-	// Check if we need to compact before adding the prompt
-	compacted, err := s.maybeAutoCompact(ctx)
-	if err != nil {
-		return s, fmt.Errorf("auto-compact: %w", err)
-	}
-
-	prompted := compacted.WithPrompt(input)
-
-	for {
-		// update the sidebar after every step, not after the entire loop; step
-		// is lazy, so sync to force it and re-root on the materialized state
-		prompted, err = prompted.Step().Sync(ctx)
+// Focus points the prompt at the agent with the given runtime handle, attaching
+// to it first when the session is not already driving it. encodedID is a
+// handle the client rebuilt from the trace (design §9: telemetry is the
+// directory); it is only consulted when attaching.
+//
+// A failed attach leaves focus where it was: an agent the client cannot
+// address is one it can watch, not one it can talk to.
+func (s *LLMSession) Focus(ctx context.Context, agentHandle, name, encodedID string) error {
+	target := s.agentByHandle(agentHandle)
+	if target == nil {
+		attached, err := s.Attach(ctx, agentHandle, name, encodedID)
 		if err != nil {
-			return s, err
+			return err
 		}
-
-		if err := s.updateLLM(prompted); err != nil {
-			return s, err
-		}
-
-		// In --debug, surface how much this step grew the context, so spikes
-		// (e.g. a tool dumping a huge result) are visible between steps.
-		s.reportContextUsage(ctx, prompted)
-
-		// Auto-save after every step so sessions are preserved even if the
-		// process is interrupted mid-turn.
-		if s.onStep != nil {
-			s.onStep(s)
-		}
-
-		hasMore, err := prompted.HasPending(s.plumbingCtx)
-		if err != nil {
-			return s, err
-		}
-		var queued string
-		if !hasMore {
-			// Check if the user queued a message while the LLM was running. If
-			// nothing is queued and no prompt is pending, the turn is complete.
-			queued = s.shell.DequeueMessage()
-			if queued == "" {
-				break
-			}
-		}
-
-		// Check if we need to compact in-between steps
-		prompted, err = s.maybeAutoCompact(ctx)
-		if err != nil {
-			return s, fmt.Errorf("auto-compact: %w", err)
-		}
-
-		// Inject any queued message as the next prompt. This must happen after
-		// maybeAutoCompact, which returns the session's LLM rather than
-		// prompted, and would otherwise discard the injected prompt.
-		if queued != "" {
-			prompted = prompted.WithPrompt(queued)
-		}
+		target = attached
 	}
-
-	return s, nil
+	s.SetTarget(target)
+	return target.refreshUI()
 }
 
-func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
-	s.llm = llm
+// Attach adopts an agent this session did not spawn as a conversation of its
+// own, rooted on the runtime's last committed snapshot -- the honest chain,
+// pinned by ID. The runtime is not owned: this session may prompt and
+// interrupt it, but clearing the conversation must never stop somebody else's
+// worker.
+//
+// Re-attaching to the same agent returns the existing conversation rather than
+// forking a second view of one runtime.
+func (s *LLMSession) Attach(ctx context.Context, agentHandle, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, agentHandle, name, encodedID, false)
+}
 
-	// figure out what the model resolved to
-	model, err := s.llm.Model(s.plumbingCtx)
-	if err != nil {
-		return err
+// AttachRestored adopts an agent this session RE-HYDRATED from a trace
+// (hack/designs/resume-from-trace.md §5.3). Same adoption, opposite ownership:
+// a restored agent has no other driver -- the session that published it is
+// gone -- so this session is the one whose business it is to stop it, and
+// .clear stopping the runtime is right.
+func (s *LLMSession) AttachRestored(ctx context.Context, agentHandle, name, encodedID string) (*sessionAgent, error) {
+	return s.attach(ctx, agentHandle, name, encodedID, true)
+}
+
+func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID string, owned bool) (*sessionAgent, error) {
+	if existing := s.agentByHandle(agentHandle); existing != nil {
+		return existing, nil
 	}
-	s.model = model
+	if encodedID == "" {
+		return nil, fmt.Errorf("agent %q is not addressable: no handle could be rebuilt from the trace", name)
+	}
+	rt := liveAgent{
+		dag:   s.dag,
+		agent: dagger.Ref[*dagger.Agent](s.dag, dagger.ID(encodedID)),
+	}
+	snapID, err := rt.SnapshotID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
+	}
+	if name == "" {
+		name = "agent"
+	}
+	attached := s.newAgent(name)
+	attached.bindRuntime(rt, agentHandle, encodedID, owned)
+	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
+	// An attached/trace-restored conversation does not carry the checkpoint it
+	// originally synchronized from. Its current snapshot workspace is the safe
+	// best-effort baseline: it is portable with the snapshot and cannot trigger
+	// an unlike-host-root comparison. A later explicit save/reset advances it.
+	if workspace := snapshot.Workspace(); workspace != nil {
+		if _, err := workspace.ID(ctx); err != nil {
+			slog.Debug("attached agent snapshot has no workspace synchronization baseline", "error", err)
+		} else {
+			attached.setLastSynced(workspace)
+		}
+	}
+	if err := attached.setLLM(snapshot); err != nil {
+		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
+	}
+	s.mu.Lock()
+	s.agents = append(s.agents, attached)
+	s.mu.Unlock()
+	return attached, nil
+}
 
-	// Refresh the status line (and changes preview) so its token/cost/context
-	// stats stay in sync with the LLM. Routing this through updateLLM means
-	// every operation that swaps the session's LLM -- prompt turns, .clear,
-	// .compact, .model, branching, resuming -- keeps the status line current
-	// without each call site having to remember to refresh it.
-	return s.updateStatusLine(s.llm)
+// SubmitToTarget offers a message to the target conversation's in-flight turn,
+// reporting whether there was one to absorb it. Nothing else routes messages:
+// a message submitted while some OTHER agent is mid-turn must not be delivered
+// to that agent just because it happens to be the busy one.
+func (s *LLMSession) SubmitToTarget(msg string) bool {
+	target := s.Target()
+	if target == nil {
+		return false
+	}
+	return target.Submit(msg)
+}
+
+// InterruptTarget preempts the target conversation, reporting whether there
+// was anything to preempt. This is Ctrl-C with a roster: it acts on the
+// focused agent's runtime, not on whichever turn holds the client.
+func (s *LLMSession) InterruptTarget() bool {
+	target := s.Target()
+	if target == nil {
+		return false
+	}
+	return target.Interrupt()
+}
+
+// stepped notifies the session that a conversation reached a step boundary, so
+// it can auto-save. The save runs in the background: serializing a long
+// conversation's portable ID is the most expensive call in the client, and a
+// turn that paid for it synchronously kept the "working" indicator lit long
+// after the reply had landed. Saves serialize behind onStepL so concurrent
+// steps cannot interleave writes to the session file.
+func (s *LLMSession) stepped(a *sessionAgent) {
+	if s.onStep == nil {
+		return
+	}
+	a.stepWG.Add(1)
+	go func() {
+		defer a.stepWG.Done()
+		s.onStepL.Lock()
+		defer s.onStepL.Unlock()
+		s.onStep(a)
+	}()
+}
+
+// ensureTitle derives and publishes the title for the current save identity.
+// It is called at the first completed turn, before that turn is auto-saved,
+// rather than from AutoSaveSession itself so later saves do not spend another
+// model call or emit duplicate title records.
+func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
+	if strings.TrimSpace(initialPrompt) == "" {
+		return ""
+	}
+
+	s.titleL.Lock()
+	if s.titleAttempted {
+		title := s.title
+		s.titleL.Unlock()
+		return title
+	}
+	s.titleAttempted = true
+	generation := s.titleGeneration
+	s.titleL.Unlock()
+
+	ctx := s.plumbingCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	generate := s.titleGenerator
+	if generate == nil {
+		generate = func(ctx context.Context, a *sessionAgent, prompt string) (string, error) {
+			return a.GenerateSessionTitle(ctx, prompt)
+		}
+	}
+	// Internal hides the wrapper itself; Encapsulate also keeps the generator's
+	// user/reply message spans out of the interactive conversation.
+	generationCtx, generationSpan := Tracer().Start(
+		ctx, "generate session title", telemetry.Internal(), telemetry.Encapsulate())
+	generated, err := generate(generationCtx, a, initialPrompt)
+	telemetry.EndWithCause(generationSpan, &err)
+	if err != nil {
+		slog.Debug("failed to generate session title; using initial prompt", "error", err)
+	}
+	title := normalizeSessionTitle(generated)
+	if title == "" {
+		title = normalizeSessionTitle(initialPrompt)
+	}
+	if title == "" {
+		title = "Dagger agent session"
+	}
+
+	// A branch or resume may have reset the identity while the lightweight
+	// request was in flight. Do not let the old request rename the new session.
+	s.titleL.Lock()
+	if generation != s.titleGeneration {
+		title = s.title
+		s.titleL.Unlock()
+		return title
+	}
+	s.title = title
+	s.titleL.Unlock()
+
+	emitSessionTitle(s.primaryCtx, title)
+	return title
+}
+
+// resetTitle makes the next completed turn title a newly branched or resumed
+// save identity. An in-flight request from the old identity is discarded.
+func (s *LLMSession) resetTitle() {
+	s.titleL.Lock()
+	s.title = ""
+	s.titleAttempted = false
+	s.titleGeneration++
+	s.titleL.Unlock()
+}
+
+const maxSessionTitleRunes = 60
+
+// normalizeSessionTitle turns either model output or the initial-prompt
+// fallback into a single concise line suitable for span and session names.
+func normalizeSessionTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ""
+	}
+	if line, _, ok := strings.Cut(title, "\n"); ok {
+		title = line
+	}
+	title = strings.Join(strings.Fields(title), " ")
+	if len(title) >= len("title:") && strings.EqualFold(title[:len("title:")], "title:") {
+		title = strings.TrimSpace(title[len("title:"):])
+	}
+	if len(title) >= 2 {
+		first, last := title[0], title[len(title)-1]
+		if first == last && (first == '\'' || first == '"' || first == '`') {
+			title = strings.TrimSpace(title[1 : len(title)-1])
+		}
+	}
+	title = strings.TrimSuffix(title, ".")
+
+	runes := []rune(title)
+	if len(runes) <= maxSessionTitleRunes {
+		return title
+	}
+	const ellipsis = "…"
+	cut := maxSessionTitleRunes - len([]rune(ellipsis))
+	for cut > 0 && runes[cut] != ' ' {
+		cut--
+	}
+	if cut < maxSessionTitleRunes/2 {
+		cut = maxSessionTitleRunes - len([]rune(ellipsis))
+	}
+	return strings.TrimSpace(string(runes[:cut])) + ellipsis
+}
+
+// emitSessionTitle attaches the title to the primary span in both mutable live
+// span state and durable OTLP log form. The role attribute lets downstream
+// consumers recognize this record without interpreting ordinary log bodies.
+func emitSessionTitle(ctx context.Context, title string) {
+	if ctx == nil || title == "" {
+		return
+	}
+	trace.SpanFromContext(ctx).SetName(title)
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(log.StringValue(title))
+	rec.AddAttributes(log.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
+}
+
+// AgentStepped notifies the session that the trace reported a step boundary
+// (a conversation commit) for the runtime with the given runtime handle. When
+// that runtime backs the TARGET conversation, the conversation-scoped
+// surfaces -- status line, changes preview -- are refreshed from its latest
+// snapshot, so they track the agent step by step instead of turn by turn.
+//
+// Cheap by design: it is invoked from the frontend's telemetry ingestion, so
+// everything that talks to the engine happens on the refresh goroutine
+// (scheduleUIRefresh), never here.
+func (s *LLMSession) AgentStepped(agentHandle string) {
+	a := s.agentByHandle(agentHandle)
+	if a == nil || !a.isTarget() {
+		return
+	}
+	a.scheduleUIRefresh()
 }
 
 // subscriptionLabel returns a display label for the OAuth subscription type of
@@ -323,48 +524,6 @@ func (s *LLMSession) subscriptionLabel() string {
 	return s.subscriptionLabelCache
 }
 
-// reportContextUsage emits a --debug span showing this step's context size (the
-// full prompt sent to the model) and how much it grew since the previous step,
-// so context spikes (e.g. a tool dumping a huge result) are visible between
-// steps. LLM.TokenUsage is cumulative over the message history, so its change
-// since the previous step is this step's own prompt (each step adds one
-// assistant message). Compaction resets the history (WithoutMessageHistory),
-// dropping the cumulative total; a drop is treated as a fresh baseline rather
-// than negative growth.
-func (s *LLMSession) reportContextUsage(ctx context.Context, llm *dagger.LLM) {
-	if !debugFlag {
-		return
-	}
-	usage := llm.TokenUsage()
-	input, err := usage.InputTokens(s.plumbingCtx)
-	if err != nil {
-		return
-	}
-	cacheReads, err := usage.CachedTokenReads(s.plumbingCtx)
-	if err != nil {
-		return
-	}
-	cacheWrites, err := usage.CachedTokenWrites(s.plumbingCtx)
-	if err != nil {
-		return
-	}
-
-	cumulative := input + cacheReads + cacheWrites
-	stepContext := cumulative - s.prevContextTokens
-	if stepContext < 0 {
-		// Compaction reset the cumulative total; this step is the new baseline.
-		stepContext = cumulative
-	}
-	growth := stepContext - s.prevStepContext
-	s.prevContextTokens = cumulative
-	s.prevStepContext = stepContext
-
-	_, span := Tracer().Start(ctx, fmt.Sprintf("context %s tokens (%s)",
-		fmtTokenCount(stepContext), fmtTokenGrowth(growth)),
-		telemetry.Reveal())
-	span.End()
-}
-
 func fmtTokenCount(n int) string {
 	switch {
 	case n >= 1_000_000:
@@ -387,252 +546,8 @@ func fmtTokenGrowth(n int) string {
 	}
 }
 
-// updateStatusLine refreshes the compact status line. During a live turn the
-// frontend recomputes the token rollup and cost from live metrics (all models +
-// sub-agents) at render time, so they stay current between turns; here we supply
-// the model, subscription label, auto-compact state, context occupancy, and a
-// token/cost snapshot read from the LLM object itself. That snapshot is the
-// fallback the frontend renders before any metrics arrive — most visibly on
-// load/resume, where the conversation has usage but no live metrics yet.
-func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
-	contextTokens, err := llm.ContextTokens(s.plumbingCtx)
-	if err != nil {
-		return err
-	}
-
-	statusData := idtui.StatusLineData{
-		Model:             s.model,
-		SubscriptionLabel: s.subscriptionLabel(),
-		ContextPercent:    -1, // unknown by default
-		AutoCompact:       s.ShouldAutocompact(),
-	}
-
-	// Seed the cumulative token rollup and cost straight from the LLM object so
-	// the status line is populated immediately on load/resume, before any new
-	// metrics arrive. During a live turn the frontend overrides these with the
-	// live metric rollup (all models + sub-agents); this is the fallback that
-	// keeps a resumed conversation from rendering an empty bar. Best-effort:
-	// stats aren't worth failing a turn over.
-	usage := llm.TokenUsage()
-	statusData.InputTokens, _ = usage.InputTokens(s.plumbingCtx)
-	statusData.OutputTokens, _ = usage.OutputTokens(s.plumbingCtx)
-	statusData.CacheReads, _ = usage.CachedTokenReads(s.plumbingCtx)
-	statusData.CacheWrites, _ = usage.CachedTokenWrites(s.plumbingCtx)
-	if provider, err := llm.Provider(s.plumbingCtx); err == nil {
-		statusData.TotalCost = modelcatalog.Cost(provider, s.model,
-			int64(statusData.InputTokens), int64(statusData.OutputTokens),
-			int64(statusData.CacheReads), int64(statusData.CacheWrites))
-	}
-
-	// The engine is the source of truth for the context window (backed by the
-	// shared catwalk catalog); it reports 0 for uncatalogued/local models or an
-	// older engine without the field.
-	contextWindow, err := llm.ContextWindow(s.plumbingCtx)
-	if err != nil {
-		contextWindow = 0
-	}
-	if contextWindow > 0 {
-		statusData.ContextWindow = contextWindow
-		if contextTokens > 0 {
-			statusData.ContextPercent = float64(contextTokens) / float64(contextWindow) * 100
-		}
-	}
-	s.frontend.SetStatusLine(statusData)
-
-	// Best-effort: refresh the "Changes" preview from the workspace overlay diff.
-	// Never fail a turn on a preview error (e.g. an unbound/rootless workspace).
-	if err := s.updateChangesPreview(llm); err != nil {
-		slog.Debug("could not refresh changes preview", "error", err)
-	}
-
-	return nil
-}
-
-// updateChangesPreview refreshes the "Changes" notification bubble with a summary
-// of the workspace's pending overlay edits (Workspace.changes). Pressing ctrl+s
-// exports them to the local Git workspace (see ExportChanges). When there are no
-// pending edits the bubble is cleared (an empty body renders nothing).
-func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
-	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: s.dag.CurrentWorkspace()}))
-	if err != nil {
-		return err
-	}
-	if len(entries) == 0 {
-		s.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
-		return nil
-	}
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title: "Changes",
-		ContentFunc: func(width int) string {
-			var buf strings.Builder
-			patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
-			return buf.String()
-		},
-		KeyMap: []key.Binding{
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reset")),
-		},
-	})
-	return nil
-}
-
-// ExportChanges writes the workspace's pending overlay edits to its local Git
-// workspace (Workspace.export), then refreshes the changes preview. It is the
-// ctrl+s action; export fails clearly when the workspace cannot persist (a
-// remote ref, a synthetic workspace, or a local dir with no Git root).
-func (s *LLMSession) ExportChanges(ctx context.Context) error {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
-	if err := s.llm.Workspace().Export(ctx); err != nil {
-		return err
-	}
-	// The exported edits now live on disk, so rebind the live workspace: the
-	// overlay the agent accumulated is now redundant with the files
-	// themselves, and carrying it forward would re-diff already-saved content
-	// as pending changes. Rebinding also drops it from the next save —
-	// portableID emits only the current binding. Export bumps the client's
-	// workspace read epoch, so reads after this point see the saved content
-	// rather than a snapshot cached earlier in the session. Sync eagerly so a
-	// failure surfaces here rather than corrupting later saves.
-	rebound, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace()).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("rebind workspace after export: %w", err)
-	}
-	if err := s.updateLLM(rebound); err != nil {
-		return err
-	}
-	if s.onStep != nil {
-		s.onStep(s)
-	}
-	return s.updateChangesPreview(s.llm)
-}
-
-// ResetWorkspace discards the workspace's pending overlay edits, re-binding the
-// LLM to the live workspace without exporting first.
-// It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
-// "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. The binding goes through
-// Workspace.reloaded so cached host reads from earlier in the session are
-// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
-// eagerly so a failure surfaces here rather than corrupting later saves.
-func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
-	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Reloaded()).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("reset workspace: %w", err)
-	}
-	if err := s.updateLLM(reset); err != nil {
-		return err
-	}
-	if s.onStep != nil {
-		s.onStep(s)
-	}
-	return s.updateChangesPreview(s.llm)
-}
-
-const autoCompactReserveTokens = 16_384
-
-// maybeAutoCompact checks whether the current context is inside the response
-// reserve and automatically compacts if so.
-func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr error) {
-	if !s.ShouldAutocompact() {
-		return s.llm, nil
-	}
-
-	contextTokens, err := s.llm.ContextTokens(s.plumbingCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	// The engine reports the model's context window (shared catwalk catalog);
-	// 0 means uncatalogued/local, so we can't determine a threshold — skip.
-	contextWindow, err := s.llm.ContextWindow(s.plumbingCtx)
-	if err != nil || contextWindow <= 0 {
-		return s.llm, nil
-	}
-
-	threshold := contextWindow - autoCompactReserveTokens
-	if threshold <= 0 {
-		threshold = int(float64(contextWindow) * 0.80)
-	}
-
-	if contextTokens > threshold {
-		ctx, span := Tracer().Start(ctx, "auto-compacting LLM history", telemetry.Reveal())
-		defer telemetry.EndWithCause(span, &rerr)
-		return s.Compact(ctx)
-	}
-
-	return s.llm, nil
-}
-
-func (s *LLMSession) Clear() *LLMSession {
-	s = s.Fork()
-	s.reset()
-	s.references = nil
-	s.updateReferencesPreview()
-	return s
-}
-
 //go:embed llm_compact.md
 var compactPrompt string
-
-func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
-	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	compactedPrompt, err := s.llm.
-		WithoutSystemPrompts().
-		WithSystemPrompt("You are a helpful AI assistant tasked with summarizing conversations.").
-		WithPrompt(compactPrompt).
-		LastReply(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.llm.
-		WithoutMessageHistory().
-		WithPrompt(fmt.Sprintf(
-			"This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n\n%s",
-			compactedPrompt,
-		)), nil
-}
-
-func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
-	transcript, err := s.llm.Transcript(ctx)
-	if err != nil {
-		return s, err
-	}
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	fmt.Fprintln(stdio.Stdout, transcript)
-	return s, nil
-}
-
-func (s *LLMSession) Model(model string) (*LLMSession, error) {
-	s = s.Fork()
-	s.updateLLM(s.llm.WithModel(model))
-	model, err := s.llm.Model(s.plumbingCtx)
-	if err != nil {
-		return nil, err
-	}
-	s.model = model
-	return s, nil
-}
-
-// Effort changes the reasoning effort for the rest of the conversation,
-// overriding any provider-configured default. "none" disables reasoning.
-func (s *LLMSession) Effort(effort string) (*LLMSession, error) {
-	s = s.Fork()
-	s.updateLLM(s.llm.WithReasoningEffort(effort))
-	// Resolve the endpoint eagerly so a configuration problem surfaces now
-	// rather than on the next prompt, mirroring Model above.
-	if _, err := s.llm.ReasoningEffort(s.plumbingCtx); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
 
 //go:embed llm_branch_summary.md
 var branchSummaryPrompt string
@@ -685,52 +600,6 @@ func trimConversationForSummary(text string, contextWindow int) string {
 	return notice + "\n\n" + strings.Join(kept, "\n\n")
 }
 
-// BranchSummary generates a summary of the current conversation branch. It is
-// used when branching to describe what was explored in the branch being
-// abandoned, so the summary can be injected at the branch target.
-//
-// The conversation is serialized to plain text first (so the model treats it
-// as data to summarize, not a conversation to continue), then passed to a
-// fresh lightweight LLM call with a small output budget. If customInstructions
-// is non-empty it is appended to the default prompt.
-func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions string) (_ string, rerr error) {
-	ctx, span := Tracer().Start(ctx, "branch summary", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	conversationText, err := s.llm.Transcript(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize history: %w", err)
-	}
-	// Budget the input to the model's actual context window; unknown models
-	// (e.g. local endpoints) report null (decoded as 0) and get a
-	// conservative fallback.
-	contextWindow, err := s.llm.ContextWindow(ctx)
-	if err != nil {
-		contextWindow = 0
-	}
-	conversationText = trimConversationForSummary(conversationText, contextWindow)
-
-	instructions := branchSummaryPrompt
-	if customInstructions != "" {
-		instructions += "\n\nAdditional focus: " + customInstructions
-	}
-
-	prompt := fmt.Sprintf("<conversation>\n%s\n</conversation>\n\n%s", conversationText, instructions)
-
-	// Use a fresh LLM (no tools, no history) with a small output budget.
-	summaryText, err := s.llm.
-		WithoutMessageHistory().
-		WithoutSystemPrompts().
-		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
-		WithPrompt(prompt).
-		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 2048}).
-		LastReply(ctx)
-	if err != nil {
-		return "", err
-	}
-	return summaryText, nil
-}
-
 // sessionMetadata stores metadata about a saved LLM session.
 type sessionMetadata struct {
 	Name      string `json:"name"`
@@ -738,6 +607,12 @@ type sessionMetadata struct {
 	CreatedAt string `json:"created_at"`
 	LLMID     string `json:"llm_id"`
 	Branch    string `json:"branch,omitempty"`
+
+	// WorkspaceBaselineID is the portable ID of an otherwise-empty LLM bound
+	// to the conversation's last-synced workspace. Workspace.id itself is an
+	// engine-local handle and Workspace has no portableID field, so the small
+	// LLM wrapper carries the workspace recipe across engine sessions.
+	WorkspaceBaselineID string `json:"workspace_baseline_id,omitempty"`
 }
 
 // getSessionDir returns the directory where LLM sessions are stored, creating
@@ -765,12 +640,17 @@ func getSessionDir() (string, error) {
 	return sessionDir, nil
 }
 
-// AutoSaveSession saves the session automatically, named after the initial
-// prompt, stored on disk under a UUIDv7 filename for anonymity and time-sorted
-// ordering. If existingUUID is non-empty the same file is updated in-place;
-// otherwise a new UUIDv7 is generated. Returns the UUID used.
-func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, existingUUID string) (string, error) {
-	if s.llm == nil {
+// AutoSaveSession saves the conversation automatically under name, stored on
+// disk under a UUIDv7 filename for anonymity and time-sorted ordering. If
+// existingUUID is non-empty the same file is updated in-place; otherwise a new
+// UUIDv7 is generated. Returns the UUID used.
+//
+// NOTE: the save identity (name/sessionUUID) is still session-wide while this
+// saves ONE conversation, so with several conversations in a session the last
+// to step wins the file. Per-conversation save identity is the follow-up
+// (hack/designs/async-agents.md §5.1).
+func (a *sessionAgent) AutoSaveSession(ctx context.Context, name string, existingUUID string) (string, error) {
+	if a.llm == nil {
 		return existingUUID, nil // nothing to save
 	}
 
@@ -782,9 +662,25 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	// Persist the portable, self-contained (recipe-form) ID rather than the
 	// default runtime handle, which is an engine-local reference that cannot be
 	// resolved once this session's engine is gone.
-	llmID, err := s.llm.PortableID(ctx)
+	llmID, err := a.llm.PortableID(ctx)
 	if err != nil {
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
+	}
+	a.session.shell.assignAgent(llmID)
+
+	// Workspace IDs are engine-local handles, so persist the baseline through a
+	// minimal portable LLM recipe that binds it. Best-effort for attached or
+	// trace-restored conversations whose snapshot may be unbound: the
+	// conversation remains saveable, and LoadSession safely falls back to its
+	// restored workspace when this field is absent.
+	var workspaceBaselineID string
+	if baseline := a.lastSynced(); baseline != nil {
+		portable, err := a.session.dag.LLM().WithWorkspace(baseline).PortableID(ctx)
+		if err != nil {
+			slog.Debug("could not persist workspace synchronization baseline", "error", err)
+		} else {
+			workspaceBaselineID = string(portable)
+		}
 	}
 
 	sessionID := existingUUID
@@ -797,10 +693,11 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	}
 
 	metadata := sessionMetadata{
-		Name:      initialPrompt,
-		Model:     s.model,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		LLMID:     string(llmID),
+		Name:                name,
+		Model:               a.model,
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+		LLMID:               string(llmID),
+		WorkspaceBaselineID: workspaceBaselineID,
 	}
 
 	jsonData, err := json.MarshalIndent(metadata, "", "  ")
@@ -818,16 +715,16 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 		return sessionID, fmt.Errorf("failed to restrict session file permissions: %w", err)
 	}
 
-	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
+	slog.Debug("auto-saved LLM session", "id", sessionID, "name", name, "file", sessionFile)
 	return sessionID, nil
 }
 
-// LoadSession loads an LLM session from disk by UUID. The message history is
-// replayed for telemetry against replayCtx (not ctx), so callers can surface
-// the replayed conversation at the conversation's top level rather than nested
-// under the command span that triggered the load. Pass ctx for replayCtx to
-// replay in place.
-func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
+// LoadSession loads an LLM session from disk by UUID, replacing this
+// conversation. The message history is replayed for telemetry against
+// replayCtx (not ctx), so callers can surface the replayed conversation at the
+// conversation's top level rather than nested under the command span that
+// triggered the load. Pass ctx for replayCtx to replay in place.
+func (a *sessionAgent) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return err
@@ -851,7 +748,27 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 		return fmt.Errorf("invalid session data: missing LLM ID")
 	}
 
-	loadedLLM := dagger.Ref[*dagger.LLM](s.dag, dagger.ID(metadata.LLMID))
+	loadedLLM := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.LLMID))
+	var baseline *dagger.Workspace
+	fallback := loadedLLM.Workspace()
+	if _, err := fallback.ID(ctx); err != nil {
+		slog.Debug("restored conversation has no workspace synchronization baseline", "error", err)
+	} else {
+		baseline = fallback
+	}
+	if metadata.WorkspaceBaselineID != "" {
+		// Workspace.id is not portable, so the metadata ID addresses the minimal
+		// LLM wrapper written by AutoSaveSession. Resolve its bound workspace now;
+		// if an old/corrupt save cannot rebuild it, retain the safe same-workspace
+		// fallback instead of failing resume or comparing unrelated host roots.
+		portable := dagger.Ref[*dagger.LLM](a.session.dag, dagger.ID(metadata.WorkspaceBaselineID))
+		candidate := portable.Workspace()
+		if _, err := candidate.ID(ctx); err != nil {
+			slog.Debug("could not restore workspace synchronization baseline", "error", err)
+		} else {
+			baseline = candidate
+		}
+	}
 
 	// Replay the message history to emit telemetry spans so the TUI shows the
 	// conversation in its scrollback. Replay against replayCtx so the spans nest
@@ -866,12 +783,13 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
 	// describes a workspace that is now partially fiction, so tell it what
 	// needs resolving rather than letting it stumble over the markers.
-	if cue := conflictMarkerCue(ctx, loadedLLM, s.dag.CurrentWorkspace()); cue != "" {
+	if cue := conflictMarkerCue(ctx, loadedLLM, baseline); cue != "" {
 		loadedLLM = loadedLLM.WithSystemPrompt(cue)
 	}
 
-	// updateLLM refreshes the status line from the restored conversation's stats.
-	return s.updateLLM(loadedLLM)
+	// Restore the baseline together with the conversation so any asynchronous
+	// status refresh sees a consistent pair.
+	return a.updateSyncedLLM(loadedLLM, baseline)
 }
 
 // conflictMarkerCue reports whether restoring the session left conflict
@@ -885,6 +803,9 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 // empty and nothing is searched. Best-effort throughout; a failed check must
 // not block loading the session.
 func conflictMarkerCue(ctx context.Context, llm *dagger.LLM, before *dagger.Workspace) string {
+	if llm == nil || before == nil {
+		return ""
+	}
 	changes := llm.Workspace().Changes(dagger.WorkspaceChangesOpts{From: before})
 	added, err := changes.AddedPaths(ctx)
 	if err != nil {

@@ -11,9 +11,7 @@ defmodule Dagger.Codegen do
     supports_nullable_objects = supports_nullable_objects?(introspection_schema.version)
 
     visit(introspection_schema, fn type ->
-      code =
-        do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
-
+      code = do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
       {generator.filename(type), generator.format(code)}
     end)
   end
@@ -39,9 +37,7 @@ defmodule Dagger.Codegen do
     types
     |> Stream.reject(&graphql_primitive_types/1)
     |> Stream.map(&modify_type/1)
-    # Large types can take longer than the default five seconds to format on
-    # busy runners. Let the caller control the overall generation timeout.
-    |> Task.async_stream(&generate.(&1), ordered: false, timeout: :infinity)
+    |> Task.async_stream(&generate.(&1), ordered: false)
   end
 
   defp modify_type(type) do

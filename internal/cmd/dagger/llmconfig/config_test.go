@@ -35,9 +35,10 @@ func TestConfigSaveAndLoad(t *testing.T) {
 			DefaultModel:    "anthropic/claude-sonnet-4.5",
 			Providers: map[string]Provider{
 				"openrouter": {
-					APIKey:  "sk-or-v1-test-key",
-					BaseURL: "https://openrouter.ai/api/v1",
-					Enabled: true,
+					APIKey:     "sk-or-v1-test-key",
+					BaseURL:    "https://openrouter.ai/api/v1",
+					SmallModel: "anthropic/claude-haiku-4.5",
+					Enabled:    true,
 				},
 				"anthropic": {
 					APIKey:  "sk-ant-test-key",

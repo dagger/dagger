@@ -22,7 +22,7 @@ class SyncerClient extends Client\AbstractObject implements Syncer, Client\IdAbl
     public function sync(): Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this;
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\SyncerClient::class, new \Dagger\Id((string)$id), 'Syncer');
     }
 }

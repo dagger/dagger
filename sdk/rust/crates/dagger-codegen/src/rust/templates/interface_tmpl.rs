@@ -4,7 +4,7 @@ use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
 use crate::rust::functions::{
-    format_name, format_struct_comment, format_struct_name, render_required_args,
+    format_name, format_struct_comment, format_struct_name, id_handle_struct, render_required_args,
 };
 use crate::utility::OptionExt;
 
@@ -100,7 +100,20 @@ fn render_trait_method(
     // Build argument list (required args only for trait signatures)
     let args = render_trait_method_args(funcs, field);
 
-    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+    if let Some(handle) = id_handle_struct(funcs, field) {
+        // A handle naming the interface itself is `Self`, so every
+        // implementation returns its own type, as the GraphQL schema does.
+        // Returning Self by value needs the Sized bound.
+        let (output, bound) = if is_self_handle(funcs, field) {
+            (quote! { Self }, Some(quote! { where Self: Sized }))
+        } else {
+            (quote! { $handle }, None)
+        };
+        Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$output, $dagger_error>> + Send$(if let Some(b) = &bound => $[' ']$b);
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
         Some(quote! {
             $(field.description.pipe(|d| format_struct_comment(d)))
             fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<Option<$output_type>, $dagger_error>> + Send;
@@ -152,15 +165,24 @@ fn render_trait_method_args(
     }
 }
 
+/// Whether an ID-handle field loads the interface it is declared on. Such a
+/// field is rendered as returning `Self`, so each implementation loads its
+/// own type.
+fn is_self_handle(funcs: &CommonFunctions, field: &FullTypeFields) -> bool {
+    let parent = field.parent_type.as_ref().and_then(|p| p.name.as_deref());
+    funcs.id_handle_type(field).as_deref() == parent
+}
+
 /// Generate `impl Foo for FooClient { ... }`.
 fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
     let iface_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
     let client_name = format!("{}Client", &iface_name);
+    let graphql_name = t.name.as_deref().unwrap_or_default();
 
     let methods = t
         .fields
         .as_ref()
-        .map(|fields| render_trait_impl_methods(funcs, fields))
+        .map(|fields| render_trait_impl_methods(funcs, fields, graphql_name))
         .unwrap_or_default();
 
     quote! {
@@ -171,10 +193,16 @@ fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::
 }
 
 /// Generate methods for `impl Foo for FooClient`.
-fn render_trait_impl_methods(funcs: &CommonFunctions, fields: &[FullTypeFields]) -> rust::Tokens {
+/// Generate the methods of a trait implementation for the type whose GraphQL
+/// name is `self_graphql_name`.
+fn render_trait_impl_methods(
+    funcs: &CommonFunctions,
+    fields: &[FullTypeFields],
+    self_graphql_name: &str,
+) -> rust::Tokens {
     let methods: Vec<rust::Tokens> = fields
         .iter()
-        .filter_map(|f| render_trait_impl_method(funcs, f))
+        .filter_map(|f| render_trait_impl_method(funcs, f, self_graphql_name))
         .collect();
 
     quote! {
@@ -186,6 +214,7 @@ fn render_trait_impl_methods(funcs: &CommonFunctions, fields: &[FullTypeFields])
 fn render_trait_impl_method(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
+    self_graphql_name: &str,
 ) -> Option<rust::Tokens> {
     let name = field.name.as_ref()?;
     let fn_name = format_struct_name(name);
@@ -197,7 +226,33 @@ fn render_trait_impl_method(
 
     let (arg_sig, _arg_pass) = render_trait_impl_arg_parts(funcs, field);
 
-    if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
+    if let Some(graphql_name) = funcs.id_handle_type(field) {
+        // An ID handle: resolve the ID, then load the object it names. A
+        // handle naming the interface itself loads `Self`, addressed by the
+        // implementing type's own GraphQL name.
+        let (output, fragment) = if is_self_handle(funcs, field) {
+            (quote! { Self }, self_graphql_name.to_string())
+        } else {
+            let handle = id_handle_struct(funcs, field).unwrap_or_default();
+            (quote! { $handle }, graphql_name)
+        };
+        Some(quote! {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$(&output), $dagger_error>> + Send {
+                let mut query = self.selection.select($(genco::tokens::quoted(name)));
+                $(render_required_args(funcs, field))
+                let proc = self.proc.clone();
+                let graphql_client = self.graphql_client.clone();
+                async move {
+                    let id: Id = query.execute(graphql_client.clone()).await?;
+                    Ok($(&output) {
+                        proc,
+                        selection: query.root().select("node").arg("id", &id.0).inline_fragment($(genco::tokens::quoted(&fragment))),
+                        graphql_client,
+                    })
+                }
+            }
+        })
+    } else if funcs.supports_nullable_objects() && type_ref.is_object() && type_ref.is_optional() {
         let graphql_name = type_ref.get_non_null().name.clone().unwrap_or_default();
         Some(quote! {
             fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<Option<$(&output_type)>, $dagger_error>> + Send {
@@ -296,12 +351,13 @@ pub fn render_interface_impl_for_object(
         .name
         .pipe(|s| format_name(s))
         .unwrap_or_default();
+    let object_graphql_name = object_type.name.as_deref().unwrap_or_default();
     let iface_name = iface_type.name.pipe(|s| format_name(s)).unwrap_or_default();
 
     let methods = iface_type
         .fields
         .as_ref()
-        .map(|fields| render_trait_impl_methods_for_object(funcs, fields))
+        .map(|fields| render_trait_impl_methods_for_object(funcs, fields, object_graphql_name))
         .unwrap_or_default();
 
     quote! {
@@ -315,10 +371,11 @@ pub fn render_interface_impl_for_object(
 fn render_trait_impl_methods_for_object(
     funcs: &CommonFunctions,
     fields: &[FullTypeFields],
+    object_graphql_name: &str,
 ) -> rust::Tokens {
     let methods: Vec<rust::Tokens> = fields
         .iter()
-        .filter_map(|f| render_trait_impl_method(funcs, f))
+        .filter_map(|f| render_trait_impl_method(funcs, f, object_graphql_name))
         .collect();
 
     quote! {

@@ -87,7 +87,8 @@ type Server struct {
 	// (sharedResult.objClass); this hook is the fallback when capture missed
 	// the path (e.g., persisted-envelope decode, or imports loaded by ID
 	// before any class-bearing wrap). Resolved classes are cached back onto
-	// the shared so subsequent reconstructions skip the hook.
+	// the shared so subsequent reconstructions skip the hook. Cold recipe loads
+	// also use this hook to select the defining module's schema before dispatch.
 	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
 }
 
@@ -109,10 +110,10 @@ func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (An
 	s.nodeLoader = loader
 }
 
-// SetResultServerForCall installs the fallback resolver used when cache
-// reconstruction or persisted-envelope decoding encounters an object type the
-// current server's schema does not have installed. See the field doc on
-// Server.resultServerForCall for the full role.
+// SetResultServerForCall installs the resolver used for module-defined recipe
+// calls and when cache reconstruction or persisted-envelope decoding encounters
+// an object type the current server's schema does not have installed. See the
+// field doc on Server.resultServerForCall for the full role.
 func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultCall *ResultCall) (*Server, error)) {
 	s.resultServerForCall = loader
 }
@@ -1280,12 +1281,27 @@ func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (Obj
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("resolve object type %q module: %w", typeName, err)
 	}
+	resolved, err := s.serverForRecipeModule(ctx, id, moduleResult)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
+	}
+	if resolved == nil {
+		return nil, nil, false, nil
+	}
+	objType, ok := resolved.ObjectType(typeName)
+	return objType, resolved, ok, nil
+}
+
+// serverForRecipeModule resolves the schema that defined a recipe vertex. The
+// module's own dependencies supply its schema; unrelated modules in receiver or
+// argument recipes are resolved independently when loading those vertices.
+func (s *Server) serverForRecipeModule(ctx context.Context, id *call.ID, moduleResult AnyResult) (*Server, error) {
 	if moduleResult == nil {
-		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is null", typeName)
+		return nil, fmt.Errorf("module result is null")
 	}
 	shared := moduleResult.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		return nil, nil, false, fmt.Errorf("resolve object type %q module: result is not attached", typeName)
+		return nil, fmt.Errorf("module result is not attached")
 	}
 	resultCall := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -1299,15 +1315,7 @@ func (s *Server) ObjectTypeAndServerForID(ctx context.Context, id *call.ID) (Obj
 			Pin:       id.Module().Pin(),
 		},
 	}
-	resolved, err := s.resultServerForCall(ctx, resultCall)
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("resolve object type %q schema: %w", typeName, err)
-	}
-	if resolved == nil {
-		return nil, nil, false, nil
-	}
-	objType, ok := resolved.ObjectType(typeName)
-	return objType, resolved, ok, nil
+	return s.resultServerForCall(ctx, resultCall)
 }
 
 // Load loads the object with the given ID.
@@ -1511,10 +1519,29 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return state.srv.loadNthValue(callCtx, parent, nth, true)
 	}
 
+	// Resolve the defining module before inspecting the field's arguments: its
+	// schema may mark IDs as lazy references. Provenance is authoritative even
+	// when the bootstrap schema has a field or return type with the same name.
+	srv := state.srv
+	if mod := id.Module(); mod != nil && mod.ID() != nil && srv.resultServerForCall != nil {
+		moduleResult, err := state.load(mod.ID())
+		if err != nil {
+			return nil, fmt.Errorf("load %s: module: %w", idInputDebugString(id), err)
+		}
+		resolved, err := srv.serverForRecipeModule(callCtx, id, moduleResult)
+		if err != nil {
+			return nil, fmt.Errorf("load %s: module schema: %w", idInputDebugString(id), err)
+		}
+		if resolved != nil {
+			srv = resolved.Canonical()
+		}
+	}
+	callCtx = srvToContext(callCtx, srv)
+
 	// Lazy-ref args (e.g. LLM.withTools(object:)) are carried by reference:
 	// not evaluated here, and reconstructed into the frame/selector as
 	// unevaluated recipe IDs. Computed once and threaded through.
-	lazyRefs := state.lazyRefArgNames(id)
+	lazyRefs := srv.lazyRefArgNames(id)
 
 	inputIDs := state.directRecipeInputIDs(id, lazyRefs)
 	loadedInputs := make(map[string]AnyResult, len(inputIDs))
@@ -1543,10 +1570,10 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 			return nil, fmt.Errorf("load %s: missing loaded receiver", idInputDebugString(id))
 		}
 	} else {
-		base = state.srv.root
+		base = srv.root
 	}
 
-	baseObj, err := state.srv.toSelectable(state.ctx, base)
+	baseObj, err := srv.toSelectable(callCtx, base)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
 	}
@@ -1560,12 +1587,12 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
 	req := &CallRequest{ResultCall: frame}
-	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
+	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
 	}
-	return baseObj.Select(callCtx, state.srv, sel)
+	return baseObj.Select(callCtx, srv, sel)
 }
 
 func (state *recipeLoadState) directRecipeInputIDs(id *call.ID, lazyRefs map[string]bool) []*call.ID {
@@ -1607,7 +1634,7 @@ func (state *recipeLoadState) directRecipeInputIDs(id *call.ID, lazyRefs map[str
 // without evaluating anything. Best-effort: if the field or its type can't be
 // resolved from the schema (e.g. a module type not currently installed), the
 // arguments are treated as normal (evaluated), preserving prior behavior.
-func (state *recipeLoadState) lazyRefArgNames(id *call.ID) map[string]bool {
+func (s *Server) lazyRefArgNames(id *call.ID) map[string]bool {
 	if id == nil || id.IsHandle() || len(id.Args()) == 0 {
 		return nil
 	}
@@ -1622,7 +1649,7 @@ func (state *recipeLoadState) lazyRefArgNames(id *call.ID) map[string]bool {
 	if parentType == "" {
 		return nil
 	}
-	objType, ok := state.srv.ObjectType(parentType)
+	objType, ok := s.ObjectType(parentType)
 	if !ok {
 		return nil
 	}

@@ -17,6 +17,8 @@ pub fn format_name(s: &str) -> String {
 pub fn format_struct_name(s: &str) -> String {
     let s = s.to_case(Case::Snake);
     match s.as_ref() {
+        "async" => "r#async".to_string(),
+        "await" => "r#await".to_string(),
         "ref" => "r#ref".to_string(),
         "enum" => "r#enum".to_string(),
         "loop" => "r#loop".to_string(),
@@ -36,7 +38,7 @@ pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
 }
 
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
-    let is_convert_id = CommonFunctions::convert_id(field);
+    let is_convert_id = funcs.convert_id(field);
     let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
         if !is_convert_id
             && t.is_object()
@@ -253,45 +255,40 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
     }
 }
 
+/// The Rust struct an ID handle loads into: the object it names, or the
+/// `FooClient` struct when the handle names an interface.
+pub fn id_handle_struct(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
+    let handle = funcs.id_handle_type(field)?;
+    Some(if funcs.is_interface(&handle) {
+        format!("{}Client", format_name(&handle))
+    } else {
+        format_name(&handle)
+    })
+}
+
 /// Render the output type for a field, accounting for ConvertID.
-/// When ConvertID applies, the return type is the parent object, not ID.
+/// When ConvertID applies, the return type is the loaded object, not ID.
 fn render_field_output_type(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::Tokens {
-    if CommonFunctions::convert_id(field) {
-        let parent_name = field
-            .parent_type
-            .as_ref()
-            .and_then(|p| p.name.as_ref())
-            .map(|n| format_name(n))
-            .unwrap_or_default();
+    if let Some(handle) = id_handle_struct(funcs, field) {
         let dagger_error = rust::import("crate::errors", "DaggerError");
         return quote! {
-            Result<$parent_name, $dagger_error>
+            Result<$handle, $dagger_error>
         };
     }
     render_output_type(funcs, &field.type_.as_ref().unwrap().type_ref)
 }
 
 fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::Tokens {
-    // ConvertID: field returns ID that should be converted to parent object.
-    // Execute the query to get the ID, then construct a new parent via
+    // ConvertID: field returns an ID handle. Execute the query to get the
+    // ID, then load the object it names via
     // root.node(id).inline_fragment(type_name).
-    if CommonFunctions::convert_id(field) {
-        let parent_name = field
-            .parent_type
-            .as_ref()
-            .and_then(|p| p.name.as_ref())
-            .map(|n| format_name(n))
-            .unwrap_or_default();
-        let graphql_name = field
-            .parent_type
-            .as_ref()
-            .and_then(|p| p.name.as_deref())
-            .unwrap_or_default();
+    if let Some(graphql_name) = funcs.id_handle_type(field) {
+        let handle = id_handle_struct(funcs, field).unwrap_or_default();
         return quote! {
             let id: Id = query.execute(self.graphql_client.clone()).await?;
-            Ok($(&parent_name) {
+            Ok($(&handle) {
                 proc: self.proc.clone(),
-                selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(graphql_name))),
+                selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(&graphql_name))),
                 graphql_client: self.graphql_client.clone(),
             })
         };

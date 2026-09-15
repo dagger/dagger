@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dagger — Context</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #171d23;
+    --panel-2: #1d242c;
+    --border: #2a333d;
+    --fg: #d8dee5;
+    --dim: #8a97a5;
+    --faint: #5c6873;
+
+    --c-system: #d98a5f;
+    --c-tools: #6f9fc8;
+    --c-skills: #c8b45f;
+    --c-user: #58b5a8;
+    --c-assistant: #8fbf6f;
+    --c-thinking: #a48fd0;
+    --c-tool-call: #5f8fd9;
+    --c-tool-result: #cf7a5f;
+    --c-overhead: #5c6873;
+    --c-reserve: #3a4551;
+    --c-miss: #e06c75;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 24px 20px 80px; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  h2 { font-size: 12px; margin: 28px 0 10px; color: var(--dim);
+       text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .header .meta { color: var(--dim); }
+  .header .spacer { flex: 1; }
+  .controls { color: var(--dim); font-size: 12px; display: flex; gap: 12px; align-items: center; }
+  .controls label { cursor: pointer; user-select: none; }
+  button {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--dim); }
+  .summary { margin-top: 14px; color: var(--dim); }
+  .summary b { color: var(--fg); font-weight: 600; }
+
+  .bar {
+    position: relative; display: flex; height: 34px; margin-top: 10px;
+    border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
+    background:
+      repeating-linear-gradient(-45deg, transparent 0 6px, rgba(255,255,255,.02) 6px 12px);
+  }
+  .bar .seg { height: 100%; min-width: 0; transition: opacity .15s; }
+  .bar .seg.reserve {
+    background: repeating-linear-gradient(-45deg,
+      var(--c-reserve) 0 5px, transparent 5px 10px);
+  }
+  .bar.dimmed .seg { opacity: .25; }
+  .bar.dimmed .seg.lit { opacity: 1; }
+  .bar .slice {
+    position: absolute; top: 0; height: 100%;
+    outline: 2px solid #fff; outline-offset: -2px;
+    pointer-events: none; z-index: 2;
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 10px; }
+  .legend .entry { display: flex; align-items: center; gap: 7px; color: var(--dim); cursor: default; }
+  .legend .entry .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .legend .entry b { color: var(--fg); font-weight: 600; }
+
+  .calls { display: grid; grid-template-columns: max-content 1fr max-content; gap: 4px 12px; align-items: center; }
+  .calls .row { display: contents; cursor: pointer; }
+  .calls .idx { color: var(--faint); text-align: right; }
+  .calls .row:hover .idx { color: var(--fg); }
+  .calls .track { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--panel); }
+  .calls .track div { height: 100%; }
+  .calls .lbl { color: var(--dim); white-space: nowrap; font-size: 12px; }
+  .calls .miss { color: var(--c-miss); font-weight: 600; }
+  .cache-note { color: var(--faint); font-size: 12px; margin-top: 8px; }
+
+  .items { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .item { border-bottom: 1px solid var(--border); }
+  .item:last-child { border-bottom: none; }
+  .item .head {
+    display: flex; align-items: center; gap: 10px; padding: 5px 10px; cursor: pointer;
+  }
+  .item .head:hover { background: var(--panel); }
+  .item.expanded .head { background: var(--panel-2); }
+  .item .cat {
+    flex: none; width: 92px; font-size: 11px; padding: 1px 6px; border-radius: 3px;
+    text-align: center; color: #0d1114; font-weight: 600; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .item .label {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg);
+  }
+  .item .label .err { color: var(--c-miss); font-weight: 600; }
+  .item .label .missmark { color: var(--c-miss); font-weight: 600; }
+  .item .tok { flex: none; color: var(--dim); }
+  .item .pct { flex: none; width: 58px; text-align: right; color: var(--faint); }
+  .item .mini { flex: none; width: 90px; height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; }
+  .item .mini div { height: 100%; }
+  .item pre {
+    margin: 0; padding: 10px 12px; background: #0b0e11; color: var(--fg);
+    white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
+    border-top: 1px solid var(--border); font-size: 12px;
+  }
+  .status { color: var(--faint); font-size: 12px; }
+  .error {
+    background: #2a1518; border: 1px solid #5c2a30; color: #e8a0a8;
+    padding: 10px 14px; border-radius: 5px; margin-top: 16px; white-space: pre-wrap;
+  }
+  .skills { color: var(--dim); font-size: 12px; }
+  .skills b { color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>Context window</h1>
+    <span class="meta" id="who"></span>
+    <span class="spacer"></span>
+    <div class="controls">
+      <span class="status" id="status"></span>
+      <label><input type="checkbox" id="auto" checked> auto-refresh</label>
+      <button id="refresh">refresh</button>
+    </div>
+  </div>
+  <div id="err" class="error" style="display:none"></div>
+  <div class="summary" id="summary"></div>
+  <div class="bar" id="bar"></div>
+  <div class="legend" id="legend"></div>
+
+  <h2>API calls · cache activity</h2>
+  <div class="calls" id="calls"></div>
+  <div class="cache-note" id="cacheNote"></div>
+
+  <h2>Transcript</h2>
+  <div class="items" id="items"></div>
+  <div class="cache-note">
+    Token counts are calibrated against the provider-reported usage of each API
+    call, so blocks add up to the measured context; a leading ~ marks blocks
+    newer than the last call, sized by the chars/4 heuristic until the next
+    call measures them.
+  </div>
+
+  <h2 id="skillsHead" style="display:none">Available skills</h2>
+  <div class="skills" id="skills"></div>
+</div>
+
+<script>
+"use strict";
+
+const COLORS = {
+  "system":      "var(--c-system)",
+  "tools":       "var(--c-tools)",
+  "skills":      "var(--c-skills)",
+  "user":        "var(--c-user)",
+  "assistant":   "var(--c-assistant)",
+  "thinking":    "var(--c-thinking)",
+  "tool-call":   "var(--c-tool-call)",
+  "tool-result": "var(--c-tool-result)",
+  "overhead":    "var(--c-overhead)",
+};
+const SHORT = {
+  "system": "system", "tools": "tools", "skills": "skill",
+  "user": "user", "assistant": "reply", "thinking": "think",
+  "tool-call": "call", "tool-result": "result", "overhead": "other",
+};
+
+let snap = null;
+let lastBody = "";
+const expanded = new Set();
+
+function fmt(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+function pct(n, d) { return d > 0 ? (100 * n / d).toFixed(1) + "%" : "–"; }
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// usedTokens is the denominator the bar fills against: the larger of the
+// measured context and the itemized estimates (they are both estimates and
+// can disagree in either direction).
+function usedTokens(s) {
+  return Math.max(s.contextTokens, s.classifiedTokens);
+}
+
+// barScale returns total tokens the bar spans: the window when known,
+// otherwise used + reserve so everything stays visible.
+function barScale(s) {
+  const used = usedTokens(s);
+  return s.contextWindow > 0 ? Math.max(s.contextWindow, used) : used + s.reserveTokens;
+}
+
+// catStart returns the token offset where a category's segment begins.
+function catStart(s, catID) {
+  let off = 0;
+  for (const c of s.categories) {
+    if (c.id === catID) return off;
+    off += c.tokens;
+  }
+  return off;
+}
+
+function renderBar(s) {
+  const bar = document.getElementById("bar");
+  bar.innerHTML = "";
+  bar.classList.remove("dimmed");
+  const scale = barScale(s);
+  if (scale <= 0) return;
+  for (const c of s.categories) {
+    if (c.tokens <= 0) continue;
+    const seg = el("div", "seg");
+    seg.dataset.cat = c.id;
+    seg.style.width = (100 * c.tokens / scale) + "%";
+    seg.style.background = COLORS[c.id];
+    seg.title = c.label + ": " + fmt(c.tokens) + " tokens (" + pct(c.tokens, scale) + ")";
+    bar.appendChild(seg);
+  }
+  const used = usedTokens(s);
+  const free = Math.max(0, scale - used - s.reserveTokens);
+  if (free > 0) {
+    const seg = el("div", "seg");
+    seg.dataset.cat = "free";
+    seg.style.width = (100 * free / scale) + "%";
+    seg.title = "Free: " + fmt(free) + " tokens (" + pct(free, scale) + ")";
+    bar.appendChild(seg);
+  }
+  if (s.reserveTokens > 0) {
+    const seg = el("div", "seg reserve");
+    seg.dataset.cat = "reserve";
+    seg.style.width = (100 * s.reserveTokens / scale) + "%";
+    seg.title = "Auto-compact reserve: " + fmt(s.reserveTokens) + " tokens";
+    bar.appendChild(seg);
+  }
+}
+
+function highlightCategory(catID) {
+  const bar = document.getElementById("bar");
+  bar.classList.toggle("dimmed", !!catID);
+  for (const seg of bar.querySelectorAll(".seg")) {
+    seg.classList.toggle("lit", seg.dataset.cat === catID);
+  }
+}
+
+// highlightItem overlays the item's own share within its category's segment.
+function highlightItem(item) {
+  clearSlice();
+  if (!snap || !item) return;
+  highlightCategory(item.category);
+  const scale = barScale(snap);
+  if (scale <= 0 || item.tokens <= 0) return;
+  let within = 0;
+  for (const it of snap.items) {
+    if (it.index >= item.index) break;
+    if (it.category === item.category) within += it.tokens;
+  }
+  const start = catStart(snap, item.category) + within;
+  const slice = el("div", "slice");
+  slice.style.left = (100 * start / scale) + "%";
+  slice.style.width = Math.max(0.25, 100 * item.tokens / scale) + "%";
+  document.getElementById("bar").appendChild(slice);
+}
+
+function clearSlice() {
+  highlightCategory(null);
+  for (const sl of document.querySelectorAll(".bar .slice")) sl.remove();
+}
+
+function renderLegend(s) {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = "";
+  const scale = barScale(s);
+  for (const c of s.categories) {
+    if (c.tokens <= 0) continue;
+    const entry = el("div", "entry");
+    const sw = el("span", "sw");
+    sw.style.background = COLORS[c.id];
+    entry.appendChild(sw);
+    const t = el("span", "", c.label + " ");
+    const b = el("b", "", fmt(c.tokens));
+    t.appendChild(b);
+    t.appendChild(document.createTextNode(" (" + pct(c.tokens, scale) + ")"));
+    entry.appendChild(t);
+    entry.onmouseenter = () => highlightCategory(c.id);
+    entry.onmouseleave = () => highlightCategory(null);
+    legend.appendChild(entry);
+  }
+  const used = usedTokens(s);
+  const free = Math.max(0, scale - used - s.reserveTokens);
+  const mk = (label, tokens, cls) => {
+    const entry = el("div", "entry");
+    const sw = el("span", "sw " + (cls || ""));
+    if (cls === "reserve") {
+      sw.style.background = "repeating-linear-gradient(-45deg, var(--c-reserve) 0 3px, transparent 3px 6px)";
+    } else {
+      sw.style.border = "1px solid var(--border)";
+    }
+    entry.appendChild(sw);
+    const t = el("span", "", label + " ");
+    t.appendChild(el("b", "", fmt(tokens)));
+    entry.appendChild(t);
+    legend.appendChild(entry);
+  };
+  if (s.contextWindow > 0) mk("Free", free);
+  if (s.reserveTokens > 0) mk("Auto-compact reserve", s.reserveTokens, "reserve");
+}
+
+function renderSummary(s) {
+  const who = document.getElementById("who");
+  who.textContent = s.agent + " · " + s.model + (s.provider ? " (" + s.provider + ")" : "");
+  const parts = [];
+  if (s.contextWindow > 0) {
+    parts.push("<b>" + fmt(s.contextTokens) + "</b> of <b>" + fmt(s.contextWindow) +
+      "</b> tokens in use (" + pct(s.contextTokens, s.contextWindow) + ")");
+  } else {
+    parts.push("<b>" + fmt(s.contextTokens) + "</b> tokens in use (context window unknown)");
+  }
+  parts.push(s.items.length + " blocks");
+  parts.push(s.calls.length + " API calls");
+  document.getElementById("summary").innerHTML = parts.join(" · ");
+}
+
+function renderCalls(s) {
+  const box = document.getElementById("calls");
+  box.innerHTML = "";
+  const note = document.getElementById("cacheNote");
+  if (s.calls.length === 0) {
+    note.textContent = "No API calls yet.";
+    return;
+  }
+  let max = 0;
+  let anyCache = false;
+  for (const c of s.calls) {
+    max = Math.max(max, c.cacheReads + c.cacheWrites + c.input + c.output);
+    if (c.cacheReads > 0 || c.cacheWrites > 0) anyCache = true;
+  }
+  for (const c of s.calls) {
+    const row = el("div", "row");
+    row.appendChild(el("div", "idx", "#" + c.index));
+    const track = el("div", "track");
+    const segs = [
+      [c.cacheReads, "var(--c-assistant)", "cache reads"],
+      [c.cacheWrites, "var(--c-skills)", "cache writes"],
+      [c.input, "var(--c-miss)", "uncached input"],
+      [c.output, "var(--c-tool-call)", "output"],
+    ];
+    for (const [n, color, label] of segs) {
+      if (n <= 0) continue;
+      const d = el("div");
+      d.style.width = (100 * n / max) + "%";
+      d.style.background = color;
+      d.title = label + ": " + fmt(n);
+      track.appendChild(d);
+    }
+    row.appendChild(track);
+    const lbl = el("div", "lbl");
+    lbl.innerHTML =
+      "read " + fmt(c.cacheReads) + " · wrote " + fmt(c.cacheWrites) +
+      " · in " + fmt(c.input) + " · out " + fmt(c.output) +
+      (c.cacheMiss ? ' · <span class="miss">CACHE MISS</span>' : "");
+    row.appendChild(lbl);
+    row.onclick = () => {
+      const target = document.getElementById("item-" + c.item);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("expanded");
+      }
+    };
+    box.appendChild(row);
+  }
+  note.textContent = anyCache
+    ? "A warm prompt cache reads back everything previous calls cached; a CACHE MISS means part of " +
+      "that prefix was re-ingested — typically after a change to the system prompt, toolset, or earlier history."
+    : "This provider reported no prompt-cache activity.";
+}
+
+function missCalls(s) {
+  const misses = new Set();
+  for (const c of s.calls) if (c.cacheMiss) misses.add(c.index);
+  return misses;
+}
+
+function renderItems(s) {
+  const box = document.getElementById("items");
+  box.innerHTML = "";
+  const used = usedTokens(s);
+  const maxTok = Math.max(1, ...s.items.map(it => it.tokens));
+  const misses = missCalls(s);
+  for (const it of s.items) {
+    const item = el("div", "item");
+    item.id = "item-" + it.index;
+    if (expanded.has(it.index)) item.classList.add("expanded");
+
+    const head = el("div", "head");
+    const cat = el("span", "cat", SHORT[it.category] || it.category);
+    cat.style.background = COLORS[it.category];
+    head.appendChild(cat);
+
+    const label = el("span", "label");
+    if (it.errored) label.appendChild(el("span", "err", "✗ "));
+    if (it.call && misses.has(it.call)) {
+      const mm = el("span", "missmark", "⚡ ");
+      mm.title = "This API call re-ingested previously cached context (cache miss)";
+      label.appendChild(mm);
+    }
+    label.appendChild(document.createTextNode(it.label));
+    head.appendChild(label);
+
+    const mini = el("span", "mini");
+    const fill = el("div");
+    fill.style.width = (100 * it.tokens / maxTok) + "%";
+    fill.style.background = COLORS[it.category];
+    mini.appendChild(fill);
+    head.appendChild(mini);
+
+    head.appendChild(el("span", "tok", (it.est ? "~" : "") + fmt(it.tokens)));
+    head.appendChild(el("span", "pct", pct(it.tokens, used)));
+
+    head.onmouseenter = () => highlightItem(it);
+    head.onmouseleave = () => clearSlice();
+    head.onclick = () => {
+      item.classList.toggle("expanded");
+      if (item.classList.contains("expanded")) {
+        expanded.add(it.index);
+        if (!item.querySelector("pre")) {
+          item.appendChild(el("pre", "", it.text || "(no content)"));
+        }
+      } else {
+        expanded.delete(it.index);
+        const pre = item.querySelector("pre");
+        if (pre) pre.remove();
+      }
+    };
+    item.appendChild(head);
+    if (expanded.has(it.index)) {
+      item.appendChild(el("pre", "", it.text || "(no content)"));
+    }
+    box.appendChild(item);
+  }
+}
+
+function renderSkills(s) {
+  const head = document.getElementById("skillsHead");
+  const box = document.getElementById("skills");
+  box.innerHTML = "";
+  if (!s.skills || s.skills.length === 0) {
+    head.style.display = "none";
+    return;
+  }
+  head.style.display = "";
+  for (const sk of s.skills) {
+    const div = el("div");
+    div.appendChild(el("b", "", sk.name));
+    div.appendChild(document.createTextNode(" — " + sk.description));
+    box.appendChild(div);
+  }
+}
+
+function render(s) {
+  snap = s;
+  renderSummary(s);
+  renderBar(s);
+  renderLegend(s);
+  renderCalls(s);
+  renderItems(s);
+  renderSkills(s);
+}
+
+async function refresh() {
+  const status = document.getElementById("status");
+  const errBox = document.getElementById("err");
+  status.textContent = "loading…";
+  try {
+    const res = await fetch("snapshot.json");
+    const body = await res.text();
+    if (!res.ok) throw new Error(body.trim() || res.statusText);
+    errBox.style.display = "none";
+    if (body !== lastBody) {
+      lastBody = body;
+      render(JSON.parse(body));
+    }
+    status.textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (err) {
+    errBox.textContent = String(err.message || err);
+    errBox.style.display = "";
+    status.textContent = "error";
+  }
+}
+
+document.getElementById("refresh").onclick = refresh;
+setInterval(() => {
+  if (document.getElementById("auto").checked && !document.hidden) refresh();
+}, 5000);
+refresh();
+</script>
+</body>
+</html>
