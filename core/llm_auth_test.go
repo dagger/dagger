@@ -147,6 +147,14 @@ func llmTestHistory() []*LLMMessage {
 
 func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 	ctx, env := newLLMEndpointTestCtx(t)
+	var mu sync.Mutex
+	var seen []string
+	ts := anthropic401Server(t, func(auth string) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, auth)
+	})
+	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
 	md, err := engine.ClientMetadataFromContext(ctx)
 	require.NoError(t, err)
 	var held atomic.Int64
@@ -172,18 +180,27 @@ func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 	require.NoError(t, err)
 	ep, err := llm.Endpoint(routingCtx)
 	require.NoError(t, err)
+	clk := newTestClock()
+	ep.AuthTokenSource.now = clk.Now
+	_, err = ep.Client.SendQuery(routingCtx, llmTestHistory(), nil, &LLMCallOpts{})
+	require.Error(t, err) // The fixture responds with an authentication error.
 	routingLease.Release()
 	require.Zero(t, held.Load(), "memoizing an endpoint must not retain the routing client")
 
 	requestCtx, requestLease := withScope("agent-turn")
 	for _, token := range []string{"token-v2", "token-v3"} {
 		env.set("env://ANTHROPIC_AUTH_TOKEN", token)
-		ep.AuthTokenSource.Invalidate()
-		cred, err := ep.AuthTokenSource.Credential(requestCtx)
-		require.NoError(t, err)
-		require.Equal(t, token, cred.Token)
+		clk.Advance(credentialRefreshTTL + time.Second)
+		_, err := ep.Client.SendQuery(requestCtx, llmTestHistory(), nil, &LLMCallOpts{})
+		require.Error(t, err)
 		require.EqualValues(t, 1, held.Load(), "credential lookup must release its temporary scope")
 	}
+	mu.Lock()
+	require.Equal(t, []string{"Bearer token-v1", "Bearer token-v2", "Bearer token-v3"}, seen)
+	mu.Unlock()
+	again, err := llm.Endpoint(requestCtx)
+	require.NoError(t, err)
+	require.Same(t, ep, again, "refresh must preserve the memoized endpoint")
 	requestLease.Release()
 	require.Zero(t, held.Load())
 	ep.AuthTokenSource.Invalidate()
