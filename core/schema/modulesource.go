@@ -1055,7 +1055,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
-	src.ManifestVersion = modCfg.ManifestVersion
 	src.Entrypoint = modCfg.Entrypoint
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
@@ -1066,7 +1065,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
-	if modCfg.ManifestVersion == modules.ModuleManifestVersion2 {
+	if modCfg.Entrypoint != nil {
 		engineVersion = engine.Version
 	}
 	switch engineVersion {
@@ -2543,12 +2542,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
-	if src.ManifestVersion == modules.ModuleManifestVersion2 {
+	if src.Entrypoint != nil {
 		return &modules.ModuleConfigWithUserFields{
 			ModuleConfig: modules.ModuleConfig{
-				ManifestVersion: src.ManifestVersion,
-				Name:            src.ModuleOriginalName,
-				Entrypoint:      src.Entrypoint,
+				Name:       src.ModuleOriginalName,
+				Entrypoint: src.Entrypoint,
 			},
 		}, nil
 	}

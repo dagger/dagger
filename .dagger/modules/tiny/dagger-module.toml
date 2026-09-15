@@ -1,4 +1,3 @@
-manifestVersion = 2
 name = "tiny"
 
 [entrypoint]
