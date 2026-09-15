@@ -45,8 +45,8 @@ type DBs struct {
 	openStore    func(context.Context, string, string, int64) (*DB, error)
 }
 
-// OpenStats is a measured snapshot of currently referenced telemetry stores.
-// Each open store owns exactly three stream handles (spans, logs, metrics).
+// OpenStats is a measured snapshot of currently open telemetry stores.
+// Each store owns exactly three stream handles, including idle cached stores.
 type OpenStats struct {
 	Stores  int
 	Streams int
