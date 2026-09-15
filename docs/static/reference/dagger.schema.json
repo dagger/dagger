@@ -9,17 +9,9 @@
           "type": "string",
           "description": "The self-describing config schema."
         },
-        "manifestVersion": {
-          "type": "integer",
-          "description": "ManifestVersion selects the dagger-module.toml schema. Zero identifies the transitional pre-v2 TOML schema."
-        },
         "name": {
           "type": "string",
           "description": "The name of the module."
-        },
-        "entrypoint": {
-          "$ref": "#/$defs/ModuleEntrypointConfig",
-          "description": "Entrypoint defines how the engine loads and calls a manifest v2 module."
         },
         "engineVersion": {
           "type": "string",
@@ -216,23 +208,6 @@
         "name",
         "source"
       ]
-    },
-    "ModuleEntrypointConfig": {
-      "properties": {
-        "kind": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "kind",
-        "source"
-      ],
-      "description": "ModuleEntrypointConfig selects and configures a module entrypoint."
     },
     "SDK": {
       "properties": {

@@ -179,7 +179,6 @@ func (src *ModuleSource) SelfCallsEnabled() bool {
 type ModuleSource struct {
 	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
 	ConfigFilename                string
-	ManifestVersion               int
 	Entrypoint                    *modules.ModuleEntrypointConfig
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
@@ -476,7 +475,6 @@ type persistedModuleSourceSDKCapabilities struct {
 type persistedModuleSourcePayload struct {
 	ConfigExists                    bool                                  `json:"configExists,omitempty"`
 	ConfigFilename                  string                                `json:"configFilename,omitempty"`
-	ManifestVersion                 int                                   `json:"manifestVersion,omitempty"`
 	Entrypoint                      *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
@@ -801,7 +799,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                  src.ConfigExists,
 		ConfigFilename:                src.ConfigFilename,
-		ManifestVersion:               src.ManifestVersion,
 		Entrypoint:                    src.Entrypoint,
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
@@ -965,7 +962,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	src := &ModuleSource{
 		ConfigExists:                  persisted.ConfigExists,
 		ConfigFilename:                persisted.ConfigFilename,
-		ManifestVersion:               persisted.ManifestVersion,
 		Entrypoint:                    persisted.Entrypoint,
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
