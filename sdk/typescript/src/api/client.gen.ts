@@ -17226,6 +17226,7 @@ export class Workspace extends BaseClient {
    * Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
    *
    * The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+   * @experimental
    */
   snapshot = (): Workspace => {
     const ctx = this._ctx.select("snapshot")

@@ -6721,7 +6721,7 @@ type Workspace implements Node {
 
   The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
   """
-  snapshot: Workspace!
+  snapshot: Workspace! @experimental(reason: "Best-effort capture for resumable sessions; capture and fallback behavior may change.")
 
   """Return all terminal targets from modules loaded in the workspace."""
   terminals(
@@ -7413,4 +7413,3 @@ type WorkspaceSDK implements Node {
   """The module reference this SDK was installed from."""
   ref: String!
 }
-
