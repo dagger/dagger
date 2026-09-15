@@ -1019,21 +1019,32 @@ func handleChangesetResponseWithApply(
 	}
 
 	analyzeCtx, analyzeSpan := Tracer().Start(ctx, "analyzing changes")
-	entries, err := idtui.PreviewPatch(analyzeCtx, dag, changeset)
+	var entries []patchpreview.Entry
+	var hasChanges bool
+	if disposition == changesetDispositionApply {
+		// Auto-apply never displays the preview, so only query changed paths.
+		// IsEmpty is not equivalent: it ignores directory-only changes.
+		hasChanges, err = changesetHasPaths(analyzeCtx, dag, changeset)
+	} else {
+		entries, err = idtui.PreviewPatch(analyzeCtx, dag, changeset)
+		hasChanges = len(entries) > 0
+	}
 	telemetry.EndWithCause(analyzeSpan, &err)
 	if err != nil {
 		return false, err
 	}
-	if len(entries) == 0 {
+	if !hasChanges {
 		slog.Info("no changes to apply")
 		return false, nil
 	}
 
-	summaryWidth := min(getViewWidth(), 80)
-
-	var descBuf strings.Builder
-	patchpreview.Summarize(idtui.NewOutput(&descBuf), entries, summaryWidth)
-	description := descBuf.String()
+	var description string
+	if disposition != changesetDispositionApply {
+		summaryWidth := min(getViewWidth(), 80)
+		var descBuf strings.Builder
+		patchpreview.Summarize(idtui.NewOutput(&descBuf), entries, summaryWidth)
+		description = descBuf.String()
+	}
 
 	switch disposition {
 	case changesetDispositionNoApply:
@@ -1073,6 +1084,40 @@ func handleChangesetResponseWithApply(
 		return false, err
 	}
 	return true, nil
+}
+
+// changesetHasPaths preserves PreviewPatch's nonempty-path semantics without
+// computing unused line counts. Renames are included in added/removed paths;
+// collapsing removed descendants cannot change whether that list is empty.
+func changesetHasPaths(ctx context.Context, dag *dagger.Client, changeset *dagger.Changeset) (bool, error) {
+	changesetID, err := changeset.ID(ctx)
+	if err != nil {
+		return false, fmt.Errorf("query changeset paths: get changeset id: %w", err)
+	}
+
+	var res struct {
+		Changeset struct {
+			AddedPaths    []string
+			ModifiedPaths []string
+			RemovedPaths  []string
+		}
+	}
+	// Keep the three fields in one request. They share ComputePaths in the
+	// engine, rather than calculating or fetching each set independently.
+	err = dag.Do(ctx, &dagger.Request{
+		Query: `query ChangesetPaths($changeset: ID!) {
+			changeset: node(id: $changeset) {
+				... on Changeset { addedPaths modifiedPaths removedPaths }
+			}
+		}`,
+		Variables: map[string]any{"changeset": changesetID},
+	}, &dagger.Response{Data: &res})
+	if err != nil {
+		return false, fmt.Errorf("query changeset paths: %w", err)
+	}
+	return len(res.Changeset.AddedPaths) > 0 ||
+		len(res.Changeset.ModifiedPaths) > 0 ||
+		len(res.Changeset.RemovedPaths) > 0, nil
 }
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
